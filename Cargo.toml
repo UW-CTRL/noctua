@@ -1,0 +1,29 @@
+[package]
+name = "noctua"
+version = "0.1.0"
+edition = "2021"
+description = "Research-paper explorer: Semantic Scholar citation graphs, Zotero folders and LaTeX notes"
+
+# The desktop app (Tauri) lives in app/. Plain `cargo build` / `cargo run`
+# builds only the browser version, without the desktop dependencies.
+[workspace]
+members = ["app"]
+default-members = ["."]
+
+[dependencies]
+anyhow = "1"
+dirs = "5"
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "sync", "process", "io-util"] }
+tokio-stream = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

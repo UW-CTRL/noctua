@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noctua</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦉</text></svg>">
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">🦉 <span>Noctua</span></div>
+    <div class="mode-switch" role="tablist">
+      <button data-mode="graph" class="active">Graph</button>
+      <button data-mode="notes">Notes</button>
+    </div>
+    <form id="search-form" autocomplete="off">
+      <input id="search" type="search" placeholder="Search papers, or paste a DOI / arXiv / Semantic Scholar link" required>
+      <button type="submit">Search</button>
+    </form>
+    <button id="clear-graph" class="hidden" title="Close the current paper graph">✕ Close graph</button>
+    <div id="queue" class="pill" title="Semantic Scholar requests waiting (limit: 1 per second)"></div>
+    <div class="zotero-box">
+      <label for="collection">Zotero</label>
+      <select id="collection" title="Folder new papers are saved into"></select>
+      <button id="refresh-collections" class="icon" title="Reload Zotero folders">↻</button>
+    </div>
+    <button id="open-settings" class="icon" title="Settings: Semantic Scholar key, Zotero folder">⚙</button>
+  </header>
+
+  <main>
+    <aside id="left">
+      <div id="notes-side">
+        <div class="notes-side-head">
+          <select id="notes-target" title="Zotero folder these notes belong to"></select>
+          <button id="note-new" class="primary">New note</button>
+        </div>
+        <ul id="note-list" class="note-list"></ul>
+      </div>
+      <nav class="tabs">
+        <button data-tab="results" class="active">Search</button>
+        <button data-tab="library">Library</button>
+        <button data-tab="projects">Projects</button>
+        <button data-tab="nodes">In graph <span id="node-count"></span></button>
+      </nav>
+      <div id="tab-results" class="tab-body">
+        <p class="hint">Search for a paper, then pick one to build its citation graph.</p>
+      </div>
+      <div id="tab-library" class="tab-body hidden">
+        <ul id="lib-tree" class="tree"></ul>
+        <div class="list-tools">
+          <select id="lib-sort">
+            <option value="added">Recently added</option>
+            <option value="title">Title</option>
+            <option value="year-desc">Newest</option>
+            <option value="year-asc">Oldest</option>
+          </select>
+          <input id="lib-filter" type="search" placeholder="Filter">
+        </div>
+        <ul id="lib-items" class="papers"></ul>
+      </div>
+      <div id="tab-projects" class="tab-body hidden">
+        <div class="list-tools">
+          <select id="proj-target" title="Zotero folder"></select>
+          <button id="proj-open" class="primary">Open graph</button>
+        </div>
+        <div id="proj-info" class="proj-info">
+          <p class="hint">Pick a Zotero folder and open its project graph: how its papers cite each other,
+            which clusters form, and which references link the clusters. It's saved, and only papers you add
+            or edit are looked up again.</p>
+        </div>
+      </div>
+      <div id="tab-nodes" class="tab-body hidden">
+        <div class="list-tools">
+          <select id="sort">
+            <option value="citations">Most cited</option>
+            <option value="year-desc">Newest</option>
+            <option value="year-asc">Oldest</option>
+            <option value="links">Most connected</option>
+          </select>
+          <input id="filter" type="search" placeholder="Filter">
+        </div>
+        <ul id="node-list" class="papers"></ul>
+      </div>
+    </aside>
+
+    <section id="stage">
+      <canvas id="graph"></canvas>
+      <div id="empty" class="empty">
+        <div class="owl">🦉</div>
+        <p>Search for a paper to see what it builds on and what builds on it.</p>
+      </div>
+      <div class="controls">
+        <label class="chip ref graph-only"><input type="checkbox" data-role="ref" checked> <i></i>References <b id="n-ref">0</b></label>
+        <label class="chip cite graph-only"><input type="checkbox" data-role="cite" checked> <i></i>Cited by <b id="n-cite">0</b></label>
+        <label class="chip sim graph-only"><input type="checkbox" data-role="sim" checked> <i></i>Similar <b id="n-sim">0</b></label>
+        <label class="chip shared proj-only" title="Outside papers cited from more than one cluster"><input type="checkbox" data-role="shared" checked> <i></i>Shared references <b id="n-shared">0</b></label>
+        <label class="chip plain"><input type="checkbox" id="timeline"> Timeline</label>
+        <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
+          <select id="limit"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
+        </label>
+        <button id="fit" class="chip plain" title="Fit graph to view">Fit</button>
+      </div>
+      <div class="legend">
+        <span class="graph-only"><i class="dot old"></i>older</span><span class="graph-only"><i class="dot new"></i>newer</span>
+        <span class="proj-only">colour = cluster</span><span class="proj-only"><i class="dot single"></i>unconnected</span>
+        <span>size = citations</span><span><i class="ring"></i>in Zotero</span>
+      </div>
+      <div id="tooltip" class="tooltip hidden"></div>
+      <div id="toast" class="toast hidden"></div>
+    </section>
+
+    <section id="notes-stage"></section>
+
+    <div id="gutter-left" class="gutter" title="Drag to resize (double-click to reset)"></div>
+    <div id="gutter-right" class="gutter" title="Drag to resize (double-click to reset)"></div>
+
+    <aside id="right">
+      <nav class="tabs">
+        <button data-rtab="paper" class="active">Paper</button>
+        <button data-rtab="chat">Chat</button>
+      </nav>
+      <div id="details" class="details">
+        <p class="hint">Click a node to see the paper and add it to Zotero.</p>
+      </div>
+      <div id="chat" class="chat hidden">
+        <div class="chat-head">
+          <span id="chat-context" class="chat-context"></span>
+          <button id="chat-history-btn" title="Saved conversations">History</button>
+          <button id="chat-new" title="Start a new conversation">New chat</button>
+        </div>
+        <ul id="chat-history" class="chat-history hidden"></ul>
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="chat-input" rows="2" placeholder="Ask about these papers, or ask me to find, graph or save papers…"></textarea>
+          <button type="submit" id="chat-send" class="primary">Send</button>
+        </form>
+        <div class="chat-foot">
+          <button type="button" id="chat-mode" class="chat-mode" title="Click or press Shift+Tab in the chat box to change mode"></button>
+          <span>shift+tab to cycle</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="cite-picker" class="cite-picker hidden"></div>
+  <div id="mention-picker" class="cite-picker hidden"></div>
+
+  <script src="/vendor/katex/katex.min.js"></script>
+  <script src="/latex.js"></script>
+  <script src="/ink.js"></script>
+  <script src="/app.js"></script>
+  <script src="/notes.js"></script>
+  <script src="/mentions.js"></script>
+  <script src="/figures.js"></script>
+  <script src="/setup.js"></script>
+</body>
+</html>

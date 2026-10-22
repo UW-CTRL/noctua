@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2f6b"/>
+      <stop offset="1" stop-color="#121433"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8f7cff"/>
+      <stop offset="1" stop-color="#5b4bd6"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <!-- stars -->
+  <circle cx="236" cy="236" r="10" fill="#c9c6ff" opacity=".8"/>
+  <circle cx="806" cy="200" r="7" fill="#c9c6ff" opacity=".7"/>
+  <circle cx="830" cy="330" r="5" fill="#c9c6ff" opacity=".6"/>
+  <!-- body with ear tufts -->
+  <path d="M292 330 L340 190 L420 300 Q512 270 604 300 L684 190 L732 330
+           Q800 430 790 600 Q770 820 512 850 Q254 820 234 600 Q224 430 292 330 Z" fill="url(#body)"/>
+  <!-- belly -->
+  <path d="M372 640 Q512 560 652 640 Q640 790 512 810 Q384 790 372 640 Z" fill="#b9adff" opacity=".55"/>
+  <!-- eyes -->
+  <circle cx="410" cy="470" r="112" fill="#f4f1ff"/>
+  <circle cx="614" cy="470" r="112" fill="#f4f1ff"/>
+  <circle cx="410" cy="470" r="70" fill="#f5b941"/>
+  <circle cx="614" cy="470" r="70" fill="#f5b941"/>
+  <circle cx="410" cy="470" r="38" fill="#141633"/>
+  <circle cx="614" cy="470" r="38" fill="#141633"/>
+  <circle cx="424" cy="454" r="12" fill="#fff"/>
+  <circle cx="628" cy="454" r="12" fill="#fff"/>
+  <!-- beak -->
+  <path d="M482 560 L542 560 L512 620 Z" fill="#f5b941"/>
+</svg>
