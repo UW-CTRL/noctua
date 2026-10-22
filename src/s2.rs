@@ -61,7 +61,7 @@ pub struct S2 {
 impl S2 {
     pub fn new(key: Option<String>, cache: Arc<Cache>) -> Self {
         let http = Client::builder()
-            .user_agent("noctua/0.1")
+            .user_agent(concat!("noctua/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(60))
             .build()
             .expect("http client");
