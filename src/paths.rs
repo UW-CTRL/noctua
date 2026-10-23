@@ -1,6 +1,6 @@
 //! Where Noctua keeps its data (a per-user folder, so `git pull` and app
 //! updates never touch it), the one-time move of data out of a source
-//! checkout, and finding the `claude` CLI when started from a desktop launcher.
+//! checkout, and finding agent CLIs when started from a desktop launcher.
 
 use std::{
     env, fs,
@@ -143,15 +143,15 @@ pub fn adopt_shell_path() {
     }
 }
 
-/// The `claude` CLI: the configured path (settings.json `claude_path`), else
-/// `$NOCTUA_CLAUDE`, else a search of PATH and the usual install locations.
-pub fn claude_command(configured: Option<&str>) -> tokio::process::Command {
+/// An agent CLI: its configured path, then NOCTUA_CLAUDE / NOCTUA_CODEX,
+/// then PATH and the usual install locations.
+pub fn cli_command(name: &str, configured: Option<&str>) -> tokio::process::Command {
     let prog = configured
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from)
-        .or_else(|| env::var_os("NOCTUA_CLAUDE").map(PathBuf::from))
-        .or_else(find_claude)
-        .unwrap_or_else(|| PathBuf::from("claude"));
+        .or_else(|| env::var_os(if name == "codex" { "NOCTUA_CODEX" } else { "NOCTUA_CLAUDE" }).map(PathBuf::from))
+        .or_else(|| find_cli(name))
+        .unwrap_or_else(|| PathBuf::from(name));
     #[allow(unused_mut)]
     let mut cmd = if cfg!(windows) && prog.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat")) {
         let mut c = tokio::process::Command::new("cmd");
@@ -165,8 +165,8 @@ pub fn claude_command(configured: Option<&str>) -> tokio::process::Command {
     cmd
 }
 
-fn find_claude() -> Option<PathBuf> {
-    let names: &[&str] = if cfg!(windows) { &["claude.exe", "claude.cmd"] } else { &["claude"] };
+fn find_cli(name: &str) -> Option<PathBuf> {
+    let names = if cfg!(windows) { vec![format!("{name}.exe"), format!("{name}.cmd")] } else { vec![name.to_string()] };
     let mut dirs: Vec<PathBuf> = env::var_os("PATH").map(|p| env::split_paths(&p).collect()).unwrap_or_default();
     if let Some(home) = dirs::home_dir() {
         dirs.extend([home.join(".local/bin"), home.join(".claude/local"), home.join(".npm-global/bin")]);

@@ -13,10 +13,14 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{paths, zotero::Zotero, ApiResult, App, Status};
+use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
+    #[serde(default)]
+    pub agent: Provider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_path: Option<String>,
     /// The user chose "continue without a key" (shared, rate-limited pool).
     #[serde(default)]
     pub s2_key_skipped: bool,
@@ -92,6 +96,7 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         None
     };
     Json(json!({
+        "agent": s.agent,
         "key_source": key_source,
         "key_hint": app.s2.key_hint(),
         "skipped": s.s2_key_skipped,
@@ -187,6 +192,19 @@ fn expand_home(p: &str) -> PathBuf {
 
 fn update(app: &App, f: impl FnOnce(&mut Settings)) -> Result<()> {
     let mut s = app.settings.lock().unwrap();
-    f(&mut s);
-    s.save(&app.data_dir)
+    let mut next = s.clone();
+    f(&mut next);
+    next.save(&app.data_dir)?;
+    *s = next;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct AgentBody {
+    pub provider: Provider,
+}
+
+pub async fn set_agent(State(app): State<Arc<App>>, Json(b): Json<AgentBody>) -> ApiResult {
+    update(&app, |s| s.agent = b.provider)?;
+    Ok(Json(json!({ "ok": true, "agent": b.provider })))
 }

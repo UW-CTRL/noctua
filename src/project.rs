@@ -119,7 +119,7 @@ fn todo_of(it: &Value) -> Todo {
 /// saved copy first if the collection changed.
 pub async fn graph(app: &App, target: &str) -> Result<Value> {
     let _one_at_a_time = app.projects.building.lock().await;
-    let items = app.zotero.items(target)?;
+    let items = app.library.items(target)?;
     let (mut st, mut updated) = app.projects.load(target)?;
 
     let present: HashSet<&str> = items.iter().filter_map(|it| it["key"].as_str()).collect();

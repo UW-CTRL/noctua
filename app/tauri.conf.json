@@ -17,7 +17,7 @@
     "targets": "all",
     "category": "Education",
     "shortDescription": "Research-paper explorer with citation graphs and LaTeX notes",
-    "longDescription": "Noctua explores Semantic Scholar citation graphs, your Zotero folders and LaTeX/handwritten notes, with a built-in Claude research assistant.",
+    "longDescription": "Noctua explores Semantic Scholar citation graphs, a native PDF library with annotations, and LaTeX/handwritten notes, with a built-in Codex or Claude Code research assistant.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

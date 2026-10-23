@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../web/pdf.css"><div class="textLayer" style="position:fixed;left:-100000px;top:0" id="text"></div><canvas id="canvas"></canvas>
+<script type="module">
+const report=s=>window.webkit.messageHandlers.result.postMessage(s);
+window.onerror=(m)=>report('FAIL: '+m);
+try {
+ if(!Promise.withResolvers)Promise.withResolvers=function(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+ const m=await import('../web/vendor/pdfjs/build/pdf.mjs');m.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+ const stream='BT /F1 24 Tf 72 700 Td (Energy and quantum mechanics) Tj ET';objects.push('<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream');let pdf='%PDF-1.7\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+o+'\nendobj\n';});const xref=pdf.length;pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ const doc=await m.getDocument({data:new TextEncoder().encode(pdf),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
+ const page=await doc.getPage(1),viewport=page.getViewport({scale:1.25}),canvas=document.querySelector('canvas');canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+ const layer=document.querySelector('#text');layer.style.setProperty('--total-scale-factor',viewport.scale);const text=new m.TextLayer({textContentSource:await page.getTextContent(),container:layer,viewport});await text.render();
+ const bounds=layer.getBoundingClientRect();if(Math.abs(bounds.width-viewport.width)>1||Math.abs(bounds.height-viewport.height)>1)throw Error('Offscreen index layer has wrong page dimensions: '+JSON.stringify(bounds));
+ if(!layer.textContent.includes('Energy'))throw Error('Missing extracted text');const span=text.textDivs[0];const r=document.createRange();r.selectNodeContents(span);const b=r.getBoundingClientRect();if(b.width<100||b.height<15)throw Error('Invalid selection geometry '+JSON.stringify(b));
+ if(b.width/bounds.width<.1)throw Error('Nearly invisible normalized highlight');
+ const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;if(!pixels.some((v,i)=>i%4!==3&&v<100))throw Error('Blank rendered page');
+ const dark=document.createElement('canvas');dark.width=canvas.width;dark.height=canvas.height;const dc=dark.getContext('2d',{alpha:false});dc.noctuaTheme={background:'#202124',foreground:'#e8eaed',invertImages:false};await page.render({canvasContext:dc,viewport}).promise;
+ const bg=dc.getImageData(0,0,1,1).data;if(bg[0]>60||bg[1]>60||bg[2]>60)throw Error('Dark canvas background not rendered natively');
+ const darkPixels=dc.getImageData(0,0,dark.width,dark.height).data;if(!darkPixels.some((v,i)=>i%4!==3&&v>180))throw Error('Missing light text on dark page');
+ report('PASS: bundled PDF.js loads, renders PDF, extracts selectable text and computes highlight geometry in WebKit');
+} catch(e){report('FAIL: '+e.stack);}
+</script>

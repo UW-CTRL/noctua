@@ -1,6 +1,6 @@
 //! A minimal MCP server (JSON-RPC over HTTP, JSON responses only) that lets
 //! the chat assistant use Noctua: search Semantic Scholar, drive the graph UI
-//! and save papers to Zotero.
+//! and save papers to Noctua.
 
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Value};
@@ -9,7 +9,7 @@ use crate::App;
 
 /// Handles one JSON-RPC message. Returns `None` for notifications. `mode` is
 /// the chat mode the assistant runs in: "suggest", "plan" or "direct".
-pub async fn handle(app: &App, req: &Value, mode: &str) -> Option<Value> {
+pub async fn handle(app: &App, req: &Value, mode: &str, chat_id: Option<&str>) -> Option<Value> {
     let id = req.get("id")?.clone();
     let method = req["method"].as_str().unwrap_or("");
     let result = match method {
@@ -20,7 +20,7 @@ pub async fn handle(app: &App, req: &Value, mode: &str) -> Option<Value> {
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tools(mode) })),
-        "tools/call" => Ok(call(app, &req["params"], mode).await),
+        "tools/call" => Ok(call(app, &req["params"], mode, chat_id).await),
         _ => Err(json!({ "code": -32601, "message": format!("unknown method {method}") })),
     };
     Some(match result {
@@ -38,11 +38,11 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-const WRITE_TOOLS: [&str; 2] = ["add_to_zotero", "edit_note"];
+const WRITE_TOOLS: [&str; 6] = ["download_pdf", "add_to_zotero", "save_to_library", "edit_note", "annotate_pdf", "comment_on_pdf_annotation"];
 
 fn tools(mode: &str) -> Value {
     let paper_id = json!({ "type": "string", "description": "Semantic Scholar paperId, or DOI:<doi> / ARXIV:<id>" });
-    let folder_id = json!({ "type": "string", "description": "Zotero target id such as \"C3\" (folder) or \"L1\" (library root)" });
+    let folder_id = json!({ "type": "string", "description": "Noctua target id such as \"C3\" (folder) or \"L1\" (library root)" });
     let mut list = json!([
         tool("search_papers", "Search Semantic Scholar. Returns up to 10 papers.",
              json!({ "query": { "type": "string" } }), &["query"]),
@@ -52,21 +52,21 @@ fn tools(mode: &str) -> Value {
              json!({ "paper_id": paper_id }), &["paper_id"]),
         tool("select_paper", "Highlight a paper in the Noctua window. If it isn't in the current graph, its own graph is opened instead.",
              json!({ "paper_id": paper_id }), &["paper_id"]),
-        tool("list_zotero_folders", "List the user's Zotero libraries and folders with their ids.",
+        tool("list_library_collections", "List the user's Noctua libraries and folders with their ids.",
              json!({}), &[]),
-        tool("list_folder_items", "List the papers in a Zotero folder or library.",
+        tool("list_folder_items", "List the papers in a Noctua folder or library.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
-        tool("get_project_graph", "Citation structure of a Zotero folder's papers: clusters of papers connected by direct citations, unconnected papers, and the references that link clusters. Uses the saved copy; only new or changed items are looked up.",
+        tool("get_project_graph", "Citation structure of a Noctua folder's papers: clusters of papers connected by direct citations, unconnected papers, and the references that link clusters. Uses the saved copy; only new or changed items are looked up.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
-        tool("show_project_graph", "Show a Zotero folder's project graph in the Noctua window.",
+        tool("show_project_graph", "Show a Noctua folder's project graph in the Noctua window.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
-        tool("list_notes", "List the user's notes attached to a Zotero folder.",
+        tool("list_notes", "List the user's notes attached to a Noctua folder.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
         tool("read_note", "Read one of the user's notes: its LaTeX text, with handwritten drawings shown as [drawing].",
              json!({ "folder_id": folder_id, "note_id": { "type": "string" } }), &["folder_id", "note_id"]),
         tool("view_note_image", "Look at an image in one of the user's notes: a path from \\includegraphics{images/…} in the note's text. Returns the image itself, so you can read, transcribe or interpret it (e.g. into LaTeX for edit_note).",
              json!({ "folder_id": folder_id, "path": { "type": "string", "description": "The image path as written in the note, e.g. images/plot-1a2b3c4d.png" } }), &["folder_id", "path"]),
-        tool("add_to_zotero", "Save a paper into a Zotero folder (skipped if it's already in the library).",
+        tool("save_to_library", "Save a paper into a Noctua collection and try downloading its open-access PDF. Existing papers are added to the collection without duplication.",
              json!({ "paper_id": paper_id, "folder_id": folder_id }), &["paper_id", "folder_id"]),
         tool("edit_note",
              if mode == "direct" {
@@ -87,6 +87,19 @@ fn tools(mode: &str) -> Value {
              }),
              &["folder_id", "note_id", "edits"]),
     ]);
+    let key=json!({"type":"string","description":"Native paper_key from list_folder_items"});
+    let page=json!({"type":"integer","minimum":1});
+    let extra=vec![
+        tool("download_pdf","Download a PDF into Noctua. Supply paper_key for a saved paper OR paper_id to save a discovered paper first. Uses its open-access URL; optionally provide a direct HTTP(S) PDF URL. Existing PDFs are reused. Does not bypass access restrictions. Return includes the saved paper key for read_pdf/show_pdf.",json!({"paper_key":key,"paper_id":paper_id,"folder_id":folder_id,"url":{"type":"string","description":"Optional direct HTTP(S) PDF URL"}}), &[]),
+        tool("read_pdf","Read locally saved PDF text, up to 20 pages. Empty text may indicate a scanned page.",json!({"paper_key":key,"start_page":page,"end_page":page}), &["paper_key"]),
+        tool("search_pdf","Find text in a saved PDF. Returns matching lines and page numbers.",json!({"paper_key":key,"query":{"type":"string"}}), &["paper_key","query"]),
+        tool("view_pdf_page","View a PDF page as an image to interpret figures, equations, or scans.",json!({"paper_key":key,"page":page}), &["paper_key","page"]),
+        tool("show_pdf","Open the paper in the user's reader.",json!({"paper_key":key,"page":page}), &["paper_key"]),
+        tool("list_pdf_annotations","Read highlights, drawings, and comment threads including pending suggestions.",json!({"paper_key":key}), &["paper_key"]),
+        tool("annotate_pdf","Add a highlight anchored to an exact quote from read_pdf, or a page comment. In suggest mode it is pending user acceptance. Comments support LaTeX $math$ and $$math$$.",json!({"paper_key":key,"page":page,"kind":{"type":"string","enum":["highlight","comment"]},"quote":{"type":"string"},"occurrence":{"type":"integer","minimum":0},"color":{"type":"string","enum":crate::library::COLORS},"comment":{"type":"string"}}), &["paper_key","page","comment"]),
+        tool("comment_on_pdf_annotation","Reply to a PDF annotation with a comment, including LaTeX math. Suggest mode creates a pending reply.",json!({"paper_key":key,"annotation_id":{"type":"string"},"comment":{"type":"string"}}), &["paper_key","annotation_id","comment"]),
+    ];
+    list.as_array_mut().unwrap().extend(extra);
     if mode == "plan" {
         if let Some(a) = list.as_array_mut() {
             a.retain(|t| !WRITE_TOOLS.contains(&t["name"].as_str().unwrap_or("")));
@@ -95,15 +108,22 @@ fn tools(mode: &str) -> Value {
     list
 }
 
-async fn call(app: &App, params: &Value, mode: &str) -> Value {
+async fn call(app: &App, params: &Value, mode: &str, chat_id: Option<&str>) -> Value {
     let name = params["name"].as_str().unwrap_or("");
+    if name == "view_pdf_page" {
+        let a=&params["arguments"];
+        return match crate::reader::page_for_agent(app,a["paper_key"].as_str().unwrap_or(""),a["page"].as_u64().unwrap_or(0).min(u32::MAX as u64) as u32,chat_id).await {
+            Ok(content)=>json!({"content":content}),
+            Err(e)=>json!({"content":[{"type":"text","text":format!("Error: {e:#}")}],"isError":true}),
+        };
+    }
     if name == "view_note_image" {
         return match view_image(app, &params["arguments"]) {
             Ok(content) => json!({ "content": content }),
             Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e:#}") }], "isError": true }),
         };
     }
-    match run(app, name, &params["arguments"], mode).await {
+    match run(app, name, &params["arguments"], mode, chat_id).await {
         Ok(v) => {
             let text = v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
             json!({ "content": [{ "type": "text", "text": text }] })
@@ -120,7 +140,7 @@ fn view_image(app: &App, args: &Value) -> Result<Value> {
     let folder = args["folder_id"].as_str().ok_or_else(|| anyhow!("missing argument `folder_id`"))?;
     let path = args["path"].as_str().map(str::trim).ok_or_else(|| anyhow!("missing argument `path`"))?;
     let file = path.strip_prefix("images/").unwrap_or(path);
-    let (full, mime) = app.notes.image_path(&app.zotero.folder_id(folder)?, file)?;
+    let (full, mime) = app.notes.image_path(&app.library.folder_id(folder)?, file)?;
     let bytes = std::fs::read(&full).map_err(|_| anyhow!("no image {path} in this folder"))?;
     if bytes.len() > MAX_IMAGE_BYTES {
         bail!("{path} is {:.1} MB; images over 5 MB can't be viewed", bytes.len() as f64 / 1048576.0);
@@ -155,7 +175,7 @@ fn image_paths(src: &str) -> Vec<&str> {
         .collect()
 }
 
-async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
+async fn run(app: &App, name: &str, args: &Value, mode: &str, chat_id: Option<&str>) -> Result<Value> {
     if mode == "plan" && WRITE_TOOLS.contains(&name) {
         bail!("plan mode is read-only: describe the change instead of making it");
     }
@@ -166,6 +186,7 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
             .filter(|v| !v.is_empty())
             .ok_or_else(|| anyhow!("missing argument `{k}`"))
     };
+    let ui = |mut action: Value| { action["chat_id"] = json!(chat_id); app.ui(action); };
     match name {
         "search_papers" => {
             let r = app.s2.search(arg("query")?, 0).await?;
@@ -184,7 +205,7 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
         }
         "show_graph" => {
             let g = app.s2.graph(arg("paper_id")?, 60).await?;
-            app.ui(json!({ "action": "graph", "id": g["center"]["paperId"] }));
+            ui(json!({ "action": "graph", "id": g["center"]["paperId"] }));
             let top = |k: &str| -> Vec<Value> {
                 g[k].as_array().into_iter().flatten().take(10).map(brief).collect()
             };
@@ -196,16 +217,16 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
         }
         "select_paper" => {
             let p = app.s2.paper(arg("paper_id")?).await?;
-            app.ui(json!({ "action": "select", "id": p["paperId"] }));
+            ui(json!({ "action": "select", "id": p["paperId"] }));
             Ok(json!("Selected in the Noctua window."))
         }
-        "list_zotero_folders" => Ok(app.zotero.collections().await?["targets"].clone()),
+        "list_zotero_folders" | "list_library_collections" => Ok(app.library.collections()?["targets"].clone()),
         "list_folder_items" => {
-            let items = app.zotero.items(arg("folder_id")?)?;
+            let items = app.library.items(arg("folder_id")?)?;
             Ok(json!(items
                 .iter()
                 .map(|it| json!({
-                    "title": it["title"], "year": it["year"], "creators": it["creators"],
+                    "paper_key": it["key"], "has_pdf": it["has_pdf"], "title": it["title"], "year": it["year"], "creators": it["creators"],
                     "doi": it["DOI"], "arxiv": it["arxiv"],
                 }))
                 .collect::<Vec<_>>()))
@@ -214,19 +235,19 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
         "show_project_graph" => {
             let folder = arg("folder_id")?;
             crate::project::graph(app, folder).await?;
-            app.ui(json!({ "action": "project", "target": folder }));
+            ui(json!({ "action": "project", "target": folder }));
             Ok(json!("Project graph shown in the Noctua window."))
         }
-        "list_notes" => Ok(app.notes.list(&app.zotero.folder_id(arg("folder_id")?)?)?),
+        "list_notes" => Ok(app.notes.list(&app.library.folder_id(arg("folder_id")?)?)?),
         "read_note" => {
-            let folder = app.zotero.folder_id(arg("folder_id")?)?;
+            let folder = app.library.folder_id(arg("folder_id")?)?;
             let note = app.notes.get(&folder, arg("note_id")?)?.ok_or_else(|| anyhow!("no such note"))?;
             Ok(json!(note_text(&note)))
         }
         "edit_note" => {
             let folder = arg("folder_id")?;
             let note_id = arg("note_id")?;
-            app.notes.get(&app.zotero.folder_id(folder)?, note_id)?.ok_or_else(|| anyhow!("no such note"))?;
+            app.notes.get(&app.library.folder_id(folder)?, note_id)?.ok_or_else(|| anyhow!("no such note"))?;
             let edits = args["edits"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| anyhow!("missing `edits`"))?;
             for e in edits {
                 match e["op"].as_str() {
@@ -236,7 +257,7 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
                     _ => bail!("each edit needs an op (replace/insert_after/delete), latex for replace/insert_after, and block_id for replace/delete"),
                 }
             }
-            app.ui(json!({
+            ui(json!({
                 "action": "note_edit", "folder": folder, "note_id": note_id,
                 "edits": edits, "summary": args["summary"], "mode": mode,
             }));
@@ -246,17 +267,64 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str) -> Result<Value> {
                 format!("Sent {} suggested edit(s) to the editor. The user will accept or reject them; don't assume they were applied.", edits.len())
             }))
         }
-        "add_to_zotero" => {
+        "add_to_zotero" | "save_to_library" => {
             let p = app.s2.paper(arg("paper_id")?).await?;
-            let folder = arg("folder_id")?;
-            let id = p["paperId"].as_str().unwrap_or_default();
-            let key = json!([{ "id": id, "doi": p["externalIds"]["DOI"], "title": p["title"] }]);
-            if !app.zotero.check(key.as_array().unwrap()).unwrap_or_default().is_empty() {
-                return Ok(json!(format!("“{}” is already in the Zotero library; not added again.", p["title"].as_str().unwrap_or(""))));
+            let key=app.library.save(&p,arg("folder_id")?)?;
+            let warning=app.library.download(&key).await.err().map(|e|e.to_string());
+            ui(json!({"action":"library"}));
+            Ok(json!({"paper_key":key,"paper":app.library.paper(&key)?,"warning":warning}))
+        }
+        "download_pdf" => {
+            let existing=args["paper_key"].as_str().filter(|s|!s.trim().is_empty());
+            let discovered=args["paper_id"].as_str().filter(|s|!s.trim().is_empty());
+            if existing.is_some()==discovered.is_some(){bail!("Supply exactly one of paper_key or paper_id");}
+            let key=if let Some(key)=existing {app.library.paper(key)?;key.to_string()} else {
+                let p=app.s2.paper(discovered.unwrap()).await?;
+                app.library.save(&p,args["folder_id"].as_str().unwrap_or("L1"))?
+            };
+            let p=app.library.paper(&key)?;
+            let mut url=args["url"].as_str().filter(|s|!s.trim().is_empty()).map(String::from);
+            if p["has_pdf"]!=true && url.is_none() && p["pdf_url"].as_str().is_none_or(str::is_empty) {
+                let id=p["s2"].as_str().filter(|s|!s.is_empty()).map(String::from)
+                    .or_else(||p["DOI"].as_str().filter(|s|!s.is_empty()).map(|s|format!("DOI:{s}")))
+                    .or_else(||p["arxiv"].as_str().filter(|s|!s.is_empty()).map(|s|format!("ARXIV:{s}")));
+                if let Some(id)=id {
+                    let details=app.s2.paper(&id).await?;
+                    url=details["openAccessPdf"]["url"].as_str().filter(|s|!s.is_empty()).map(String::from)
+                        .or_else(||details["externalIds"]["ArXiv"].as_str().map(|id|format!("https://arxiv.org/pdf/{id}")));
+                }
             }
-            app.zotero.add(&p, Some(folder), true).await?;
-            app.ui(json!({ "action": "library" }));
-            Ok(json!(format!("Added “{}” to Zotero.", p["title"].as_str().unwrap_or(""))))
+            let result=app.library.download_from(&key,url.as_deref()).await;
+            ui(json!({"action":"library"}));
+            result.map_err(|e|anyhow!("Paper {key} is saved, but PDF download failed: {e}. You can retry with a direct PDF URL."))?;
+            Ok(json!({"paper_key":key,"has_pdf":true,"already_downloaded":p["has_pdf"],"paper":app.library.paper(&key)?}))
+        }
+        "read_pdf" | "search_pdf" => {
+            let index=crate::reader::ensure_index(app,arg("paper_key")?,chat_id).await?;
+            let pages=index["pages"].as_array().ok_or_else(||anyhow!("Invalid PDF index"))?;
+            if name=="search_pdf" {
+                let query=arg("query")?.to_lowercase();
+                let hits:Vec<Value>=pages.iter().filter_map(|p|{let text=p["text"].as_str().unwrap_or("");let matching:Vec<&str>=text.lines().filter(|l|l.to_lowercase().contains(&query)).take(20).collect();if matching.is_empty(){None}else{Some(json!({"page":p["page"],"matches":matching}))}}).take(50).collect();
+                Ok(json!({"hits":hits,"page_count":pages.len()}))
+            } else {
+                let start=args["start_page"].as_u64().unwrap_or(1).max(1) as usize;
+                let end=args["end_page"].as_u64().unwrap_or((start+4) as u64) as usize;
+                if start>pages.len()||end<start{bail!("Invalid page range");}
+                let selected:Vec<Value>=pages.iter().skip(start-1).take((end-start+1).min(20)).map(|p|json!({"page":p["page"],"text":p["text"]})).collect();
+                Ok(json!({"pages":selected,"page_count":pages.len(),"hint":"If text is empty or equations are unclear, use view_pdf_page."}))
+            }
+        }
+        "show_pdf" => {let key=arg("paper_key")?;app.library.pdf_path(key)?;ui(json!({"action":"pdf_show","key":key,"page":args["page"].as_u64().unwrap_or(1)}));Ok(json!("PDF opened"))}
+        "list_pdf_annotations" => Ok(json!(app.library.annotations(arg("paper_key")?)?)),
+        "annotate_pdf" => {
+            let key=arg("paper_key")?;crate::reader::ensure_index(app,key,chat_id).await?;
+            let mut body=args.clone();if body["kind"].is_null(){body["kind"]=json!("highlight");}
+            let a=app.library.annotate(key,&body,"assistant",mode!="direct")?;
+            ui(json!({"action":"pdf_annotations","key":key,"id":a["id"],"page":a["page"]}));Ok(a)
+        }
+        "comment_on_pdf_annotation" => {
+            let key=arg("paper_key")?;let a=app.library.reply(key,arg("annotation_id")?,arg("comment")?,"assistant",mode!="direct")?;
+            ui(json!({"action":"pdf_annotations","key":key,"id":a["id"],"page":a["page"]}));Ok(a)
         }
         _ => bail!("unknown tool {name}"),
     }

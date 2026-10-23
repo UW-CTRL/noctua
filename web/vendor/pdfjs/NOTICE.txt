@@ -1,0 +1,8 @@
+PDF.js 5.7.0 (build 37919f5), Mozilla Foundation and contributors.
+Vendored from the PDF.js distribution bundled in Zotero on this development machine.
+The renderer includes Zotero extensions; Noctua uses the standard PDF.js APIs.
+See LICENSE and the licenses in web/cmaps, web/standard_fonts, web/wasm, and web/iccs.
+These files are bundled into Noctua; Zotero is not required at runtime.
+
+Noctua modification: CanvasGraphics.beginDrawing accepts ctx.noctuaTheme
+for per-canvas use of the bundled Zotero color renderer.

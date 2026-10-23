@@ -3,10 +3,10 @@
 // pads. Uses app.js globals ($, esc, api, store, toast, collections, …).
 
 const N = {
-  target: null,        // Zotero folder ("C1") whose notes are listed
+  target: null,        // Noctua folder ("C1") whose notes are listed
   list: [],
   doc: null,           // open note
-  items: new Map(),    // Zotero item key -> item, for \cite
+  items: new Map(),    // Noctua item key -> item, for \cite
   editing: null,       // id of the text block whose source is open
   pads: new Map(),     // block id -> Ink pad
   dirty: false,
@@ -14,8 +14,8 @@ const N = {
   saveTimer: null,
   typesetTimer: null,
   focusBlock: null,    // block new blocks are inserted after (⌘⇧D)
-  suggestions: [],     // Claude's pending edits: { id, op, block_id, latex, reason, summary }
-  claudeUndo: [],      // block lists from before each direct edit by Claude
+  suggestions: [],     // the assistant's pending edits: { id, op, block_id, latex, reason, summary }
+  agentUndo: [],      // block lists from before each direct edit by Claude
   imgSel: null,        // selected image: { block, k } (figures.js)
 };
 
@@ -26,6 +26,7 @@ const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).sl
 
 function setMode(mode) {
   const notes = mode === 'notes';
+  document.body.classList.toggle('pdf-mode', mode === 'pdf');
   document.body.classList.toggle('notes-mode', notes);
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   store.set('noctua.mode', mode);
@@ -40,7 +41,7 @@ function setMode(mode) {
   updateChatContext();
 }
 
-// Called by app.js whenever the Zotero folder list (re)loads.
+// Called by app.js whenever the Noctua folder list (re)loads.
 function notesRefreshFolders() {
   const ids = collections.targets.map((t) => t.id);
   const want = N.target || store.get('noctua.notesTarget');
@@ -57,9 +58,9 @@ async function loadNoteFolder(target) {
   $('#notes-target').value = target;
   N.items = new Map();
   try {
-    const [list, items] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/zotero/items?target=${enc(target)}`)]);
+    const [list, items] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`)]);
     N.list = list;
-    for (const it of items) N.items.set(it.key, it);
+    for (const it of items) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
   } catch (e) {
     N.list = [];
     toast(e.message, { error: true });
@@ -128,7 +129,7 @@ async function openNote(id) {
 }
 
 function showNote(doc) {
-  if (N.doc?.id !== doc.id) { N.suggestions = []; N.claudeUndo = []; N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
+  if (N.doc?.id !== doc.id) { N.suggestions = []; N.agentUndo = []; N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
   N.editing = null;
   N.focusBlock = null;
@@ -238,7 +239,7 @@ function renderEditor() {
   const stage = $('#notes-stage');
   if (!N.doc) {
     stage.innerHTML = `<div class="note-page note-empty">
-      <p>${N.target ? 'No note open.' : 'Pick a Zotero folder.'}</p>
+      <p>${N.target ? 'No note open.' : 'Pick a Noctua folder.'}</p>
       ${N.target ? '<button class="primary" id="note-new-big">New note</button>' : ''}</div>`;
     stage.querySelector('#note-new-big')?.addEventListener('click', createNote);
     return;
@@ -248,8 +249,8 @@ function renderEditor() {
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
       <div class="nb-tools"><button id="note-preamble-toggle" title="Preamble: page margins (\\geometry), \\usepackage, \\newcommand">⚙</button></div>
       <input class="note-title" value="${esc(N.doc.title)}" placeholder="Untitled note" spellcheck="false">
-      <div class="note-meta">${esc(folder)} · <span id="note-status">Saved</span>${N.claudeUndo.length
-        ? ` · <a href="#" id="note-undo-claude">Undo Claude's edit</a>` : ''}${N.suggestions.length > 1
+      <div class="note-meta">${esc(folder)} · <span id="note-status">Saved</span>${N.agentUndo.length
+        ? ` · <a href="#" id="note-undo-agent">Undo assistant's edit</a>` : ''}${N.suggestions.length > 1
         ? ` · ${N.suggestions.length} suggestions: <a href="#" id="sg-accept-all">accept all</a> / <a href="#" id="sg-reject-all">reject all</a>` : ''}</div>
       ${N.preambleOpen ? `<div class="note-preamble">
         <textarea class="nb-src" spellcheck="false" placeholder="% Preamble: applies to the whole note and takes no space on the page
@@ -388,13 +389,13 @@ function wirePreamble(stage) {
   });
 }
 
-// ---------------------------------------------------------------- Claude's edits
+// ---------------------------------------------------------------- the assistant's edits
 
 function suggestionEl(sg) {
   const d = document.createElement('div');
   d.className = `nb-suggest op-${sg.op}`;
   d.dataset.sid = sg.id;
-  const what = { replace: 'Claude suggests rewriting the block above', insert_after: 'Claude suggests adding', delete: 'Claude suggests deleting the block above' }[sg.op];
+  const what = { replace: 'Assistant suggests rewriting the block above', insert_after: 'Assistant suggests adding', delete: 'Assistant suggests deleting the block above' }[sg.op];
   const why = sg.reason || sg.summary;
   const body = sg.op === 'delete' ? ''
     : `<div class="sg-body tex-view">${NoctuaLatex.renderDoc([sg.latex], { cite: citeHtml, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble })[0]}</div>
@@ -451,11 +452,11 @@ async function noteEditFromChat(a) {
   if (!isNotesMode()) setMode('notes');
   if (N.target !== a.folder) { N.target = null; await loadNoteFolder(a.folder); }
   if (N.doc?.id !== a.note_id) await openNote(a.note_id);
-  if (N.doc?.id !== a.note_id) return toast("Couldn't open the note Claude wanted to edit.", { error: true });
+  if (N.doc?.id !== a.note_id) return toast("Couldn't open the note the assistant wanted to edit.", { error: true });
   stopEdit();
   const edits = (a.edits || []).map((e) => ({ ...e, id: newId('s'), summary: a.summary }));
   if (a.mode === 'direct') {
-    N.claudeUndo.push(JSON.stringify(N.doc.blocks));
+    N.agentUndo.push(JSON.stringify(N.doc.blocks));
     const touched = [];
     let skipped = 0;
     for (const e of edits) {
@@ -465,7 +466,7 @@ async function noteEditFromChat(a) {
     markDirty();
     renderEditor();
     for (const id of touched) document.querySelector(`.nb[data-id="${id}"]`)?.classList.add('nb-flash');
-    toast(`Claude edited the note${skipped ? ` (${skipped} edit(s) skipped: block not found)` : ''}.`);
+    toast(`The assistant edited the note${skipped ? ` (${skipped} edit(s) skipped: block not found)` : ''}.`);
     document.querySelector('.nb-flash')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   } else {
     N.suggestions.push(...edits);
@@ -554,13 +555,19 @@ async function blockAction(id, act, btn) {
   } else if (act === 'image') {
     pickImages({ blockId: id });
   } else if (act === 'latex') {
+    if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
+    const doc = N.doc, target = N.target, provider = chat.provider;
     const png = N.pads.get(id)?.toPNG();
     if (!png) return toast('Draw something first.');
     btn.disabled = true;
     btn.textContent = '…';
     toast('Converting handwriting to LaTeX…');
     try {
-      const { latex } = await api('/api/ink-latex', { png });
+      const { latex } = await api('/api/ink-latex', { png, provider });
+      if (N.doc !== doc || N.target !== target || blockIndex(id) < 0) {
+        toast('The note changed while transcribing. Reopen the drawing and try again.');
+        return;
+      }
       const nb = { id: newId('b'), type: 'text', src: latex };
       N.doc.blocks.splice(blockIndex(id) + 1, 0, nb);
       markDirty();
@@ -734,7 +741,7 @@ function updatePicker(ta) {
   const token = m[1].split(',').pop();
   const q = token.trim().toLowerCase();
   picker.start = ta.selectionEnd - token.length;
-  const items = [...N.items.values()];
+  const items = [...new Map([...N.items.values()].map((it) => [it.key, it])).values()];
   picker.matches = items
     .filter((it) => !q || [it.title, (it.creators || []).join(' '), it.year, it.key].join(' ').toLowerCase().includes(q))
     .slice(0, 8);
@@ -807,7 +814,7 @@ function notesContext(sentKey) {
   if (!N.doc) return { lines: [...lines, 'No note open.'], key: null };
   const text = noteText(N.doc);
   const key = `${N.doc.id}:${text.length}:${text.slice(0, 50)}:${text.slice(-200)}`;
-  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys are Zotero item keys of the folder's papers.`);
+  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys are Noctua item keys of the folder's papers.`);
   const sel = N.imgSel && N.doc.blocks.find((b) => b.id === N.imgSel.block);
   const at = sel && imageOffsets(sel.src)[N.imgSel.k];
   if (at != null) lines.push(`Selected image (the user clicked it): ${texArgs(sel.src, at + '\\includegraphics'.length).arg} in block ${sel.id}.`);
@@ -835,15 +842,15 @@ $('#notes-stage').addEventListener('input', (e) => {
   markDirty();
 });
 $('#notes-stage').addEventListener('click', (e) => {
-  const act = e.target.closest('#note-undo-claude, #sg-accept-all, #sg-reject-all');
+  const act = e.target.closest('#note-undo-agent, #sg-accept-all, #sg-reject-all');
   if (act) {
     e.preventDefault();
-    if (act.id === 'note-undo-claude' && N.claudeUndo.length) {
+    if (act.id === 'note-undo-agent' && N.agentUndo.length) {
       stopEdit();
-      N.doc.blocks = JSON.parse(N.claudeUndo.pop());
+      N.doc.blocks = JSON.parse(N.agentUndo.pop());
       markDirty();
       renderEditor();
-    } else if (act.id !== 'note-undo-claude') {
+    } else if (act.id !== 'note-undo-agent') {
       const accept = act.id === 'sg-accept-all';
       for (const sg of [...N.suggestions]) resolveSuggestion(sg.id, accept);
     }
@@ -888,4 +895,4 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
-if (store.get('noctua.mode') === 'notes') collectionsReady.then(() => setMode('notes'));
+if (store.get('noctua.mode') === 'notes' && !location.hash.startsWith('#pdf=')) collectionsReady.then(() => { if (!location.hash.startsWith('#pdf=')) setMode('notes'); });

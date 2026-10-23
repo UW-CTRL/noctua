@@ -2,8 +2,8 @@
 
 A small, fast research-paper explorer. Search Semantic Scholar, see a
 Connected-Papers-style graph of what a paper builds on and what builds on it,
-save papers into your Zotero folders, and keep LaTeX + handwritten notes per
-folder with a Claude research assistant alongside.
+save papers into your Noctua library, and keep LaTeX + handwritten notes per
+folder with your choice of Codex or Claude Code as the research assistant.
 
 Noctua is a Rust program that serves its UI locally: as a **desktop app**
 (its own windows, tabs and icon) or in your **browser**. No Node, no Electron,
@@ -21,22 +21,24 @@ The builds aren't code-signed yet, so the first launch needs one extra step:
   "Noctua was blocked…" → **Open Anyway**.
 - **Windows**: SmartScreen → **More info** → **Run anyway**.
 
-The chat assistant uses [Claude Code](https://claude.com/claude-code): install
-it and sign in once (`claude` in a terminal). If Noctua can't find it, set
-`"claude_path"` in `settings.json` (see *Your data* below).
+The research assistant uses your installed [Codex CLI](https://developers.openai.com/codex/cli)
+or [Claude Code](https://code.claude.com/docs/en/overview) and its existing account login.
+Use a current CLI version. In **Settings → Research assistant**, choose a backend and click
+**Sign in** to complete its browser login. Existing CLI logins are detected automatically.
+If a CLI is installed but not found, set `"codex_path"` or `"claude_path"` in
+`settings.json` (see *Your data* below).
+
+The header's **Claude Code / Codex** selector switches the backend for both chat and
+handwriting-to-LaTeX. Each backend has its own saved conversations, CLI sessions, and
+message draft. Switching restores that backend's last open conversation. If a reply is
+running, switching stops it and waits for the interrupted turn to be saved. Existing
+conversations are retained as Claude Code chats when upgrading.
 
 ## First run
 
-Noctua asks for two things before it starts:
+Noctua asks for your **Semantic Scholar API key**. You can continue without one to use the slower shared pool. Configure the selected assistant in **Settings**.
 
-1. **Your Semantic Scholar API key.** Every user needs their own (free):
-   [request one here](https://www.semanticscholar.org/product/api#api-key-form).
-   Approval can take a while; until then choose *Continue without a key* to
-   use the shared pool, which is slow and often rate-limited.
-2. **Your Zotero data folder** (the one containing `zotero.sqlite`; Zotero →
-   Settings → Advanced → Files and Folders), or *I don't use Zotero*.
-
-Change either later with **⚙** in the header (or Noctua → Settings… / ⌘,).
+Zotero is optional: configure its data folder in **Settings**, then choose **Library → Import from Zotero** to copy collections, metadata, and locally available PDFs. The source is read-only. Close Zotero before importing for the freshest database snapshot; it is never needed to open papers afterward.
 
 ## Your data
 
@@ -50,7 +52,9 @@ Everything Noctua stores lives in a per-user folder, so updating the app or
 | Linux | `~/.local/share/noctua` |
 
 It holds `key.txt` (your API key, readable only by you), `settings.json`,
-`notes/` (one folder per Zotero folder, with an `images/` folder), the chat
+`library/library.sqlite` (collections, paper metadata, annotations, and PDF text),
+`library/pdfs/` (PDFs named by content hash), `notes/` (one folder per collection,
+with an `images/` folder), the chat
 history and the Semantic Scholar cache. Versions before this one kept these
 files in the source folder; the first run copies them over (the originals are
 left in place).
@@ -88,6 +92,7 @@ Environment overrides (all optional):
 | `ZOTERO_DATA_DIR` | Zotero data folder (instead of the one in Settings) |
 | `NOCTUA_NOTES` | where notes are stored (default: `notes/` in the data folder) |
 | `NOCTUA_CLAUDE` | path to the `claude` CLI |
+| `NOCTUA_CODEX` | path to the `codex` CLI |
 | `NOCTUA_PORT` | browser version's port (default 7878; the app uses 47878) |
 | `NOCTUA_NO_OPEN` | don't open the browser |
 | `NOCTUA_DEBUG` | log every request |
@@ -103,19 +108,15 @@ on its own port, and refuses writes from other websites' pages.
   papers citing it (*derivative work*) and Semantic Scholar's recommended
   *similar* papers. Edges are real citations between any two papers in view.
   Node size = citation count (log), colour = year (light = older).
-  Green ring = already in your Zotero library.
+  Green ring = already in your Noctua library.
+- Selecting a paper automatically fetches its full abstract when missing from the current record, including library items. Loading, unavailable abstracts, and retryable errors are shown separately.
 - Hover to highlight a paper's links (blue = it cites, orange = cites it).
   Click to open details, **double-click** to rebuild the graph around it, drag
   to move, scroll to zoom. **Expand here** adds a paper's own neighbours to the
   current graph. **Timeline** lays papers out left→right by year.
 - **✕ Close graph** (next to the search bar) closes the current graph.
-- **Library** tab: browse your Zotero libraries and folders (with item
-  counts), filter/sort their items, and hit **Graph** on any item to build its
-  citation graph. Items are found on Semantic Scholar by the Semantic Scholar id
-  Noctua stores, arXiv id, or DOI, and otherwise by title (only accepted if the
-  matched title agrees). Read from `zotero.sqlite`; while Zotero is running
-  this is a snapshot that can lag a little behind very recent changes.
-- **Projects** tab: pick a Zotero folder and **Open graph** to see how its own
+- **Library**: nested collections, local PDFs, filter/sort, metadata editing, and citation graphs. Use **Import PDF** for files, **Add to Noctua** for discovered papers, or the optional Zotero importer. A paper can belong to several collections without duplicating its PDF.
+- **Projects** tab: pick a Noctua collection and **Open graph** to see how its own
   papers cite each other. Papers that cite one another (directly or through
   other folder papers) form a **cluster**, each with its own colour; papers with
   no citation links to the rest are *unconnected* (grey). Since clusters by
@@ -130,14 +131,25 @@ on its own port, and refuses writes from other websites' pages.
   items it couldn't reach are retried the next time you open the project.
 - **Rename or create a folder**: hover it in the Library tab and click ✎ to
   rename it, or **+** (also on My Library) to create a folder inside it. Enter
-  saves, Esc cancels. This writes to `zotero.sqlite` directly, so **Zotero must
-  be closed**. The database is backed up to `zotero.sqlite.noctua-bak` before
-  each change. New folders are marked unsynced, so Zotero uploads them on its
-  next sync.
+  saves, Esc cancels. Changes are saved in Noctua’s own library.
 - **Resize the side panels** by dragging the line between a panel and the
   middle (double-click it to reset). Widths are remembered.
-- **Add to Zotero**: pick a folder (defaults to the one in the header, which is
+- **Add to Noctua**: pick a folder (defaults to the one in the header, which is
   remembered) and optionally attach the open-access PDF.
+
+## PDF reader
+
+Open a library paper with **PDF**, **New tab**, or **New window**. Desktop PDF tabs can be reordered, restored, or moved into windows just like graph/note tabs. Scroll continuously through the document, or use the page controls to jump. Noctua keeps placeholders for all pages and renders a bounded set near the viewport, releasing distant canvases instead of allocating a high-resolution image for every page. Use zoom (40–600%) and the dark/light page toggle. Reader buttons and trackpad pinch re-render the PDF at the new scale and display pixel density; large canvases are bounded to 32 megapixels. Scanned pages remain limited by their source image resolution. Dark mode uses the bundled renderer’s Zotero color transformation at canvas resolution, without a CSS inversion filter. Use the light toggle for original page colors.
+
+Select text and click **Highlight** or **Comment**; choose from six colors. **Draw** enables freehand annotation. Comments and replies support `$inline math$` and `$$display math$$`, with a preview as you type. Selecting or focusing a comment emphasizes its highlight and scrolls to the passage; clicking highlighted text selects its comment. Clicking or focusing outside a comment removes the bold emphasis. Annotations save immediately; comment drafts survive reopening. Multiple windows share saved annotations and detect conflicting edits.
+
+Hover, click, or select an embedded PDF citation/link to preview its destination. Internal links show a crop of the referenced page with **Go to passage**. External links are labeled **External link** and offer **Follow link**; they are not opened automatically. Selecting a plain numbered citation such as `[12]` also tries to match it to a numbered entry under References/Bibliography. PDFs without links or a recognizable bibliography cannot always supply a preview. Saved text highlights currently cover one page per selection.
+
+Both assistants can download PDFs on request with `download_pdf`: use a saved paper key or a Semantic Scholar/DOI/arXiv identifier, with an optional direct PDF URL. Downloads reuse existing files and report unavailable or invalid sources; Plan mode stays read-only.
+
+Both assistants can read/search PDFs, view rendered page images, highlight exact passages, and discuss them in comment threads. **Suggest** creates pending highlights/replies with Accept/Reject controls; **Direct** saves immediately; **Plan** cannot write annotations. PDF text is indexed locally by the reader; scanned pages remain viewable but do not gain OCR. Keep a Noctua chat tab open while the assistant requests uncached text or page images.
+
+The optional Zotero import preserves nested collections and citation keys, and reconnects existing collection notes. It copies the first available local PDF per paper; cloud-only files must first be downloaded in Zotero. Existing Zotero annotations are not imported. Noctua annotations live in its database, not embedded in the original PDF. Back up the entire Noctua data folder, including `library/`.
 
 ## Notes
 
@@ -194,12 +206,12 @@ to add a drawing pad after the current block.
 - **Drawing pads** take pen input (Wacom pressure sets the width; flip the pen
   to erase; touch is ignored), with colours, widths, eraser, undo/redo (⌘Z /
   ⇧⌘Z) and a draggable bottom edge. **TeX** (left of the block) converts the
-  handwriting to LaTeX with Claude (via your `claude` CLI login) and inserts it
+  handwriting to LaTeX with the selected assistant (using its CLI login) and inserts it
   as a text block below; the drawing is kept.
 - Notes save automatically (and on ⌘S) as one JSON file each in
   `notes/<folder>/`, keyed by the Zotero folder's permanent key, so renaming the
   folder doesn't lose them. Deleted notes move to `notes/.trash/`.
-- The chat sees the open note, and can list and read any folder's notes. It can
+- The selected assistant sees the open note, and can list and read any folder's notes. It can
   also look at a note's images (the one you clicked is pointed out to it), so
   you can ask it to transcribe a photo of equations, interpret a plot, or turn
   a diagram into LaTeX; images over 5 MB can't be viewed. It can
@@ -207,39 +219,53 @@ to add a drawing pad after the current block.
   Shift+Tab in the chat box cycles):
   - **✎ Suggest edits** (default): each change appears as a card under its
     block with Accept / Reject (or accept/reject all).
-  - **◇ Plan**: read-only. Claude can't edit notes or add papers to Zotero; it
+  - **◇ Plan**: read-only. the assistant can't edit notes or save papers to Noctua; it
     investigates and answers with a plan.
   - **⚡ Direct edits**: changes apply immediately and are highlighted; "Undo
-    Claude's edit" (under the note title) reverts them.
+    assistant's edit" (under the note title) reverts them.
 
   Edits go through the open editor, so they never collide with autosave.
-- **@-mentions** in the chat box search your Zotero papers and notes together
+- **@-mentions** in the chat box search your Noctua papers and notes together
   (results tagged PAPER / NOTE, best 4 shown). The picked item's details (a
   paper's metadata and abstract, or a note's full text) are attached to the
-  message, so Claude can read it, and edit a mentioned note.
+  message, so the assistant can read it, and edit a mentioned note.
 
 ## Chat
 
-The **Chat** tab (right panel) is Claude, running through your installed
-Claude Code CLI and your existing Claude login (no API key). Every message
+The **Chat** tab (right panel) uses the selected Codex or Claude Code backend and
+its existing login (no separate API key). Every message
 automatically includes what you're looking at: the graph's center, the selected
 paper and its abstract, your folders, and the list of papers in the graph (only
-re-sent when the graph changes). Claude can also act through Noctua's tools:
-search papers, open a paper's graph, select a paper, list your Zotero folders
+re-sent when the graph changes). The assistant can also act through Noctua's tools:
+search papers, open a paper's graph, select a paper, list your Noctua collections
 and their contents, read or open a folder's project graph, list and read your
-notes, and add papers to Zotero (it skips papers already in your
-library). Paper links in its answers are clickable. **New chat** starts a fresh
+notes, and save papers to Noctua (adding existing papers to the chosen collection). Paper links in its answers are clickable. **New chat** starts a fresh
 conversation, and **Stop** cancels a reply. LaTeX in messages (`$…$`, `$$…$$`,
 `\(…\)`, `\[…\]`) is typeset.
 
 Chats are saved to `noctua-chats.sqlite` after every reply (including
 stopped or interrupted ones). **History** lists them; pick one to reopen and
-keep going, where Claude still remembers the earlier messages, or hover and
+keep going, where the same backend still remembers the earlier messages, or hover and
 click × to delete it. Reloading the page reopens the chat you were in.
 
-Under the hood each message runs `claude -p` (resuming the conversation) with
-all built-in tools disabled. Its only tools are Noctua's, served over MCP at
-`/mcp`. Set `NOCTUA_CLAUDE` to use a different `claude` binary.
+Under the hood each message runs `claude -p` or `codex exec --json`, resuming
+that conversation's provider-specific session. Both use Noctua's MCP tools at `/mcp`;
+Claude's built-in tools are disabled, and Codex runs with command execution disabled
+and a read-only filesystem sandbox. Codex receives an isolated per-invocation
+configuration, sharing its normal login without importing user-configured MCP servers.
+Codex messages appear as each message item completes; Claude streams text deltas.
+Handwriting conversion uses an image attachment and a separate, non-persistent CLI run.
+Credentials remain in the CLI's own credential store.
+
+Development checks:
+
+```sh
+cargo test                         # migration, stream events, HTTP handlers and fake CLI integration
+swift tests/frontend.swift         # macOS: JavaScript syntax and backend switching, using JavaScriptCore
+```
+
+The backend integration tests use temporary data and fake CLIs; they do not sign in
+to real accounts or make Semantic Scholar or model requests.
 
 ## How it works
 
@@ -252,19 +278,15 @@ all built-in tools disabled. Its only tools are Noctua's, served over MCP at
 - `src/cache.rs`: every response is cached in `noctua-cache.sqlite`
   (search 1 day, papers 7 days, reference lists 30 days), so revisiting a
   graph is instant and uses no quota.
-- `src/zotero.rs`:
-  - **Folders** are read from the running Zotero app's local connector
-    (port 23119). If Zotero is closed, they're read read-only from
-    `zotero.sqlite`.
-  - **Saving** uses the same connector API as the Zotero browser extension
-    (`saveItems`, then `updateSession` to file it into the chosen folder), so no
-    Zotero web API key is needed, but **Zotero must be running**.
-  - **"Already in library"** matches by DOI or normalised title against the
-    local database.
+- `src/library.rs`: native SQLite library, immutable PDF files, collection membership, annotations, and optional Zotero import.
+- `src/reader.rs`, `web/pdf.js`, `web/library.js`: reader HTTP API, offline PDF.js rendering, local text indexing, and assistant PDF tools.
+- `src/zotero.rs`: read-only adapter for importing Zotero metadata and PDFs.
 - `src/project.rs`: project graphs. Builds clusters (connected components of
   the citation graph) and shared references from each item's saved Semantic
   Scholar record and reference list.
-- `src/notes.rs`: note files, and handwriting-to-LaTeX through `claude -p`
+- `src/agent.rs`: CLI discovery, account status, browser sign-in, and Codex configuration.
+- `src/chat.rs` / `src/history.rs`: provider-specific chat execution, session resumption, and saved history.
+- `src/notes.rs`: note files and handwriting-to-LaTeX through the selected backend,
   with the drawing sent as an image.
 - `web/latex.js` (the LaTeX-subset typesetter), `web/ink.js` (drawing pads)
   and `web/notes.js` (the editor).
@@ -273,3 +295,11 @@ all built-in tools disabled. Its only tools are Noctua's, served over MCP at
 
 Citations are capped at the first 1000 Semantic Scholar returns per paper, and
 the graph keeps the most-cited N of those (N = the "Top" selector).
+
+Developer checks: `cargo test --offline` and (on macOS) `swift tests/frontend.swift`.
+`swift tests/abstracts.swift` checks abstract loading, selection races, and retries.
+`swift tests/pdf-navigation.swift` checks page-window bounds, destination resolution, safe external links, and bibliography matching.
+`swift tests/reader.swift tests/pdf-reader.html` exercises the continuous reader and link popovers in a desktop WebKit session.
+`swift tests/pdf-zoom.swift` checks rendering density, zoom gestures, and canvas limits.
+`swift tests/pdf-selection.swift` checks comment/highlight selection and agent page navigation.
+`swift tests/reader.swift` exercises bundled PDF.js canvas rendering and text-selection geometry in WebKit; it requires a desktop session that permits WebKit subprocesses.

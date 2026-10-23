@@ -37,7 +37,7 @@ function addTab(url = '/', { activate = true, after = null } = {}) {
   tabsEl.insertBefore(el, tabs[at + 1]?.el || newBtn);
   framesEl.appendChild(frame);
   frame.addEventListener('load', () => watchFrame(t));
-  el.addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('.x')) activate(t); });
+  el.addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('.x')) activateTab(t); });
   el.addEventListener('auxclick', (e) => { if (e.button === 1) closeTab(t); });
   el.querySelector('.x').addEventListener('click', () => closeTab(t));
   el.addEventListener('contextmenu', (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); });
@@ -95,7 +95,7 @@ async function closeTab(t) {
   tabs.splice(i, 1);
   t.el.remove();
   // Removing an iframe skips its beforeunload, so save its open note first.
-  try { await t.frame.contentWindow.saveNow?.(); } catch { /* page not loaded */ }
+  try { await t.frame.contentWindow.saveNow?.(); await t.frame.contentWindow.flushPDF?.(); } catch { /* page not loaded */ }
   t.frame.remove();
   if (!tabs.length) {
     save();
@@ -152,6 +152,7 @@ function save() {
 }
 
 window.noctuaShell = {
+  openTab(url) { return addTab(url, { after: active }); },
   cmd(name) {
     if (name === 'newTab') addTab('/', { after: active });
     else if (name === 'closeTab') active && closeTab(active);

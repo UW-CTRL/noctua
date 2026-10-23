@@ -1,7 +1,7 @@
 //! Notes attached to Zotero folders: one JSON file per note under
 //! `notes/<folder id>/<note id>.json`, where a note is a list of typed-LaTeX
 //! and handwriting blocks. Deleted notes move to `notes/.trash/`.
-//! Also turns handwriting (a PNG) into LaTeX with the `claude` CLI.
+//! Also turns handwriting (a PNG) into LaTeX with the selected CLI backend.
 
 use std::{
     path::{Path, PathBuf},
@@ -12,10 +12,10 @@ use std::{
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
 };
 
-use crate::App;
+use crate::{agent::{self, Provider}, App};
 
 pub struct Notes {
     root: PathBuf,
@@ -216,48 +216,68 @@ LaTeX source using only: plain paragraphs (blank line between them), inline math
 wording. Output only the LaTeX source: no preamble, no \\begin{document}, no code fences, no comments. \
 If part of it is a diagram rather than text or math, write a short [diagram: ...] placeholder for it.";
 
-/// Handwriting (base64 PNG) to LaTeX source, via the `claude` CLI.
-pub async fn ink_to_latex(app: &App, png_b64: &str) -> Result<String> {
+/// Handwriting (base64 PNG) to LaTeX source, via the selected CLI backend.
+pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Result<String> {
+    use base64::Engine;
     let data = png_b64.trim().trim_start_matches("data:image/png;base64,");
-    if data.is_empty() {
-        bail!("no image");
-    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).context("invalid drawing image")?;
+    if image_ext(&bytes) != Some("png") { bail!("drawing must be a PNG image"); }
     std::fs::create_dir_all(&app.chat_dir)?;
-    let msg = json!({
-        "type": "user",
-        "message": { "role": "user", "content": [
+    // Codex accepts local image attachments. Remove the private temporary file
+    // on success, failure, timeout, or cancellation.
+    struct Drawing(PathBuf);
+    impl Drop for Drawing { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
+    let drawing = Drawing(app.chat_dir.join(format!("ink-{}.png", SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos())));
+    let (mut cmd, input) = if provider == Provider::Codex {
+        std::fs::write(&drawing.0, &bytes)?;
+        crate::paths::restrict(&drawing.0);
+        let mut c = agent::codex_command(app, None, INK_PROMPT);
+        c.arg("--ephemeral").arg("--image").arg(&drawing.0).arg("-");
+        (c, INK_PROMPT.to_string())
+    } else {
+        let mut c = provider.command(app);
+        c.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"])
+            .args(["--tools", "", "--strict-mcp-config", "--no-session-persistence"]);
+        let msg = json!({ "type": "user", "message": { "role": "user", "content": [
             { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": data } },
             { "type": "text", "text": INK_PROMPT },
-        ]},
-    });
-    let mut child = crate::paths::claude_command(app.claude_path().as_deref())
-        .args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"])
-        .args(["--tools", "", "--strict-mcp-config", "--no-session-persistence"])
-        .current_dir(&app.chat_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .context(crate::NO_CLAUDE)?;
-    let mut stdin = child.stdin.take().expect("piped stdin");
-    stdin.write_all(format!("{msg}\n").as_bytes()).await?;
+        ] } });
+        (c, format!("{msg}\n"))
+    };
+    let mut child = cmd.current_dir(&app.chat_dir)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true)
+        .spawn().with_context(|| provider.missing())?;
+    let stderr = agent::drain_stderr(child.stderr.take().unwrap());
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(input.as_bytes()).await?;
     drop(stdin);
-
-    let mut lines = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
-    while let Some(line) = lines.next_line().await? {
-        let Ok(e) = serde_json::from_str::<Value>(&line) else { continue };
-        if e["type"] == "result" {
-            let text = e["result"].as_str().unwrap_or("").trim().to_string();
-            if e["is_error"].as_bool().unwrap_or(false) {
-                bail!("conversion failed: {text}");
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut text = String::new();
+    let mut error = None;
+    let mut finished = false;
+    let read = async {
+        while let Some(line) = lines.next_line().await? {
+            if provider == Provider::Codex {
+                for ev in crate::chat::translate_codex(&line, &mut finished) {
+                    if ev["type"] == "text" { text.push_str(ev["text"].as_str().unwrap_or("")); }
+                    if ev["type"] == "error" { error = Some(ev["message"].as_str().unwrap_or("conversion failed").to_string()); }
+                }
+            } else if let Ok(e) = serde_json::from_str::<Value>(&line) {
+                if e["type"] == "result" {
+                    finished = true;
+                    text = e["result"].as_str().unwrap_or("").to_string();
+                    if e["is_error"].as_bool().unwrap_or(false) { error = Some(text.clone()); }
+                }
             }
-            // Drop code fences if the model added them anyway.
-            let text = text.trim_start_matches("```latex").trim_start_matches("```").trim_end_matches("```").trim();
-            return Ok(text.to_string());
         }
+        anyhow::Ok(())
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(300), read).await.context("drawing conversion timed out")??;
+    let status = child.wait().await?;
+    let err = stderr.await.unwrap_or_default();
+    if let Some(e) = error { bail!("conversion failed: {e}"); }
+    if !status.success() || !finished || text.trim().is_empty() {
+        bail!("{} could not transcribe the drawing ({status}): {}", provider.label(), err.trim());
     }
-    let mut err = String::new();
-    let _ = child.stderr.take().expect("piped stderr").read_to_string(&mut err).await;
-    bail!("claude exited without an answer: {}", err.trim())
+    Ok(text.trim().trim_start_matches("```latex").trim_start_matches("```").trim_end_matches("```").trim().to_string())
 }

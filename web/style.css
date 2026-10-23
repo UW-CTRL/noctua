@@ -89,9 +89,9 @@ button.icon { padding: 4px 9px; }
   min-width: 0;
 }
 .pill.busy { color: var(--accent); }
-.zotero-box { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.zotero-box label { font-weight: 600; font-size: 13px; }
-.zotero-box select, .list-tools select, .controls select {
+.library-box { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.library-box label { font-weight: 600; font-size: 13px; }
+.library-box select, .list-tools select, .controls select {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -274,14 +274,14 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
 .stats b { color: var(--ink); font-size: 14px; display: block; }
 .links { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin-bottom: 12px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.zotero-add {
+.library-add {
   border: 1px solid var(--line); border-radius: 10px;
   padding: 10px 12px; margin-bottom: 14px;
   display: flex; flex-direction: column; gap: 8px;
 }
-.zotero-add .row { display: flex; gap: 8px; align-items: center; }
-.zotero-add select { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
-.zotero-add small { color: var(--muted); }
+.library-add .row { display: flex; gap: 8px; align-items: center; }
+.library-add select { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.library-add small { color: var(--muted); }
 .in-lib { color: var(--ok); font-weight: 600; font-size: 13px; }
 .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 12px 0 4px; }
 .abstract { font-size: 13px; white-space: pre-wrap; }
@@ -296,7 +296,7 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
 
 @media (max-width: 1100px) {
   main { grid-template-columns: 260px minmax(0, 1fr) 300px; }
-  .zotero-box label { display: none; }
+  .library-box label { display: none; }
 }
 @media (max-width: 800px) {
   body { overflow: auto; }
@@ -572,3 +572,10 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 #s2-banner { display: flex; align-items: center; gap: 10px; padding: 6px 14px; font-size: 13px; background: color-mix(in srgb, var(--cite) 18%, var(--panel)); border-bottom: 1px solid var(--line); }
 #s2-banner a { color: var(--accent); }
 #s2-banner button { margin-left: auto; }
+
+/* Assistant account and backend selection. */
+#agent-provider { max-width: 130px; }
+#agent-signin { font-size: 12px; white-space: nowrap; }
+#setup-agent { min-width: 140px; }
+.agent-login-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 12px; }
+.setup-card { max-height: 90vh; overflow-y: auto; }

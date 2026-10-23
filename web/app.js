@@ -85,10 +85,10 @@ const G = {
   inLib: new Set(),
   token: 0,
   autoFit: false,
-  libKey: null,       // Zotero item key the current graph was built from
+  libKey: null,       // Noctua item key the current graph was built from
   project: null,      // project graph being shown: the /api/project result plus { name }
 };
-// Zotero library browser: selected folder, its items, item shown in details.
+// Noctua library browser: selected folder, its items, item shown in details.
 const lib = { target: store.get('noctua.libTarget') || 'L1', items: null, detail: null };
 const view = { x: 0, y: 0, k: 1 };
 let results = [];          // current search results (paper objects)
@@ -226,7 +226,7 @@ function clearGraph({ push = true } = {}) {
 
 const targetName = (id) => collections.targets.find((t) => t.id === id)?.name || id;
 
-// A Zotero folder's own citation graph: its papers, coloured by cluster, plus
+// A Noctua folder's own citation graph: its papers, coloured by cluster, plus
 // the outside papers that several clusters cite.
 async function openProject(target, { push = true } = {}) {
   if (!target) return;
@@ -286,7 +286,7 @@ function renderProjectInfo() {
   if (!P) {
     if (el.dataset.empty !== '1') {
       el.dataset.empty = '1';
-      el.innerHTML = `<p class="hint">Pick a Zotero folder and open its project graph: how its papers cite each other,
+      el.innerHTML = `<p class="hint">Pick a Noctua folder and open its project graph: how its papers cite each other,
         which clusters form, and which references link the clusters. It's saved, and only papers you add
         or edit are looked up again.</p>`;
     }
@@ -329,7 +329,7 @@ function renderProjectInfo() {
       <ul>${P.unresolved.map((u) => `<li class="hint">${esc(u.title || '(untitled)')}</li>`).join('')}</ul>` : ''}`;
 }
 
-// Zotero items carry a DOI / arXiv id / Noctua-written S2 id when we have
+// Noctua items carry a DOI / arXiv id / Noctua-written S2 id when we have
 // one; otherwise fall back to Semantic Scholar's title matcher.
 async function graphFromLibrary(item) {
   const opts = { quiet404: true, libKey: item.key, switchTab: false };
@@ -407,10 +407,10 @@ async function checkLibrary() {
   if (!seen.size) return;
   const papers = [...seen.values()].map((p) => ({ id: p.paperId, doi: p.externalIds?.DOI || null, title: p.title }));
   try {
-    G.inLib = new Set(await api('/api/zotero/check', { papers }));
+    G.inLib = new Set(await api('/api/library/check', { papers }));
     refreshAll();
     renderResults();
-  } catch { /* no Zotero database; ignore */ }
+  } catch { /* no Noctua database; ignore */ }
 }
 
 // ---------------------------------------------------------------- search
@@ -461,7 +461,7 @@ function lastName(p) {
 const fmt = (n) => (n ?? 0).toLocaleString();
 
 function paperLi(p, extraClass = '') {
-  const inLib = G.inLib.has(p.paperId) ? '<span class="badge">in Zotero</span>' : '';
+  const inLib = G.inLib.has(p.paperId) ? '<span class="badge">in Noctua</span>' : '';
   const venue = p.venue ? `${esc(p.venue)} · ` : '';
   return `<li data-id="${esc(p.paperId)}" class="${extraClass}">
     <div class="p-title">${esc(p.title)}${inLib}</div>
@@ -536,15 +536,47 @@ function collectionOptions(selected) {
   ).join('');
 }
 
+// Selection fetches full records: project/search records can omit abstracts.
+const abstractDetails = new Map();
+function abstractKey(p,native){return (native?'library:':'paper:')+(native?p.key:p.paperId);}
+async function fetchAbstractDetails(p,native){
+  if(!native)return api('/api/paper?id='+enc(p.paperId));
+  const ids=[p.s2,p.arxiv&&'ARXIV:'+p.arxiv,p.DOI&&'DOI:'+p.DOI].filter(Boolean);
+  for(const id of ids){try{return await api('/api/paper?id='+enc(id));}catch(e){if(e.status!==404)throw e;}}
+  if(p.title){try{const match=await api('/api/match?title='+enc(p.title));if(titlesAgree(p.title,match.title))return await api('/api/paper?id='+enc(match.paperId));}catch(e){if(e.status!==404)throw e;}}
+  return {};
+}
+function ensureAbstract(p,native=false){
+  const field=native?'abstractNote':'abstract',key=abstractKey(p,native);
+  if(p[field]?.trim())return;
+  const cached=abstractDetails.get(key);
+  if(cached){if(cached.data?.abstract)p[field]=cached.data.abstract;return;}
+  const state={status:'loading'};abstractDetails.set(key,state);
+  fetchAbstractDetails(p,native).then(data=>{state.status='loaded';state.data=data;if(data.abstract)p[field]=data.abstract;})
+    .catch(e=>{state.status='error';state.error=e.message;})
+    .finally(()=>{
+      const current=native?lib.detail:(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId===G.selected));
+      if(current&&abstractKey(current,native)===key){if(state.data?.abstract)current[field]=state.data.abstract;renderDetails();updateChatContext();}
+    });
+}
+function abstractHTML(p,native=false){
+  const text=native?p.abstractNote:p.abstract,state=abstractDetails.get(abstractKey(p,native));
+  if(text?.trim())return `<div class="abstract">${esc(text)}</div>`;
+  if(state?.status==='error')return `<div class="abstract">Couldn’t load the abstract: ${esc(state.error)} <button data-retry-abstract>Retry</button></div>`;
+  return `<div class="abstract">${state?.status==='loading'?'Loading abstract…':'No abstract supplied by Semantic Scholar for this paper.'}</div>`;
+}
+function bindAbstractRetry(el,p,native=false){el.querySelector('[data-retry-abstract]')?.addEventListener('click',()=>{abstractDetails.delete(abstractKey(p,native));renderDetails();});}
+
 function renderDetails() {
   const el = $('#details');
   const n = G.nodes.get(G.selected);
   const p = n?.p || results.find((r) => r.paperId === G.selected);
   if (!p) {
     if (lib.detail) return renderLibDetails(lib.detail);
-    el.innerHTML = '<p class="hint">Click a node to see the paper and add it to Zotero.</p>';
+    el.innerHTML = '<p class="hint">Click a node to see the paper and add it to Noctua.</p>';
     return;
   }
+  ensureAbstract(p);
   const ext = p.externalIds || {};
   const pdf = p.openAccessPdf?.url || (ext.ArXiv ? `https://arxiv.org/pdf/${ext.ArXiv}` : '');
   const authors = (p.authors || []).map((a) => a.name);
@@ -573,52 +605,59 @@ function renderDetails() {
       ${pdf ? `<a href="${esc(pdf)}" target="_blank" rel="noopener">PDF ↗</a>` : ''}
     </div>
     <div class="actions">
+      <button id="act-read-pdf" class="primary">Read PDF</button>
+      <button id="act-pdf-tab">PDF in new tab</button>
       ${p.paperId !== G.centerId ? '<button id="act-center" class="primary">Build graph from this paper</button>' : ''}
       ${n && p.paperId !== G.centerId && !n.expanded ? '<button id="act-expand" title="Add this paper\'s top references and citations to the current graph">Expand here</button>' : ''}
     </div>
-    <div class="zotero-add">
-      ${inLib ? '<div class="in-lib">✓ Already in your Zotero library</div>' : ''}
+    <div class="library-add">
+      ${inLib ? '<div class="in-lib">✓ Already in your Noctua library</div>' : ''}
       <div class="row">
         <select id="add-target">${collectionOptions(target)}</select>
-        <button id="act-add" class="${inLib ? '' : 'primary'}">${inLib ? 'Add again' : 'Add to Zotero'}</button>
+        <button id="act-add" class="${inLib ? '' : 'primary'}">${inLib ? 'Add to collection' : 'Add to Noctua'}</button>
       </div>
       ${pdf ? '<label><input type="checkbox" id="add-pdf" checked> Attach open-access PDF</label>' : ''}
-      ${collections.live ? '' : '<small>Zotero isn’t running — start it to add papers. Folders shown from your library database.</small>'}
+
     </div>
     ${p.tldr?.text ? `<div class="section-label">TL;DR</div><div class="tldr">${esc(p.tldr.text)}</div>` : ''}
     <div class="section-label">Abstract</div>
-    <div class="abstract">${esc(p.abstract || 'No abstract available from Semantic Scholar.')}</div>
+    ${abstractHTML(p)}
   `;
+  bindAbstractRetry(el,p);
+  el.querySelector('#act-read-pdf').addEventListener('click', () => readDiscoveredPaper(p));
+  el.querySelector('#act-pdf-tab').addEventListener('click', () => readDiscoveredPaper(p, 'tab'));
   el.querySelector('#act-center')?.addEventListener('click', () => loadGraph(p.paperId));
   el.querySelector('#act-expand')?.addEventListener('click', () => expand(p.paperId));
-  el.querySelector('#act-add').addEventListener('click', (ev) => addToZotero(p, ev.currentTarget));
+  el.querySelector('#act-add').addEventListener('click', (ev) => saveToLibrary(p, ev.currentTarget));
 }
 
-async function addToZotero(p, btn) {
+async function saveToLibrary(p, btn) {
   const target = $('#add-target').value;
   const attach = $('#add-pdf')?.checked ?? false;
   btn.disabled = true;
   btn.textContent = 'Adding…';
   try {
-    await api('/api/zotero/add', { paper: p, target, attach_pdf: attach });
+    const saved = await api('/api/library/add', { paper: p, target, attach_pdf: attach });
     G.inLib.add(p.paperId);
-    const name = collections.targets.find((t) => t.id === target)?.name || 'Zotero';
-    toast(`Added to “${name}”`);
+    const name = collections.targets.find((t) => t.id === target)?.name || 'Noctua';
+    toast(saved.warning ? `Saved to “${name}”. ${saved.warning}` : `Saved to “${name}”`, { error: !!saved.warning });
+    loadCollections();
+    loadRefs(true);
     refreshAll();
     renderResults();
   } catch (e) {
     toast(e.message, { error: true });
     btn.disabled = false;
-    btn.textContent = 'Add to Zotero';
+    btn.textContent = 'Add to Noctua';
   }
 }
 
-// ---------------------------------------------------------------- Zotero library browser
+// ---------------------------------------------------------------- Noctua library browser
 
 function renderLibTree() {
   const el = $('#lib-tree');
   if (!collections.targets.length) {
-    el.innerHTML = `<p class="hint">${esc(collections.error || 'Zotero library not found.')} <a href="#" class="open-settings">Settings</a></p>`;
+    el.innerHTML = `<p class="hint">${esc(collections.error || 'Noctua library not found.')} <a href="#" class="open-settings">Settings</a></p>`;
     return;
   }
   el.innerHTML = collections.targets.map((t) => `
@@ -626,8 +665,8 @@ function renderLibTree() {
       <span>${t.id.startsWith('L') ? '📚' : '📁'}</span>
       <span class="t-name">${esc(t.name)}</span>
       <span class="t-count">${t.count ?? ''}</span>
-      ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder (Zotero must be closed)">✎</button>' : ''}
-      <button class="icon t-rename t-new" title="New folder inside (Zotero must be closed)">+</button>
+      ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder">✎</button>' : ''}
+      <button class="icon t-rename t-new" title="New folder inside">+</button>
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     li.addEventListener('click', () => {
@@ -666,7 +705,7 @@ function startRename(li) {
     if (!save || !name || name === old) return renderLibTree();
     input.disabled = true;
     try {
-      await api('/api/zotero/rename', { target: li.dataset.id, name });
+      await api('/api/library/rename', { target: li.dataset.id, name });
       toast(`Renamed “${old}” to “${name}”`);
       await loadCollections();
     } catch (e) {
@@ -698,7 +737,7 @@ function startNewFolder(li) {
     if (!save || !name) return row.remove();
     input.disabled = true;
     try {
-      const { id } = await api('/api/zotero/folder', { parent: li.dataset.id, name });
+      const { id } = await api('/api/library/folder', { parent: li.dataset.id, name });
       toast(`Created “${name}”`);
       lib.target = id;
       store.set('noctua.libTarget', id);
@@ -720,7 +759,7 @@ async function loadLibItems() {
   if (!collections.targets.some((t) => t.id === lib.target)) lib.target = collections.targets[0]?.id;
   if (!lib.target) return;
   try {
-    lib.items = await api(`/api/zotero/items?target=${enc(lib.target)}`);
+    lib.items = await api(`/api/library/items?target=${enc(lib.target)}`);
   } catch (e) {
     lib.items = null;
     el.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
@@ -759,11 +798,13 @@ function renderLibItems() {
         <div class="p-meta">${esc(libAuthors(it))}</div>
         <div class="p-meta">${esc([it.venue, it.year].filter(Boolean).join(' · ') || it.itemType)}</div>
       </div>
+      ${it.has_pdf ? '<button class="read-btn" title="Read PDF (⌘/Ctrl-click opens a new tab)">PDF</button>' : ''}
       <button class="graph-btn" title="Build this paper's citation graph">Graph</button>
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     const it = lib.items.find((x) => x.key === li.dataset.key);
     li.addEventListener('click', () => showLibItem(it));
+    li.querySelector('.read-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openPaperView(it.key, e.metaKey || e.ctrlKey ? 'tab' : 'here'); });
     li.querySelector('.graph-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       showLibItem(it);
@@ -782,15 +823,16 @@ function showLibItem(it) {
 }
 
 function renderLibDetails(it) {
+  ensureAbstract(it,true);
   const el = $('#details');
   const doi = it.DOI && !/^10\.48550\/arxiv\./i.test(it.DOI) ? it.DOI : null;
   el.innerHTML = `
-    <div class="roles"><span class="role exp">In your Zotero library</span></div>
+    <div class="roles"><span class="role exp">In your Noctua library</span></div>
     <h2>${esc(it.title || '(untitled)')}</h2>
     <div class="authors">${esc((it.creators || []).join(', ') || 'Unknown authors')}</div>
     <div class="venue">${esc([it.venue, it.date || it.year].filter(Boolean).join(' · '))}</div>
     <div class="links">
-      <a href="${esc(it.zoteroUrl)}">Open in Zotero ↗</a>
+
       ${doi ? `<a href="https://doi.org/${esc(doi)}" target="_blank" rel="noopener">DOI ↗</a>` : ''}
       ${it.arxiv ? `<a href="https://arxiv.org/abs/${esc(it.arxiv)}" target="_blank" rel="noopener">arXiv ↗</a>` : ''}
       ${it.url && !it.arxiv && !doi ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">Link ↗</a>` : ''}
@@ -800,17 +842,19 @@ function renderLibDetails(it) {
     </div>
     <p class="hint">${it.s2 || it.arxiv || doi
       ? 'Found by its identifier on Semantic Scholar.'
-      : 'No DOI or arXiv id, so Noctua will look it up by title.'}</p>`;
+      : 'No DOI or arXiv id, so Noctua will look it up by title.'}</p><div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
+  bindAbstractRetry(el,it,true);
   el.querySelector('#act-lib-graph').addEventListener('click', () => graphFromLibrary(it));
+  libraryPaperActions(el, it);
 }
 
 async function loadCollections() {
   const sel = $('#collection');
   try {
-    collections = await api('/api/zotero/collections');
+    collections = await api('/api/library/collections');
   } catch (e) {
     collections = { live: false, targets: [], error: e.message };
-    sel.innerHTML = '<option value="">Zotero unavailable</option>';
+    sel.innerHTML = '<option value="">Noctua unavailable</option>';
     $('#proj-target').innerHTML = sel.innerHTML;
     sel.title = e.message;
     renderLibTree();
@@ -827,19 +871,98 @@ async function loadCollections() {
   sel.innerHTML = collectionOptions(pick);
   const projSaved = G.project?.target || store.get('noctua.projTarget');
   $('#proj-target').innerHTML = collectionOptions(ids.includes(projSaved) ? projSaved : ids.find((i) => i.startsWith('C')) || ids[0] || '');
-  sel.title = collections.live ? 'Folder new papers are saved into' : 'Zotero is closed — showing folders from its database';
+  sel.title = collections.live ? 'Folder new papers are saved into' : 'Your local Noctua library';
   renderDetails();
 }
 
 // ---------------------------------------------------------------- chat
 
-const chat = { id: null, busy: false, abort: null, sentGraphKey: null, sentNoteKey: null, mode: store.get('noctua.chatMode') || 'suggest' };
+const chat = { provider: 'claude', ready: false, switching: false, running: null, id: null, busy: false, abort: null, sentGraphKey: null, sentNoteKey: null, mode: store.get('noctua.chatMode') || 'suggest' };
 
-// What Claude may do to notes: suggest edits (accept/reject), plan (read-only), or edit directly.
+const agentLabel = (provider = chat.provider) => provider === 'codex' ? 'Codex' : 'Claude Code';
+
+async function readEvents(response, handle) {
+  const reader = response.body.getReader();
+  const dec = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += done ? dec.decode() : dec.decode(value, { stream: true });
+    let i;
+    while ((i = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, i); buffer = buffer.slice(i + 1);
+      if (line.trim()) handle(JSON.parse(line));
+    }
+    if (done) { if (buffer.trim()) handle(JSON.parse(buffer)); break; }
+  }
+}
+
+// Wait until the server has saved even a stopped turn before restoring a
+// conversation. Session ids and the current conversation are provider-specific.
+async function stopChat() {
+  chat.abort?.abort();
+  await chat.running;
+  if (!chat.id) return;
+  for (let i = 0; i < 100; i++) {
+    const c = await api(`/api/chats/${enc(chat.id)}?provider=${chat.provider}`);
+    if (!c.busy) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('The previous reply is still stopping. Please try again.');
+}
+
+async function activateAgent(provider, { persist = true } = {}) {
+  if (chat.switching) return;
+  chat.switching = true;
+  $('#agent-provider').disabled = true;
+  $('#chat-input').disabled = true;
+  $('#chat-send').disabled = true;
+  try {
+    await stopChat();
+    if (persist) await api('/api/settings/agent', { provider });
+    if (chat.ready) store.set('noctua.chatDraft.' + chat.provider, $('#chat-input').value);
+    chat.provider = provider;
+    chat.ready = true;
+    chat.sentGraphKey = null; chat.sentNoteKey = null;
+    $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
+    $('#agent-provider').value = provider;
+    toggleChatHistory(false);
+    const id = store.get('noctua.chat.' + provider) || (provider === 'claude' ? store.get('noctua.chat') : null);
+    chat.id = null;
+    if (id) await openChat(id); else { setChatId(null); chatWelcome(); }
+    // Once imported, the old shared pointer must never reopen a deleted chat.
+    if (provider === 'claude') store.set('noctua.chat', '');
+    if (typeof settings !== 'undefined' && settings) settings.agent = provider;
+    refreshAgentBadge();
+  } finally {
+    chat.switching = false;
+    $('#agent-provider').value = chat.provider;
+    $('#agent-provider').disabled = false;
+    $('#chat-input').disabled = false;
+    $('#chat-send').disabled = false;
+  }
+}
+
+async function refreshAgentBadge() {
+  const provider = chat.provider;
+  $('#agent-signin').textContent = 'Account';
+  try {
+    const s = await api('/api/agents/' + provider);
+    if (provider !== chat.provider) return;
+    $('#agent-signin').textContent = s.signed_in ? 'Connected' : 'Sign in';
+    $('#agent-signin').title = s.signed_in ? `${agentLabel()} is signed in. Manage in Settings.` : `Sign in to ${agentLabel()}`;
+  } catch { /* account details remain available in Settings */ }
+}
+
+$('#agent-provider').addEventListener('change', (e) => {
+  activateAgent(e.target.value).catch((err) => toast(err.message, { error: true }));
+});
+
+// What the assistant may do to notes: suggest edits (accept/reject), plan (read-only), or edit directly.
 const CHAT_MODES = {
-  suggest: { label: '✎ Suggest edits', hint: 'Claude proposes note edits; you accept or reject each.' },
-  plan: { label: '◇ Plan', hint: 'Read-only: Claude investigates and proposes a plan, but changes nothing.' },
-  direct: { label: '⚡ Direct edits', hint: 'Claude edits notes directly; you can undo.' },
+  suggest: { label: '✎ Suggest edits', hint: 'The assistant proposes note edits; you accept or reject each.' },
+  plan: { label: '◇ Plan', hint: 'Read-only: the assistant investigates and proposes a plan, but changes nothing.' },
+  direct: { label: '⚡ Direct edits', hint: 'The assistant edits notes directly; you can undo.' },
 };
 
 function setChatMode(mode) {
@@ -864,13 +987,21 @@ const TOOL_LABEL = {
   get_project_graph: 'Reading project graph',
   show_project_graph: 'Opening project graph',
   select_paper: 'Selecting paper',
-  list_zotero_folders: 'Reading Zotero folders',
-  list_folder_items: 'Reading Zotero folder',
+  list_zotero_folders: 'Reading Noctua folders',
+  list_folder_items: 'Reading Noctua folder',
   list_notes: 'Listing notes',
   read_note: 'Reading note',
   view_note_image: 'Looking at image',
   edit_note: 'Editing note',
-  add_to_zotero: 'Adding to Zotero',
+  add_to_zotero: 'Adding to Noctua',
+  save_to_library: 'Saving to library',
+  list_library_collections: 'Reading collections',
+  download_pdf: 'Downloading PDF',
+  read_pdf: 'Reading PDF',
+  search_pdf: 'Searching PDF',
+  view_pdf_page: 'Viewing PDF page',
+  annotate_pdf: 'Annotating PDF',
+  comment_on_pdf_annotation: 'Commenting on PDF',
 };
 
 const paperLine = (p) =>
@@ -879,19 +1010,21 @@ const paperLine = (p) =>
 // What the assistant sees each turn. The full paper list is only resent when
 // the graph changed, to keep the conversation small.
 function chatContext() {
+  if (document.body.classList.contains('pdf-mode') && typeof pdfContext === 'function') return { context: JSON.stringify(pdfContext()), key: 'pdf:' + PDF.key, noteKey: null };
   const L = [];
   const c = G.nodes.get(G.centerId);
   const P = G.project;
   if (P) {
     const nc = P.clusters.filter((x) => x.size > 1).length;
-    L.push(`Project graph open for Zotero folder "${P.name}" (${P.target}): ${P.papers.length} of ${P.items} items found on Semantic Scholar, ` +
+    L.push(`Project graph open for Noctua folder "${P.name}" (${P.target}): ${P.papers.length} of ${P.items} items found on Semantic Scholar, ` +
       `${P.edges.length} direct citation links, ${nc} clusters, ${P.clusters.length - nc} unconnected papers. ` +
       'Use get_project_graph for the connections between clusters.');
   } else L.push(c ? `Graph center: ${paperLine(c.p)}` : 'Graph center: none (no graph open)');
   const s = G.nodes.get(G.selected);
   if (s && s.id !== G.centerId) L.push(`Selected paper: ${paperLine(s.p)}`);
   if (s?.p.abstract) L.push(`Selected paper abstract: ${s.p.abstract.slice(0, 1500)}`);
-  if (!s && lib.detail) L.push(`Selected Zotero item: ${lib.detail.title} (${lib.detail.year ?? 'n.d.'}; ${libAuthors(lib.detail)})`);
+  if (!s && lib.detail) L.push(`Selected Noctua item: ${lib.detail.title} (${lib.detail.year ?? 'n.d.'}; ${libAuthors(lib.detail)})`);
+  if (!s && lib.detail) { L.push(`Native paper_key: ${lib.detail.key}; PDF available: ${!!lib.detail.has_pdf}`); if(lib.detail.abstractNote)L.push(`Selected paper abstract: ${lib.detail.abstractNote}`); }
   const add = collections.targets.find((t) => t.id === $('#collection').value);
   if (add) L.push(`Add-to folder: ${add.name} (${add.id})`);
   const open = collections.targets.find((t) => t.id === lib.target);
@@ -916,6 +1049,7 @@ function chatContext() {
 }
 
 function updateChatContext() {
+  if (document.body.classList.contains('pdf-mode') && typeof PDF !== 'undefined' && PDF.paper) { $('#chat-context').textContent = `Sees PDF: ${PDF.paper.title} · page ${PDF.page}`; return; }
   if (document.body.classList.contains('notes-mode')) {
     $('#chat-context').textContent = N.doc ? `Sees note: ${N.doc.title || 'Untitled note'}` : 'Notes mode';
     return;
@@ -962,8 +1096,9 @@ function renderMd(src) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|paper:)[^)\s]+)\)/g, (m, text, url) => url.startsWith('paper:')
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|paper:|pdf:)[^)\s]+)\)/g, (m, text, url) => url.startsWith('paper:')
       ? `<a href="${url}" class="paper-link">${text}</a>`
+      : url.startsWith('pdf:') ? `<a href="${url}" class="pdf-link">${text}</a>`
       : `<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
   const out = [];
   let para = [], list = null, code = null;
@@ -1010,7 +1145,7 @@ function appendMsg(role, html) {
 
 function chatWelcome() {
   $('#chat-log').innerHTML = `<p class="hint">Ask about the papers you're looking at. I can see the current graph and selection,
-    and I can search for papers, open graphs, and add papers to your Zotero folders.</p>`;
+    and I can search for papers, open graphs, and add papers to your Noctua folders.</p>`;
 }
 
 function renderStoredMsg(m) {
@@ -1022,7 +1157,7 @@ function renderStoredMsg(m) {
 
 function setChatId(id) {
   chat.id = id;
-  store.set('noctua.chat', id || '');
+  store.set('noctua.chat.' + chat.provider, id || '');
 }
 
 function newChat() {
@@ -1034,9 +1169,9 @@ function newChat() {
 }
 
 async function openChat(id) {
-  chat.abort?.abort();
+  await stopChat();
   let c;
-  try { c = await api(`/api/chats/${enc(id)}`); } catch (e) {
+  try { c = await api(`/api/chats/${enc(id)}?provider=${chat.provider}`); } catch (e) {
     if (e.status === 404) return newChat();
     return toast(`Couldn't open chat: ${e.message}`, { error: true });
   }
@@ -1053,12 +1188,14 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
   box.classList.toggle('hidden', !show);
   $('#chat-history-btn').classList.toggle('active', show);
   if (!show) return;
+  const provider = chat.provider;
   box.innerHTML = '<li class="hint">Loading…</li>';
   let list;
-  try { list = await api('/api/chats'); } catch (e) {
+  try { list = await api('/api/chats?provider=' + provider); } catch (e) {
     box.innerHTML = `<li class="error">${esc(e.message)}</li>`;
     return;
   }
+  if (provider !== chat.provider) return;
   box.innerHTML = list.length ? list.map((c) => `
     <li data-id="${esc(c.id)}" class="${c.id === chat.id ? 'current' : ''}">
       <span class="h-title">${esc(c.title || 'Untitled')}</span>
@@ -1068,8 +1205,9 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
 }
 
 function runChatAction(a) {
+  if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
   if (a.action === 'note_edit') return noteEditFromChat(a);
-  if (a.action !== 'library' && document.body.classList.contains('notes-mode')) setMode('graph');
+  if (a.action !== 'library' && (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode'))) setMode('graph');
   if (a.action === 'graph') loadGraph(a.id);
   else if (a.action === 'project') openProject(a.target);
   else if (a.action === 'select') {
@@ -1083,11 +1221,16 @@ function runChatAction(a) {
 
 function setChatBusy(busy) {
   chat.busy = busy;
+  $('#chat-new').disabled = busy;
+  $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
   $('#chat-send').classList.toggle('primary', !busy);
 }
 
 async function sendChat(text) {
+  const provider = chat.provider;
+  const ctrl = new AbortController();
+  chat.abort = ctrl;
   setChatBusy(true);
   appendMsg('user', userMsgHtml(text));
   const el = appendMsg('assistant', '<div class="body"><span class="typing">Thinking…</span></div>');
@@ -1095,9 +1238,6 @@ async function sendChat(text) {
   const log = $('#chat-log');
   let md = '';
   const { context, key, noteKey } = chatContext();
-  const attachments = await chatAttachments(text);
-  const ctrl = new AbortController();
-  chat.abort = ctrl;
 
   const handle = (e) => {
     if (e.type === 'chat') setChatId(e.id);
@@ -1116,27 +1256,16 @@ async function sendChat(text) {
   };
 
   try {
+    const attachments = await chatAttachments(text);
+    if (ctrl.signal.aborted) return;
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, context, chat_id: chat.id, mode: chat.mode, attachments }),
+      body: JSON.stringify({ message: text, provider, context, chat_id: chat.id, mode: chat.mode, attachments }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-    const reader = r.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i);
-        buf = buf.slice(i + 1);
-        if (line.trim()) handle(JSON.parse(line));
-      }
-    }
+    await readEvents(r, handle);
   } catch (e) {
     if (e.name === 'AbortError') body.insertAdjacentHTML('beforeend', '<p class="tool">Stopped.</p>');
     else body.insertAdjacentHTML('beforeend', `<p class="error">${esc(e.message)}</p>`);
@@ -1425,7 +1554,7 @@ function draw() {
     ctx.lineWidth = (n.roles.has('shared') ? 1.5 : 1) / view.k;
     ctx.strokeStyle = n.roles.has('shared') ? colors.muted : colors.panel;
     ctx.stroke();
-    if (G.inLib.has(n.id) && !n.roles.has('proj')) {  // every project paper is in Zotero
+    if (G.inLib.has(n.id) && !n.roles.has('proj')) {  // every project paper is in Noctua
       ctx.beginPath();
       ctx.arc(n.x, n.y, r + 3 / view.k, 0, Math.PI * 2);
       ctx.lineWidth = 2.5 / view.k;
@@ -1652,11 +1781,12 @@ $('#proj-info').addEventListener('click', (e) => {
 document.querySelectorAll('#right .tabs button').forEach((b) => b.addEventListener('click', () => showRightTab(b.dataset.rtab)));
 $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  if (chat.busy) { chat.abort?.abort(); return; }
+  if (!chat.ready || chat.switching) return;
+  if (chat.busy) { stopChat().catch((err) => toast(err.message, { error: true })); return; }
   const text = $('#chat-input').value.trim();
   if (!text) return;
   $('#chat-input').value = '';
-  sendChat(text);
+  chat.running = sendChat(text);
 });
 $('#chat-mode').addEventListener('click', cycleChatMode);
 $('#chat-input').addEventListener('keydown', (e) => {
@@ -1671,15 +1801,16 @@ $('#chat-input').addEventListener('keydown', (e) => {
     $('#chat-form').requestSubmit();
   }
 });
-$('#chat-new').addEventListener('click', () => { toggleChatHistory(false); newChat(); });
+$('#chat-new').addEventListener('click', async () => { try { await stopChat(); toggleChatHistory(false); newChat(); } catch (e) { toast(e.message, { error: true }); } });
 $('#chat-history-btn').addEventListener('click', () => toggleChatHistory());
 $('#chat-history').addEventListener('click', async (e) => {
+  if (chat.switching) return;
   const li = e.target.closest('li[data-id]');
   if (!li) return;
   const id = li.dataset.id;
   if (e.target.closest('.h-del')) {
     if (!confirm(`Delete “${li.querySelector('.h-title').textContent}”?`)) return;
-    const r = await fetch(`/api/chats/${enc(id)}`, { method: 'DELETE' }).catch(() => null);
+    const r = await fetch(`/api/chats/${enc(id)}?provider=${chat.provider}`, { method: 'DELETE' }).catch(() => null);
     if (!r?.ok) return toast("Couldn't delete chat", { error: true });
     if (id === chat.id) newChat();
     toggleChatHistory(true);
@@ -1689,6 +1820,8 @@ $('#chat-history').addEventListener('click', async (e) => {
   openChat(id);
 });
 $('#chat-log').addEventListener('click', (e) => {
+  const pdf = e.target.closest('a.pdf-link');
+  if (pdf) { e.preventDefault(); const [key, query] = pdf.getAttribute('href').slice(4).split('?'); const q = new URLSearchParams(query); openPDF(key, { page: Number(q.get('page')) || 1, annotation: q.get('annotation') }).catch((err) => toast(err.message, { error: true })); return; }
   const a = e.target.closest('a.paper-link');
   if (!a) return;
   e.preventDefault();
@@ -1698,11 +1831,12 @@ $('#lib-sort').addEventListener('change', renderLibItems);
 $('#lib-filter').addEventListener('input', renderLibItems);
 
 window.addEventListener('popstate', () => {
+  if (!location.hash.startsWith('#pdf=') && document.body.classList.contains('pdf-mode')) setMode('graph');
   const m = location.hash.match(/^#paper=(.+)$/);
   const pm = location.hash.match(/^#project=(.+)$/);
   if (m) loadGraph(decodeURIComponent(m[1]), { push: false });
   else if (pm) openProject(decodeURIComponent(pm[1]), { push: false });
-  else clearGraph({ push: false });
+  else if (!location.hash.startsWith('#pdf=')) clearGraph({ push: false });
 });
 new ResizeObserver(() => draw()).observe($('#stage'));
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
@@ -1710,7 +1844,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 readColors();
 setChatMode(chat.mode);
 chatWelcome();
-if (store.get('noctua.chat')) openChat(store.get('noctua.chat'));
+
 const collectionsReady = loadCollections();
 {
   const m = location.hash.match(/^#paper=(.+)$/);

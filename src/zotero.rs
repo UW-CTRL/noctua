@@ -1,111 +1,25 @@
-//! Zotero integration.
-//!
-//! * Writing goes through the Zotero desktop app's local connector server
-//!   (the same API the browser extension uses), so no web API key is needed
-//!   but Zotero must be running.
-//! * Reading collections prefers the connector (always current) and falls
-//!   back to reading `zotero.sqlite` read-only when Zotero is closed.
+//! Optional read-only Zotero import source. No runtime connector dependency.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::PathBuf,
-    sync::Mutex,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Result};
-use reqwest::Client;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
-const CONNECTOR: &str = "http://127.0.0.1:23119/connector";
-
 pub struct Zotero {
-    http: Client,
     /// `<Zotero data folder>/zotero.sqlite`; None when Zotero isn't set up.
     db_path: std::sync::RwLock<Option<PathBuf>>,
-    /// Semantic Scholar ids saved during this run (the sqlite snapshot can lag).
-    added: Mutex<HashSet<String>>,
 }
 
 impl Zotero {
     pub fn new(data_dir: Option<PathBuf>) -> Self {
-        let http = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("http client");
         Self {
-            http,
             db_path: std::sync::RwLock::new(data_dir.map(|d| d.join("zotero.sqlite"))),
-            added: Mutex::new(HashSet::new()),
         }
-    }
-
-    async fn connector(&self, endpoint: &str, body: &Value) -> Result<reqwest::Response> {
-        let resp = self
-            .http
-            .post(format!("{CONNECTOR}/{endpoint}"))
-            .header("X-Zotero-Connector-API-Version", "3")
-            .json(body)
-            .send()
-            .await
-            .context("Zotero is not running (could not reach its connector on port 23119)")?;
-        Ok(resp)
-    }
-
-    /// Libraries and collections as a flat, depth-annotated list:
-    /// `{ live, selected, targets: [{ id: "L1" | "C42", name, level, count }] }`.
-    /// `live` is false when read from the database snapshot.
-    pub async fn collections(&self) -> Result<Value> {
-        self.db_path()?;  // not set up (or turned off in Settings)
-        let mut out = None;
-        if let Ok(resp) = self.connector("getSelectedCollection", &json!({})).await {
-            if resp.status().is_success() {
-                let v: Value = resp.json().await?;
-                let targets: Vec<Value> = v["targets"]
-                    .as_array()
-                    .map(|a| a.as_slice())
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|t| json!({ "id": t["id"], "name": t["name"], "level": t["level"] }))
-                    .collect();
-                let selected = match v["id"].as_u64() {
-                    Some(id) => format!("C{id}"),
-                    None => format!("L{}", v["libraryID"].as_u64().unwrap_or(1)),
-                };
-                out = Some(json!({ "live": true, "selected": selected, "targets": targets }));
-            }
-        }
-        let mut out = match out {
-            Some(v) => v,
-            None => json!({ "live": false, "selected": null, "targets": self.collections_from_db()? }),
-        };
-        if let (Ok(counts), Some(targets)) = (self.item_counts(), out["targets"].as_array_mut()) {
-            for t in targets {
-                if let Some(n) = t["id"].as_str().and_then(|id| counts.get(id)) {
-                    t["count"] = json!(n);
-                }
-            }
-        }
-        Ok(out)
-    }
-
-    /// Number of top-level items per target id ("L1", "C42").
-    fn item_counts(&self) -> Result<HashMap<String, i64>> {
-        let db = self.open_db()?;
-        let mut counts = HashMap::new();
-        let queries = [
-            ("C", format!("SELECT ci.collectionID, count(*) FROM collectionItems ci WHERE ci.itemID IN ({TOP_LEVEL}) GROUP BY 1")),
-            ("L", format!("SELECT i.libraryID, count(*) FROM items i WHERE i.itemID IN ({TOP_LEVEL}) GROUP BY 1")),
-        ];
-        for (prefix, sql) in queries {
-            let mut stmt = db.prepare(&sql)?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
-            for (id, n) in rows.flatten() {
-                counts.insert(format!("{prefix}{id}"), n);
-            }
-        }
-        Ok(counts)
     }
 
     /// Top-level items directly in a collection ("C42") or anywhere in a
@@ -232,19 +146,27 @@ impl Zotero {
         }
     }
 
-    /// The target ("C42" / "L1") of a folder id from `folder_id`, if the folder still exists.
-    pub fn folder_target(&self, folder: &str) -> Option<String> {
-        if folder.starts_with('L') {
-            return Some(folder.to_string());
+    pub fn import_collections(&self) -> Result<Vec<Value>> { self.collections_from_db() }
+
+    pub fn local_pdf(&self, library: &str, item_key: &str) -> Result<Option<PathBuf>> {
+        let library_id: i64 = library.strip_prefix('L').context("bad library id")?.parse()?;
+        let db = self.open_db()?;
+        let mut stmt = db.prepare("SELECT child.key,a.path FROM itemAttachments a
+            JOIN items parent ON parent.itemID=COALESCE(a.parentItemID,a.itemID) JOIN items child ON child.itemID=a.itemID
+            WHERE parent.key=?1 AND parent.libraryID=?2 AND a.contentType='application/pdf'
+            AND child.itemID NOT IN (SELECT itemID FROM deletedItems) ORDER BY a.itemID")?;
+        let rows = stmt.query_map(rusqlite::params![item_key,library_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?)))?;
+        for row in rows {
+            let (key,Some(path)) = row? else {continue};
+            let file = if let Some(name) = path.strip_prefix("storage:") {
+                let rel = std::path::Path::new(name);
+                if rel.components().any(|c| !matches!(c,std::path::Component::Normal(_))) {continue;}
+                self.db_path()?.parent().unwrap().join("storage").join(key).join(rel)
+            } else if std::path::Path::new(&path).is_absolute() { PathBuf::from(path) }
+            else {continue};
+            if file.is_file() {return Ok(Some(file));}
         }
-        let (lib, key) = folder.split_once('-')?;
-        let lib: i64 = lib.parse().ok()?;
-        let id: i64 = self
-            .open_db()
-            .ok()?
-            .query_row("SELECT collectionID FROM collections WHERE libraryID = ?1 AND key = ?2", rusqlite::params![lib, key], |r| r.get(0))
-            .ok()?;
-        Some(format!("C{id}"))
+        Ok(None)
     }
 
     /// Switches to another Zotero data folder (or none).
@@ -340,182 +262,6 @@ impl Zotero {
         Ok(out)
     }
 
-    /// Opens zotero.sqlite for writing. Zotero must be closed: it holds an
-    /// exclusive lock while running. The database is backed up to
-    /// `zotero.sqlite.noctua-bak` first.
-    async fn open_for_write(&self, what: &str) -> Result<Connection> {
-        if self.http.get(format!("{CONNECTOR}/ping")).send().await.is_ok() {
-            bail!("Close Zotero first — folders can only be {what} while Zotero is closed");
-        }
-        let db_path = self.db_path()?;
-        let db = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-            .with_context(|| format!("could not open {}", db_path.display()))?;
-        db.query_row("SELECT count(*) FROM collections", [], |_| Ok(()))
-            .context("could not read the Zotero database (is Zotero still running?)")?;
-        let backup = db_path.with_extension("sqlite.noctua-bak");
-        let _ = std::fs::remove_file(&backup);
-        db.execute("VACUUM INTO ?1", [backup.to_string_lossy()])
-            .context("could not back up the Zotero database (is Zotero still running?)")?;
-        Ok(db)
-    }
-
-    /// Renames a collection ("C42") by writing to zotero.sqlite (see `open_for_write`).
-    pub async fn rename(&self, target: &str, name: &str) -> Result<()> {
-        let name = name.trim();
-        if name.is_empty() {
-            bail!("folder name can't be empty");
-        }
-        let id: i64 = target
-            .strip_prefix('C')
-            .and_then(|s| s.parse().ok())
-            .context("only folders can be renamed")?;
-        let db = self.open_for_write("renamed").await?;
-        let n = db.execute(
-            "UPDATE collections
-             SET collectionName = ?1, clientDateModified = CURRENT_TIMESTAMP, synced = 0
-             WHERE collectionID = ?2",
-            rusqlite::params![name, id],
-        )?;
-        if n == 0 {
-            bail!("folder not found");
-        }
-        Ok(())
-    }
-
-    /// Creates a folder inside `parent` (a library "L1" or a folder "C42") by
-    /// writing to zotero.sqlite (see `open_for_write`). Returns its target id.
-    /// It's marked unsynced, so Zotero uploads it on its next sync.
-    pub async fn create_collection(&self, parent: &str, name: &str) -> Result<String> {
-        let name = name.trim();
-        if name.is_empty() {
-            bail!("folder name can't be empty");
-        }
-        let (kind, id) = parent.split_at(1.min(parent.len()));
-        let id: i64 = id.parse().context("bad parent id")?;
-        let db = self.open_for_write("created").await?;
-        let (lib, parent_col): (i64, Option<i64>) = match kind {
-            "L" => (id, None),
-            "C" => (
-                db.query_row("SELECT libraryID FROM collections WHERE collectionID = ?1", [id], |r| r.get(0))
-                    .ok()
-                    .context("parent folder not found")?,
-                Some(id),
-            ),
-            _ => bail!("parent must start with C or L"),
-        };
-        let editable: bool = db
-            .query_row("SELECT editable FROM libraries WHERE libraryID = ?1", [lib], |r| r.get(0))
-            .ok()
-            .context("library not found")?;
-        if !editable {
-            bail!("that library is read-only");
-        }
-        // Zotero's object keys: 8 characters from this alphabet, unique per library.
-        const ALPHABET: &[u8] = b"23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
-        let key = loop {
-            let bytes: Vec<u8> = db.query_row("SELECT randomblob(8)", [], |r| r.get(0))?;
-            let key: String = bytes.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect();
-            let taken: bool = db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM collections WHERE libraryID = ?1 AND key = ?2)",
-                rusqlite::params![lib, key],
-                |r| r.get(0),
-            )?;
-            if !taken {
-                break key;
-            }
-        };
-        db.execute(
-            "INSERT INTO collections (collectionName, parentCollectionID, libraryID, key, synced)
-             VALUES (?1, ?2, ?3, ?4, 0)",
-            rusqlite::params![name, parent_col, lib, key],
-        )?;
-        Ok(format!("C{}", db.last_insert_rowid()))
-    }
-
-    /// Which of the given papers are already in the library, matched by DOI
-    /// or normalized title. Input: `[{ id, doi, title }]`; output: ids.
-    pub fn check(&self, papers: &[Value]) -> Result<Vec<String>> {
-        let db = self.open_db()?;
-        let mut dois = HashSet::new();
-        let mut titles = HashSet::new();
-        let mut stmt = db.prepare(
-            "SELECT f.fieldName, v.value
-             FROM itemData d
-             JOIN itemDataValues v ON v.valueID = d.valueID
-             JOIN fields f ON f.fieldID = d.fieldID
-             WHERE f.fieldName IN ('DOI', 'title')
-               AND d.itemID NOT IN (SELECT itemID FROM deletedItems)",
-        )?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-        for row in rows.flatten() {
-            match row.0.as_str() {
-                "DOI" => dois.insert(row.1.trim().to_lowercase()),
-                _ => titles.insert(norm_title(&row.1)),
-            };
-        }
-        let added = self.added.lock().map(|a| a.clone()).unwrap_or_default();
-        Ok(papers
-            .iter()
-            .filter_map(|p| {
-                let id = p["id"].as_str()?;
-                let doi_hit = p["doi"]
-                    .as_str()
-                    .is_some_and(|d| dois.contains(&d.trim().to_lowercase()));
-                let title_hit = p["title"].as_str().is_some_and(|t| {
-                    let n = norm_title(t);
-                    n.len() > 12 && titles.contains(&n)
-                });
-                (doi_hit || title_hit || added.contains(id)).then(|| id.to_string())
-            })
-            .collect())
-    }
-
-    /// Saves a Semantic Scholar paper into Zotero, optionally into a target
-    /// collection ("C<id>") or library ("L<id>").
-    pub async fn add(&self, paper: &Value, target: Option<&str>, attach_pdf: bool) -> Result<()> {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let session = format!("noctua-{nanos}");
-        let item = to_zotero_item(paper, attach_pdf, &format!("noctua-item-{nanos}"));
-
-        let resp = self
-            .connector(
-                "saveItems",
-                &json!({
-                    "sessionID": session,
-                    "uri": item["url"],
-                    "items": [item],
-                }),
-            )
-            .await?;
-        if !resp.status().is_success() {
-            let s = resp.status();
-            bail!("Zotero rejected the item ({s}): {}", resp.text().await.unwrap_or_default());
-        }
-
-        if let Some(target) = target.filter(|t| !t.is_empty()) {
-            let resp = self
-                .connector(
-                    "updateSession",
-                    &json!({ "sessionID": session, "target": target, "tags": "" }),
-                )
-                .await?;
-            if !resp.status().is_success() {
-                let s = resp.status();
-                bail!(
-                    "Saved, but Zotero could not move it into the folder ({s}): {}",
-                    resp.text().await.unwrap_or_default()
-                );
-            }
-        }
-
-        if let (Some(id), Ok(mut added)) = (paper["paperId"].as_str(), self.added.lock()) {
-            added.insert(id.to_string());
-        }
-        Ok(())
-    }
 }
 
 /// Regular items plus standalone attachments: no notes, annotations,
@@ -569,114 +315,4 @@ fn arxiv_of(doi: &str, extra: &str, archive: &str, url: &str) -> Option<String> 
         }
     }
     None
-}
-
-fn norm_title(t: &str) -> String {
-    t.chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
-}
-
-/// Maps a Semantic Scholar paper object onto Zotero's connector item format.
-fn to_zotero_item(p: &Value, attach_pdf: bool, item_id: &str) -> Value {
-    let ext = &p["externalIds"];
-    let doi = ext["DOI"].as_str();
-    let arxiv = ext["ArXiv"].as_str();
-    let types: Vec<&str> = p["publicationTypes"]
-        .as_array()
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    let journal = p["journal"]["name"].as_str().filter(|s| !s.is_empty());
-    let venue = p["venue"].as_str().filter(|s| !s.is_empty());
-    let container = journal.or(venue);
-
-    let item_type = if types.contains(&"Conference") {
-        "conferencePaper"
-    } else if types.contains(&"JournalArticle") || types.contains(&"Review") || journal.is_some() {
-        "journalArticle"
-    } else if arxiv.is_some() {
-        "preprint"
-    } else {
-        "journalArticle"
-    };
-
-    let creators: Vec<Value> = p["authors"]
-        .as_array()
-        .map(|a| a.as_slice())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|a| a["name"].as_str())
-        .map(|name| match name.trim().rsplit_once(' ') {
-            Some((first, last)) => {
-                json!({ "creatorType": "author", "firstName": first, "lastName": last })
-            }
-            None => json!({ "creatorType": "author", "lastName": name, "firstName": "" }),
-        })
-        .collect();
-
-    let mut extra = vec![format!("Semantic Scholar: {}", p["paperId"].as_str().unwrap_or(""))];
-    if let Some(a) = arxiv {
-        extra.push(format!("arXiv: {a}"));
-    }
-
-    let url = match (doi, arxiv) {
-        (Some(d), _) => format!("https://doi.org/{d}"),
-        (None, Some(a)) => format!("https://arxiv.org/abs/{a}"),
-        _ => p["url"].as_str().unwrap_or("").to_string(),
-    };
-
-    let mut item = json!({
-        "id": item_id,
-        "itemType": item_type,
-        "title": p["title"],
-        "creators": creators,
-        "date": p["publicationDate"].as_str().map(Value::from).unwrap_or_else(|| p["year"].clone()),
-        "abstractNote": p["abstract"].as_str().unwrap_or(""),
-        "url": url,
-        "extra": extra.join("\n"),
-        "tags": [],
-        "attachments": [],
-    });
-    let obj = item.as_object_mut().expect("object");
-    if let Some(d) = doi {
-        obj.insert("DOI".into(), d.into());
-    }
-    match item_type {
-        "conferencePaper" => {
-            if let Some(c) = container {
-                obj.insert("proceedingsTitle".into(), c.into());
-            }
-        }
-        "preprint" => {
-            obj.insert("repository".into(), "arXiv".into());
-            if let Some(a) = arxiv {
-                obj.insert("archiveID".into(), format!("arXiv:{a}").into());
-            }
-        }
-        _ => {
-            if let Some(c) = container {
-                obj.insert("publicationTitle".into(), c.into());
-            }
-            for (src, dst) in [("volume", "volume"), ("pages", "pages")] {
-                if let Some(v) = p["journal"][src].as_str() {
-                    obj.insert(dst.into(), v.trim().into());
-                }
-            }
-        }
-    }
-
-    if attach_pdf {
-        let oa = p["openAccessPdf"]["url"].as_str().filter(|u| !u.is_empty());
-        let pdf = oa
-            .map(String::from)
-            .or_else(|| arxiv.map(|a| format!("https://arxiv.org/pdf/{a}")));
-        if let Some(pdf) = pdf {
-            obj.insert(
-                "attachments".into(),
-                json!([{ "title": "Full Text PDF", "url": pdf, "mimeType": "application/pdf" }]),
-            );
-        }
-    }
-    item
 }

@@ -4,12 +4,12 @@
 
 const REF = { papers: [], notes: [], at: 0, loading: null };
 
-// Every Zotero paper (all libraries) and every note (all folders). Cached briefly.
+// Every Noctua paper (all libraries) and every note (all folders). Cached briefly.
 function loadRefs(force = false) {
   if (!force && REF.at && Date.now() - REF.at < 30000) return Promise.resolve();
   if (REF.loading) return REF.loading;
-  const libs = collections.targets.filter((t) => t.id.startsWith('L'));
-  REF.loading = Promise.all([api('/api/notes/all'), ...libs.map((l) => api(`/api/zotero/items?target=${enc(l.id)}`))])
+  const libs = collections.targets.filter((t) => t.id === 'L1');
+  REF.loading = Promise.all([api('/api/notes/all'), ...libs.map((l) => api(`/api/library/items?target=${enc(l.id)}`))])
     .then(([notes, ...items]) => {
       REF.notes = notes;
       REF.papers = items.flat();
@@ -145,8 +145,9 @@ async function chatAttachments(text) {
     if (r.kind === 'paper') {
       const p = r.ref;
       parts.push([
-        `${token} = Zotero paper (item key ${p.key}):`,
+        `${token} = Noctua paper (item key ${p.key}):`,
         `Title: ${p.title || ''}`,
+        p.has_pdf && `PDF available: use read_pdf or view_pdf_page with paper_key ${p.key}.`,
         `Authors: ${(p.creators || []).join(', ')}`,
         `Year: ${p.year ?? 'n.d.'}${p.venue ? ` · ${p.venue}` : ''}`,
         p.DOI && `DOI: ${p.DOI}`, p.arxiv && `arXiv: ${p.arxiv}`, p.s2 && `Semantic Scholar paperId: ${p.s2}`,
@@ -197,7 +198,7 @@ async function updateNoteLinkPicker(ta) {
 }
 
 async function openNoteRef(id, target) {
-  if (!target) return toast("That note's Zotero folder no longer exists.", { error: true });
+  if (!target) return toast("That note's Noctua folder no longer exists.", { error: true });
   if (N.target !== target) { N.target = null; await loadNoteFolder(target); }
   if (N.doc?.id !== id) await openNote(id);
 }

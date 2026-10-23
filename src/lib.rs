@@ -2,9 +2,12 @@
 //! graphs, Zotero folders and LaTeX notes. `start` runs the local web server;
 //! the browser binary (`src/main.rs`) and the desktop app (`app/`) both use it.
 
+mod agent;
 mod cache;
 mod chat;
 mod history;
+mod library;
+mod reader;
 mod mcp;
 mod notes;
 pub mod paths;
@@ -59,13 +62,11 @@ impl std::fmt::Display for Status {
 
 impl std::error::Error for Status {}
 
-pub(crate) const NO_CLAUDE: &str = "could not start the `claude` CLI. Install Claude Code \
-(https://claude.com/claude-code); if it's installed but not found, put its full path in \
-\"claude_path\" in settings.json in Noctua's data folder";
 
 struct App {
     s2: S2,
     zotero: Zotero,
+    library: library::Library,
     /// UI commands from the chat assistant's tools, forwarded to the browser.
     actions: broadcast::Sender<Value>,
     base_url: String,
@@ -76,15 +77,13 @@ struct App {
     data_dir: PathBuf,
     settings: std::sync::Mutex<Settings>,
     desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
+    login_gate: tokio::sync::Mutex<()>,
+    chat_jobs: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl App {
     fn ui(&self, action: Value) {
         let _ = self.actions.send(action);
-    }
-
-    fn claude_path(&self) -> Option<String> {
-        self.settings.lock().unwrap().claude_path.clone()
     }
 }
 
@@ -173,7 +172,7 @@ async fn status(State(app): Shared) -> Json<Value> {
 }
 
 async fn zotero_collections(State(app): Shared) -> ApiResult {
-    Ok(Json(app.zotero.collections().await?))
+    Ok(Json(app.library.collections()?))
 }
 
 #[derive(Deserialize)]
@@ -191,7 +190,7 @@ async fn match_title(State(app): Shared, Query(q): Query<TitleQ>) -> ApiResult {
 }
 
 async fn zotero_items(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
-    Ok(Json(json!(app.zotero.items(&q.target)?)))
+    Ok(Json(json!(app.library.items(&q.target)?)))
 }
 
 async fn project_graph(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
@@ -199,7 +198,7 @@ async fn project_graph(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResul
 }
 
 async fn zotero_check(State(app): Shared, Json(b): Json<CheckBody>) -> ApiResult {
-    Ok(Json(json!(app.zotero.check(&b.papers)?)))
+    Ok(Json(json!(app.library.check(&b.papers)?)))
 }
 
 #[derive(Deserialize)]
@@ -209,7 +208,7 @@ struct RenameBody {
 }
 
 async fn zotero_rename(State(app): Shared, Json(b): Json<RenameBody>) -> ApiResult {
-    app.zotero.rename(&b.target, &b.name).await?;
+    app.library.rename(&b.target, &b.name)?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -220,7 +219,7 @@ struct NewFolderBody {
 }
 
 async fn zotero_new_folder(State(app): Shared, Json(b): Json<NewFolderBody>) -> ApiResult {
-    let id = app.zotero.create_collection(&b.parent, &b.name).await?;
+    let id = app.library.create_collection(&b.parent, &b.name)?;
     Ok(Json(json!({ "id": id })))
 }
 
@@ -228,33 +227,41 @@ async fn zotero_new_folder(State(app): Shared, Json(b): Json<NewFolderBody>) -> 
 struct ModeQ {
     #[serde(default)]
     mode: String,
+    chat_id: Option<String>,
 }
 
 async fn mcp_endpoint(State(app): Shared, Query(q): Query<ModeQ>, Json(req): Json<Value>) -> Response {
-    match mcp::handle(&app, &req, chat::mode_or_default(&q.mode)).await {
+    match mcp::handle(&app, &req, chat::mode_or_default(&q.mode), q.chat_id.as_deref()).await {
         Some(resp) => Json(resp).into_response(),
         None => StatusCode::ACCEPTED.into_response(),
     }
 }
 
-async fn chat_endpoint(State(app): Shared, Json(b): Json<chat::ChatBody>) -> Response {
-    ([(header::CONTENT_TYPE, "application/x-ndjson")], chat::stream(app, b)).into_response()
+async fn chat_endpoint(State(app): Shared, Json(b): Json<chat::ChatBody>) -> Result<Response, ApiError> {
+    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], chat::stream(app, b)?).into_response())
 }
 
-async fn chats_list(State(app): Shared) -> ApiResult {
-    Ok(Json(app.history.list()?))
+#[derive(Deserialize, Default)]
+struct AgentQuery { provider: Option<agent::Provider> }
+impl AgentQuery {
+    fn provider(&self, app: &App) -> agent::Provider { self.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent) }
 }
 
-async fn chats_get(State(app): Shared, Path(id): Path<String>) -> Response {
-    match app.history.get(&id) {
-        Ok(Some(c)) => Json(c).into_response(),
+async fn chats_list(State(app): Shared, Query(q): Query<AgentQuery>) -> ApiResult {
+    Ok(Json(app.history.list(q.provider(&app))?))
+}
+
+async fn chats_get(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> Response {
+    match app.history.get(&id, q.provider(&app)) {
+        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); Json(c).into_response() },
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such chat" }))).into_response(),
         Err(e) => ApiError(e).into_response(),
     }
 }
 
-async fn chats_delete(State(app): Shared, Path(id): Path<String>) -> ApiResult {
-    app.history.delete(&id)?;
+async fn chats_delete(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> ApiResult {
+    if app.chat_jobs.lock().unwrap().contains(&id) { return Err(Status(StatusCode::CONFLICT, "Stop this chat before deleting it.".into()).into()); }
+    app.history.delete(&id, q.provider(&app))?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -268,10 +275,11 @@ struct NewNote {
 #[derive(Deserialize)]
 struct InkBody {
     png: String,
+    provider: Option<agent::Provider>,
 }
 
 async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
-    let folder = app.zotero.folder_id(&q.target)?;
+    let folder = app.library.folder_id(&q.target)?;
     Ok(Json(app.notes.list(&folder)?))
 }
 
@@ -279,7 +287,7 @@ async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
 async fn notes_all(State(app): Shared) -> ApiResult {
     let mut out = Vec::new();
     for (folder, list) in app.notes.list_all()? {
-        let target = app.zotero.folder_target(&folder);
+        let target = app.library.folder_target(&folder);
         for mut n in list.as_array().cloned().unwrap_or_default() {
             n["folder"] = json!(folder);
             n["target"] = json!(target);
@@ -290,12 +298,12 @@ async fn notes_all(State(app): Shared) -> ApiResult {
 }
 
 async fn notes_create(State(app): Shared, Json(b): Json<NewNote>) -> ApiResult {
-    let folder = app.zotero.folder_id(&b.target)?;
+    let folder = app.library.folder_id(&b.target)?;
     Ok(Json(app.notes.create(&folder, &b.title)?))
 }
 
 async fn notes_get(State(app): Shared, Path((target, id)): Path<(String, String)>) -> Response {
-    let res = app.zotero.folder_id(&target).and_then(|f| app.notes.get(&f, &id));
+    let res = app.library.folder_id(&target).and_then(|f| app.notes.get(&f, &id));
     match res {
         Ok(Some(n)) => Json(n).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such note" }))).into_response(),
@@ -304,12 +312,12 @@ async fn notes_get(State(app): Shared, Path((target, id)): Path<(String, String)
 }
 
 async fn notes_save(State(app): Shared, Path((target, id)): Path<(String, String)>, Json(doc): Json<Value>) -> ApiResult {
-    let folder = app.zotero.folder_id(&target)?;
+    let folder = app.library.folder_id(&target)?;
     Ok(Json(json!({ "updated": app.notes.save(&folder, &id, doc)? })))
 }
 
 async fn notes_delete(State(app): Shared, Path((target, id)): Path<(String, String)>) -> ApiResult {
-    let folder = app.zotero.folder_id(&target)?;
+    let folder = app.library.folder_id(&target)?;
     app.notes.delete(&folder, &id)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -326,13 +334,13 @@ async fn note_image_upload(
     Query(q): Query<ImageNameQ>,
     body: axum::body::Bytes,
 ) -> ApiResult {
-    let folder = app.zotero.folder_id(&target)?;
+    let folder = app.library.folder_id(&target)?;
     Ok(Json(json!({ "path": app.notes.save_image(&folder, &q.name, &body)? })))
 }
 
 async fn note_image_get(State(app): Shared, Path((target, file)): Path<(String, String)>) -> Response {
     let found = app
-        .zotero
+        .library
         .folder_id(&target)
         .and_then(|f| app.notes.image_path(&f, &file))
         .and_then(|(path, mime)| Ok((std::fs::read(path)?, mime)));
@@ -351,12 +359,13 @@ async fn note_image_get(State(app): Shared, Path((target, file)): Path<(String, 
 }
 
 async fn ink_latex(State(app): Shared, Json(b): Json<InkBody>) -> ApiResult {
-    Ok(Json(json!({ "latex": notes::ink_to_latex(&app, &b.png).await? })))
+    Ok(Json(json!({ "latex": notes::ink_to_latex(&app, b.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent), &b.png).await? })))
 }
 
 async fn zotero_add(State(app): Shared, Json(b): Json<AddBody>) -> ApiResult {
-    app.zotero.add(&b.paper, b.target.as_deref(), b.attach_pdf).await?;
-    Ok(Json(json!({ "ok": true })))
+    let key = app.library.save(&b.paper, b.target.as_deref().unwrap_or("L1"))?;
+    let warning = if b.attach_pdf { app.library.download(&key).await.err().map(|e| format!("{e:#}")) } else { None };
+    Ok(Json(json!({ "ok": true, "key": key, "paper": app.library.paper(&key)?, "warning": warning })))
 }
 
 fn asset(body: &'static str, mime: &'static str) -> impl IntoResponse {
@@ -490,6 +499,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     let app = Arc::new(App {
         s2: S2::new(key, cache),
         zotero: Zotero::new(settings::zotero_dir(&settings)),
+        library: library::Library::open(data.join("library"))?,
         actions: broadcast::channel(32).0,
         base_url: url.clone(),
         chat_dir: data.join(".noctua-chat"),
@@ -499,9 +509,15 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         data_dir: data,
         settings: std::sync::Mutex::new(settings),
         desktop: opts.desktop,
+        login_gate: tokio::sync::Mutex::new(()),
+        chat_jobs: std::sync::Mutex::new(Default::default()),
     });
 
-    let router = Router::new()
+    Ok((url, axum::serve(listener, router(app, hosts)).into_future()))
+}
+
+fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
+    Router::new()
         .route("/", get(|| async { asset(include_str!("../web/index.html"), "text/html; charset=utf-8") }))
         .route("/app.js", get(|| async { asset(include_str!("../web/app.js"), "text/javascript; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(include_str!("../web/style.css"), "text/css; charset=utf-8") }))
@@ -522,6 +538,12 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         .route("/api/similar", get(similar))
         .route("/api/links", post(links))
         .route("/api/status", get(status))
+        .route("/api/library/collections", get(zotero_collections))
+        .route("/api/library/items", get(zotero_items))
+        .route("/api/library/check", post(zotero_check))
+        .route("/api/library/add", post(zotero_add))
+        .route("/api/library/rename", post(zotero_rename))
+        .route("/api/library/folder", post(zotero_new_folder))
         .route("/api/zotero/collections", get(zotero_collections))
         .route("/api/match", get(match_title))
         .route("/api/zotero/items", get(zotero_items))
@@ -544,6 +566,9 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         .route("/api/chats/{id}", get(chats_get).delete(chats_delete))
         .route("/mcp", post(mcp_endpoint))
         .route("/api/settings", get(settings::get))
+        .route("/api/settings/agent", post(settings::set_agent))
+        .route("/api/agents/{provider}", get(agent::status))
+        .route("/api/agents/{provider}/login", post(agent::login))
         .route("/api/settings/key", post(settings::set_key).delete(settings::delete_key))
         .route("/api/settings/skip", post(settings::skip_key))
         .route("/api/settings/zotero", post(settings::set_zotero))
@@ -551,8 +576,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         .route("/api/desktop/open", post(desktop_open))
         .route("/api/desktop/pick-folder", post(desktop_pick_folder))
         .route("/api/desktop/close", post(desktop_close))
+        .merge(reader::routes())
         .with_state(app)
-        .layer(middleware::from_fn_with_state(hosts, guard));
-
-    Ok((url, axum::serve(listener, router).into_future()))
+        .layer(middleware::from_fn_with_state(hosts, guard))
 }

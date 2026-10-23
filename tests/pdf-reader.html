@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><title>Noctua reader integration test</title>
+<link rel="stylesheet" href="../web/pdf.css">
+<body class="pdf-mode"><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={get:()=>null,set(){}},paperURL=key=>'/api/papers/'+key;
+const NoctuaLatex={renderDoc:s=>s.map(esc)};
+async function api(){return PDF.annotations;}
+function updateChatContext(){}function setMode(){}function toast(e){console.error(e);}function openPaperView(){}
+</script>
+<script src="../web/pdf.js"></script>
+<script type="module">
+const report=s=>window.webkit?.messageHandlers.result.postMessage(s);
+const assert=(v,m)=>{if(!v)throw Error(m);};
+try{
+ const m=await import('../web/vendor/pdfjs/build/pdf.mjs');m.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(m);
+ const page='<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R';
+ const stream='BT /F1 24 Tf 72 700 Td (Energy and quantum mechanics) Tj ET';
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R 6 0 R 7 0 R] /Count 3 >>',page+' /Annots [8 0 R 9 0 R] >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream',page+' >>',page+' >>','<< /Type /Annot /Subtype /Link /Rect [72 690 140 725] /Dest [6 0 R /XYZ 72 700 0] >>','<< /Type /Annot /Subtype /Link /Rect [145 690 240 725] /A << /S /URI /URI (https://example.org/paper) >> >>'];
+ let pdf='%PDF-1.7\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+o+'\nendobj\n';});const xref=pdf.length;pdf+='xref\n0 10\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 10 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ const doc=await m.getDocument({data:new TextEncoder().encode(pdf),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
+ Object.assign(PDF,{key:'fixture',paper:{title:'Fixture'},doc,page:1,dark:true,annotations:[{id:'a',kind:'highlight',page:2,color:'#ffd400',rects:[[.1,.1,.2,.04]],status:'accepted',comment:'Test',replies:[]}]});
+ await renderPDF();assert(document.querySelectorAll('.pdf-page').length===3,'missing continuous page placeholders');
+ const first=pdfPageEntries[0];await ensurePDFPage(first);assert(first.links.length===2,'embedded PDF links missing');
+ await showPDFLinkPreview(first.links.find(l=>l.url),100,100,true);assert($('#pdf-link-preview').textContent.includes('External link'),'external link not labeled');assert($('#pdf-link-preview a').href==='https://example.org/paper','wrong external target');
+ await showPDFLinkPreview(first.links.find(l=>l.dest),100,100,true);assert($('#pdf-link-preview').textContent.includes('Page 2'),'citation did not resolve');assert($('#pdf-link-preview canvas').width>0,'citation crop missing');closePDFLinkPreview();
+ await pdfNavigate(2);assert(PDF.page===2&&pdfPageEntries[1].loaded,'scroll navigation did not load page');
+ await refreshPDFAnnotations();await selectPDFAnnotation('a');assert(pdfPageBox(2).querySelector('.pdf-mark.selected'),'wrong page for highlighted comment');
+ document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));assert(PDF.selected===null&&!pdfPageBox(2).querySelector('.pdf-mark.selected'),'outside click left bold highlight');
+ const before=pdfPageBox(2).getBoundingClientRect();await zoomPDF(1.75,{page:2,x:.5,y:.3,screenX:450,screenY:200});assert(pdfPageBox(2).getBoundingClientRect().width>before.width,'zoom did not resize continuous pages');
+ await pdfNavigate(3);assert(PDF.page===3,'third page navigation failed');
+ report('PASS: actual PDF.js continuous pages, links, citation crop, selection, outside click and zoom');
+}catch(e){report('FAIL: '+e.stack);}
+</script>
