@@ -1,6 +1,6 @@
 [package]
 name = "noctua"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "Research-paper explorer: Semantic Scholar citation graphs, a native PDF library and LaTeX notes"
 
