@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<meta charset="utf-8"><title>Noctua PR 3 demo</title>
+<link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/pdf.css"><link rel="stylesheet" href="../web/icons.css">
+<style>
+body{margin:0;width:1400px;height:900px}header{height:52px;box-sizing:border-box}main{height:848px!important}#left{width:280px;min-width:280px}#right{width:300px;min-width:300px}#pdf-stage{min-width:0}.demo-label{margin-left:auto;color:var(--muted);font-size:12px}.pdf-scroll{padding:18px 20px}#chat{display:flex;flex-direction:column;height:calc(100% - 38px)}#chat-log{flex:1;padding:18px}#chat-form{padding:12px}#chat-input{width:100%;box-sizing:border-box;min-height:84px}.demo-settings{display:none;position:fixed;inset:80px 230px;background:var(--panel);border:1px solid var(--line);border-radius:16px;z-index:2000;padding:28px;box-shadow:0 16px 60px #0002}.demo-settings h2{margin-top:0}.demo-settings h3{margin:24px 0 18px}.demo-settings p{color:var(--muted);font-size:13px}
+</style>
+<body class="pdf-mode">
+<header><div class="brand">🦉 <span>Noctua</span></div><div class="mode-switch"><button data-icon="network">Graph</button><button data-icon="notebook-pen">Notes</button><button class="active" data-icon="book-open">Reader</button></div><span class="demo-label">Reader feature demo · fictional paper and annotations</span></header>
+<main><aside id="left"><div id="pdf-sidebar"></div></aside><section id="pdf-stage"></section><aside id="right"><div class="tabs"><button data-rtab="paper">Paper</button><button data-rtab="chat" class="active">Chat</button></div><section id="chat"><div id="chat-log"><p class="hint">Ask about this paper</p><div class="msg assistant"><div class="body">Select a passage or click a figure to bring its context into this conversation.</div></div></div><div id="chat-selections" hidden></div><form id="chat-form"><textarea id="chat-input" placeholder="Ask about this paper…"></textarea><button data-icon="send" data-icon-only aria-label="Send"></button></form></section><section id="details" hidden></section></aside></main>
+<div class="demo-settings" id="demo-settings"></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)};const chat={provider:'codex',id:'demo'};
+const NoctuaLatex={renderDoc:blocks=>blocks.map(esc)},paperURL=k=>'/api/demo/'+k;
+async function api(){return PDF.annotations}function updateChatContext(){}function setMode(){}function showRightTab(){}function toast(message){console.log(message)}function openPaperView(){}
+</script>
+<script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
+<script type="module">
+try{
+ const engine=await import('../web/vendor/pdfjs/build/pdf.mjs');engine.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(engine);
+ const lines=[['Learning Reliable World Models',54,744,19],['A fictional research paper for the Noctua Reader demo',54,721,10],['Abstract',54,684,14],['We introduce a stable latent dynamics model that learns directly',54,658,12],['from visual observations using a compact predictive objective.',54,641,12],['1  Method',54,602,14],['Our method combines a shared visual encoder with an action-',54,576,12],['conditioned predictor and a simple regularization objective.',54,559,12],['2  Results',54,520,14],['The model improves prediction accuracy across three environments',54,494,12],['while reducing the computational cost of downstream planning.',54,477,12],['3  Limitations',54,438,14],['Performance depends on the diversity of the offline training data.',54,412,12],['Long-horizon predictions can lose fine-grained visual details.',54,395,12],['Encoder',91,296,12],['Predictor',262,296,12],['Latent state',435,296,12],['Figure 1: A compact predictive learning pipeline.',54,236,11],['A shared encoder maps observations to a latent representation.',54,220,11],['The predictor estimates the next state conditioned on an action.',54,204,11],['References',54,155,14],['[1] A. Researcher. Stable predictive representations. 2025.',54,131,11],['[2] B. Scientist. Efficient visual planning. 2024.',54,115,11]];
+ const stream='\n0.88 0.93 0.97 rg 64 268 118 62 re f 235 268 118 62 re f 406 268 118 62 re f 0.35 0.45 0.55 RG 1.2 w 64 268 118 62 re S 235 268 118 62 re S 406 268 118 62 re S 182 299 m 235 299 l S 353 299 m 406 299 l S'+'\n0 0 0 rg\n'+lines.map(([text,x,y,size])=>`BT /F1 ${size} Tf ${x} ${y} Td (${text.replace(/[()\\]/g,'\\$&')}) Tj ET`).join('\n');
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+ let pdf='%PDF-1.7\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+o+'\nendobj\n'});const xref=pdf.length;pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ const doc=await engine.getDocument({data:new TextEncoder().encode(pdf),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
+ Object.assign(PDF,{key:'demo',paper:{title:'Learning Reliable World Models'},doc,page:1,scale:.91,dark:false});
+ PDF.annotations=Object.keys(pdfCategories).map((category,index)=>({id:'demo-'+category,author:'assistant',kind:'highlight',category,source:'auto-highlight',page:1,color:pdfCategories[category].color,rects:[[54/612,(792-[658,576,494,412][index]-12)/792,.79,32/792]],quote:[lines[3][0]+' '+lines[4][0],lines[6][0]+' '+lines[7][0],lines[9][0]+' '+lines[10][0],lines[12][0]+' '+lines[13][0]][index],comment:['A stable predictive objective is the central contribution.','The encoder and predictor form the main learning method.','Prediction improves while planning requires less computation.','Limited data diversity and long-horizon detail remain challenges.'][index],status:'accepted',revision:1,replies:[]}));
+ pdfOutlines.set('demo',{status:'ready',outline:{source:'ai',entries:[{title:'Abstract',page:1,level:1,y:.12},{title:'Method',page:1,level:1,y:.24},{title:'Results',page:1,level:1,y:.34},{title:'Limitations',page:1,level:1,y:.44},{title:'References',page:1,level:1,y:.79}]}});
+ ensurePDFSidebar();await renderPDF();await ensurePDFPage(pdfPageEntries[0]);await refreshPDFAnnotations();renderPDFOutline();
+ window.demoScene=async name=>{
+  $('#demo-settings').style.display='none';getSelection().removeAllRanges();NoctuaChatSelections.consume(NoctuaChatSelections.snapshot());$('#selection-add-chat').hidden=true;
+  setPDFSidebarTab(name==='outline'?'outline':'annotations');
+  if(name==='attachments'){
+   const entry=pdfPageEntries[0];await NoctuaPDFObjects.mount(entry,await doc.getPage(1),engine,()=>true);
+   const region=entry.objects.find(o=>o.label==='Figure 1');if(!region)throw Error('Figure demo was not detected');NoctuaPDFObjects.attach(entry,region);
+   const span=[...entry.box.querySelectorAll('.textLayer span')].find(span=>span.textContent.startsWith('Our method'));
+   const range=document.createRange();range.selectNodeContents(span);const rect=normalizedRect(span.getBoundingClientRect(),entry.box.getBoundingClientRect());
+   NoctuaChatSelections.add({text:span.textContent,source:{kind:'pdf',label:PDF.paper.title,paper_key:'demo',page:1,page_end:1},range,anchor:{kind:'pdf',page:1,rect,pages:[{page:1,rects:[rect]}]}});
+   region.button.classList.add('hovered');$('#chat-input').value='Explain how this method relates to Figure 1.';
+   $('#chat-selections [data-quote-preview]').click();
+   $('#chat-selections').dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}));
+  }
+  if(name==='settings'){
+   const source=await (await fetch('../web/setup.js')).text(),start=source.indexOf('function highlightColorOptions('),end=source.indexOf('function syncHighlightColorSettings(');
+   $('#demo-settings').innerHTML='<h2>Appearance</h2><p>Reader highlight palette and AI category defaults</p>'+Function(source.slice(start,end)+';return highlightColorSettings();')();$('#demo-settings').style.display='block';
+  }
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return name;
+ };
+ await window.demoScene('outline');window.demoReady=true;
+}catch(error){window.demoError=error.stack;document.body.textContent=error.stack}
+</script>
+</html>
