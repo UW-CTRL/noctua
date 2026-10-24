@@ -184,6 +184,9 @@ verifying new updates. The public key is compiled into the native app from
 `NOCTUA_UPDATER_PUBLIC_KEY`; it is not supplied by the update server.
 
 The release-only `app/tauri.release.conf.json` enables updater artifact signing.
+The updater disables legacy ZIP support to avoid the vulnerable `zip` dependency.
+Keep Windows updates as raw NSIS `.exe` files and Linux updates as raw AppImages;
+macOS `.app.tar.gz` support remains enabled independently of that feature.
 Ordinary local builds do not require a private key. They show an explanatory
 error when checking for updates unless built with `NOCTUA_UPDATER_PUBLIC_KEY`.
 For a local signed build, export that variable and Tauri's signing environment
