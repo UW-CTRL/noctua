@@ -147,6 +147,8 @@ function appearanceSection() {
       <select id="setup-app-theme">${options(document.documentElement.dataset.theme || 'system')}</select></label>
     <label class="setting-field" for="setup-notes-theme"><span>Notes theme</span>
       <select id="setup-notes-theme">${options($('#notes-stage').dataset.notesTheme || 'dark')}</select></label>
+    <label class="setting-field" for="setup-reader-theme"><span>Reader theme</span>
+      <select id="setup-reader-theme">${options(PDF.theme || 'dark')}</select></label>
     </div>
     <p class="setup-msg ok" role="status"></p></section>`;
 }
@@ -382,8 +384,10 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   });
   card.addEventListener('change', async (e) => {
-    if (e.target.id === 'setup-app-theme' || e.target.id === 'setup-notes-theme') {
-      if (e.target.id === 'setup-app-theme') setAppTheme(e.target.value); else setNotesTheme(e.target.value);
+    if (['setup-app-theme', 'setup-notes-theme', 'setup-reader-theme'].includes(e.target.id)) {
+      if (e.target.id === 'setup-app-theme') setAppTheme(e.target.value);
+      else if (e.target.id === 'setup-notes-theme') setNotesTheme(e.target.value);
+      else await setReaderTheme(e.target.value);
       msg(e.target.closest('section'), 'Saved.', true); return;
     }
     if (['setup-model', 'setup-custom-model', 'setup-reasoning', 'setup-fast'].includes(e.target.id)) {

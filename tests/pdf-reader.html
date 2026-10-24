@@ -3,7 +3,7 @@
 <body class="pdf-mode"><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const store={get:()=>null,set(){}},paperURL=key=>'/api/papers/'+key;
+const preferences=new Map(),store={get:k=>preferences.get(k),set:(k,v)=>preferences.set(k,v)},paperURL=key=>'/api/papers/'+key;
 const NoctuaLatex={renderDoc:s=>s.map(esc)};
 async function api(){return PDF.annotations;}
 function updateChatContext(){}function setMode(){}function toast(e){console.error(e);}function openPaperView(){}
@@ -29,6 +29,22 @@ try{
  document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));assert(PDF.selected===null&&!pdfPageBox(2).querySelector('.pdf-mark.selected'),'outside click left bold highlight');
  const before=pdfPageBox(2).getBoundingClientRect();await zoomPDF(1.75,{page:2,x:.5,y:.3,screenX:450,screenY:200});assert(pdfPageBox(2).getBoundingClientRect().width>before.width,'zoom did not resize continuous pages');
  await pdfNavigate(3);assert(PDF.page===3,'third page navigation failed');
- report('PASS: actual PDF.js continuous pages, links, citation crop, selection, outside click and zoom');
+ await setReaderTheme('dark');
+ await $('#pdf-stage [data-dark]').onclick();
+ assert(PDF.theme==='dark'&&!PDF.dark&&store.get('noctua.pdfPageTheme')==='light','toolbar did not save separate light page preference');
+ assert(PDF.page===3,'theme change lost current page');
+ assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(209, 211, 214)','light pages need gray surroundings');
+ assert(getComputedStyle($('#pdf-sidebar')).color==='rgb(232, 232, 234)','page toggle changed sidebar theme');
+ let pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
+ assert(pixel[0]>240&&pixel[1]>240&&pixel[2]>240,'light reader did not restore original page colors');
+ await setReaderTheme('system');assert($('#pdf-stage').dataset.readerTheme===(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),'system reader theme does not follow OS');
+ assert(!PDF.dark,'reader theme changed PDF pages');
+ await setPDFPageTheme('dark');
+ assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(23, 25, 29)','dark surroundings not restored');
+ pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
+ assert(pixel[0]<60&&pixel[1]<60&&pixel[2]<60,'dark pages not restored');
+ store.set('noctua.readerTheme','light');window.dispatchEvent(new StorageEvent('storage',{key:'noctua.readerTheme'}));
+ assert(PDF.theme==='light'&&PDF.dark,'reader preference did not sync independently across windows');
+ report('PASS: continuous reader, links, selection, zoom, saved reader themes, system appearance and gray light-page background');
 }catch(e){report('FAIL: '+e.stack);}
 </script>
