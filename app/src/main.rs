@@ -105,10 +105,10 @@ fn run(app: &AppHandle, cmd: DesktopCmd) {
                 let _ = w.close();
             }
         }
-        DesktopCmd::Update(action, reply) => {
+        DesktopCmd::Update(action, version, reply) => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                let result = updater::run(&app, action).await.map_err(|e| e.to_string());
+                let result = updater::run(&app, action, version).await.map_err(|e| e.to_string());
                 let _ = reply.send(result);
             });
         }

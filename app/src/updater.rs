@@ -11,12 +11,29 @@ pub struct Updates(tokio::sync::Mutex<Pending>);
 struct Pending {
     update: Option<Update>,
     installed: bool,
+    startup_checked: bool,
 }
 
-pub async fn run(app: &AppHandle, action: UpdateAction) -> anyhow::Result<Value> {
+fn summaries(raw: &Value, current: &str, latest: &str) -> Vec<Value> {
+    let (Ok(current), Ok(latest)) = (semver::Version::parse(current), semver::Version::parse(latest)) else { return vec![] };
+    let mut entries: Vec<_> = raw["release_summaries"].as_array().into_iter().flatten().filter_map(|entry| {
+        let version = semver::Version::parse(entry["version"].as_str()?).ok()?;
+        (version > current && version <= latest && version.pre.is_empty()).then(|| (version, entry.clone()))
+    }).collect();
+    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.dedup_by(|a, b| a.0 == b.0);
+    entries.into_iter().map(|(_, entry)| entry).collect()
+}
+
+pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>) -> anyhow::Result<Value> {
     let state = app.state::<Updates>();
     let mut pending = state.0.try_lock()
         .map_err(|_| anyhow::anyhow!("An update operation is already in progress. Please wait."))?;
+    if matches!(action, UpdateAction::StartupCheck) {
+        if pending.startup_checked { return Ok(json!({ "status": "skipped" })); }
+        // Claim before awaiting the network: opening another window must not show a second prompt.
+        pending.startup_checked = true;
+    }
     if pending.installed {
         if matches!(action, UpdateAction::Restart) {
             // Give the local HTTP response time to reach the Settings panel.
@@ -29,7 +46,7 @@ pub async fn run(app: &AppHandle, action: UpdateAction) -> anyhow::Result<Value>
         return Ok(json!({ "status": "installed" }));
     }
     match action {
-        UpdateAction::Check => {
+        UpdateAction::Check | UpdateAction::StartupCheck => {
             #[cfg(target_os = "linux")]
             anyhow::ensure!(std::env::var_os("APPIMAGE").is_some(),
                 "In-app updates require the AppImage build on Linux. Update .deb and .rpm installations with your package manager.");
@@ -42,18 +59,38 @@ pub async fn run(app: &AppHandle, action: UpdateAction) -> anyhow::Result<Value>
             pending.update = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check())
                 .await.map_err(|_| anyhow::anyhow!("Checking for updates timed out. Please try again."))??;
             Ok(match &pending.update {
-                Some(update) => json!({ "status": "available", "version": update.version }),
+                Some(update) => json!({ "status": "available", "version": update.version,
+                    "current_version": update.current_version,
+                    "releases": summaries(&update.raw_json, &update.current_version, &update.version) }),
                 None => json!({ "status": "current" }),
             })
         }
         UpdateAction::Install => {
             let update = pending.update.as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Check for updates before installing."))?;
+            anyhow::ensure!(version.as_ref().is_none_or(|version| version == &update.version),
+                "The offered update changed in another window. Check for updates again before installing.");
             update.download_and_install(|_, _| {}, || {}).await?;
             pending.installed = true;
             pending.update = None;
             Ok(json!({ "status": "installed" }))
         }
         UpdateAction::Restart => anyhow::bail!("Install an update before restarting."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changes_cover_only_versions_between_installed_and_offered_releases() {
+        let raw = json!({"release_summaries": [
+            {"version":"0.2.0"}, {"version":"0.1.0"}, {"version":"0.4.0"},
+            {"version":"0.3.0"}, {"version":"0.3.0"}, {"version":"0.3.0-beta"},
+            {"version":"invalid"}, {"changes":[]}
+        ]});
+        assert_eq!(summaries(&raw, "0.1.0", "0.3.0"), vec![json!({"version":"0.3.0"}), json!({"version":"0.2.0"})]);
+        assert!(summaries(&Value::Null, "0.1.0", "0.3.0").is_empty());
     }
 }

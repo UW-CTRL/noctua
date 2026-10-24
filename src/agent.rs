@@ -369,15 +369,17 @@ mod tests {
         let f = Fixture::with_desktop(Some(tx))?;
         assert_eq!(f.request("/api/desktop/update", Some(json!({"action":"arbitrary"})), None).await.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let native = tokio::spawn(async move {
-            for expected in ["check", "install", "restart"] {
-                let Some(crate::DesktopCmd::Update(action, reply)) = rx.recv().await else { panic!("Expected update request") };
-                assert!(matches!((expected, action), ("check", crate::UpdateAction::Check) | ("install", crate::UpdateAction::Install) | ("restart", crate::UpdateAction::Restart)));
+            for expected in ["startup_check", "check", "install", "restart"] {
+                let Some(crate::DesktopCmd::Update(action, version, reply)) = rx.recv().await else { panic!("Expected update request") };
+                if expected == "install" { assert_eq!(version.as_deref(), Some("0.3.0")); }
+                assert!(matches!((expected, action), ("startup_check", crate::UpdateAction::StartupCheck) | ("check", crate::UpdateAction::Check) | ("install", crate::UpdateAction::Install) | ("restart", crate::UpdateAction::Restart)));
                 if expected == "install" { let _ = reply.send(Err("Signature verification failed".into())); }
                 else { let _ = reply.send(Ok(json!({"status": expected}))); }
             }
         });
+        assert_eq!(f.json("/api/desktop/update", Some(json!({"action":"startup_check"}))).await["status"], "startup_check");
         assert_eq!(f.json("/api/desktop/update", Some(json!({"action":"check"}))).await["status"], "check");
-        let failure = f.request("/api/desktop/update", Some(json!({"action":"install"})), None).await;
+        let failure = f.request("/api/desktop/update", Some(json!({"action":"install", "version":"0.3.0"})), None).await;
         assert_eq!(failure.status(), StatusCode::BAD_GATEWAY);
         assert!(String::from_utf8(to_bytes(failure.into_body(), usize::MAX).await?.to_vec())?.contains("Signature verification failed"));
         assert_eq!(f.json("/api/desktop/update", Some(json!({"action":"restart"}))).await["status"], "restart");

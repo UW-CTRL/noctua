@@ -2385,6 +2385,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "noctua",
+ "semver",
  "serde_json",
  "tauri",
  "tauri-build",

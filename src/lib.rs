@@ -49,12 +49,12 @@ pub enum DesktopCmd {
     /// Close a window (its last tab was closed).
     CloseWindow(String),
     /// Check, install, or restart after a signed desktop update.
-    Update(UpdateAction, oneshot::Sender<Result<Value, String>>),
+    Update(UpdateAction, Option<String>, oneshot::Sender<Result<Value, String>>),
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UpdateAction { Check, Install, Restart }
+pub enum UpdateAction { Check, StartupCheck, Install, Restart }
 
 pub struct ServeOptions {
     /// 0 picks a free port.
@@ -480,11 +480,11 @@ async fn desktop_pick_folder(State(app): Shared) -> ApiResult {
 }
 
 #[derive(Deserialize)]
-struct UpdateBody { action: UpdateAction }
+struct UpdateBody { action: UpdateAction, version: Option<String> }
 
 async fn desktop_update(State(app): Shared, Json(body): Json<UpdateBody>) -> ApiResult {
     let (tx, rx) = oneshot::channel();
-    desktop(&app)?.send(DesktopCmd::Update(body.action, tx))
+    desktop(&app)?.send(DesktopCmd::Update(body.action, body.version, tx))
         .map_err(|_| anyhow::anyhow!("The desktop app is unavailable."))?;
     let result = rx.await.map_err(|_| anyhow::anyhow!("The desktop updater stopped."))?
         .map_err(anyhow::Error::msg)?;

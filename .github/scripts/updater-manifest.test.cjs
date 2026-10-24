@@ -12,8 +12,9 @@ function fixture() {
     getReleaseAsset: async p => { calls.push(['get', p.asset_id]); return { data: Buffer.from('c2lnbmF0dXJl\n') }; },
     deleteReleaseAsset: async p => { calls.push(['delete', p.asset_id]); },
     uploadReleaseAsset: async p => { calls.push(['upload', JSON.parse(p.data)]); },
+    listReleases: () => {},
   };
-  const args = { github: { rest: { repos } }, context: { repo: { owner: 'UW-CTRL', repo: 'noctua' } },
+  const args = { github: { rest: { repos }, paginate: async () => [] }, context: { repo: { owner: 'UW-CTRL', repo: 'noctua' } },
     release: { id: 42, tag_name: 'v0.1.2', body: 'Release notes' }, assets };
   return { args, assets, calls, repos };
 }
@@ -24,11 +25,23 @@ test('one complete manifest maps both Mac architectures to the signed Universal 
   const uploaded = f.calls.at(-1)[1];
   assert.equal(uploaded.version, '0.1.2');
   assert.equal(uploaded.notes, 'Release notes');
+  assert.deepEqual(uploaded.release_summaries, [{ version: '0.1.2', changes: [] }]);
   assert.deepEqual(Object.keys(uploaded.platforms), ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64', 'linux-x86_64']);
   assert.deepEqual(uploaded.platforms['darwin-aarch64'], uploaded.platforms['darwin-x86_64']);
   assert.equal(uploaded.platforms['windows-x86_64'].url, 'https://example.com/Noctua_0.1.2_x64-setup.exe');
   assert.equal(uploaded.platforms['linux-x86_64'].signature, 'c2lnbmF0dXJl');
   assert.equal(f.calls.filter(c => c[0] === 'get').length, 3);
+});
+
+test('release history summaries include older stable releases and fail closed on API errors', async () => {
+  const f = fixture();
+  f.args.github.paginate = async () => [{ tag_name: 'v0.1.1', body: '### Bug Fixes\n* Fix startup' }];
+  await manifest(f.args);
+  assert.deepEqual(f.calls.at(-1)[1].release_summaries[1], { version: '0.1.1', changes: [{ kind: 'fixes', items: ['Fix startup'] }] });
+  const failure = fixture();
+  failure.args.github.paginate = async () => { throw new Error('History unavailable'); };
+  await assert.rejects(manifest(failure.args), /History unavailable/);
+  assert(!failure.calls.some(c => ['delete', 'upload'].includes(c[0])));
 });
 
 test('each missing, empty, or incomplete bundle or signature prevents manifest writes', async () => {

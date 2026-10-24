@@ -104,6 +104,8 @@ test('updater manifest upload must succeed before an enabled release is publishe
       f.assets.push({ name: `${name}.sig`, size: 10, state: 'uploaded', id: 10 });
     }
     const repos = f.args.github.rest.repos;
+    repos.listReleases = () => {};
+    f.args.github.paginate = async method => method === repos.listReleases ? [] : f.assets;
     repos.getReleaseAsset = async () => ({ data: 'c2lnbmF0dXJl' });
     let uploaded = false;
     repos.uploadReleaseAsset = async params => {

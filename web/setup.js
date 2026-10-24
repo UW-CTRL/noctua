@@ -229,12 +229,26 @@ function dataSection(s) {
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
+function updateSummary(result) {
+  const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
+  const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
+  return `<p class="update-version">${esc(result.current_version || settings?.version || 'Current version')} → ${esc(result.version)}</p>` +
+    releases.map(release => {
+      const changes = Array.isArray(release.changes) ? release.changes : [];
+      const items = changes.filter(group => group && typeof group === 'object').flatMap(group => (Array.isArray(group.items) ? group.items : []).slice(0, 2)
+        .map(item => `<li><strong>${Object.hasOwn(labels, group.kind) ? labels[group.kind] : 'Other'}:</strong> ${esc(String(item))}</li>`)).slice(0, 6);
+      return `<section class="update-release"><h4>Version ${esc(release.version)}</h4>` +
+        (items.length ? `<ul>${items.join('')}</ul>` : '<p>See the full release notes for details.</p>') + '</section>';
+    }).join('') + `<p><a href="https://github.com/UW-CTRL/noctua/compare/v${encodeURIComponent(result.current_version || settings?.version || '')}...v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">All changes since your version</a> · <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Full release notes</a></p>`;
+}
+
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc(s.version || 'unknown')} · ${s.desktop ? 'Desktop app' : 'Browser app'}</p>
     ${s.desktop ? `<div class="settings-group" data-update>
       <h3>App updates</h3>
-      <p>Check the latest published release. Save your work before installing; installation may close and restart Noctua.</p>
+      <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
+      <div class="update-summary" hidden></div>
       <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
       <p class="setup-msg" role="status" aria-live="polite"></p>
     </div>` : ''}
@@ -248,12 +262,16 @@ function aboutSection(s) {
 }
 
 // The native process retains the checked release and serializes operations across windows.
-async function updateApp(button, section, msg) {
+async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
   const action = button.dataset.updateAction;
-  if (action === 'install' && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
+  if (action === 'install' && confirmInstall && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
   msg(section, { check: 'Checking for updates…', install: 'Downloading, verifying, and installing the update…', restart: 'Restarting Noctua…' }[action], true);
   try {
-    const result = await api('/api/desktop/update', { action });
+    const result = await api('/api/desktop/update', { action, ...(action === 'install' ? { version: button.dataset.updateVersion } : {}) });
+    if (result.status === 'available') button.dataset.updateVersion = result.version;
+    const summary = section.querySelector('.update-summary');
+    if (summary && result.status === 'available') { summary.innerHTML = updateSummary(result); summary.hidden = false; }
+    else if (summary && result.status === 'current') { summary.innerHTML = ''; summary.hidden = true; }
     const next = {
       available: ['install', `Update to ${result.version}`, `Version ${result.version} is available.`],
       current: ['check', 'Check for updates', 'You are using the latest published version.'],
@@ -269,6 +287,51 @@ async function updateApp(button, section, msg) {
     button.textContent = 'Check for updates';
     throw err;
   }
+}
+
+function showUpdatePrompt(result) {
+  if (document.querySelector('#app-update-dialog')) return;
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'app-update-dialog';
+  dialog.className = 'setup-card';
+  dialog.setAttribute('aria-labelledby', 'app-update-title');
+  dialog.innerHTML = `<h2 id="app-update-title">A new Noctua version is available</h2>
+    <div class="update-summary">${updateSummary(result)}</div>
+    <p>Save your work before updating. Installation may close and restart Noctua.</p>
+    <p class="setup-msg ok" role="status" aria-live="polite"></p>
+    <div class="setup-actions end"><button data-dismiss>Not now</button>
+      <button class="primary" data-update-action="install" data-update-version="${esc(result.version)}">Update to ${esc(result.version)}</button></div>`;
+  document.body.appendChild(dialog);
+  let busy = false;
+  const close = () => { dialog.close(); dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus(); };
+  dialog.querySelector('[data-dismiss]').addEventListener('click', close);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); if (!busy) close(); });
+  const button = dialog.querySelector('[data-update-action]');
+  button.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    dialog.querySelectorAll('button').forEach(node => { node.disabled = true; });
+    const msg = (_, text, ok) => {
+      const node = dialog.querySelector('.setup-msg');
+      node.textContent = text; node.classList.toggle('ok', !!ok);
+    };
+    // This dialog's Update button is the explicit confirmation of the warning above it.
+    try { await updateApp(button, dialog, msg, { confirmInstall: false }); }
+    catch (error) { msg(dialog, error.message, false); }
+    finally { busy = false; dialog.querySelectorAll('button').forEach(node => { node.disabled = false; }); }
+  });
+  dialog.showModal();
+  dialog.querySelector('[data-dismiss]').focus();
+}
+
+async function checkStartupUpdate(s = settings) {
+  if (!s?.desktop || keyNeeded(s)) return;
+  try {
+    // The native process grants this check once per launch, across all tabs/windows.
+    const result = await api('/api/desktop/update', { action: 'startup_check' });
+    if (result.status === 'available') showUpdatePrompt(result);
+  } catch { /* Startup must stay usable offline; Settings provides an explicit retry. */ }
 }
 
 // First run stays short and skippable. Settings keeps every panel mounted so
@@ -590,6 +653,7 @@ function openSetup({ firstRun = false, tab } = {}) {
 function afterSetup() {
   renderKeyBanner();
   loadCollections();
+  checkStartupUpdate();
 }
 
 // Reminder while running without a key.
@@ -631,5 +695,5 @@ document.addEventListener('click', (e) => {
 loadSettings().then(async (s) => {
   await activateAgent(s.agent || 'claude', { persist: false });
   if (keyNeeded(s)) openSetup({ firstRun: true });
-  else renderKeyBanner();
+  else { renderKeyBanner(); checkStartupUpdate(s); }
 }).catch((e) => toast(e.message, { error: true }));

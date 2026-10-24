@@ -100,7 +100,11 @@ In official desktop builds, open **Settings → About & shortcuts → Check for
 updates**, then choose **Update to …** to download and install the latest
 published stable release. Save your work before confirming installation.
 Windows closes and relaunches through its installer; macOS and Linux offer
-**Restart Noctua** after installation. Updates are checked only when requested.
+**Restart Noctua** after installation. The app also checks once on startup and
+asks whether to update when a newer stable release is available. The prompt
+shows brief categorized highlights for releases since your installed version;
+choose **Not now** to continue without installing. Startup check failures stay
+silent; Settings provides an explicit retry.
 Linux in-app updates require the AppImage build; use your package manager for
 `.deb` and `.rpm` installations. Older apps without the update button need one
 manual installation of a version containing this feature. Browser mode has no
