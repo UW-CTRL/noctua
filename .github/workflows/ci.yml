@@ -107,7 +107,7 @@ jobs:
           script: |
             const detect = require('./.github/scripts/desktop-changes.cjs');
             await detect({ context, core });
-      - name: Test release validation, change detection, and note preservation
+      - name: Test release validation, publication, change detection, and note preservation
         run: |
           python3 -m unittest discover -s .github/scripts -p 'test_*.py'
           node --test .github/scripts/*.test.cjs

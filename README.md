@@ -111,9 +111,10 @@ The browser version and the desktop app share the same data folder, key and
 settings. Linux builds of the desktop app need WebKitGTK (`libwebkit2gtk-4.1-dev`
 and friends; see the release workflow). Pushing a tag like `v0.2.0` builds
 installers for all three systems with GitHub Actions
-(`.github/workflows/release.yml`) as a draft release.
+(`.github/workflows/release.yml`). All three platform builds must succeed and all
+expected installers must be uploaded before the release is published automatically.
 See [Releasing Noctua](docs/releases.md) for version selection, tag validation,
-categorized release notes, screenshots and GIFs, draft publication, and recovery.
+categorized release notes, screenshots and GIFs, automatic publication, and recovery.
 Pull requests targeting `main` and pushes to `main` run backend and frontend
 tests, cross-platform desktop compilation checks, dependency security audits,
 and release/workflow checks. See [Continuous integration](docs/ci.md) for coverage,

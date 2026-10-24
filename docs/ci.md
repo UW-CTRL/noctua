@@ -4,7 +4,8 @@
 `main`, and manual execution. Each PR update starts fresh checks and cancels
 older runs for that PR. Jobs have read-only repository access and no release or
 deployment steps. The separate release workflow still builds installers only
-for version tags or an explicit manual release run.
+for version tags or an explicit manual release run, then publishes the release
+automatically after every platform build and installer verification succeeds.
 
 ## Checks
 
