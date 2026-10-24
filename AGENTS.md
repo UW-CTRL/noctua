@@ -1,18 +1,20 @@
 # Repository conventions
 
-Write source comments, UI text, documentation, prompts, and test fixtures in English.
+Before editing a folder, read its applicable `AGENTS.md` files for local rules
+and file inventories; do not load unrelated inventories.
 
-## Keep note features and the assistant in sync
+Keep implementation, relevant validation, and user documentation in sync in the
+same change. For note or chat-rendering changes, read and follow
+[Feature synchronization](docs/development.md#feature-synchronization) before editing.
 
-Whenever adding or changing a note feature, update these together in the same change:
+Keep the project README focused on the overview, downloads, and guide links.
+Find guide responsibilities in [docs/AGENTS.md](docs/AGENTS.md) and prompt
+responsibilities in [src/prompts/AGENTS.md](src/prompts/AGENTS.md).
 
-- Its implementation and relevant validation.
-- `src/prompts/notes.md`, the note capability guide included in the system prompt for both Claude and Codex.
-- The user-facing note guide in `showNoteHelp()` in `web/notes.js`, and relevant README documentation.
-- MCP tool descriptions or schemas in `src/mcp.rs` when the available tool behavior changes.
+## Commits
 
-Describe supported syntax, how users activate the feature, and what the assistant can actually do with the available tools. Clearly distinguish UI-only controls from assistant actions. Do not claim a tool exists unless it is implemented. Keep examples valid for Noctua's actual LaTeX subset. Backend prompt changes require rebuilding and restarting the backend before they affect running chats.
+Use `type: short description` in English, with a lowercase type and an imperative
+description: `feat`, `fix`, `refactor`, `docs`, `test`, `build`, `ci`, or `chore`.
 
-For changes to chat rendering, update `src/prompts/chat-formatting.md`, relevant
-README documentation, and rendering checks together. Keep chat Markdown and
-note LaTeX capabilities distinct in both the UI and assistant guidance.
+Keep each commit focused on one logical change, including its relevant tests and
+documentation. Split unrelated changes into separate commits.

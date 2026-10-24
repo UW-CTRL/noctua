@@ -1,5 +1,7 @@
 # Continuous integration
 
+[Documentation](README.md) · [Project README](../README.md)
+
 `.github/workflows/ci.yml` runs on pull requests targeting `main`, pushes to
 `main`, and manual execution. Pushes to `main` skip CI when every changed file is `README.md`, `AGENTS.md`,
 `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`, `LICENSE.*`, `NOTICE`, or under

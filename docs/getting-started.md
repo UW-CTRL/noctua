@@ -1,0 +1,54 @@
+# Getting started
+
+[Documentation](README.md) · [Project README](../README.md)
+
+## Install and open
+
+Download the installer for your OS from
+[GitHub Releases](https://github.com/UW-CTRL/noctua/releases/latest), install it,
+and open Noctua. On Linux, make the AppImage executable before opening it.
+
+You can continue without a Semantic Scholar API key. AI and Zotero are optional;
+you do not need them to read local PDFs or write notes.
+
+## Read your first paper and write a note
+
+| Step | Action |
+| --- | --- |
+| 1. Choose a collection | In **Library**, select a collection or use **New folder inside** (+) to create one. |
+| 2. Add a paper | Choose **Import PDF** and select a local file. Alternatively, search by title, DOI, or arXiv link and choose **Add to Noctua**. |
+| 3. Read | Select the saved paper and choose **Read PDF**. Select text to highlight it or add a comment. |
+| 4. Write | Switch to **Notes**, select the same collection, and choose **New note**. Enter a title and write a short takeaway; changes save automatically. |
+
+If a search result has no downloadable PDF, use **Attach PDF** in its saved
+paper details to add a local copy. The PDF and note are stored locally.
+
+For more, see [Research](research.md), [PDF reader](reader.md), and [Notes](notes.md).
+
+## Optional setup
+
+### Add a Semantic Scholar API key
+
+Enter a key in **Settings → Connections** for your own API access. Without one,
+online search uses a slower shared pool and may encounter rate limits.
+
+### Connect an assistant (optional)
+
+Install [Codex CLI](https://developers.openai.com/codex/cli) or
+[Claude Code](https://code.claude.com/docs/en/overview), then:
+
+1. Open **Settings → Research assistant** and choose the provider.
+2. Click **Sign in**, or use an existing CLI login detected by Noctua.
+3. Choose a model, click **Check connection**, and open **Chat**.
+
+No separate model API key is needed. Model access depends on your CLI account.
+See [Research assistant](assistant.md) for capabilities, edit modes, and prompts.
+
+### Import from Zotero (optional)
+
+Set the Zotero data folder in **Settings → Connections**, then choose
+**Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
+
+Noctua copies nested collections, metadata, citation keys, and available local
+PDFs without changing Zotero. Download cloud-only PDFs in Zotero before importing;
+existing Zotero annotations are not imported. Zotero can stay closed afterward.

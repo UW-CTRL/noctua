@@ -1,5 +1,7 @@
 # Releasing Noctua
 
+[Documentation](README.md) · [Project README](../README.md)
+
 The release workflow builds macOS Universal (Intel and Apple Silicon), Windows,
 and Linux installers. It uploads them to a shared **draft** GitHub Release.
 Once all three platform builds succeed, it verifies the completed installer uploads

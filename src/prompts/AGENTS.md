@@ -6,7 +6,8 @@ Store static task instructions as Markdown, embedded explicitly with
 
 Preserve prompt contents and provider-specific delivery when moving files unless
 a behavior change is intended. For instruction changes, review validation,
-cached analysis, and the relevant feature guide.
+cached analysis, and the relevant feature guide. Follow
+[Feature synchronization](../../docs/development.md#feature-synchronization).
 Rebuild and restart the backend to apply prompt edits.
 
 This file is a contributor reference, not an app task prompt.
