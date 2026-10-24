@@ -2,7 +2,9 @@
 
 The release workflow builds macOS Universal (Intel and Apple Silicon), Windows,
 and Linux installers. It uploads them to a shared **draft** GitHub Release.
-Publication is always manual. The workflow never bumps versions or creates tags.
+Once all three platform builds succeed, it verifies the completed installer uploads
+and publishes the release automatically. A failed or cancelled build leaves the
+release unpublished. The workflow never bumps versions or creates tags.
 
 ## Choose a version
 
@@ -61,11 +63,18 @@ All three builds check out that resolved commit and upload to the same release
 ID. Per-tag concurrency queues overlapping runs. Platform-specific installers
 have distinct names; updater metadata uploads are disabled because Noctua has no
 updater configured and a shared `latest.json` would require serialized merging.
+The final `publish` job depends on preparation and the entire build matrix. It runs
+only after they succeed and checks all seven required installers before publishing.
+It preserves the release title, notes, media, and pre-release setting. GitHub chooses
+the Latest release using version/date ordering, so an older draft retry is not
+explicitly promoted over a newer version.
 
 For manual execution, select **Actions → release → Run workflow**, use a workflow
 ref containing this workflow, and enter an **existing** tag in the `tag` field.
 The build always checks out that tag, regardless of the selected workflow ref.
-The tagged commit must contain these release scripts and configuration. Selecting
+The tagged commit must contain the preparation scripts and build configuration.
+The publication helper comes from the selected workflow ref, allowing the updated
+workflow on `main` to publish an older tagged draft without changing its source. Selecting
 a branch name as `tag` does not build or create a release from that branch.
 
 ## Prepare release notes
@@ -92,8 +101,9 @@ Labels categorize PRs, not individual commits. Direct commits are available in
 the full comparison, but may need a manually written summary in the release body.
 See [GitHub's generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes).
 
-Open the draft on **Releases**, choose **Edit**, and add an English description,
-highlights, migration guidance, screenshots, or GIF demonstrations using Markdown:
+For custom notes, create or edit the draft for the intended tag **before starting
+the workflow**. Add an English description, highlights, migration guidance,
+screenshots, or GIF demonstrations using Markdown:
 
 ```markdown
 ## Highlights
@@ -119,18 +129,32 @@ comparison baseline need correction, edit or regenerate the relevant section in
 GitHub while retaining your manual content and the marker. Rerunning the workflow
 does not refresh notes that already contain the marker.
 
-## Review and publish
+## Automatic publication
 
-Wait for **all three** platform jobs to succeed. A draft can exist while builds
-are running or after one of them fails. Check the tag, commit, version, release
-notes, comparison range, and all expected installer assets. Download and test
-installers on the supported operating systems; CI success alone does not verify
-installation and application behavior.
+Review the intended tag, commit, version, and any custom release notes before
+pushing the tag or dispatching a manual run. Builds upload into a shared draft;
+the final publication job waits for all three builds and verifies these assets:
 
-Keep the release as a draft while any job runs or any required file is missing.
-When verification is complete, choose **Publish release** in GitHub. Noctua's
-workflow does not publish automatically or configure application auto-updates.
-It refuses to rebuild a release that is already published.
+- macOS: Universal `.dmg` and `.app.tar.gz`.
+- Windows: x64 setup `.exe` and `.msi`.
+- Linux: amd64 `.AppImage`, `.deb`, and x86_64 `.rpm`.
+
+Every required asset must match the chosen version, have a completed upload state,
+and be non-empty. Missing or incomplete files fail publication and leave the draft
+available for recovery. A successful run publishes automatically; there is no
+manual publication approval step. Download and test installers on the supported
+operating systems; build success alone does not verify application behavior.
+
+Merging this workflow does not publish existing drafts retroactively. For an
+existing draft such as `v0.1.1`, dispatch **Actions → release → Run workflow** from
+updated `main` with that existing tag. It rebuilds the tagged source, preserves
+existing notes, and publishes after the same checks. Rerunning failed publication
+jobs can reuse successful build outputs. The preparation job continues to refuse
+rebuilding already published releases; retrying publication itself is a no-op for
+an already published release.
+
+Automatic release publication does not configure application auto-updates.
+Installed Noctua apps still require manual replacement with the new version.
 
 ## Recover from failures
 
@@ -144,11 +168,14 @@ It refuses to rebuild a release that is already published.
   reused; rerunning all jobs also reuses the draft without replacing its notes.
   Existing assets with matching names can be replaced on rerun.
 - **Preparation failure:** verify Actions has `contents: write` access for the
-  preparation and build jobs and inspect the API error. The default permission
-  is read-only; only those two jobs request writes. Missing tags fail checkout.
+  preparation, build, and publication jobs and inspect the API error. The default
+  permission is read-only; only those three jobs request writes. Missing tags fail checkout.
 - **Source or workflow fix:** merge the correction and release a new version/tag
   rather than silently rebuilding different source under a published version.
-- **Partial draft:** keep it unpublished until every intended installer is
+- **Publication failure:** check the final job for missing, empty, or incomplete
+  assets, a tag mismatch, or an API error. Rerun failed jobs after correcting a
+  transient failure; a missing installer requires its build/upload job to succeed.
+- **Partial draft:** publication remains blocked until every intended installer is
   present. Review and remove obsolete assets manually if a packaging change
   leaves files with old names. Do not publish during a running build.
 
@@ -156,7 +183,7 @@ No deployment or publication is required to validate the workflow locally:
 
 ```sh
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
-node --test .github/scripts/prepare-release.test.cjs
+node --test .github/scripts/*.test.cjs
 actionlint .github/workflows/release.yml
 ```
 

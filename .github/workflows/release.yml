@@ -1,4 +1,4 @@
-# Validate an existing version tag, prepare one draft, then upload installers.
+# Validate a version tag, build installers in one draft, then publish on success.
 name: release
 
 on:
@@ -95,3 +95,24 @@ jobs:
           # No updater is configured; avoid concurrent writes to shared latest.json.
           includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Use the workflow's helper so a manual run can publish an older tagged draft.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify installers and publish release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+        with:
+          script: |
+            const publish = require('./.github/scripts/publish-release.cjs');
+            await publish({ github, context, core, tag: process.env.RELEASE_TAG, releaseId: process.env.RELEASE_ID });
