@@ -15,6 +15,8 @@ use tauri::{
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
+mod updater;
+
 /// A fixed port keeps the pages' origin (and so their saved tabs and layout)
 /// the same between launches; another free port is used if it's taken.
 const PORT: u16 = 47878;
@@ -31,6 +33,10 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new()
+            .pubkey(option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim())
+            .build())
+        .manage(updater::Updates::default())
         .setup(|app| {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let (url, server) = tauri::async_runtime::block_on(async {
@@ -98,6 +104,13 @@ fn run(app: &AppHandle, cmd: DesktopCmd) {
             if let Some(w) = app.get_webview_window(&label) {
                 let _ = w.close();
             }
+        }
+        DesktopCmd::Update(action, reply) => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let result = updater::run(&app, action).await.map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            });
         }
     }
 }

@@ -232,6 +232,12 @@ function dataSection(s) {
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc(s.version || 'unknown')} · ${s.desktop ? 'Desktop app' : 'Browser app'}</p>
+    ${s.desktop ? `<div class="settings-group" data-update>
+      <h3>App updates</h3>
+      <p>Check the latest published release. Save your work before installing; installation may close and restart Noctua.</p>
+      <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
+      <p class="setup-msg" role="status" aria-live="polite"></p>
+    </div>` : ''}
     <h3>Keyboard shortcuts</h3><dl class="settings-shortcuts">
       <dt>Save note</dt><dd>⌘ / Ctrl + S</dd>
       <dt>Add drawing</dt><dd>⌘ / Ctrl + Shift + D</dd>
@@ -239,6 +245,30 @@ function aboutSection(s) {
       <dt>Change chat editing mode</dt><dd>Shift + Tab in chat</dd>
       <dt>Close Settings</dt><dd>Esc</dd></dl>
     </section>`;
+}
+
+// The native process retains the checked release and serializes operations across windows.
+async function updateApp(button, section, msg) {
+  const action = button.dataset.updateAction;
+  if (action === 'install' && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
+  msg(section, { check: 'Checking for updates…', install: 'Downloading, verifying, and installing the update…', restart: 'Restarting Noctua…' }[action], true);
+  try {
+    const result = await api('/api/desktop/update', { action });
+    const next = {
+      available: ['install', `Update to ${result.version}`, `Version ${result.version} is available.`],
+      current: ['check', 'Check for updates', 'You are using the latest published version.'],
+      installed: ['restart', 'Restart Noctua', 'Update installed. Restart Noctua to use the new version.'],
+    }[result.status];
+    if (!next) throw new Error('Unexpected response from the desktop updater.');
+    button.dataset.updateAction = next[0];
+    button.textContent = next[1];
+    msg(section, next[2], true);
+  } catch (err) {
+    // Recheck after a failure, including when another window already installed an update.
+    button.dataset.updateAction = 'check';
+    button.textContent = 'Check for updates';
+    throw err;
+  }
 }
 
 // First run stays short and skippable. Settings keeps every panel mounted so
@@ -386,12 +416,13 @@ function openSetup({ firstRun = false, tab } = {}) {
     const t = e.target.closest('[data-act]');
     if (!t) return;
     e.preventDefault();
-    const section = t.closest('section');
+    const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
     const busy = (on) => section?.querySelectorAll('button, input').forEach((b) => { b.disabled = on; });
     try {
       busy(true);
       switch (t.dataset.act) {
+        case 'update': await updateApp(t, section, msg); break;
         case 'agent-login': signIn(); break;
         case 'agent-check': await checkAgent(); break;
         case 'agent-cancel': loginAbort?.abort(); break;

@@ -89,3 +89,36 @@ test('a publication API failure fails the job instead of reporting success', asy
   f.args.github.rest.repos.updateRelease = async () => { throw new Error('Publication denied'); };
   await assert.rejects(publish(f.args), /Publication denied/);
 });
+
+test('updater-enabled releases stay in draft when signatures are missing', async () => {
+  const f = fixture();
+  await assert.rejects(publish({ ...f.args, updaterEnabled: true }), /Missing completed updater asset/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('updater manifest upload must succeed before an enabled release is published', async () => {
+  for (const failUpload of [false, true]) {
+    const f = fixture();
+    f.release.id = 42;
+    for (const name of ['Noctua_universal.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
+      f.assets.push({ name: `${name}.sig`, size: 10, state: 'uploaded', id: 10 });
+    }
+    const repos = f.args.github.rest.repos;
+    repos.getReleaseAsset = async () => ({ data: 'c2lnbmF0dXJl' });
+    let uploaded = false;
+    repos.uploadReleaseAsset = async params => {
+      assert.equal(params.release_id, 42);
+      assert.deepEqual(f.calls, []);
+      if (failUpload) throw new Error('Upload unavailable');
+      uploaded = true;
+    };
+    if (failUpload) {
+      await assert.rejects(publish({ ...f.args, updaterEnabled: true }), /Upload unavailable/);
+      assert.deepEqual(f.calls, []);
+    } else {
+      await publish({ ...f.args, updaterEnabled: true });
+      assert.equal(uploaded, true);
+      assert.equal(f.calls.length, 1);
+    }
+  }
+});

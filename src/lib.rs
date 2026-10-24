@@ -48,7 +48,13 @@ pub enum DesktopCmd {
     PickFolder(oneshot::Sender<Option<String>>),
     /// Close a window (its last tab was closed).
     CloseWindow(String),
+    /// Check, install, or restart after a signed desktop update.
+    Update(UpdateAction, oneshot::Sender<Result<Value, String>>),
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateAction { Check, Install, Restart }
 
 pub struct ServeOptions {
     /// 0 picks a free port.
@@ -473,6 +479,18 @@ async fn desktop_pick_folder(State(app): Shared) -> ApiResult {
     Ok(Json(json!({ "path": rx.await.ok().flatten() })))
 }
 
+#[derive(Deserialize)]
+struct UpdateBody { action: UpdateAction }
+
+async fn desktop_update(State(app): Shared, Json(body): Json<UpdateBody>) -> ApiResult {
+    let (tx, rx) = oneshot::channel();
+    desktop(&app)?.send(DesktopCmd::Update(body.action, tx))
+        .map_err(|_| anyhow::anyhow!("The desktop app is unavailable."))?;
+    let result = rx.await.map_err(|_| anyhow::anyhow!("The desktop updater stopped."))?
+        .map_err(anyhow::Error::msg)?;
+    Ok(Json(result))
+}
+
 /// Only this server's own pages (and local tools like `claude`) may use it:
 /// the Host must be our address (stops DNS rebinding), and a write from a
 /// page must come from our own origin (stops other websites posting to it).
@@ -619,6 +637,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/desktop/open", post(desktop_open))
         .route("/api/desktop/pick-folder", post(desktop_pick_folder))
         .route("/api/desktop/close", post(desktop_close))
+        .route("/api/desktop/update", post(desktop_update))
         .merge(reader::routes())
         .with_state(app)
         .layer(middleware::from_fn_with_state(hosts, guard))

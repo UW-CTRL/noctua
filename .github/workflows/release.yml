@@ -26,6 +26,7 @@ jobs:
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
       commit: ${{ steps.commit.outputs.sha }}
+      updater: ${{ steps.updater.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +40,20 @@ jobs:
       - name: Resolve tagged commit
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate update signing configuration
+        id: updater
+        env:
+          NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -f app/tauri.release.conf.json ]; then
+            test -n "$NOCTUA_UPDATER_PUBLIC_KEY" || { echo 'Missing NOCTUA_UPDATER_PUBLIC_KEY repository variable'; exit 1; }
+            test -n "$TAURI_SIGNING_PRIVATE_KEY" || { echo 'Missing TAURI_SIGNING_PRIVATE_KEY repository secret'; exit 1; }
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Prepare draft release
         id: release
@@ -88,13 +103,16 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tauriScript: cargo tauri
           releaseId: ${{ needs.prepare.outputs.release_id }}
-          # No updater is configured; avoid concurrent writes to shared latest.json.
+          # The publication job generates one manifest after every upload completes.
           includeUpdaterJson: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ needs.prepare.outputs.updater == 'true' && '--config tauri.release.conf.json' || '' }}
 
   publish:
     needs: [prepare, build]
@@ -112,7 +130,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+          UPDATER_ENABLED: ${{ needs.prepare.outputs.updater }}
         with:
           script: |
             const publish = require('./.github/scripts/publish-release.cjs');
-            await publish({ github, context, core, tag: process.env.RELEASE_TAG, releaseId: process.env.RELEASE_ID });
+            await publish({ github, context, core, tag: process.env.RELEASE_TAG, releaseId: process.env.RELEASE_ID,
+              updaterEnabled: process.env.UPDATER_ENABLED === 'true' });

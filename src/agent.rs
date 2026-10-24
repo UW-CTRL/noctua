@@ -311,6 +311,9 @@ mod tests {
     impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.root); } }
     impl Fixture {
         fn new() -> Result<Self> {
+            Self::with_desktop(None)
+        }
+        fn with_desktop(desktop: Option<tokio::sync::mpsc::UnboundedSender<crate::DesktopCmd>>) -> Result<Self> {
             use std::os::unix::fs::PermissionsExt;
             let root = std::env::temp_dir().join(format!("noctua-cli-test-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir(&root)?;
@@ -326,7 +329,7 @@ mod tests {
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
                 notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, settings: std::sync::Mutex::new(settings),
-                desktop: None, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
+                desktop, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
             Ok(Self { root, router, app })
@@ -356,6 +359,30 @@ mod tests {
             }
             panic!("CLI did not stop and save its turn");
         }
+    }
+
+    #[tokio::test]
+    async fn desktop_updates_validate_actions_and_relay_native_results() -> Result<()> {
+        let browser = Fixture::new()?;
+        assert_eq!(browser.request("/api/desktop/update", Some(json!({"action":"check"})), None).await.status(), StatusCode::NOT_FOUND);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let f = Fixture::with_desktop(Some(tx))?;
+        assert_eq!(f.request("/api/desktop/update", Some(json!({"action":"arbitrary"})), None).await.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let native = tokio::spawn(async move {
+            for expected in ["check", "install", "restart"] {
+                let Some(crate::DesktopCmd::Update(action, reply)) = rx.recv().await else { panic!("Expected update request") };
+                assert!(matches!((expected, action), ("check", crate::UpdateAction::Check) | ("install", crate::UpdateAction::Install) | ("restart", crate::UpdateAction::Restart)));
+                if expected == "install" { let _ = reply.send(Err("Signature verification failed".into())); }
+                else { let _ = reply.send(Ok(json!({"status": expected}))); }
+            }
+        });
+        assert_eq!(f.json("/api/desktop/update", Some(json!({"action":"check"}))).await["status"], "check");
+        let failure = f.request("/api/desktop/update", Some(json!({"action":"install"})), None).await;
+        assert_eq!(failure.status(), StatusCode::BAD_GATEWAY);
+        assert!(String::from_utf8(to_bytes(failure.into_body(), usize::MAX).await?.to_vec())?.contains("Signature verification failed"));
+        assert_eq!(f.json("/api/desktop/update", Some(json!({"action":"restart"}))).await["status"], "restart");
+        native.await?;
+        Ok(())
     }
 
     #[tokio::test]

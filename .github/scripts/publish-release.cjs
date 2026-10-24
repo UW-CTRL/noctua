@@ -1,5 +1,5 @@
 // Run only after every platform build succeeds; never publish incomplete assets.
-module.exports = async function publishRelease({ github, context, core, tag, releaseId }) {
+module.exports = async function publishRelease({ github, context, core, tag, releaseId, updaterEnabled = false }) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[1-9]\d*$/.test(String(releaseId))) {
     throw new Error('A numeric version tag and release ID are required.');
   }
@@ -26,6 +26,10 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
   const missing = required.filter(name => !assets.some(asset => asset.name === name && asset.state === 'uploaded' && asset.size > 0));
   if (missing.length) {
     throw new Error(`Release ${tag} is missing completed installers: ${missing.join(', ')}`);
+  }
+  if (updaterEnabled) {
+    const manifest = require('./updater-manifest.cjs');
+    await manifest({ github, context, release, assets });
   }
   // Let GitHub choose Latest by version/date instead of promoting an older retry.
   const { data: published } = await github.rest.repos.updateRelease({ ...params, draft: false, make_latest: 'legacy' });
