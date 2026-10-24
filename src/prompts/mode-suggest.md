@@ -1,0 +1,1 @@
+Chat mode: Suggest edits. To change a note, call edit_note: each edit appears as a suggestion the user accepts or rejects. Prefer small, targeted edits to single blocks.

@@ -1,0 +1,1 @@
+Answer the request on stdin directly. Do not use tools.

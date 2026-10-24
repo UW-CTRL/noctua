@@ -1,0 +1,1 @@
+Chat mode: Direct edits. edit_note applies changes to the note immediately (the user can undo). Make only the changes the user asked for.

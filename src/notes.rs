@@ -206,11 +206,7 @@ fn image_ext(b: &[u8]) -> Option<&'static str> {
     }
 }
 
-const INK_PROMPT: &str = "This image is handwriting from the user's research notes. Transcribe it into \
-LaTeX source using only: plain paragraphs (blank line between them), inline math $...$, display math \
-\\[...\\], align/equation environments, itemize/enumerate, and \\section/\\subsection. Keep the user's \
-wording. Output only the LaTeX source: no preamble, no \\begin{document}, no code fences, no comments. \
-If part of it is a diagram rather than text or math, write a short [diagram: ...] placeholder for it.";
+const INK_PROMPT: &str = include_str!("prompts/handwriting.md");
 
 /// Handwriting (base64 PNG) to LaTeX source, via the selected CLI backend.
 pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Result<String> {

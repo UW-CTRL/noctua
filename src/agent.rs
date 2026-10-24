@@ -274,7 +274,7 @@ pub async fn one_shot(app: &App, provider: Provider, mut cmd: Command, input: &s
 /// A text-only one-shot question to the selected backend.
 pub async fn ask_text(app: &App, provider: Provider, prompt: &str, what: &str) -> Result<String> {
     let cmd = if provider == Provider::Codex {
-        let mut c = codex_command(app, None, "Answer the request on stdin directly. Do not use tools.");
+        let mut c = codex_command(app, None, include_str!("prompts/text-task.md"));
         c.args(["--ephemeral", "-"]);
         c
     } else {

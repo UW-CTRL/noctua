@@ -41,25 +41,7 @@ pub struct Request {
     others: Vec<String>,
 }
 
-const PROMPT: &str = "Below are research threads found in a citation graph. Each thread is a chain of \
-papers in time order, where each step means the later paper cites and builds on the earlier one. \
-Name each research thread, pick the papers that carried it forward, and explain how its ideas evolved. \
-Reply with JSON only, no prose, in exactly this shape:\n\
-{\"common\": \"1-2 sentences on what links the threads, or how they differ\",\n \
-\"threads\": [{\"id\": \"<thread id>\", \
-\"name\": \"a concise phrase naming the thread's high-level theme and how its papers build on each other; \
-use as many words as needed (usually 6-14), e.g. From conditional generative models to language-guided dexterous grasping\", \
-\"problem\": \"one sentence: the research problem or gap this line of work targets\", \
-\"summary\": \"2-3 sentences on how the ideas changed along the thread\", \
-\"key\": [\"<paper id>\", ...], \
-\"steps\": [{\"from\": \"<paper id>\", \"to\": \"<paper id>\", \
-\"relation\": \"extends|refines|challenges|applies|combines|surveys\", \
-\"note\": \"at most 20 words: how the later paper builds on the earlier one, i.e. what it adds or changes, \
-counting any papers in between\"}]}]}\n\
-\"key\" lists, in time order, the papers that made the major contributions along the thread; always include \
-the first and last paper, and leave out incremental, survey or application papers. Give one entry in \
-\"steps\" for every consecutive pair in \"key\". Use the ids exactly as given. Base the answer on the \
-titles and abstracts; if an abstract is missing, rely on the title and keep the note cautious.\n\n";
+const PROMPT: &str = include_str!("prompts/lineage.md");
 
 fn clip(s: &str, max: usize) -> String {
     let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
