@@ -49,6 +49,9 @@ if args == ['login'] or args == ['auth','login']:
     (home / (provider+'-signed-in')).touch()
     sys.exit(0)
 prompt = sys.stdin.read()
+if 'verify-selected-passages' in prompt:
+    assert '<selected_passages>' in prompt and 'A grounded passage.' in prompt and 'note-1' in prompt
+    (home / (provider+'-selected.txt')).write_text(prompt)
 if '--image' in args:
     assert Path(args[args.index('--image')+1]).read_bytes().startswith(b'\x89PNG'), 'missing image attachment'
 if '--input-format' in args:

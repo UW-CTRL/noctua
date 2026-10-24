@@ -310,7 +310,7 @@ function pdfRenderWindow(metrics,top,bottom){
 function disposePDFPage(entry){
   entry.epoch++;entry.task?.cancel();entry.task=null;entry.text?.cancel();entry.text=null;
   const canvas=entry.box.querySelector('canvas');if(canvas)canvas.width=canvas.height=0;
-  entry.box.replaceChildren();entry.box.dataset.loaded='false';entry.loaded=false;entry.loading=null;
+  entry.objects=[];entry.box.classList.remove('over-pdf-object');entry.box.replaceChildren();entry.box.dataset.loaded='false';entry.loaded=false;entry.loading=null;
 }
 function updatePDFViewport(){
   pdfScrollFrame=null;
@@ -348,6 +348,7 @@ async function ensurePDFPage(entry){
     entry.text=await textLayer(page,box.querySelector('.textLayer'),viewport);if(!active())return;
     entry.links=await pdfPageLinks(page,viewport).catch(()=>[]);if(!active())return;
     schedulePDFTextSelection();entry.loaded=true;box.dataset.loaded='true';paintPDFAnnotations();bindPDFPage(entry,key,token);renderPDFLinkTargets(entry);
+    if(window.NoctuaPDFObjects)pdfjs().then(engine=>NoctuaPDFObjects.mount(entry,page,engine,active)).catch(()=>{});
   })().catch(error=>{if(error.name!=='RenderingCancelledException'&&error.name!=='AbortException'&&active()){entry.box.textContent='Could not render page '+entry.number+'. Use the page control to retry.';throw error;}})
     .finally(()=>{if(entry.epoch===epoch)entry.loading=null;});
   entry.loading=work;return work;
@@ -464,6 +465,7 @@ async function pdfNavigate(page,y=0){
 }
 function bindPDFPage(entry,key,token){
   const box=entry.box,pageNumber=entry.number;
+  box.onpointerdown=event=>{entry.objectPointerStart={x:event.clientX,y:event.clientY};window.NoctuaPDFObjects?.clear(entry);};
   box.onpointerup=event=>{
     if(PDF.mode==='draw'||event.button!==undefined&&event.button!==0||event.target.closest?.('.pdf-auto-labels,.pdf-document-link'))return;
     const clickedSelection=getSelection(),clickedBounds=box.getBoundingClientRect();
@@ -471,6 +473,8 @@ function bindPDFPage(entry,key,token){
       const x=(event.clientX-clickedBounds.left)/clickedBounds.width,y=(event.clientY-clickedBounds.top)/clickedBounds.height;
       const link=entry.links.find(link=>pdfPointInRect(x,y,link.rect));
       if(link){followPDFLink(link).catch(error=>toast(error.message));return;}
+      const object=window.NoctuaPDFObjects?.hit(entry,x,y),start=entry.objectPointerStart;
+      if(object&&start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)<=5&&NoctuaPDFObjects.attach(entry,object)){event.noctuaObjectSelection=true;return;}
     }
     setTimeout(()=>{
       if(token!==PDF.token)return;
@@ -486,12 +490,12 @@ function bindPDFPage(entry,key,token){
     },0);
   };
   box.onpointermove=event=>{
-    if(PDF.mode==='draw'||event.buttons){return;}
+    if(PDF.mode==='draw'||event.buttons){window.NoctuaPDFObjects?.clear(entry);return;}
     const b=box.getBoundingClientRect(),x=(event.clientX-b.left)/b.width,y=(event.clientY-b.top)/b.height;
     const link=entry.links.find(a=>pdfPointInRect(x,y,a.rect));box.classList.toggle('over-pdf-link',!!link);
-    if(link)schedulePDFLinkPreview(link,event.clientX,event.clientY);else schedulePDFLinkClose();
+    if(link){window.NoctuaPDFObjects?.clear(entry);schedulePDFLinkPreview(link,event.clientX,event.clientY);}else{schedulePDFLinkClose();window.NoctuaPDFObjects?.hover(entry,x,y);}
   };
-  box.onpointerleave=schedulePDFLinkClose;
+  box.onpointerleave=()=>{schedulePDFLinkClose();window.NoctuaPDFObjects?.clear(entry);};
   const svg=box.querySelector('.pdf-overlay');let points=null;
   const point=e=>{const b=svg.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-b.left)/b.width)),Math.max(0,Math.min(1,(e.clientY-b.top)/b.height))];};
   svg.onpointerdown=e=>{if(PDF.mode!=='draw')return;e.preventDefault();entry.drawing=true;svg.setPointerCapture(e.pointerId);points=[point(e)];};

@@ -485,6 +485,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn selected_passages_reach_both_assistants_and_remain_in_history()->Result<()> {
+        let f=Fixture::new()?;
+        let selections=json!([{"id":"quote-1","text":"A grounded passage.","source":{"kind":"pdf","label":"A paper","paper_key":"paper-1","page":3}},{"id":"quote-2","text":"A note excerpt.","source":{"kind":"note","label":"Research note","note_id":"note-1","folder_id":"L1"}}]);
+        for provider in ["claude","codex"]{
+            let events=f.events("/api/chat",json!({"provider":provider,"message":"verify-selected-passages","selections":selections})).await;
+            assert!(events.iter().any(|event|event["type"]=="done"),"{events:?}");
+            let id=events.iter().find(|event|event["type"]=="chat").unwrap()["id"].as_str().unwrap();
+            let stored=f.settled(id,provider).await;
+            assert_eq!(stored["messages"][0]["selections"],selections);
+            let prompt=std::fs::read_to_string(f.root.join(format!("{provider}-selected.txt")))?;
+            assert!(prompt.contains("<selected_passages>")&&prompt.contains("A grounded passage.")&&prompt.contains("note-1"));
+        }
+        for invalid in [json!([{"id":"x","text":"x"}]),json!([{"id":"x","text":"x".repeat(12001),"source":{"label":"x"}}]),json!([{"id":"x","text":"","source":{"label":"x"}}])]{
+            assert_eq!(f.request("/api/chat",Some(json!({"message":"test","selections":invalid})),None).await.status(),StatusCode::BAD_REQUEST);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_pdf_tools_and_http_assets() -> Result<()> {
         let f=Fixture::new()?;
         let key=f.app.library.upload("L1","test.pdf",b"%PDF-1.7\nfixture")?;

@@ -124,3 +124,8 @@
 .pdf-reference-popover .pdf-citation-row{display:flex;align-items:baseline;gap:8px;flex:none;width:100%;min-height:0;margin:0;padding:7px 5px;background:transparent;border:0;border-radius:5px;text-align:left;font-size:calc(12px * var(--ui-font-scale,1));line-height:1.45;color:var(--ink)}
 .pdf-reference-popover .pdf-citation-row:hover{background:var(--bg)}
 .pdf-citation-number{flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.pdf-object-regions{position:absolute;inset:0;z-index:3;pointer-events:none}
+.pdf-object-target{position:absolute;pointer-events:none;min-height:0;padding:0;border:1px solid transparent;border-radius:4px;background:transparent;opacity:0}
+.pdf-object-target.hovered,.pdf-object-target:focus-visible{opacity:1;background:color-mix(in srgb,var(--accent) 5%,transparent);border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+.pdf-page.over-pdf-object,.pdf-page.over-pdf-object .textLayer span{cursor:pointer}

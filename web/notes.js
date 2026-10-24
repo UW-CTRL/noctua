@@ -292,6 +292,7 @@ function showNoteHelp() {
     const example = source => `<pre><code>${esc(source)}</code></pre>`;
     dialog.innerHTML = `<div class="note-help-header"><h2 id="note-help-title">Note guide</h2><form method="dialog"><button data-icon="x" data-icon-only aria-label="Close note guide" title="Close" autofocus></button></form></div>
       <p class="note-help-intro">Write, add media, and connect your research.</p>
+      <section><h3>Selected passages in chat</h3><p>Drag across rendered note text and click Add to chat. You can attach several passages, hover over the annotation count to preview them, and remove individual passages before sending. Theme-colored numbered badges and faint highlights mark attached source passages. The badges match the attachment preview; click a badge to open it. Removing or sending attachments removes the badges and faint highlights without changing your note. These are chat attachments, not saved PDF annotations. The assistant receives the quoted text and note identifiers; adding or removing attachments is a UI-only control.</p></section>
       <section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically.</p>${example(String.raw`Inline math: $E = mc^2$
 
 \[ a^2 + b^2 = c^2 \]
@@ -545,7 +546,7 @@ function blockEl(b) {
   if (b.type === 'text') {
     body.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write…"></div>';
     body.addEventListener('click', (e) => {
-      if (e.target.closest('a, .tex-img, .tex-youtube')) return;
+      if (e.target.closest('a, .tex-img, .tex-youtube') || !getSelection().isCollapsed) return;
       if (N.editing !== b.id) startEdit(b.id);
     });
   } else {

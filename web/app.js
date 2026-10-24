@@ -1091,9 +1091,9 @@ function extractMath(src) {
 }
 
 // A user's chat message: plain text with @-mention chips and typeset math.
-function userMsgHtml(text) {
+function userMsgHtml(text, selections=[]) {
   const { text: t, restore } = extractMath(text);
-  return restore(mentionChips(esc(t)));
+  return restore(mentionChips(esc(t)))+(window.NoctuaChatSelections?.sentHTML(selections)||'');
 }
 
 // Split table rows without treating escaped pipes or inline code as cell boundaries.
@@ -1235,15 +1235,18 @@ function chatWelcome() {
 }
 
 function renderStoredMsg(m) {
-  if (m.role === 'user') return appendMsg('user', userMsgHtml(m.text));
+  if (m.role === 'user') return appendMsg('user', userMsgHtml(m.text,m.selections));
   const tools = (m.tools || []).map((n) => `<div class="tool">⚙ ${esc(TOOL_LABEL[n] || n)}</div>`).join('');
   appendMsg('assistant', `${tools}<div class="body">${renderMd(m.text || '')}${
     m.error ? `<p class="error">${esc(m.error)}</p>` : ''}${m.stopped ? '<p class="tool">Stopped.</p>' : ''}</div>`);
 }
 
 function setChatId(id) {
+  const previousId=chat.id,selectionKey=window.NoctuaChatSelections?.storageKey();
   chat.id = id;
   store.set('noctua.chat.' + chat.provider, id || '');
+  if(previousId==null&&id&&chat.busy)window.NoctuaChatSelections?.moveDraft(selectionKey);
+  else window.NoctuaChatSelections?.restore();
 }
 
 function newChat() {
@@ -1318,10 +1321,11 @@ function setChatBusy(busy) {
 
 async function sendChat(text) {
   const provider = chat.provider;
+  const selectedPassages=window.NoctuaChatSelections?.snapshot()||{items:[]};
   const ctrl = new AbortController();
   chat.abort = ctrl;
   setChatBusy(true);
-  appendMsg('user', userMsgHtml(text));
+  appendMsg('user', userMsgHtml(text,selectedPassages.items));
   const el = appendMsg('assistant', '<div class="body"><span class="typing">Thinking…</span></div>');
   const body = el.querySelector('.body');
   const log = $('#chat-log');
@@ -1350,10 +1354,11 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, chat_id: chat.id, mode: chat.mode, attachments }),
+      body: JSON.stringify({ message: text, provider, context, chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    window.NoctuaChatSelections?.consume(selectedPassages);
     await readEvents(r, handle);
   } catch (e) {
     if (e.name === 'AbortError') body.insertAdjacentHTML('beforeend', '<p class="tool">Stopped.</p>');
@@ -1366,11 +1371,13 @@ async function sendChat(text) {
   }
 }
 
-function showRightTab(name) {
+function showRightTab(name, { focus = true } = {}) {
+  name = name === 'chat' ? 'chat' : 'paper';
+  store.set('noctua.rightTab', name);
   document.querySelectorAll('#right > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.rtab === name));
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
-  if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); $('#chat-input').focus(); }
+  if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); if (focus) $('#chat-input').focus(); }
 }
 
 // ---------------------------------------------------------------- resizable side panels
@@ -1926,7 +1933,7 @@ $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (!chat.ready || chat.switching) return;
   if (chat.busy) { stopChat().catch((err) => toast(err.message, { error: true })); return; }
-  const text = $('#chat-input').value.trim();
+  const text = $('#chat-input').value.trim()||(window.NoctuaChatSelections?.count()?'Explain the selected passages.':'');
   if (!text) return;
   $('#chat-input').value = '';
   chat.running = sendChat(text);
@@ -2011,6 +2018,7 @@ window.addEventListener('storage', (e) => {
 });
 setChatMode(chat.mode);
 chatWelcome();
+showRightTab(store.get('noctua.rightTab'), { focus: false });
 
 const collectionsReady = loadCollections();
 {

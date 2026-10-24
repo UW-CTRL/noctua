@@ -1,0 +1,217 @@
+'use strict';
+// Detect captioned objects locally; only nearby rendered pages need hit targets.
+window.NoctuaPDFObjects=(()=>{
+  const union=(a,b)=>{const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);return [x,y,Math.max(a[0]+a[2],b[0]+b[2])-x,Math.max(a[1]+a[3],b[1]+b[3])-y];};
+  const overlap=(a,b)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]));
+  const gap=(a,b)=>Math.max(0,a[1]-b[1]-b[3],b[1]-a[1]-a[3]);
+  const caption=/^(Figure|Fig\.?|Table|Algorithm)\s+((?:[A-Z]\.?\d+|\d+)(?:\.\d+)*|[IVX]+)(?:\s*[:.]\s*|\s*$)/i;
+  function columnGutter(texts){
+    const broad=texts.filter(item=>item.text.length>20&&item.rect[2]>.18),median=values=>values.sort((a,b)=>a-b)[Math.floor(values.length/2)];
+    const estimate=items=>{
+      const left=items.map(item=>item.rect[0]+item.rect[2]).filter(x=>x>.38&&x<.54),right=items.map(item=>item.rect[0]).filter(x=>x>.46&&x<.62);
+      if(left.length<2||right.length<2)return null;
+      const a=median(left),b=median(right);return b-a>=.012&&b-a<.12?(a+b)/2:null;
+    };
+    const initial=estimate(broad);if(initial===null)return null;
+    // Bold and inline-math runs can split a full-width line near its midpoint.
+    const separated=broad.filter(item=>!texts.some(other=>other.rect[0]<initial&&other.rect[0]+other.rect[2]>initial&&Math.abs(other.rect[1]+other.rect[3]/2-item.rect[1]-item.rect[3]/2)<Math.max(other.rect[3],item.rect[3])*.7));
+    return estimate(separated);
+  }
+
+  function linesOf(texts,gutter=null){
+    const rows=[];
+    for(const item of texts.filter(item=>!(item.rect[3]>.04&&item.rect[3]>item.rect[2]*2)).sort((a,b)=>a.rect[1]-b.rect[1]||a.rect[0]-b.rect[0])){
+      const r=item.rect,center=r[1]+r[3]/2;
+      const matches=rows.filter(row=>(!gutter||!((r[0]>=gutter&&row.rect[0]+row.rect[2]<=gutter)||(row.rect[0]>=gutter&&r[0]+r[2]<=gutter)))&&Math.abs(row.guide.rect[1]+row.guide.rect[3]/2-center)<Math.max(row.guide.rect[3],r[3])*.7&&Math.max(0,r[0]-row.rect[0]-row.rect[2],row.rect[0]-r[0]-r[2])<.035).sort((a,b)=>Math.abs(a.guide.rect[1]+a.guide.rect[3]/2-center)-Math.abs(b.guide.rect[1]+b.guide.rect[3]/2-center));
+      const row=matches[0];
+      if(row){row.parts.push(item);row.rect=union(row.rect,r);if(item.text.length>row.guide.text.length)row.guide=item;}else rows.push({rect:[...r],parts:[item],guide:item});
+    }
+    return rows.map(row=>({...row,fontHeight:row.guide.rect[3],text:row.parts.sort((a,b)=>a.rect[0]-b.rect[0]).map(item=>item.text).join(' ').replace(/\s+/g,' ').trim()})).sort((a,b)=>a.guide.rect[1]-b.guide.rect[1]||a.rect[0]-b.rect[0]);
+  }
+  function captionMatch(line){
+    const strict=line.text.match(caption);if(strict)return strict;
+    const label=/^(Figure|Fig\.?|Table|Algorithm)\s+((?:[A-Z]\.?\d+|\d+)(?:\.\d+)*|[IVX]+)\s*$/i;
+    for(const count of [1,2])if(line.parts.length>count){const match=line.parts.slice(0,count).map(part=>part.text).join(' ').trim().match(label);if(match)return match;}
+    return null;
+  }
+  function detect(texts,graphics){
+    const gutter=columnGutter(texts),lines=linesOf(texts,gutter),clusters=[];
+    // Running-header rules can touch a top figure but are not part of its content.
+    graphics=graphics.filter(r=>!(r[3]<.003&&r[2]>.7&&r[1]<.09&&lines.some(row=>!captionMatch(row)&&row.rect[1]+row.rect[3]<=r[1]&&r[1]-row.rect[1]-row.rect[3]<.025&&row.rect[2]>.3)&&!lines.some(row=>captionMatch(row)&&row.rect[1]<r[1])));
+    for(const rect of graphics){
+      if(rect[2]>.94||rect[3]>.8||rect[2]*rect[3]>.65)continue;
+      let joined=[...rect];
+      for(let i=0;i<clusters.length;){const c=clusters[i];if((!gutter||!((joined[0]>=gutter&&c[0]+c[2]<=gutter)||(c[0]>=gutter&&joined[0]+joined[2]<=gutter)))&&gap(joined,c)<.018&&Math.max(0,joined[0]-c[0]-c[2],c[0]-joined[0]-joined[2])<.025){joined=union(joined,c);clusters.splice(i,1);i=0;}else i++;}
+      clusters.push(joined);
+    }
+    const regions=[],captionRows=new Set();
+    for(const line of lines){
+      if(captionRows.has(line))continue;
+      const match=captionMatch(line);if(!match)continue;
+      const kind=/^(?:fig)/i.test(match[1])?'figure':match[1].toLowerCase(),label=`${kind[0].toUpperCase()+kind.slice(1)} ${match[2]}`;
+      const c=line.rect,mid=gutter??.5,wideFigure=kind==='figure'&&clusters.some(r=>r[2]>.5&&overlap(r,c)>.01&&gap(r,c)<.13),centeredTable=kind==='table'&&graphics.some(r=>r[3]<.003&&r[0]<mid&&r[0]+r[2]>mid+.06&&overlap(r,c)>.01&&gap(r,c)<.13),full=gutter?c[0]<mid&&c[0]+c[2]>mid:wideFigure||centeredTable||c[0]<.45&&(c[0]+c[2]>.56||kind!=='figure'&&lines.some(row=>row.rect[1]>c[1]&&row.rect[1]<c[1]+.09&&Math.abs(row.rect[0]-c[0])<.03&&row.rect[0]+row.rect[2]>.56)),left=full?0:c[0]>=mid?mid:0,right=full?1:c[0]>=mid?1:mid;
+      const inLane=r=>full||r[0]>=left-.005&&r[0]+r[2]<=right+.005;
+
+      let ruledTable=null;
+      if(kind==='table'){
+        const rules=graphics.filter(r=>!regions.some(region=>region.kind==='table'&&r[0]>=region.rect[0]&&r[0]+r[2]<=region.rect[0]+region.rect[2]&&r[1]>=region.rect[1]&&r[1]<=region.rect[1]+region.rect[3])&&inLane(r)&&r[3]<.003&&r[2]>.07&&overlap(r,c)>.01);
+        const nearest=[...rules].filter(r=>gap(r,c)<.13).sort((a,b)=>(gap(a,c)+(a[1]<c[1]?.025:0))-(gap(b,c)+(b[1]<c[1]?.025:0)))[0];
+        if(nearest){
+          const below=nearest[1]>=c[1],ordered=rules.filter(r=>below?r[1]>=nearest[1]:r[1]<=nearest[1]).sort((a,b)=>below?a[1]-b[1]:b[1]-a[1]);
+          let joined=[...nearest],count=0;
+          for(const rule of ordered){
+            if(Math.abs(rule[0]-nearest[0])>.025||Math.abs(rule[2]-nearest[2])>.04)continue;
+            if(gap(rule,joined)>.13)break;
+            const top=Math.min(rule[1],joined[1]+joined[3]),bottom=Math.max(rule[1],joined[1]);
+            if(lines.some(row=>overlap(row.rect,nearest)>Math.min(row.rect[2],nearest[2])*.5&&row.rect[1]>top&&row.rect[1]+row.rect[3]<bottom&&(captionMatch(row)||row.text.length>90)))break;
+            joined=union(joined,rule);count++;
+          }
+          if(count>=2&&joined[3]>.015)ruledTable=joined;
+        }
+      }
+      let captionRect=[...c],captionText=line.text;
+      let captionLines=1,lastCaption=line;
+      for(const next of kind==='algorithm'?[]:lines){
+        if(next===line||next.guide.rect[1]<=lastCaption.guide.rect[1]+lastCaption.fontHeight*.5||next.rect[0]<left||next.rect[0]+next.rect[2]>right+.02)continue;
+        if(next.guide.rect[1]-lastCaption.guide.rect[1]-lastCaption.fontHeight>line.fontHeight*.9)break;
+        if(ruledTable&&ruledTable[1]>c[1]&&next.guide.rect[1]>=ruledTable[1]-.002)break;
+        if(captionLines>=24||captionText.length>4000||next.fontHeight>line.fontHeight*1.22)break;
+        captionRect=union(captionRect,next.rect);captionText+=' '+next.text;captionLines++;lastCaption=next;captionRows.add(next);
+      }
+      const candidates=clusters.filter(r=>inLane(r)&&overlap(r,c)>.01&&gap(r,c)<.13&&(kind!=='figure'||r[1]<c[1]+c[3]));
+      candidates.sort((a,b)=>(gap(a,c)+(kind==='figure'?(a[1]>c[1]?.08:0):(a[1]<c[1]?.025:0)))-(gap(b,c)+(kind==='figure'?(b[1]>c[1]?.08:0):(b[1]<c[1]?.025:0))));
+      let object=ruledTable||candidates[0];
+      if(object&&!ruledTable){
+        for(const other of candidates.slice(1))if(other[0]>=left-.02&&other[0]+other[2]<=right+.02&&Math.min(object[1]+object[3],other[1]+other[3])-Math.max(object[1],other[1])>Math.min(object[3],other[3])*.4)object=union(object,other);
+      }
+      if(object&&kind==='figure'){
+        // A caption can describe vertically stacked panels separated by whitespace.
+        let changed=true;
+        while(changed){changed=false;for(const other of clusters){
+          if(!inLane(other)||other===object||other[1]+other[3]>c[1]+.005||gap(other,object)>.055||overlap(other,object)<Math.min(other[2],object[2])*.35)continue;
+          const betweenTop=Math.min(other[1]+other[3],object[1]+object[3]),betweenBottom=Math.max(other[1],object[1]);
+          if(lines.some(row=>row.guide.rect[1]>=betweenTop&&row.guide.rect[1]+row.fontHeight<=betweenBottom&&(captionMatch(row)||row.text.length>70)&&overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5))continue;
+          const joined=union(object,other);if(joined[3]>object[3]+.001){object=joined;changed=true;}
+        }}
+      }
+      if(kind!=='figure'&&!ruledTable){
+        const above=kind==='table'&&object&&object[1]+object[3]/2<c[1];
+        const rows=lines.filter(row=>row!==line&&(above?row.guide.rect[1]+row.fontHeight<=c[1]:row.guide.rect[1]>=lastCaption.guide.rect[1]+lastCaption.fontHeight*.9)&&row.rect[0]>=left&&row.rect[0]+row.rect[2]<=right+.01);
+        if(above)rows.reverse();
+        let edge=above?c[1]:lastCaption.guide.rect[1]+lastCaption.fontHeight,count=0,lastY=-1,textObject=null;
+        for(const row of rows){
+          const distance=above?edge-row.guide.rect[1]-row.fontHeight:row.guide.rect[1]-edge;
+          if(distance>(count ? .025 : .05)||captionMatch(row)||row.fontHeight>line.fontHeight*1.4)break;
+          textObject=textObject?union(textObject,row.rect):row.rect;edge=above?Math.min(edge,row.guide.rect[1]):Math.max(edge,row.guide.rect[1]+row.fontHeight);
+          if(Math.abs(row.guide.rect[1]-lastY)>row.fontHeight*.5){lastY=row.guide.rect[1];if(++count>=40)break;}
+        }
+        if(count>=2)object=object?union(object,textObject):textObject;
+        else if(!object||object[3]<.015)object=null;
+      }
+      if(!object||object[2]<.07||object[3]<.015)continue;
+      if(kind==='figure'){
+        const limit=object[1]+Math.min(.065,object[3]*.25);let top=object[1];
+        // PDF form bounds can include whitespace overlapping the preceding paragraph.
+        for(const row of lines)if(overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5&&row.rect[1]>=object[1]&&row.rect[1]<limit&&row.text.length>35&&row.rect[2]>object[2]*.3&&row.fontHeight>=line.fontHeight*.95&&!captionMatch(row))top=Math.max(top,row.rect[1]+row.rect[3]+.008);
+        object=[object[0],top,object[2],object[1]+object[3]-top];
+      }
+      let rect=union(object,captionRect);rect=[Math.max(0,rect[0]-.006),Math.max(0,rect[1]-.006),Math.min(1-rect[0],rect[2]+.012),Math.min(1-rect[1],rect[3]+.012)];
+      if(rect[3]>(kind==='figure'?.9:.65)||regions.some(region=>region.label===label))continue;
+      const contents=lines.filter(row=>overlap(row.rect,rect)>row.rect[2]*.5&&row.rect[1]>=rect[1]&&row.rect[1]+row.rect[3]<=rect[1]+rect[3]).map(row=>row.text);
+      regions.push({kind,label,rect,text:[label,captionText,...contents.filter(text=>!captionText.includes(text))].join('\n').slice(0,12000)});
+    }
+    return regions;
+  }
+  const multiply=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
+  function graphicRects(list,ops,viewport){
+    let matrix=[1,0,0,1,0,0],clip=null,pendingClip=false;const stack=[],rects=[];
+    const intersect=(a,b)=>{const x=Math.max(a[0],b[0]),y=Math.max(a[1],b[1]);return [x,y,Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-x),Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-y)];};
+    const boundsRect=bounds=>{
+      if(!bounds||bounds.length!==4)return null;
+      const m=multiply(viewport.transform,matrix),points=[[bounds[0],bounds[1]],[bounds[2],bounds[1]],[bounds[0],bounds[3]],[bounds[2],bounds[3]]].map(([x,y])=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]]);
+      const xs=points.map(p=>p[0]/viewport.width),ys=points.map(p=>p[1]/viewport.height),x=Math.min(...xs),y=Math.min(...ys);
+      return [x,y,Math.max(...xs)-x,Math.max(...ys)-y];
+    };
+    const add=bounds=>{
+      let rect=boundsRect(bounds);if(!rect)return;
+      if(clip){
+        if(clip[2]<=0||clip[3]<=0||rect[0]+rect[2]<clip[0]||rect[0]>clip[0]+clip[2]||rect[1]+rect[3]<clip[1]||rect[1]>clip[1]+clip[3])return;
+        rect=intersect(rect,clip);
+      }
+      const [x,y,w,h]=rect;
+      if(x<-.01||y<-.01||x+w>1.01||y+h>1.01||w<.006&&h<.006||w<.07&&h<.012)return;
+      if(rects.length>=2000)return;
+      rects.push([Math.max(0,x),Math.max(0,y),Math.max(w,.001),Math.max(h,.001)]);
+    };
+    const save=()=>stack.push({matrix:[...matrix],clip:clip&&[...clip]});
+    const restore=()=>{const state=stack.pop();matrix=state?.matrix||[1,0,0,1,0,0];clip=state?.clip||null;};
+    for(let i=0;i<list.fnArray.length;i++){
+      const op=list.fnArray[i],args=list.argsArray[i]||[];
+      if(op===ops.save)save();
+      else if(op===ops.restore)restore();
+      else if(op===ops.transform)matrix=multiply(matrix,args);
+      else if(op===ops.paintFormXObjectBegin){
+        // Form bounds clip content but are never painted regions themselves.
+        save();if(args[0])matrix=multiply(matrix,args[0]);
+        const bounds=boundsRect(args[1]);if(bounds)clip=clip?intersect(clip,bounds):bounds;
+      }
+      else if(op===ops.paintFormXObjectEnd)restore();
+      // PDF.js emits the clipping operator before the optimized constructPath.
+      else if(op===ops.clip||op===ops.eoClip)pendingClip=true;
+      else if(op===ops.constructPath){
+        if(args[0]!==ops.endPath)add(args[2]);
+        if(pendingClip){const bounds=boundsRect(args[2]);if(bounds)clip=clip?intersect(clip,bounds):bounds;pendingClip=false;}
+      }
+      else if([ops.paintImageXObject,ops.paintInlineImageXObject,ops.paintImageMaskXObject,ops.paintSolidColorImageMask].filter(Number.isInteger).includes(op))add([0,0,1,1]);
+    }
+    return rects;
+  }
+  function tightenRect(rect,raster,background=[255,255,255]){
+    const {width,height,data}=raster,x0=Math.max(0,Math.floor(rect[0]*width)),y0=Math.max(0,Math.floor(rect[1]*height)),x1=Math.min(width,Math.ceil((rect[0]+rect[2])*width)),y1=Math.min(height,Math.ceil((rect[1]+rect[3])*height));
+    let left=x1,top=y1,right=x0,bottom=y0,count=0;
+    for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+      const offset=(y*width+x)*4,r=data[offset],g=data[offset+1],b=data[offset+2];
+      if(data[offset+3]<32||r>248&&g>248&&b>248||Math.abs(r-background[0])+Math.abs(g-background[1])+Math.abs(b-background[2])<45)continue;
+      left=Math.min(left,x);right=Math.max(right,x+1);top=Math.min(top,y);bottom=Math.max(bottom,y+1);count++;
+    }
+    if(count<16)return rect;
+    const x=Math.max(0,left/width-.006),y=Math.max(0,top/height-.006);
+    return [x,y,Math.min(1,right/width+.006)-x,Math.min(1,bottom/height+.006)-y];
+  }
+  const cache=new WeakMap();
+  async function mount(entry,page,engine,active){
+    if(!cache.has(page))cache.set(page,page.getOperatorList().then(list=>graphicRects(list,engine.OPS,page.getViewport({scale:1}))).catch(()=>[]));
+    const graphics=await cache.get(page);if(!active())return;
+    const bounds=entry.box.getBoundingClientRect(),texts=[...entry.box.querySelectorAll('.textLayer span')].filter(span=>span.textContent.trim()&&!span.querySelector('span')).map(span=>({text:span.textContent,rect:normalizedRect(span.getBoundingClientRect(),bounds)}));
+    entry.objects=detect(texts,graphics);
+    const canvas=entry.box.querySelector('canvas');
+    if(entry.objects.length&&canvas?.width&&canvas.height){
+      // Drawing bounds can contain invisible padding; crop to visible ink in a bounded raster.
+      const sample=document.createElement('canvas'),scale=Math.min(1,1000/canvas.width,1400/canvas.height);
+      try{
+        sample.width=Math.max(1,Math.round(canvas.width*scale));sample.height=Math.max(1,Math.round(canvas.height*scale));
+        const context=sample.getContext('2d',{willReadFrequently:true});context.drawImage(canvas,0,0,sample.width,sample.height);
+        const raster=context.getImageData(0,0,sample.width,sample.height),background=entry.box.classList.contains('dark')?[32,33,36]:[255,255,255];
+        for(const object of entry.objects)object.rect=tightenRect(object.rect,raster,background);
+      }catch{/* Retain geometric bounds if raster readback is unavailable. */}
+      finally{sample.width=sample.height=0;}
+    }
+    const layer=document.createElement('div');layer.className='pdf-object-regions';
+    for(const object of entry.objects){
+      const button=document.createElement('button');button.type='button';button.className='pdf-object-target';button.setAttribute('aria-label',`Add ${object.label} to chat`);button.style.cssText=`left:${object.rect[0]*100}%;top:${object.rect[1]*100}%;width:${object.rect[2]*100}%;height:${object.rect[3]*100}%`;object.button=button;
+      button.onfocus=()=>button.classList.add('hovered');button.onblur=()=>button.classList.remove('hovered');button.onclick=event=>{event.preventDefault();attach(entry,object);};layer.append(button);
+    }
+    entry.box.querySelector('.pdf-object-regions')?.remove();entry.box.append(layer);
+  }
+  function hit(entry,x,y){return (entry.objects||[]).filter(object=>pdfPointInRect(x,y,object.rect)).sort((a,b)=>a.rect[2]*a.rect[3]-b.rect[2]*b.rect[3])[0];}
+  function clear(entry){for(const object of entry.objects||[])object.button?.classList.remove('hovered');entry.box.classList.remove('over-pdf-object');}
+  function hover(entry,x,y){const object=hit(entry,x,y);for(const item of entry.objects||[])item.button?.classList.toggle('hovered',item===object);entry.box.classList.toggle('over-pdf-object',!!object);}
+  function attach(entry,object){
+    if(!window.NoctuaChatSelections?.add)return false;
+    const rect=[...object.rect],page=entry.number;PDF.selection=null;updateChatContext();
+    NoctuaChatSelections.add({text:object.text,source:{kind:'pdf',label:`${PDF.paper?.title||'PDF'} · ${object.label}`.slice(0,500),paper_key:PDF.key,page,page_end:page,region_kind:object.kind,region_label:object.label,rect},anchor:{kind:'pdf',page,rect,pages:[{page,rects:[rect]}]}});
+    clear(entry);
+    return true;
+  }
+  return {detect,graphicRects,tightenRect,mount,hit,hover,clear,attach};
+})();

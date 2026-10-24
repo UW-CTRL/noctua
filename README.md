@@ -295,6 +295,8 @@ relevant MCP tool descriptions in sync whenever note features change (see
 
 ## Chat
 
+The right panel remembers the selected **Paper** or **Chat** tab across page reloads.
+
 The **Chat** tab (right panel) uses the selected Codex or Claude Code backend and
 its existing login (no separate API key). Every message
 automatically includes what you're looking at: the graph's center, the selected
@@ -305,6 +307,10 @@ and their contents, read or open a folder's project graph, list and read your
 notes, and save papers to Noctua (adding existing papers to the chosen collection). Paper links in its answers are clickable. **New chat** starts a fresh
 conversation, and **Stop** cancels a reply. LaTeX in messages (`$…$`, `$$…$$`,
 `\(…\)`, `\[…\]`) is typeset.
+
+Drag text in the PDF Reader, rendered notes, paper details, or a chat message and click **Add to chat** to attach the excerpt to the current composer. Theme-colored numbered badges and a faint highlight mark attached source passages. The badges show which passages are queued and match their order in the preview. Clicking a badge opens its attachment preview; removing or sending attachments removes the badges and faint highlights without modifying the source. Multiple passages appear as an annotation-count chip; hover over it to preview sources and text, remove individual entries, or clear them all. These attachments are distinct from saved PDF annotations. Pending attachments are kept locally per assistant and conversation, and sent excerpts remain expandable in saved user messages. The assistant receives each passage with its paper/page or note identifiers. Failed submissions retain the attachments. You can attach up to 20 passages (12,000 characters per passage; 40,000 total). Sending only attachments asks the assistant to explain them. This uses the existing Chat tab. For a one-page PDF selection, the same popup offers six palette circles below **Add to chat**; clicking a circle immediately saves a user highlight in that color.
+
+Hover over a detected **Figure**, **Table**, or **Algorithm** in the Reader to see a faint box, then click it to add it directly to the current chat annotations. Boxes include caption continuations and nearby stacked figure panels, and tables can have captions above or below their rows. In two-column layouts, detection estimates the text gutter to keep adjacent objects and their captions separate while retaining figures that span both columns. Detection uses selectable captions and local PDF drawing geometry, then trims empty padding against the rendered page; no AI request runs on hover. Attachments include the caption, available text, and the paper/page/region location. The assistant can inspect the original page with `view_pdf_page`; the attachment is not an uploaded image crop. Ordinary text dragging and citation links retain their existing behavior. Scanned PDFs and unusual caption layouts may not expose selectable objects.
 
 
 Replies also render Markdown tables, `>` blockquotes, read-only task status
@@ -386,3 +392,5 @@ theme changes, and invalid-diagram fallback.
 `swift tests/pdf-selection.swift` checks comment/highlight selection, continuous line geometry, and agent page navigation.
 `swift tests/highlight-colors.swift` checks palette swatches, circular AI color controls, per-category saves, palette remapping, and save-failure recovery.
 `swift tests/reader.swift` exercises bundled PDF.js canvas rendering and text-selection geometry in WebKit; it requires a desktop session that permits WebKit subprocesses.
+
+PDF attachment badges sit in the page margins, aligned with the start of the selected passage, without covering its text.
