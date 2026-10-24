@@ -2,13 +2,13 @@
 
 Add AI-assisted PDF navigation and highlighting, clearer annotations, and source-aware chat attachments. Readers can navigate an inferred outline, identify the paper's key contributions, and bring selected passages or figures into the existing chat without losing their source locations.
 
-This PR is stacked on #1 (`codex/settings-assistant-storage`) so its diff contains only the new Reader and attachment work. Merge #1 first, then retarget this PR to `main`.
+This PR was stacked on #1 (`codex/settings-assistant-storage`), which is now merged. The Reader and attachment work remains on the existing PR branch.
 
 ## Main Features
 
 ### AI document outlines
 
-Add **Outline** and **Annotations** tabs to the left Reader sidebar. Use the embedded PDF outline when available; otherwise generate a grounded outline from selectable text, including inferred sections. Section entries navigate to the source passage. Support regeneration, retry, and a local cache keyed by the PDF hash.
+Add **Outline** and **Annotations** tabs to the left Reader sidebar. Default to **Document** on the left. Keep **AI-generated** in a separate right-hand source selector; selecting it starts a grounded outline from selectable text, including inferred sections, or loads an existing saved result. A PDF without embedded bookmarks stays empty until the user chooses AI. Section entries navigate to the source passage. Support regeneration, retry, and a local cache keyed by the PDF hash. Place Regenerate on the left and an icon-only AI-outline delete control on the right; deleting the saved AI outline leaves document bookmarks and annotations intact.
 
 ![AI-generated document outline beside a highlighted demo paper](images/pr-3/outline.png)
 
@@ -24,7 +24,7 @@ Drag text in PDFs, rendered notes, paper details, or chat messages and choose **
 
 Hover over a detected **Figure**, **Table**, or **Algorithm** and click to attach it directly. Attachments carry captions, available text, and paper/page/region identifiers. Detection handles separate columns, spanning figures, long captions, stacked panels, image clipping, table rules, and rotated page watermarks. Visual interpretation uses the original page through `view_pdf_page`; attachments are not uploaded image crops. These controls use the existing Chat tab; no side chat is added.
 
-![A selected passage and figure queued in chat with numbered source badges and an attachment preview](images/pr-3/attachments.png)
+![Select a passage, attach a figure and table, preview the queued sources, and save a text highlight](images/pr-3/attachments.gif)
 
 ### Readable annotations and configurable highlight colors
 
@@ -36,7 +36,7 @@ Expose six editable palette swatches and circular AI category pickers in Setting
 
 ![The six-color Reader palette and four circular AI category color controls](images/pr-3/settings.png)
 
-The screenshots render the production components in an isolated English demo with fictional paper content and annotations. No personal notes or chat histories are included. Regenerate them with `swift tests/pr3-screenshots.swift` on macOS.
+The outline and auto-highlight screenshots use isolated fictional demo content. The attachment GIF renders the production Reader components with the user-selected LeWorldModel paper, demonstrating text selection, figure and table attachments, previews, and a saved highlight. It uses an isolated draft and does not load personal notes or chat history. The Settings image is the screenshot supplied for this PR. The attachment recording fixture reads local inputs from the ignored `target/pr3-recording/` directory; it does not call an AI provider or persist changes to the live library. Render frames with `swift tests/pr3-recordings.swift attachments`, then encode them with `python3 tests/pr3-gifs.py attachments` (FFmpeg required).
 
 ## Minor Changes
 
@@ -52,10 +52,10 @@ The screenshots render the production components in an isolated English demo wit
 
 ## Validation
 
-- **Passed:** `cargo test --offline --locked -p noctua` — 26 tests, including isolated analysis sessions, quote grounding, caching, atomic annotation writes, palette migration/recoloring, and selected passages reaching both assistants and saved history.
+- **Passed:** `cargo test --offline --locked -p noctua` — 29 tests, including isolated analysis sessions, quote grounding, caching, atomic annotation writes, palette migration/recoloring, and selected passages reaching both assistants and saved history.
 - **Passed:** Swift checks for frontend syntax/backend switching, PDF navigation and bibliography matching, continuous/non-stacking highlights, palette controls, and captioned object detection.
 - **Passed:** `node tests/pdf-comments.cjs` — debounce, serialized saves, tab-close flushing, revision conflicts, offline recovery, and deletion during a save.
-- **Passed:** isolated WebKit screenshot fixture for the four feature examples above.
+- **Passed:** isolated WebKit screenshot fixture and the 14-step public-paper attachment recording; GIF frame encoding and dimensions checked.
 - **Checked:** PDF geometry on LeWorldModel (19 figures and 9 tables) and SmoothQuant (10 figures and 11 tables), including SmoothQuant's actual Reader text geometry.
 - **Passed:** whitespace and English-language audits of changed source, UI text, documentation, prompts, and fixtures.
 - **Not counted as passing:** the full `tests/pdf-reader.html` WebKit integration suite timed out in this environment.

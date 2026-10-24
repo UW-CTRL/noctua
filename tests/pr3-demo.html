@@ -27,7 +27,7 @@ try{
  Object.assign(PDF,{key:'demo',paper:{title:'Learning Reliable World Models'},doc,page:1,scale:.91,dark:false});
  PDF.annotations=Object.keys(pdfCategories).map((category,index)=>({id:'demo-'+category,author:'assistant',kind:'highlight',category,source:'auto-highlight',page:1,color:pdfCategories[category].color,rects:[[54/612,(792-[658,576,494,412][index]-12)/792,.79,32/792]],quote:[lines[3][0]+' '+lines[4][0],lines[6][0]+' '+lines[7][0],lines[9][0]+' '+lines[10][0],lines[12][0]+' '+lines[13][0]][index],comment:['A stable predictive objective is the central contribution.','The encoder and predictor form the main learning method.','Prediction improves while planning requires less computation.','Limited data diversity and long-horizon detail remain challenges.'][index],status:'accepted',revision:1,replies:[]}));
  pdfOutlines.set('demo',{status:'ready',outline:{source:'ai',entries:[{title:'Abstract',page:1,level:1,y:.12},{title:'Method',page:1,level:1,y:.24},{title:'Results',page:1,level:1,y:.34},{title:'Limitations',page:1,level:1,y:.44},{title:'References',page:1,level:1,y:.79}]}});
- ensurePDFSidebar();await renderPDF();await ensurePDFPage(pdfPageEntries[0]);await refreshPDFAnnotations();renderPDFOutline();
+ PDF.outlineSource='ai';ensurePDFSidebar();await renderPDF();await ensurePDFPage(pdfPageEntries[0]);await refreshPDFAnnotations();renderPDFOutline();
  window.demoScene=async name=>{
   $('#demo-settings').style.display='none';getSelection().removeAllRanges();NoctuaChatSelections.consume(NoctuaChatSelections.snapshot());$('#selection-add-chat').hidden=true;
   setPDFSidebarTab(name==='outline'?'outline':'annotations');
