@@ -45,7 +45,8 @@ Zotero is optional: configure its data folder in **Settings**, then choose **Lib
 
 The header's **⚙ Settings** button opens a dialog with tabs on the left:
 
-- **Appearance**: Light, Dark, or System for the app and independently for Notes.
+- **Appearance**: Light, Dark, or System independently for App, Notes, and Reader.
+  All three default to System on first launch; saved preferences are preserved.
   Appearance saves automatically in this browser and updates other tabs at the same address.
 - **Research assistant**: choose Codex or Claude Code, a model (or custom model ID), reasoning
   effort, and fast mode. Choices save automatically per provider and apply to the next chat
@@ -237,7 +238,7 @@ The optional Zotero import preserves nested collections and citation keys, and r
 
 Switch the header to **Notes** for a writing page attached to a Noctua
 collection. Use **Settings → Appearance → Notes theme** to choose **Dark**, **Light**,
-or **System** (follows your system appearance). Dark is the default. Your choice
+or **System** (follows your system appearance). System is the default. Your choice
 is remembered in this browser and shared with other tabs at the same address.
 Drawing colors adapt for readability without changing saved strokes.
 Each folder holds any number of notes (**New note**, click to open, ×

@@ -42,7 +42,7 @@ Typing `[[` or `\noteref{` opens a note picker across folders. `\noteref{NOTE_ID
 
 The gear beside the title opens the preamble, which applies to the entire note. It supports custom commands (`\newcommand`, `\def`, `\DeclareMathOperator`), page geometry and margins, and paragraph spacing/indentation. For example, `\geometry{margin=1in}` changes margins and `\setlength{\parindent}{0pt}` removes paragraph indentation. Only supported packages are available; do not imply arbitrary packages can be installed.
 
-Settings provides separate System, Note, and Chat font families and sizes. Notes also have appearance settings. These are UI controls, not chat tools; equations retain their math typeface.
+Settings provides separate System, Note, and Chat font families and sizes. App, Notes, and Reader themes independently default to System and preserve saved choices. These are UI controls, not chat tools; equations retain their math typeface.
 
 ### Assistant tools and limits
 

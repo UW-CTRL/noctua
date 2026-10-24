@@ -37,7 +37,7 @@ function applyReaderTheme(){
   if(changed&&PDF.key)return renderPDF(anchor);
 }
 function setReaderTheme(theme){
-  PDF.theme=['dark','light','system'].includes(theme)?theme:'dark';
+  PDF.theme=['dark','light','system'].includes(theme)?theme:'system';
   store.set('noctua.readerTheme',PDF.theme);
   return applyReaderTheme();
 }

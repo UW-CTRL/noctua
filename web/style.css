@@ -471,7 +471,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
 .note-list li:hover .n-del, .note-list li:focus-within .n-del { opacity: 1; }
 .note-list .hint { padding: 0 12px; }
 
-/* Page palettes are independent of the app theme. Keep existing notes dark by default. */
+/* Page palettes are independent of the app theme and follow the system by default. */
 #notes-stage {
   --np-bg: #fdfcfb; --np-ink: #25262b; --np-muted: #66636c; --np-line: #dedbd3; --np-raise: #f0eee8;
   --np-link: #805536; --np-ref: #633b1c; --np-warn: #b12a44; --np-unknown: #8c5a12; --np-link-ink: #fff;
@@ -480,7 +480,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   color-scheme: light;
   overflow: auto; background: var(--np-bg); color: var(--np-ink); min-height: 0;
 }
-#notes-stage:not([data-notes-theme]), #notes-stage[data-notes-theme="dark"] {
+#notes-stage[data-notes-theme="dark"] {
   --np-bg: #15161b; --np-ink: #e6e3dc; --np-muted: #8d8a83; --np-line: #2f313a; --np-raise: #1e2027;
   --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
   --np-link-rgb: 169, 184, 255; --np-suggest-line: #3d4466;
@@ -488,7 +488,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
-  #notes-stage[data-notes-theme="system"] {
+  #notes-stage:not([data-notes-theme]), #notes-stage[data-notes-theme="system"] {
     --np-bg: #15161b; --np-ink: #e6e3dc; --np-muted: #8d8a83; --np-line: #2f313a; --np-raise: #1e2027;
     --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
     --np-link-rgb: 169, 184, 255; --np-suggest-line: #3d4466;

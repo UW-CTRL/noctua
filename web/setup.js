@@ -199,9 +199,9 @@ function appearanceSection() {
     <label class="setting-field" for="setup-app-theme"><span>App theme</span>
       <select id="setup-app-theme">${options(document.documentElement.dataset.theme || 'system')}</select></label>
     <label class="setting-field" for="setup-notes-theme"><span>Notes theme</span>
-      <select id="setup-notes-theme">${options($('#notes-stage').dataset.notesTheme || 'dark')}</select></label>
+      <select id="setup-notes-theme">${options($('#notes-stage').dataset.notesTheme || 'system')}</select></label>
     <label class="setting-field" for="setup-reader-theme"><span>Reader theme</span>
-      <select id="setup-reader-theme">${options(PDF.theme || 'dark')}</select></label>
+      <select id="setup-reader-theme">${options(PDF.theme || 'system')}</select></label>
     </div>
     ${highlightColorSettings()}
     <div class="settings-group" role="group" aria-labelledby="settings-fonts-title"><h3 id="settings-fonts-title">Fonts</h3>
