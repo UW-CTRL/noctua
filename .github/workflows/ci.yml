@@ -5,6 +5,15 @@ on:
     branches: [main]
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'CONTRIBUTING.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'LICENSE.*'
+      - 'NOTICE'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:

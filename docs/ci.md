@@ -1,7 +1,11 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on pull requests targeting `main`, pushes to
-`main`, and manual execution. Each PR update starts fresh checks and cancels
+`main`, and manual execution. Pushes to `main` skip CI when every changed file is `README.md`, `AGENTS.md`,
+`CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`, `LICENSE.*`, `NOTICE`, or under
+`docs/`. Any other changed path still triggers CI, including
+runtime prompts under `src/prompts/`. PR checks, manual runs, and the separate
+dependency security workflow retain their existing triggers. Each PR update starts fresh checks and cancels
 older runs for that PR. Jobs have read-only repository access and no release or
 deployment steps. The separate release workflow still builds installers only
 for version tags or an explicit manual release run, then publishes the release
@@ -32,7 +36,8 @@ it includes both deleted and added paths for renames. Classification uses the
 whole PR diff, not just the last pushed commit. Any other path requires
 desktop checks, including `src/prompts/*.md`, Rust source, native app assets,
 dependencies, and workflow files. An empty/failed comparison conservatively runs
-desktop checks. Main pushes and manual runs always run desktop checks. Backend,
+desktop checks. Main pushes containing non-documentation changes and manual runs always run
+desktop checks. Backend,
 frontend, release/workflow, and security jobs still run for these PRs; desktop
 setup and compilation steps are skipped. Each desktop runner only
 reports a skip message, keeping all three named checks successful and available
