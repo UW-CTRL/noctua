@@ -85,6 +85,24 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
 
+      - name: Configure update verification key
+        if: needs.prepare.outputs.updater == 'true'
+        uses: actions/github-script@v7
+        env:
+          NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const pubkey = process.env.NOCTUA_UPDATER_PUBLIC_KEY?.trim();
+            if (!pubkey || !Buffer.from(pubkey, 'base64').toString('utf8').startsWith('untrusted comment:')) {
+              throw new Error('NOCTUA_UPDATER_PUBLIC_KEY must contain the complete base64-encoded public key file.');
+            }
+            const path = 'app/tauri.release.conf.json';
+            const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+            config.plugins ??= {};
+            config.plugins.updater = { ...config.plugins.updater, pubkey };
+            fs.writeFileSync(path, JSON.stringify(config, null, 2));
+
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |

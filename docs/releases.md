@@ -196,6 +196,14 @@ every future release: changing the public key prevents installed apps from
 verifying new updates. The public key is compiled into the native app from
 `NOCTUA_UPDATER_PUBLIC_KEY`; it is not supplied by the update server.
 
+Before building, the workflow also writes that same public key into
+`plugins.updater.pubkey` in the runner's release configuration. The Tauri CLI
+needs it to verify generated signatures; the runtime builder override alone
+does not configure the bundler. The variable must contain the complete encoded
+`.pub` file produced by Tauri, including its encoded comment line. This step
+uses the selected workflow, so a manual run from updated `main` can rebuild an
+older draft without moving its version tag.
+
 The release-only `app/tauri.release.conf.json` enables updater artifact signing.
 The updater disables legacy ZIP support to avoid the vulnerable `zip` dependency.
 Keep Windows updates as raw NSIS `.exe` files and Linux updates as raw AppImages;
@@ -203,7 +211,9 @@ macOS `.app.tar.gz` support remains enabled independently of that feature.
 Ordinary local builds do not require a private key. They show an explanatory
 error when checking for updates unless built with `NOCTUA_UPDATER_PUBLIC_KEY`.
 For a local signed build, export that variable and Tauri's signing environment
-variables, then run `cargo tauri build --config tauri.release.conf.json` in `app/`.
+variables and set `plugins.updater.pubkey` to the same public key in your local
+release configuration. Then run
+`cargo tauri build --config tauri.release.conf.json` in `app/`.
 
 In the desktop app, **Settings → About & shortcuts → Check for updates** checks
 for a strictly newer version. **Update to …** asks the user to save work and
