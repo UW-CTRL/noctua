@@ -300,7 +300,7 @@ function showNoteHelp() {
 \section{Introduction}
 \textbf{Bold} and \emph{emphasis}`)}</section>
       <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear beside the note title opens the preamble for page layout and custom LaTeX commands.</p></section>
-      <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Equations keep their math typeface.</p></section>
+      <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
       <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
       <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
@@ -880,7 +880,7 @@ function notesContext(sentKey) {
 
 // CSS follows system changes automatically; changing palettes never rewrites note content.
 function setNotesTheme(theme) {
-  const next = ['dark', 'light', 'system'].includes(theme) ? theme : 'dark';
+  const next = ['dark', 'light', 'system'].includes(theme) ? theme : 'system';
   $('#notes-stage').dataset.notesTheme = next;
   if ($('#setup-notes-theme')) $('#setup-notes-theme').value = next;
   store.set('noctua.notesTheme', next);

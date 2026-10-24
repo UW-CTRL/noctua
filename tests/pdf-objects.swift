@@ -15,6 +15,14 @@ assert(table.length===1&&table[0].kind==='table'&&table[0].text.includes('94.5')
 const cells=[text('Table 1: Results',.1,.1,.8)];for(let row=0;row<10;row++)for(let col=0;col<4;col++)cells.push(text('Cell '+row+':'+col,.1+col*.2,.15+row*.018,.08));const many=NoctuaPDFObjects.detect(cells,[[.1,.14,.8,.04]]);assert(many.length===1&&many[0].text.includes('Cell 9:3')&&many[0].rect[1]+many[0].rect[3]>.32,'table bounds must count complete rows, not individual cells');
 const algorithm=NoctuaPDFObjects.detect([text('Algorithm 1: Training',.1,.1,.8),text('Initialize parameters',.1,.15,.6),text('Repeat until convergence',.1,.18,.6)],[]);
 assert(algorithm.length===1&&algorithm[0].kind==='algorithm','unruled algorithm text must form a selectable region');
+const wrappedAlgorithmReference=NoctuaPDFObjects.detect([
+ text('The bound depends on model uncertainty when the policy executes using',.176,.59,.647,.013),
+ text('Algorithm 1. By Lemma 12, the objective is an optimistic upper bound.',.176,.604,.647,.013),
+ text('The following paragraph establishes the performance guarantee.',.176,.618,.647,.013),
+ text('Lemma 3. The policy satisfies the lower performance bound.',.176,.64,.647,.013),
+ text('Proof. Consider the following cases.',.176,.66,.647,.013)
+],[]);
+assert(wrappedAlgorithmReference.length===0,'a sentence wrapping before Algorithm 1. must not turn the following proof into an algorithm attachment');
 const split=NoctuaPDFObjects.detect([text('Algorithm 2',.1,.1,.15),text('Learning procedure',.26,.1,.3),text('Initialize parameters',.1,.15,.6),text('Repeat until convergence',.1,.18,.6)],[]);assert(split.length===1&&split[0].label==='Algorithm 2','a separately styled caption label must not require a colon');
 const ruled=NoctuaPDFObjects.detect([text('Algorithm 1: Training',.1,.1,.8),text('Initialize parameters',.1,.15,.6),text('Repeat until convergence',.1,.18,.6)],[[.1,.14,.8,.001],[.1,.21,.8,.001]]);assert(ruled.length===1&&ruled[0].rect[3]>.08,'thin horizontal rules must not collapse an algorithm to a single line');
 assert(NoctuaPDFObjects.detect([text('Figure 2 shows an improvement.',.1,.4,.8)],[[.1,.12,.8,.25]]).length===0,'in-text figure references must not become object captions');
@@ -75,6 +83,39 @@ const runningHeader=NoctuaPDFObjects.detect([
   text('A paragraph occupying the right column.',.51,.15,.38),text('Another line of the right-column paragraph.',.51,.168,.38)
 ],[[.09,.07,.8,.001],[.11,.083,.34,.2]]);
 assert(runningHeader.length===1&&runningHeader[0].rect[0]+runningHeader[0].rect[2]<.5,'a running-header rule must not merge a column figure into a full-width cluster');
+const nearTopChart=NoctuaPDFObjects.detect([
+ text('A chart title that belongs to the figure',.2,.066,.6,.012),
+ text('Figure 8: A plot near the top of the page',.1,.3,.8)
+],[[.1,.085,.8,.001],[.3,.15,.4,.1]]);
+assert(nearTopChart.length===1&&nearTopChart[0].rect[1]<.075,'a chart title and its top rule below the running-header band must remain inside the figure');
+const samePageFigures=NoctuaPDFObjects.detect([
+ text('Published as a conference paper at ICLR 2026',.176,.032,.302,.013),
+ text('SOOPER SAILR CRPO Primal-Dual Baseline',.26,.104,.48,.009),
+ text('(a) Safe online learning from an offline-trained policy.',.182,.229,.317,.011),
+ text('(b) Vision control task.',.59,.229,.135,.011),
+ text('Figure 5: Learning curves of the objective and constraint.',.176,.254,.647,.013),
+ text('Both panels preserve safety while improving the policy.',.176,.268,.647,.013),
+ text('SOOPER CRPO Baseline',.18,.316,.22,.009),
+ text('Figure 6: Safe exploration on real hardware.',.176,.547,.647,.013),
+ text('The caption describes the objective and constraint.',.176,.561,.647,.013),
+ text('All seeds and the training video are included.',.176,.575,.647,.013),
+ text('The following body paragraph is outside both figures.',.176,.625,.647,.013)
+],[[.176,.049,.647,.001],[.26,.103,.48,.015],[.183,.12,.317,.104],[.5,.12,.317,.104],[.18,.33,.24,.2],[.45,.325,.37,.21]]);
+const curveFigure=samePageFigures.find(r=>r.label==='Figure 5'),hardwareFigure=samePageFigures.find(r=>r.label==='Figure 6');
+assert(samePageFigures.length===2&&curveFigure&&hardwareFigure,'both figures on the page must have independent annotation boxes');
+assert(curveFigure.rect[1]>.09&&curveFigure.rect[1]<.105&&curveFigure.rect[0]+curveFigure.rect[2]>.815&&curveFigure.rect[1]+curveFigure.rect[3]>.28,'a content-width running-header rule must not join Figure 5 or lose either pair of plots and the caption');
+assert(hardwareFigure.rect[1]>.3&&hardwareFigure.rect[1]+hardwareFigure.rect[3]>.588&&hardwareFigure.rect[1]+hardwareFigure.rect[3]<.61&&!hardwareFigure.text.includes('following body'),'Figure 6 must retain its graph, image and full caption without absorbing Figure 5 or following prose');
+// Single-column body text can wrap tightly around a narrow figure.
+for(const left of [false,true]){
+ const x=left?.176:.59,bodyX=left?.43:.176,bodyWidth=left?.394:.4;
+ const wrappedTexts=[text('An earlier full-width body paragraph.',.176,.52,.648,.013)];
+ for(let row=0;row<8;row++)wrappedTexts.push(text('Adjacent body prose must remain outside the attachment.',bodyX,.58+row*.018,bodyWidth,.013));
+ wrappedTexts.push(text('Figure 16: A floating chart',x,.748,.234,.013),text('The caption continues beside',x,.766,.234,.013),text('the surrounding body paragraph.',x,.784,.234,.013),text('Following full-width body paragraph.',.176,.812,.648,.013));
+ const floating=NoctuaPDFObjects.detect(wrappedTexts,[[x+.005,.582,.223,.157]]);
+ assert(floating.length===1&&floating[0].label==='Figure 16','a wrapped caption must remain detectable beside body text on either side');
+ assert(floating[0].rect[1]>.57&&floating[0].rect[1]<.59&&floating[0].rect[1]+floating[0].rect[3]>.797&&floating[0].rect[1]+floating[0].rect[3]<.812,'floating figure bounds must include the graphic and complete caption without nearby paragraphs');
+ assert(floating[0].text.includes('surrounding body paragraph')&&!floating[0].text.includes('Adjacent body')&&!floating[0].text.includes('Following full-width')&&!floating[0].text.includes('earlier full-width'),'attachment text must be collected from the local figure lane');
+}
 const adjacentTables=NoctuaPDFObjects.detect([
  text('Table 1: First results',.52,.1,.4),text('First metric 94.0',.52,.14,.3),text('Last metric 95.0',.52,.24,.3),
  text('Table 2: Second results',.52,.29,.4),text('Second metric 96.0',.52,.35,.3),text('Final metric 97.0',.52,.38,.3)

@@ -38,8 +38,12 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{cache::Cache, history::History, notes::Notes, project::Projects, s2::S2, settings::Settings, zotero::Zotero};
 
+pub use settings::AppIcon;
+
 /// Requests from the page to the desktop app (absent in browser mode).
 pub enum DesktopCmd {
+    /// Apply the selected running-app icon, optionally acknowledging the result.
+    SetAppIcon(AppIcon, Option<oneshot::Sender<Result<(), String>>>),
     /// Open a new window showing this app URL (path and #hash).
     NewWindow(String),
     /// Open an external link in the system browser.
@@ -557,6 +561,10 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         chat_jobs: std::sync::Mutex::new(Default::default()),
     });
 
+    if let Some(desktop) = &app.desktop {
+        let icon = app.settings.lock().unwrap().app_icon;
+        let _ = desktop.send(DesktopCmd::SetAppIcon(icon, None));
+    }
     Ok((url, axum::serve(listener, router(app, hosts)).into_future()))
 }
 
@@ -622,7 +630,10 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/chats", get(chats_list))
         .route("/api/chats/{id}", get(chats_get).delete(chats_delete))
         .route("/mcp", post(mcp_endpoint))
+        .route("/app-icons/dark.svg", get(|| async { asset(include_str!("../app/icons/icon-dark.svg"), "image/svg+xml") }))
+        .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))
         .route("/api/settings", get(settings::get))
+        .route("/api/settings/app-icon", post(settings::set_app_icon))
         .route("/api/settings/storage", post(settings::set_storage))
         .route("/api/settings/agent", post(settings::set_agent))
         .route("/api/settings/highlight-colors", post(settings::set_highlight_colors))

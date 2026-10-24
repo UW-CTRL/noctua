@@ -18,11 +18,12 @@ window.NoctuaPDFObjects=(()=>{
     return estimate(separated);
   }
 
+  const startsCaption=text=>caption.test(text.trim())||/^(?:Figure|Fig\.?|Table|Algorithm)\s*$/i.test(text.trim());
   function linesOf(texts,gutter=null){
     const rows=[];
     for(const item of texts.filter(item=>!(item.rect[3]>.04&&item.rect[3]>item.rect[2]*2)).sort((a,b)=>a.rect[1]-b.rect[1]||a.rect[0]-b.rect[0])){
       const r=item.rect,center=r[1]+r[3]/2;
-      const matches=rows.filter(row=>(!gutter||!((r[0]>=gutter&&row.rect[0]+row.rect[2]<=gutter)||(row.rect[0]>=gutter&&r[0]+r[2]<=gutter)))&&Math.abs(row.guide.rect[1]+row.guide.rect[3]/2-center)<Math.max(row.guide.rect[3],r[3])*.7&&Math.max(0,r[0]-row.rect[0]-row.rect[2],row.rect[0]-r[0]-r[2])<.035).sort((a,b)=>Math.abs(a.guide.rect[1]+a.guide.rect[3]/2-center)-Math.abs(b.guide.rect[1]+b.guide.rect[3]/2-center));
+      const matches=rows.filter(row=>(!gutter||!((r[0]>=gutter&&row.rect[0]+row.rect[2]<=gutter)||(row.rect[0]>=gutter&&r[0]+r[2]<=gutter)))&&Math.abs(row.guide.rect[1]+row.guide.rect[3]/2-center)<Math.max(row.guide.rect[3],r[3])*.7&&Math.max(0,r[0]-row.rect[0]-row.rect[2],row.rect[0]-r[0]-r[2])<.035&&!(r[2]>.18&&row.rect[2]>.18&&Math.max(0,r[0]-row.rect[0]-row.rect[2],row.rect[0]-r[0]-r[2])>.008&&(startsCaption(item.text)||row.parts.some(part=>startsCaption(part.text))))).sort((a,b)=>Math.abs(a.guide.rect[1]+a.guide.rect[3]/2-center)-Math.abs(b.guide.rect[1]+b.guide.rect[3]/2-center));
       const row=matches[0];
       if(row){row.parts.push(item);row.rect=union(row.rect,r);if(item.text.length>row.guide.text.length)row.guide=item;}else rows.push({rect:[...r],parts:[item],guide:item});
     }
@@ -38,18 +39,23 @@ window.NoctuaPDFObjects=(()=>{
   function detect(texts,graphics){
     const gutter=columnGutter(texts),lines=linesOf(texts,gutter),clusters=[];
     // Running-header rules can touch a top figure but are not part of its content.
-    graphics=graphics.filter(r=>!(r[3]<.003&&r[2]>.7&&r[1]<.09&&lines.some(row=>!captionMatch(row)&&row.rect[1]+row.rect[3]<=r[1]&&r[1]-row.rect[1]-row.rect[3]<.025&&row.rect[2]>.3)&&!lines.some(row=>captionMatch(row)&&row.rect[1]<r[1])));
+    graphics=graphics.filter(r=>!(r[3]<.003&&r[2]>.5&&r[1]<.09&&lines.some(row=>!captionMatch(row)&&row.rect[1]<.055&&row.rect[1]+row.rect[3]<=r[1]&&r[1]-row.rect[1]-row.rect[3]<.025&&row.rect[2]>Math.max(.2,r[2]*.4))&&!lines.some(row=>captionMatch(row)&&row.rect[1]<r[1])));
     for(const rect of graphics){
       if(rect[2]>.94||rect[3]>.8||rect[2]*rect[3]>.65)continue;
       let joined=[...rect];
       for(let i=0;i<clusters.length;){const c=clusters[i];if((!gutter||!((joined[0]>=gutter&&c[0]+c[2]<=gutter)||(c[0]>=gutter&&joined[0]+joined[2]<=gutter)))&&gap(joined,c)<.018&&Math.max(0,joined[0]-c[0]-c[2],c[0]-joined[0]-joined[2])<.025){joined=union(joined,c);clusters.splice(i,1);i=0;}else i++;}
       clusters.push(joined);
     }
-    const regions=[],captionRows=new Set();
+    const regions=[],captionRows=new Set(),captionParts=new Set();
+    const isCaptionRow=row=>captionRows.has(row)||row.parts.some(part=>captionParts.has(part));
     for(const line of lines){
-      if(captionRows.has(line))continue;
+      if(isCaptionRow(line))continue;
       const match=captionMatch(line);if(!match)continue;
       const kind=/^(?:fig)/i.test(match[1])?'figure':match[1].toLowerCase(),label=`${kind[0].toUpperCase()+kind.slice(1)} ${match[2]}`;
+      // A wrapped prose reference such as "using Algorithm 1. By Lemma ..."
+      // is part of the preceding sentence, not an algorithm heading.
+      if(kind==='algorithm'&&/\.\s*$/.test(match[0])&&lines.some(previous=>previous!==line&&previous.rect[1]<line.rect[1]&&Math.abs(previous.rect[0]-line.rect[0])<.012&&previous.rect[2]>line.rect[2]*.75&&Math.abs(previous.fontHeight-line.fontHeight)<line.fontHeight*.15&&line.guide.rect[1]-previous.guide.rect[1]-previous.fontHeight>=0&&line.guide.rect[1]-previous.guide.rect[1]-previous.fontHeight<line.fontHeight*.6&&!/[.!?:;]$/.test(previous.text)&&!captionMatch(previous)))continue;
+      for(const part of line.parts)captionParts.add(part);
       const c=line.rect,mid=gutter??.5;
       // A short caption can belong to a graphic spanning the page gutter.
       const wideFigure=kind==='figure'&&clusters.some(r=>r[2]>.5&&r[0]<mid-.03&&r[0]+r[2]>mid+.03&&overlap(r,c)>Math.min(r[2],c[2])*.5&&gap(r,c)<.13&&r[1]+r[3]<=c[1]+c[3]);
@@ -73,20 +79,24 @@ window.NoctuaPDFObjects=(()=>{
           if(count>=2&&joined[3]>.015)ruledTable=joined;
         }
       }
-      let captionRect=[...c],captionText=line.text;
-      let captionLines=1,lastCaption=line;
-      for(const next of kind==='algorithm'?[]:lines){
-        if(next===line||next.guide.rect[1]<=lastCaption.guide.rect[1]+lastCaption.fontHeight*.5||next.rect[0]<left||next.rect[0]+next.rect[2]>right+.02)continue;
-        if(next.guide.rect[1]-lastCaption.guide.rect[1]-lastCaption.fontHeight>line.fontHeight*.9)break;
-        if(ruledTable&&ruledTable[1]>c[1]&&next.guide.rect[1]>=ruledTable[1]-.002)break;
-        if(captionLines>=24||captionText.length>4000||next.fontHeight>line.fontHeight*1.22)break;
-        captionRect=union(captionRect,next.rect);captionText+=' '+next.text;captionLines++;lastCaption=next;captionRows.add(next);
-      }
       const candidates=clusters.filter(r=>inLane(r)&&overlap(r,c)>.01&&gap(r,c)<.13&&(kind!=='figure'||r[1]<c[1]+c[3]));
       candidates.sort((a,b)=>(gap(a,c)+(kind==='figure'?(a[1]>c[1]?.08:0):(a[1]<c[1]?.025:0)))-(gap(b,c)+(kind==='figure'?(b[1]>c[1]?.08:0):(b[1]<c[1]?.025:0))));
       let object=ruledTable||candidates[0];
       if(object&&!ruledTable){
         for(const other of candidates.slice(1))if(other[0]>=left-.02&&other[0]+other[2]<=right+.02&&Math.min(object[1]+object[3],other[1]+other[3])-Math.max(object[1],other[1])>Math.min(object[3],other[3])*.4)object=union(object,other);
+      }
+      let captionRect=[...c],captionText=line.text;
+      let captionLines=1,lastCaption=line;
+      // Wrapped figures need their own text lane, even on a single-column page.
+      const wrapped=kind==='figure'&&!full&&gutter===null&&!!object;
+      const captionLane=wrapped?linesOf(texts.filter(item=>item.rect[0]>=c[0]-.004&&item.rect[0]+item.rect[2]<=Math.max(c[0]+c[2],object[0]+object[2])+.012)):lines;
+      for(const next of kind==='algorithm'?[]:captionLane){
+        if(next===line||next.guide.rect[1]<=lastCaption.guide.rect[1]+lastCaption.fontHeight*.5||next.rect[0]<left||next.rect[0]+next.rect[2]>right+.02)continue;
+        if(next.guide.rect[1]-lastCaption.guide.rect[1]-lastCaption.fontHeight>line.fontHeight*.9)break;
+        if(wrapped&&Math.abs(next.rect[0]-c[0])>Math.max(.018,c[2]*.15))break;
+        if(ruledTable&&ruledTable[1]>c[1]&&next.guide.rect[1]>=ruledTable[1]-.002)break;
+        if(captionLines>=24||captionText.length>4000||next.fontHeight>line.fontHeight*1.22)break;
+        captionRect=union(captionRect,next.rect);captionText+=' '+next.text;captionLines++;lastCaption=next;captionRows.add(next);for(const part of next.parts)captionParts.add(part);
       }
       if(object&&kind==='figure'){
         // A caption can describe vertically stacked panels separated by substantial whitespace.
@@ -97,7 +107,7 @@ window.NoctuaPDFObjects=(()=>{
           // A panel heading can bridge a larger gap between drawings in one figure.
           const distance=gap(other,object),headingBridge=distance>.075&&distance<.13&&lines.some(row=>panelHeading(row)&&inLane(row.rect)&&row.rect[1]>=betweenTop&&row.rect[1]+row.rect[3]<=betweenBottom&&gap(row.rect,object)<.055&&gap(row.rect,other)<.055&&overlap(row.rect,object)>.01&&overlap(row.rect,other)>.01);
           if(distance>.075&&!headingBridge)continue;
-          if(lines.some(row=>row.guide.rect[1]>=betweenTop&&row.guide.rect[1]+row.fontHeight<=betweenBottom&&(captionMatch(row)||row.text.length>70&&!panelHeading(row))&&overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5))continue;
+          if(lines.some(row=>row.guide.rect[1]>=betweenTop&&row.guide.rect[1]+row.fontHeight<=betweenBottom&&(captionMatch(row)||isCaptionRow(row)||row.text.length>70&&!panelHeading(row))&&overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5))continue;
           const joined=union(object,other);if(joined[2]>object[2]+.001||joined[3]>object[3]+.001){object=joined;changed=true;}
         }}
       }
@@ -131,7 +141,9 @@ window.NoctuaPDFObjects=(()=>{
         const graphic=[...object];
         for(const row of lines){
           const marker=panelHeading(row);
-          if(row.rect[1]<figureTextFloor||captionMatch(row)||!inLane(row.rect)||row.rect[1]+row.rect[3]>c[1]||gap(row.rect,graphic)>.055||overlap(row.rect,graphic)<=0)continue;
+          const floating=wrapped&&gutter===null;
+          if(floating&&(row.rect[0]<Math.min(c[0],graphic[0])-.012||row.rect[0]+row.rect[2]>Math.max(c[0]+c[2],graphic[0]+graphic[2])+.012))continue;
+          if(row.rect[1]<figureTextFloor||captionMatch(row)||isCaptionRow(row)||!inLane(row.rect)||row.rect[1]+row.rect[3]>c[1]||gap(row.rect,graphic)>(floating?.02:.055)||overlap(row.rect,graphic)<=0)continue;
           if(row.fontHeight>line.fontHeight*(marker?2.5:1.1)||!marker&&row.text.length>70)continue;
           if(!marker&&row.fontHeight>=line.fontHeight*.95&&lines.some(other=>other!==row&&other.text.length>70&&other.fontHeight>=line.fontHeight*.95&&other.rect[1]+other.rect[3]<=graphic[1]&&gap(other.rect,row.rect)<line.fontHeight*.8&&overlap(other.rect,row.rect)>row.rect[2]*.5))continue;
           object=union(object,row.rect);
@@ -139,7 +151,8 @@ window.NoctuaPDFObjects=(()=>{
       }
       let rect=union(object,captionRect);rect=[Math.max(0,rect[0]-.006),Math.max(0,rect[1]-.006),Math.min(1-rect[0],rect[2]+.012),Math.min(1-rect[1],rect[3]+.012)];
       if(rect[3]>(kind==='figure'?.9:.65)||regions.some(region=>region.label===label))continue;
-      const contents=lines.filter(row=>overlap(row.rect,rect)>row.rect[2]*.5&&row.rect[1]>=rect[1]&&row.rect[1]+row.rect[3]<=rect[1]+rect[3]).map(row=>row.text);
+      const contentLines=wrapped?linesOf(texts.filter(item=>item.rect[0]>=rect[0]-.002&&item.rect[0]+item.rect[2]<=rect[0]+rect[2]+.002)):lines;
+      const contents=contentLines.filter(row=>overlap(row.rect,rect)>row.rect[2]*.5&&row.rect[1]>=rect[1]&&row.rect[1]+row.rect[3]<=rect[1]+rect[3]).map(row=>row.text);
       regions.push({kind,label,rect,text:[label,captionText,...contents.filter(text=>!captionText.includes(text))].join('\n').slice(0,12000)});
     }
     return regions;
@@ -202,6 +215,19 @@ window.NoctuaPDFObjects=(()=>{
     return [x,y,Math.min(1,right/width+.006)-x,Math.min(1,bottom/height+.006)-y];
   }
   const cache=new WeakMap();
+  function textRects(items,viewport){
+    return items.filter(item=>item.str?.trim()&&item.transform).map(item=>{
+      const [a,b,c,d,x,y]=item.transform,u=Math.hypot(a,b)||1,v=Math.hypot(c,d)||1,w=item.width,h=item.height||v;
+      const corners=[[x,y],[x+a/u*w,y+b/u*w],[x+c/v*h,y+d/v*h],[x+a/u*w+c/v*h,y+b/u*w+d/v*h]].map(([x,y])=>viewport.convertToViewportPoint(x,y));
+      const left=Math.min(...corners.map(p=>p[0])),top=Math.min(...corners.map(p=>p[1])),right=Math.max(...corners.map(p=>p[0])),bottom=Math.max(...corners.map(p=>p[1]));
+      return {text:item.str,rect:[left/viewport.width,top/viewport.height,(right-left)/viewport.width,(bottom-top)/viewport.height]};
+    }).filter(item=>item.rect.every(Number.isFinite)&&item.rect[2]>0&&item.rect[3]>0);
+  }
+  async function regions(page,engine,items){
+    if(!cache.has(page))cache.set(page,page.getOperatorList().then(list=>graphicRects(list,engine.OPS,page.getViewport({scale:1}))).catch(()=>[]));
+    const texts=textRects(items||(await page.getTextContent()).items,page.getViewport({scale:1}));
+    return detect(texts,await cache.get(page));
+  }
   async function mount(entry,page,engine,active){
     if(!cache.has(page))cache.set(page,page.getOperatorList().then(list=>graphicRects(list,engine.OPS,page.getViewport({scale:1}))).catch(()=>[]));
     const graphics=await cache.get(page);if(!active())return;
@@ -236,5 +262,5 @@ window.NoctuaPDFObjects=(()=>{
     clear(entry);
     return true;
   }
-  return {detect,graphicRects,tightenRect,mount,hit,hover,clear,attach};
+  return {detect,graphicRects,tightenRect,textRects,regions,columnGutter,linesOf,mount,hit,hover,clear,attach};
 })();

@@ -191,6 +191,18 @@ async function saveHighlightPalette(colors){
   applyPDFHighlightColors(result.highlight_colors,result.highlight_palette);syncHighlightColorSettings();
   if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
 }
+function appIconSettings() {
+  const selected = settings?.app_icon || 'light';
+  const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
+  return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App icon</h3>
+    <p class="hint">${note}</p>
+    <div class="settings-app-icons">${['light','dark'].map(icon => `<label class="settings-app-icon"><input type="radio" name="app-icon" value="${icon}" ${icon === selected ? 'checked' : ''}><img src="/app-icons/${icon}.svg" width="80" height="80" alt=""><span>${icon === 'dark' ? 'Dark' : 'Light'}</span></label>`).join('')}</div>
+    </div>`;
+}
+async function saveAppIcon(icon) {
+  const result = await api('/api/settings/app-icon', {app_icon: icon});
+  settings.app_icon = result.app_icon;
+}
 function appearanceSection() {
   const options = (value) => ['system', 'light', 'dark'].map((v) =>
     `<option value="${v}" ${v === value ? 'selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join('');
@@ -199,10 +211,11 @@ function appearanceSection() {
     <label class="setting-field" for="setup-app-theme"><span>App theme</span>
       <select id="setup-app-theme">${options(document.documentElement.dataset.theme || 'system')}</select></label>
     <label class="setting-field" for="setup-notes-theme"><span>Notes theme</span>
-      <select id="setup-notes-theme">${options($('#notes-stage').dataset.notesTheme || 'dark')}</select></label>
+      <select id="setup-notes-theme">${options($('#notes-stage').dataset.notesTheme || 'system')}</select></label>
     <label class="setting-field" for="setup-reader-theme"><span>Reader theme</span>
-      <select id="setup-reader-theme">${options(PDF.theme || 'dark')}</select></label>
+      <select id="setup-reader-theme">${options(PDF.theme || 'system')}</select></label>
     </div>
+    ${appIconSettings()}
     ${highlightColorSettings()}
     <div class="settings-group" role="group" aria-labelledby="settings-fonts-title"><h3 id="settings-fonts-title">Fonts</h3>
       ${fontSetting('ui', 'System font')}
@@ -548,6 +561,14 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   });
   card.addEventListener('change', async (e) => {
+    if (e.target.name === 'app-icon') {
+      const section = e.target.closest('section'), controls = [...section.querySelectorAll('input[name="app-icon"]')];
+      controls.forEach(control => control.disabled = true);
+      try { await saveAppIcon(e.target.value); msg(section, settings.desktop ? 'App icon updated.' : 'Saved for the next desktop launch.', true); }
+      catch (error) { msg(section, error.message); }
+      finally { controls.forEach(control => { control.disabled = false; control.checked = control.value === (settings.app_icon || 'light'); }); }
+      return;
+    }
     const category=e.target.dataset?.highlightColor,paletteIndex=e.target.dataset?.highlightPalette;
     if(category||paletteIndex!==undefined){
       const section=e.target.closest('section'),group=e.target.closest('section'),controls=[...group.querySelectorAll('[data-highlight-color],[data-highlight-palette]')];

@@ -18,6 +18,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
     #[serde(default)]
+    pub app_icon: AppIcon,
+    #[serde(default)]
     pub highlight_palette: HighlightPalette,
     #[serde(default)]
     pub highlight_colors: HighlightColors,
@@ -37,6 +39,41 @@ pub struct Settings {
     pub zotero_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AppIcon {
+    Dark,
+    #[default]
+    Light,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppIconBody { pub app_icon: AppIcon }
+
+async fn apply_app_icon(app: &App, icon: AppIcon) -> Result<()> {
+    if let Some(desktop) = &app.desktop {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        desktop.send(crate::DesktopCmd::SetAppIcon(icon, Some(tx)))
+            .map_err(|_| bad("The desktop app is unavailable."))?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx).await
+            .map_err(|_| bad("The desktop app did not respond. Try again."))?
+            .map_err(|_| bad("The desktop app closed before applying the icon."))?
+            .map_err(bad)?;
+    }
+    Ok(())
+}
+
+pub async fn set_app_icon(State(app): State<Arc<App>>, Json(body): Json<AppIconBody>) -> ApiResult {
+    let previous = app.settings.lock().unwrap().app_icon;
+    apply_app_icon(&app, body.app_icon).await?;
+    if let Err(error) = update(&app, |s| s.app_icon = body.app_icon) {
+        let _ = apply_app_icon(&app, previous).await;
+        return Err(error.into());
+    }
+    Ok(Json(json!({"app_icon": body.app_icon})))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -173,6 +210,7 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "agent": s.agent,
+        "app_icon": s.app_icon,
         "assistant": s.assistant,
         "highlight_colors": s.highlight_colors,
         "highlight_palette": s.highlight_palette,

@@ -37,7 +37,7 @@ function applyReaderTheme(){
   if(changed&&PDF.key)return renderPDF(anchor);
 }
 function setReaderTheme(theme){
-  PDF.theme=['dark','light','system'].includes(theme)?theme:'dark';
+  PDF.theme=['dark','light','system'].includes(theme)?theme:'system';
   store.set('noctua.readerTheme',PDF.theme);
   return applyReaderTheme();
 }
@@ -594,11 +594,11 @@ async function resolvePDFDestination(doc,link){
   const [left,top]=viewport.convertToViewportPoint(Number.isFinite(x)?x:page.view[0],Number.isFinite(y)?y:page.view[3]);
   return {page:index+1,x:Math.max(0,Math.min(1,left/viewport.width)),y:Math.max(0,Math.min(1,top/viewport.height))};
 }
-let pdfPreviewLink=null;
+let pdfPreviewLink=null,pdfPreviewTask=null;
 let pdfLinkTimer=null,pdfLinkCloseTimer=null,pdfLinkCurrent=null,pdfLinkPending=null,pdfLinkPinned=false,pdfLinkSerial=0;
 function closePDFLinkPreview(){
   clearTimeout(pdfLinkTimer);clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;pdfLinkPending=null;pdfLinkCurrent=null;pdfLinkPinned=false;pdfLinkSerial++;
-  pdfPreviewLink=null;
+  pdfPreviewLink=null;pdfPreviewTask?.cancel();pdfPreviewTask=null;
   $('#pdf-link-preview')?.remove();
 }
 function schedulePDFLinkClose(){
@@ -612,7 +612,11 @@ function schedulePDFLinkPreview(link,x,y){
   clearTimeout(pdfLinkTimer);pdfLinkPending=link.id;
   pdfLinkTimer=setTimeout(()=>{pdfLinkPending=null;showPDFLinkPreview(link,x,y).catch(e=>toast(e.message));},300);
 }
-function pdfPreviewSizeKey(){return 'noctua.pdfPreviewSize.reference';}
+function pdfPreviewSizeKey(popup){return popup?.dataset.previewKind==='passage'?'noctua.pdfPreviewSize.passage.'+popup.dataset.previewLayout:'noctua.pdfPreviewSize.reference';}
+function savedPDFPreviewSize(popup){
+  try{const size=JSON.parse(store.get(pdfPreviewSizeKey(popup))||'null');if(Number.isFinite(size?.width)&&Number.isFinite(size?.height)&&size.width>0&&size.height>0)return size;}catch{}
+  return null;
+}
 function applyPDFPreviewSize(popup,size){
   if(!Number.isFinite(size?.width)||!Number.isFinite(size?.height)||size.width<=0||size.height<=0)return;
   const width=Math.max(Math.min(260,innerWidth-24),Math.min(size.width,innerWidth-24));
@@ -620,10 +624,10 @@ function applyPDFPreviewSize(popup,size){
   popup.classList.add('pdf-preview-sized');popup.style.width=width+'px';popup.style.height=height+'px';
 }
 function bindPDFPreviewResize(popup){
-  try{applyPDFPreviewSize(popup,JSON.parse(store.get(pdfPreviewSizeKey(popup))||'null'));}catch{}
-  const grip=document.createElement('div');grip.className='pdf-preview-resize';grip.tabIndex=0;grip.setAttribute('role','separator');grip.setAttribute('aria-label','Resize preview');grip.title='Drag to resize preview';popup.append(grip);
+  const saved=savedPDFPreviewSize(popup);if(saved){applyPDFPreviewSize(popup,saved);popup.dataset.previewManual='true';}
+  const grip=document.createElement('div');grip.className='pdf-preview-resize';grip.tabIndex=0;grip.setAttribute('role','separator');grip.setAttribute('aria-label','Resize preview');grip.title='Drag to resize preview; double-click to restore automatic size';popup.append(grip);
   let start=null;
-  const save=()=>{if(!popup.isConnected)return;const rect=popup.getBoundingClientRect();store.set(pdfPreviewSizeKey(popup),JSON.stringify({width:rect.width,height:rect.height}));};
+  const save=()=>{if(!popup.isConnected)return;const rect=popup.getBoundingClientRect();popup.dataset.previewManual='true';store.set(pdfPreviewSizeKey(popup),JSON.stringify({width:rect.width,height:rect.height}));};
   const resize=(width,height)=>{
     const rect=popup.getBoundingClientRect();
     applyPDFPreviewSize(popup,{width:Math.min(width,innerWidth-rect.left-12),height:Math.min(height,innerHeight-rect.top-12)});
@@ -637,12 +641,20 @@ function bindPDFPreviewResize(popup){
   const finish=event=>{
     if(!start)return;start=null;delete popup.dataset.resizing;save();
     if(grip.hasPointerCapture(event.pointerId))grip.releasePointerCapture(event.pointerId);
-    trackPDFReferencePreview(event);
+    popup.noctuaRenderPreview?.();trackPDFReferencePreview(event);
   };
   grip.onpointerup=finish;grip.onpointercancel=finish;grip.onlostpointercapture=finish;
+  const reset=()=>{
+    localStorage.removeItem(pdfPreviewSizeKey(popup));popup.dataset.previewManual='false';
+    if(popup.pdfPreviewCrop){const size=pdfReferencePreviewSize(popup.pdfPreviewCrop,innerWidth,innerHeight);popup.dataset.previewAuto=JSON.stringify(size);applyPDFPreviewSize(popup,size);}
+    else{popup.classList.remove('pdf-preview-sized');popup.style.width='';popup.style.height='';}
+    const rect=popup.getBoundingClientRect();positionPDFPreview(popup,rect.left-12,rect.top-16);popup.noctuaRenderPreview?.();
+  };
+  grip.ondblclick=event=>{event.preventDefault();reset();};
   grip.onkeydown=event=>{
+    if(event.key==='Home'){event.preventDefault();reset();return;}
     const dx={ArrowLeft:-20,ArrowRight:20}[event.key]||0,dy={ArrowUp:-20,ArrowDown:20}[event.key]||0;if(!dx&&!dy)return;
-    event.preventDefault();const rect=popup.getBoundingClientRect();resize(rect.width+dx,rect.height+dy);save();
+    event.preventDefault();const rect=popup.getBoundingClientRect();resize(rect.width+dx,rect.height+dy);save();popup.noctuaRenderPreview?.();
   };
 }
 function positionPDFPreview(popup,x,y){
@@ -652,6 +664,71 @@ function positionPDFPreview(popup,x,y){
   const left=onRight?x+gap:x-gap-width;
   popup.style.left=Math.max(margin,Math.min(left,innerWidth-width-margin))+'px';
   popup.style.top=Math.max(12,Math.min(y+16,innerHeight-popup.offsetHeight-12))+'px';
+}
+function pdfReferenceCrop(viewport,target,items,objects=[],destination=''){
+  const {width:pw,height:ph}=viewport,texts=NoctuaPDFObjects.textRects(items,viewport),tx=target.x,ty=target.y;
+  const median=values=>values.sort((a,b)=>a-b)[Math.floor(values.length/2)];
+  const fontHeight=median(texts.filter(t=>t.text.length>4&&t.rect[3]>.005&&t.rect[3]<.035).map(t=>t.rect[3]*ph))||10;
+  let gutter=NoctuaPDFObjects.columnGutter(texts);
+  if(gutter!==null&&texts.filter(t=>t.text.length>45&&t.rect[2]>.52&&t.rect[0]<gutter-.1&&t.rect[0]+t.rect[2]>gutter+.1&&t.rect[1]>ty-.22&&t.rect[1]<ty+.4).length>=3)gutter=null;
+  const kind=typeof destination==='string'&&destination.match(/^(figure|table|algorithm|equation|section|subsection|subsubsection)[.:]/i)?.[1].toLowerCase();
+  const bounds=(left,top,right,bottom,extra={})=>{
+    const x=Math.max(0,left),y=Math.max(0,top);
+    return {x,y,width:Math.max(1,Math.min(pw,right)-x),height:Math.max(1,Math.min(ph,bottom)-y),fontHeight,columns:gutter===null?1:2,kind:kind||'passage',...extra};
+  };
+  // Use the same detected objects (including their captions) as annotation hit boxes.
+  if(!/^(?:equation|.*section)$/.test(kind||'')){
+    const candidates=objects.map(object=>{
+      const r=object.rect,dx=Math.max(0,r[0]-tx,tx-r[0]-r[2]),dy=Math.max(0,r[1]-ty,ty-r[1]-r[3]);
+      return {object,dx,dy,distance:dy+dx*.25};
+    }).filter(({distance,dx,dy})=>kind?distance<.045:dy<.008&&dx<.04).sort((a,b)=>a.distance-b.distance);
+    const chosen=candidates.find(({object})=>object.kind===kind)||candidates[0];
+    if(chosen){const {rect:r,kind:objectKind}=chosen.object;return bounds(r[0]*pw,r[1]*ph,(r[0]+r[2])*pw,(r[1]+r[3])*ph,{kind:objectKind,object:true});}
+  }
+  const lines=NoctuaPDFObjects.linesOf(texts,gutter).filter(line=>line.rect[3]<.08&&line.rect[1]>.025&&line.rect[1]+line.rect[3]<.97);
+  const nearest=lines.slice().sort((a,b)=>(Math.abs(a.rect[1]-ty)+Math.abs(a.rect[0]-tx)*.12)-(Math.abs(b.rect[1]-ty)+Math.abs(b.rect[0]-tx)*.12))[0];
+  if(!nearest)return bounds(pw*.06,Math.max(0,ty*ph-24),pw*.94,Math.min(ph,ty*ph+ph*.25));
+  const side=gutter===null?null:nearest.rect[0]+nearest.rect[2]/2>=gutter?'right':'left';
+  const lane=lines.filter(line=>side===null||side==='left'&&line.rect[0]+line.rect[2]<=gutter+.01||side==='right'&&line.rect[0]>=gutter-.01);
+  const body=lane.filter(line=>line.text.length>20&&line.rect[2]>(gutter===null?.25:.14)&&line.fontHeight*ph<=fontHeight*1.4);
+  const content=body.length?body:lane.length?lane:[nearest],pad=Math.max(6,fontHeight*.8);
+  let left=Math.min(...content.map(line=>line.rect[0]))*pw-pad,right=Math.max(...content.map(line=>line.rect[0]+line.rect[2]))*pw+pad;
+  if(side==='left')right=Math.min(right,gutter*pw-pad/2);if(side==='right')left=Math.max(left,gutter*pw+pad/2);
+  let top=nearest.rect[1]*ph-fontHeight*.8,bottom=top+Math.max(fontHeight*10,(right-left)*.38);
+  if(kind==='equation'){
+    const paragraph=line=>{
+      const words=line.text.match(/\b[a-zA-Z]{3,}\b/g)||[],letters=words.join('').length;
+      return words.length>=3&&letters>=18||letters>10&&/^[a-zA-Z\s\d.:-]+$/.test(line.text);
+    };
+    const rows=lane.filter(line=>!paragraph(line)).sort((a,b)=>a.rect[1]-b.rect[1]);
+    const equations=rows.filter(line=>/[=∑∫≤≥∈≔]/.test(line.text)||/^\(\d+(?:\.\d+)*[a-z]?\)$/.test(line.text.trim()));
+    const anchor=equations.sort((a,b)=>(Math.abs(a.rect[1]-ty)+Math.abs(a.rect[0]-tx)*.06)-(Math.abs(b.rect[1]-ty)+Math.abs(b.rect[0]-tx)*.06)).find(line=>Math.abs(line.rect[1]-ty)<.08)||nearest;
+    let lo=anchor.rect[1],hi=anchor.rect[1]+anchor.rect[3],changed=true;
+    while(changed){changed=false;for(const line of rows){
+      const r=line.rect,gap=Math.max(0,lo-r[1]-r[3],r[1]-hi);
+      if(gap>fontHeight/ph*1.6||Math.max(hi,r[1]+r[3])-Math.min(lo,r[1])>.4)continue;
+      if(lane.some(other=>paragraph(other)&&other.rect[1]<Math.max(hi,r[1]+r[3])-.002&&other.rect[1]+other.rect[3]>Math.min(lo,r[1])+.002))continue;
+      if(r[1]<lo||r[1]+r[3]>hi){lo=Math.min(lo,r[1]);hi=Math.max(hi,r[1]+r[3]);changed=true;}
+    }}
+    top=lo*ph-pad;bottom=hi*ph+pad;
+    const above=lane.filter(line=>paragraph(line)&&line.rect[1]+line.rect[3]<=lo),below=lane.filter(line=>paragraph(line)&&line.rect[1]>=hi);
+    if(above.length)top=Math.max(top,Math.max(...above.map(line=>line.rect[1]+line.rect[3]))*ph+fontHeight*.25);
+    if(below.length)bottom=Math.min(bottom,Math.min(...below.map(line=>line.rect[1]))*ph-fontHeight*.25);
+  }
+  return bounds(left,top,right,bottom);
+}
+function pdfReferencePreviewSize(crop,screenWidth,screenHeight){
+  const maxWidth=Math.max(1,Math.min(960,screenWidth-24)),maxHeight=Math.max(1,Math.min(720,screenHeight-24));
+  let scale=Math.min(16/(crop.fontHeight||10),Math.max(1,maxWidth-20)/crop.width);
+  if(crop.object)scale=Math.min(scale,Math.max(1,maxHeight-70)/crop.height);
+  const width=Math.min(maxWidth,Math.max(Math.min(280,maxWidth),crop.width*scale+20));
+  return {width:Math.round(width),height:Math.round(Math.min(maxHeight,Math.max(Math.min(120,maxHeight),crop.height*(width-20)/crop.width+70)))};
+}
+function sizePDFReferencePreview(popup,crop){
+  popup.pdfPreviewCrop=crop;popup.dataset.previewKind='passage';popup.dataset.previewLayout=`${crop.columns===2?'column':'page'}.${crop.kind}`;
+  popup.dataset.previewAuto=JSON.stringify(pdfReferencePreviewSize(crop,innerWidth,innerHeight));
+  const saved=savedPDFPreviewSize(popup);
+  popup.dataset.previewManual=saved?'true':'false';applyPDFPreviewSize(popup,saved||JSON.parse(popup.dataset.previewAuto));
 }
 async function showPDFLinkPreview(link,x,y){
   if(link.url){closePDFLinkPreview();return;}
@@ -678,6 +755,42 @@ async function showPDFLinkPreview(link,x,y){
       const target=await resolvePDFDestination(doc,link);if(!active())return;
       const row=document.createElement('button');row.className='pdf-citation-row';row.textContent=`Page ${target.page}`;
       row.onclick=()=>{closePDFLinkPreview();pdfNavigate(target.page,target.y).catch(error=>toast(error.message));};body.append(row);
+      if(pdfIsNamedCitation(link.dest)){
+        const source=(index.pages||[]).find(page=>page.page===link.sourcePage);
+        const links=source&&link.rect?(pdfPageEntries.find(entry=>entry.number===link.sourcePage)?.links||await pdfCitationPageLinks(doc,link.sourcePage)):[];if(!active())return;
+        const names=pdfLinkCitationNames(index,link,links);
+        const entries=await Promise.all(names.map(async name=>{
+          const reference=await pdfNamedCitationReference(index,doc,name);let destination=reference;
+          if(!destination){try{destination=name===link.dest?target:await resolvePDFDestination(doc,{dest:name});}catch{}}
+          return {reference,destination};
+        }));if(!active())return;
+        body.classList.add('pdf-citation-list');body.replaceChildren();
+        for(const {reference,destination} of entries){
+          const entry=document.createElement('button');entry.className='pdf-citation-row';entry.textContent=reference?.title||'Reference title unavailable';entry.title=reference?.excerpt||'';entry.disabled=!destination;
+          if(destination)entry.onclick=()=>{closePDFLinkPreview();pdfNavigate(destination.page,destination.y).catch(error=>toast(error.message));};
+          body.append(entry);
+        }
+      }else{
+        const page=await doc.getPage(target.page);if(!active())return;
+        const viewport=page.getViewport({scale:1}),text=await page.getTextContent();if(!active())return;
+        const mounted=pdfPageEntries.find(entry=>entry.number===target.page&&entry.loaded&&entry.objects);
+        const objects=mounted?.objects||await NoctuaPDFObjects.regions(page,await pdfjs(),text.items);if(!active())return;
+        const crop=pdfReferenceCrop(viewport,target,text.items,objects,link.dest),canvas=document.createElement('canvas');
+        canvas.className='pdf-reference-preview';canvas.setAttribute('aria-label',`Preview of page ${target.page}`);body.append(canvas);
+        sizePDFReferencePreview(popup,crop);popup.hidden=false;positionPDFPreview(popup,x,y);
+        let revision=0;
+        const render=async()=>{
+          if(!active())return;const current=++revision,previous=pdfPreviewTask;
+          previous?.cancel();if(previous)await previous.promise.catch(()=>{});if(!active()||revision!==current)return;
+          const width=body.clientWidth||crop.width,raster=pdfRasterSize(width,width*crop.height/crop.width,pdfPixelDensity());
+          canvas.width=raster.width;canvas.height=raster.height;
+          const sx=raster.width/crop.width,sy=raster.height/crop.height,context=canvas.getContext('2d',{alpha:false});
+          context.noctuaTheme=PDF.dark?{background:'#202124',foreground:'#e8eaed',invertImages:false}:null;
+          const task=page.render({canvasContext:context,viewport,transform:[sx,0,0,sy,-crop.x*sx,-crop.y*sy]});pdfPreviewTask=task;
+          try{await task.promise;}catch(error){if(error.name!=='RenderingCancelledException')throw error;}finally{if(pdfPreviewTask===task)pdfPreviewTask=null;}
+        };
+        popup.noctuaRenderPreview=()=>render().catch(error=>{if(active())toast(error.message);});await render();
+      }
     }
     if(active()){popup.hidden=false;positionPDFPreview(popup,x,y);}
   }catch(e){if(active())closePDFLinkPreview();}
@@ -695,7 +808,8 @@ function trackPDFReferencePreview(event){
 document.addEventListener('pointermove',trackPDFReferencePreview);
 window.addEventListener('resize',()=>{
   const popup=$('#pdf-link-preview');if(!popup||popup.hidden)return;
-  const rect=popup.getBoundingClientRect();if(popup.classList.contains('pdf-preview-sized'))applyPDFPreviewSize(popup,{width:rect.width,height:rect.height});
+  const rect=popup.getBoundingClientRect();if(popup.pdfPreviewCrop&&popup.dataset.previewManual!=='true')applyPDFPreviewSize(popup,pdfReferencePreviewSize(popup.pdfPreviewCrop,innerWidth,innerHeight));else if(popup.classList.contains('pdf-preview-sized'))applyPDFPreviewSize(popup,{width:rect.width,height:rect.height});
+  popup.noctuaRenderPreview?.();
   popup.style.left=Math.max(12,Math.min(rect.left,innerWidth-popup.offsetWidth-12))+'px';popup.style.top=Math.max(12,Math.min(rect.top,innerHeight-popup.offsetHeight-12))+'px';
 });
 
@@ -724,12 +838,82 @@ function pdfBibliography(index){
 }
 function pdfReferenceTitle(raw){
   const text=raw.replace(/-\s*\n\s*/g,'-').replace(/\s+/g,' ').trim();
-  const quoted=/[“"]([^”"]{8,})[”"]/.exec(text);if(quoted)return quoted[1].trim();
+  const quoted=/[“"]([^”"]{8,})[”"]/.exec(text);if(quoted)return quoted[1].trim().replace(/,\s*$/,'').trimEnd();
   const boundaries=[...text.matchAll(/\.\s+/g)].filter(match=>!/(?:\b[A-Z]|\b(?:Dr|Prof|Jr|Sr|St))$/.test(text.slice(0,match.index)));
-  if(!boundaries.length)return text.replace(/,?\s*(?:19|20)\d{2}[a-z]?\.?$/,'').trim();
+  if(!boundaries.length)return text.replace(/,?\s*(?:19|20)\d{2}[a-z]?\.?$/,'').trim().replace(/,\s*$/,'').trimEnd();
   const start=boundaries[0].index+boundaries[0][0].length;
   const end=boundaries[1]?.index??text.length;
-  return text.slice(start,end).replace(/,?\s*(?:19|20)\d{2}[a-z]?(?:[.,].*)?$/,'').trim()||'Reference title unavailable';
+  return text.slice(start,end).replace(/,?\s*(?:19|20)\d{2}[a-z]?(?:[.,].*)?$/,'').trim().replace(/,\s*$/,'').trimEnd()||'Reference title unavailable';
+}
+function pdfIsNamedCitation(destination){return typeof destination==='string'&&/^(?:cite|citation|bibitem)[.:].+/i.test(destination);}
+const pdfNamedBibliographies=new WeakMap();
+async function pdfNamedCitationReference(index,doc,name){
+  let cached=pdfNamedBibliographies.get(doc);
+  if(cached?.index!==index){
+    const work=(async()=>{
+      const destinations=await doc.getDestinations();
+      const anchors=await Promise.all(Object.entries(destinations).filter(([name])=>pdfIsNamedCitation(name)).map(async([name,dest])=>{
+        try{return {name,...await resolvePDFDestination(doc,{dest})};}catch{return null;}
+      }));
+      return pdfCitationReferences(index,anchors.filter(Boolean));
+    })();
+    cached={index,work};pdfNamedBibliographies.set(doc,cached);
+    work.catch(()=>{if(pdfNamedBibliographies.get(doc)===cached)pdfNamedBibliographies.delete(doc);});
+  }
+  try{return (await cached.work).get(name)||null;}catch{return null;}
+}
+function pdfCitationReferences(index,anchors){
+  const pages=index.pages||[],byPage=new Map(pages.map(page=>[page.page,page]));
+  const entries=anchors.flatMap(anchor=>{
+    const page=byPage.get(anchor.page);if(!page)return [];
+    // Citation destinations point just above the first line of their bibliography entry.
+    const score=word=>Math.abs(word.rect[1]-anchor.y)+Math.abs(word.rect[0]-anchor.x)*.15;
+    const word=(page.words||[]).reduce((best,word)=>!best||score(word)<score(best)?word:best,null);
+    return word?[{...anchor,offset:word.start}]:[];
+  }).sort((a,b)=>a.page-b.page||a.offset-b.offset);
+  const references=new Map();
+  for(let i=0;i<entries.length;i++){
+    const entry=entries[i],next=entries.slice(i+1).find(next=>next.page!==entry.page||next.offset>entry.offset);
+    const excerpt=pages.filter(page=>page.page>=entry.page&&page.page<=(next?.page||entry.page)).map(page=>{
+      const start=page.page===entry.page?entry.offset:0,end=page.page===next?.page?next.offset:undefined;
+      return (page.text||'').slice(start,end);
+    }).join('\n').split(/\(\s*Cited on pages?\b/i)[0].trim().slice(0,6000);
+    references.set(entry.name,{...entry,excerpt,title:excerpt?pdfReferenceTitle(excerpt):'Reference title unavailable'});
+  }
+  return references;
+}
+const pdfCitationSourcePages=new WeakMap();
+async function pdfCitationPageLinks(doc,number){
+  let pages=pdfCitationSourcePages.get(doc);if(!pages){pages=new Map();pdfCitationSourcePages.set(doc,pages);}
+  if(!pages.has(number)){
+    const work=(async()=>{const page=await doc.getPage(number);return pdfPageLinks(page,page.getViewport({scale:1}));})();
+    pages.set(number,work);work.catch(()=>{if(pages.get(number)===work)pages.delete(number);});
+  }
+  return pages.get(number);
+}
+function pdfLinkCitationNames(index,link,links){
+  if(!pdfIsNamedCitation(link.dest))return [];
+  const fallback=[link.dest],page=(index.pages||[]).find(page=>page.page===link.sourcePage);
+  if(!page||!link.rect)return fallback;
+  const overlaps=(word,rect)=>{
+    const r=word.rect,w=Math.min(r[0]+r[2],rect[0]+rect[2])-Math.max(r[0],rect[0]),h=Math.min(r[1]+r[3],rect[1]+rect[3])-Math.max(r[1],rect[1]);
+    return w>=Math.min(r[2],rect[2])*.15&&h>=Math.min(r[3],rect[3])*.45;
+  };
+  const words=page.words||[],hovered=words.filter(word=>overlaps(word,link.rect)),ranges=[],stack=[];
+  for(let i=0;i<(page.text||'').length;i++){
+    if(page.text[i]==='(')stack.push(i);
+    else if(page.text[i]===')'&&stack.length){const start=stack.pop();if(hovered.some(word=>word.start<i&&word.end>start))ranges.push({start,end:i+1});}
+  }
+  ranges.sort((a,b)=>(a.end-a.start)-(b.end-b.start));
+  for(const range of ranges){
+    const matches=links.filter(candidate=>candidate.sourcePage===link.sourcePage&&candidate.rect&&pdfIsNamedCitation(candidate.dest)).map(candidate=>{
+      const inside=words.filter(word=>word.start<range.end&&word.end>range.start&&overlaps(word,candidate.rect));
+      return {name:candidate.dest,start:inside.length?Math.min(...inside.map(word=>word.start)):Infinity};
+    }).filter(match=>Number.isFinite(match.start)).sort((a,b)=>a.start-b.start);
+    const names=[...new Set(matches.map(match=>match.name))];
+    if(names.length>1&&names.includes(link.dest))return names;
+  }
+  return fallback;
 }
 function pdfCitationNumbers(value){
   const match=value.trim().match(/^\[\s*(\d[\d\s,;–—-]*)\s*\]$/);if(!match)return [];
