@@ -19,6 +19,7 @@ mod project;
 mod s2;
 mod settings;
 mod storage;
+mod threads;
 mod zotero;
 
 use std::{env, future::{Future, IntoFuture}, net::SocketAddr, path::PathBuf, sync::Arc};
@@ -279,6 +280,17 @@ struct NewNote {
 }
 
 #[derive(Deserialize)]
+struct ThreadsBody {
+    #[serde(flatten)]
+    req: threads::Request,
+    provider: Option<agent::Provider>,
+    #[serde(default)]
+    force: bool,
+    #[serde(default)]
+    cache_only: bool,
+}
+
+#[derive(Deserialize)]
 struct InkBody {
     png: String,
     provider: Option<agent::Provider>,
@@ -366,6 +378,11 @@ async fn note_image_get(State(app): Shared, Path((target, file)): Path<(String, 
 
 async fn ink_latex(State(app): Shared, Json(b): Json<InkBody>) -> ApiResult {
     Ok(Json(json!({ "latex": notes::ink_to_latex(&app, b.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent), &b.png).await? })))
+}
+
+async fn explain_threads(State(app): Shared, Json(b): Json<ThreadsBody>) -> ApiResult {
+    let provider = b.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent);
+    Ok(Json(threads::explain(&app, provider, b.req, b.force, b.cache_only).await?))
 }
 
 async fn zotero_add(State(app): Shared, Json(b): Json<AddBody>) -> ApiResult {
@@ -547,6 +564,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
+        .route("/lineage.js", get(|| async { asset(include_str!("../web/lineage.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.css", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.css"), "text/css; charset=utf-8") }))
         .route("/vendor/katex/fonts/{name}", get(katex_font))
@@ -567,6 +585,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/zotero/items", get(zotero_items))
         .route("/api/zotero/check", post(zotero_check))
         .route("/api/project", get(project_graph))
+        .route("/api/threads", post(explain_threads))
         .route("/api/zotero/add", post(zotero_add))
         .route("/api/zotero/rename", post(zotero_rename))
         .route("/api/zotero/folder", post(zotero_new_folder))

@@ -75,6 +75,11 @@ impl S2 {
         }
     }
 
+    /// The response cache, shared with other derived data (e.g. thread labels).
+    pub fn cache(&self) -> &Cache {
+        &self.cache
+    }
+
     pub fn set_key(&self, key: Option<String>) {
         *self.key.write().unwrap() = key;
     }

@@ -81,7 +81,7 @@ const G = {
   selected: null,
   hover: null,
   show: { ref: true, cite: true, sim: true, shared: true },
-  timeline: false,
+  layout: 'network',  // 'network' (force layout) or 'lineage' (lineage.js)
   inLib: new Set(),
   token: 0,
   autoFit: false,
@@ -600,6 +600,7 @@ function renderDetails() {
       <span><b>${fmt(p.influentialCitationCount)}</b>influential</span>
       ${n ? `<span><b>${n.deg}</b>links here</span>` : ''}
     </div>
+    ${typeof lineageDetailsHTML === 'function' ? lineageDetailsHTML(n) : ''}
     <div class="links">
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Semantic Scholar ↗</a>` : ''}
       ${ext.DOI ? `<a href="https://doi.org/${esc(ext.DOI)}" target="_blank" rel="noopener">DOI ↗</a>` : ''}
@@ -1039,7 +1040,8 @@ function chatContext() {
   if (open) L.push(`Folder open in Library tab: ${open.name} (${open.id})`);
 
   const root = G.centerId || (P && 'project:' + P.target);
-  const key = root ? `${root}:${G.nodes.size}:${G.edges.length}` : '';
+  const lin = typeof lineageContext === 'function' ? lineageContext() : { sig: '', lines: [] };
+  const key = root ? `${root}:${G.nodes.size}:${G.edges.length}${lin.sig}` : '';
   if (key && key !== chat.sentGraphKey) {
     const ns = [...G.nodes.values()].sort((a, b) => (b.p.citationCount || 0) - (a.p.citationCount || 0)).slice(0, 150);
     const role = (n) => !P ? primaryRole(n) : n.roles.has('shared') ? 'shared-ref' : n.single ? 'unconnected' : `cluster ${n.cluster}`;
@@ -1048,6 +1050,7 @@ function chatContext() {
       : 'Roles: ref = cited by center, cite = cites center, sim = similar, exp = from expansion.'));
     L.push('role | paperId | year | citations | title');
     for (const n of ns) L.push(`${role(n)} | ${n.id} | ${n.p.year ?? '?'} | ${n.p.citationCount ?? 0} | ${n.p.title}`);
+    L.push(...lin.lines);
   } else if (key) {
     L.push('Papers in graph: unchanged since the previous message.');
   }
@@ -1434,7 +1437,7 @@ function hideToast() { $('#toast').classList.add('hidden'); }
 
 function showTab(name) {
   document.querySelectorAll('#left > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  for (const t of ['results', 'library', 'projects', 'nodes']) $('#tab-' + t).classList.toggle('hidden', name !== t);
+  for (const t of ['results', 'library', 'projects', 'nodes', 'threads']) $('#tab-' + t).classList.toggle('hidden', name !== t);
 }
 
 // ---------------------------------------------------------------- force simulation
@@ -1473,17 +1476,11 @@ function yearRange(ns) {
   return lo === Infinity ? [2000, 2000] : [lo, hi];
 }
 
-function timelineX(year, range, count) {
-  const width = Math.max(600, count * 8);
-  const span = Math.max(1, range[1] - range[0]);
-  return ((year - range[0]) / span - 0.5) * width;
-}
-
 function step() {
   const ns = visibleNodes();
+  if (G.layout === 'lineage') { stepLineage(ns); return; }
   const N = ns.length;
   const vis = new Set(ns.map((n) => n.id));
-  const range = yearRange(ns);
 
   // Repulsion + collision (O(n²); fine for a few hundred nodes).
   for (let i = 0; i < N; i++) {
@@ -1522,14 +1519,9 @@ function step() {
   }
 
   for (const n of ns) {
-    if (G.timeline && n.p.year) {
-      n.vx += (timelineX(n.p.year, range, N) - n.x) * 0.25 * alpha;
-      n.vy += -n.y * 0.02 * alpha;
-    } else {
-      n.vx += -n.x * 0.03 * alpha;
-      n.vy += -n.y * 0.03 * alpha;
-    }
-    if (n.fixed || (n.id === G.centerId && !G.timeline)) {
+    n.vx += -n.x * 0.03 * alpha;
+    n.vy += -n.y * 0.03 * alpha;
+    if (n.fixed || n.id === G.centerId) {
       n.vx = 0; n.vy = 0;
       if (n.id === G.centerId && !n.fixed) { n.x = 0; n.y = 0; }
       continue;
@@ -1586,6 +1578,7 @@ function draw() {
 
   const ns = visibleNodes();
   const vis = new Set(ns.map((n) => n.id));
+  if (G.layout === 'lineage') { drawLineage(w, h, ns, vis); return; }
   const range = yearRange(ns);
   const focus = G.hover || G.selected;
   const near = new Set();
@@ -1596,8 +1589,6 @@ function draw() {
       if (e.t === focus) near.add(e.s);
     }
   }
-
-  if (G.timeline) drawAxis(w, h, range, ns.length);
 
   ctx.translate(w / 2 + view.x, h / 2 + view.y);
   ctx.scale(view.k, view.k);
@@ -1644,29 +1635,8 @@ function draw() {
   // Nodes (focused neighbourhood drawn last, on top).
   const order = focus ? ns.slice().sort((a, b) => near.has(a.id) - near.has(b.id)) : ns;
   for (const n of order) {
-    const r = radius(n);
     ctx.globalAlpha = focus && !near.has(n.id) ? 0.28 : 1;
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = nodeColor(n, range);
-    ctx.fill();
-    ctx.lineWidth = (n.roles.has('shared') ? 1.5 : 1) / view.k;
-    ctx.strokeStyle = n.roles.has('shared') ? colors.muted : colors.panel;
-    ctx.stroke();
-    if (G.inLib.has(n.id) && !n.roles.has('proj')) {  // every project paper is in Noctua
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r + 3 / view.k, 0, Math.PI * 2);
-      ctx.lineWidth = 2.5 / view.k;
-      ctx.strokeStyle = colors.ok;
-      ctx.stroke();
-    }
-    if (n.id === G.centerId || n.id === G.selected) {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r + (G.inLib.has(n.id) ? 6 : 3) / view.k, 0, Math.PI * 2);
-      ctx.lineWidth = (n.id === G.selected ? 2.5 : 3) / view.k;
-      ctx.strokeStyle = n.id === G.selected ? colors.ink : colors.accent;
-      ctx.stroke();
-    }
+    drawNode(n, nodeColor(n, range));
   }
   ctx.globalAlpha = 1;
 
@@ -1677,15 +1647,46 @@ function draw() {
   for (const n of order) {
     const r = radius(n);
     const show = n.id === focus || n.id === G.centerId || (focus ? near.has(n.id) && r * view.k > 6 : r * view.k > 11);
-    if (!show) continue;
-    const label = `${lastName(n.p)} ${n.p.year ?? ''}`.trim();
-    const y = n.y + r + 3 / view.k;
-    ctx.lineWidth = 3 / view.k;
-    ctx.strokeStyle = colors.bg;
-    ctx.strokeText(label, n.x, y);
-    ctx.fillStyle = colors.ink;
-    ctx.fillText(label, n.x, y);
+    if (show) drawLabel(n);
   }
+}
+
+// A paper's circle with its library, center and selection rings. With no
+// fill, it is drawn hollow with a `ring`-coloured outline.
+function drawNode(n, fill, ring) {
+  const r = radius(n);
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill || colors.panel;
+  ctx.fill();
+  ctx.lineWidth = (fill ? (n.roles.has('shared') ? 1.5 : 1) : 2) / view.k;
+  ctx.strokeStyle = !fill ? ring : n.roles.has('shared') ? colors.muted : colors.panel;
+  ctx.stroke();
+  if (G.inLib.has(n.id) && !n.roles.has('proj')) {  // every project paper is in Noctua
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r + 3 / view.k, 0, Math.PI * 2);
+    ctx.lineWidth = 2.5 / view.k;
+    ctx.strokeStyle = colors.ok;
+    ctx.stroke();
+  }
+  if (n.id === G.centerId || n.id === G.selected) {
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r + (G.inLib.has(n.id) ? 6 : 3) / view.k, 0, Math.PI * 2);
+    ctx.lineWidth = (n.id === G.selected ? 2.5 : 3) / view.k;
+    ctx.strokeStyle = n.id === G.selected ? colors.ink : colors.accent;
+    ctx.stroke();
+  }
+}
+
+// "LastName Year" under a paper; expects font and alignment already set.
+function drawLabel(n) {
+  const label = `${lastName(n.p)} ${n.p.year ?? ''}`.trim();
+  const y = n.y + radius(n) + 3 / view.k;
+  ctx.lineWidth = 3 / view.k;
+  ctx.strokeStyle = colors.bg;
+  ctx.strokeText(label, n.x, y);
+  ctx.fillStyle = colors.ink;
+  ctx.fillText(label, n.x, y);
 }
 
 function arrow(s, t) {
@@ -1699,25 +1700,6 @@ function arrow(s, t) {
   ctx.lineTo(x - a * Math.cos(ang + 0.4), y - a * Math.sin(ang + 0.4));
   ctx.closePath();
   ctx.fill();
-}
-
-function drawAxis(w, h, range, count) {
-  const spanYears = Math.max(1, range[1] - range[0]);
-  const stepYears = [1, 2, 5, 10, 20, 50].find((s) => (spanYears / s) * 70 < w * view.k + 400) || 50;
-  ctx.font = `${11 * colors.fontScale}px ${colors.font}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = colors.muted;
-  ctx.strokeStyle = colors.edge;
-  ctx.lineWidth = 1;
-  for (let y = Math.ceil(range[0] / stepYears) * stepYears; y <= range[1]; y += stepYears) {
-    const sx = w / 2 + view.x + timelineX(y, range, count) * view.k;
-    if (sx < 0 || sx > w) continue;
-    ctx.beginPath();
-    ctx.moveTo(sx, 52);
-    ctx.lineTo(sx, h);
-    ctx.stroke();
-    ctx.fillText(String(y), sx, 50);
-  }
 }
 
 // ---------------------------------------------------------------- view helpers & interaction
@@ -1737,18 +1719,20 @@ function hit(sx, sy) {
   return null;
 }
 
-function fit() {
-  const ns = visibleNodes();
+function fit(ns = visibleNodes(), maxK = 2.2) {
   if (!ns.length) return;
+  // Lineage nodes may still be moving; fit where they are heading.
+  const lin = G.layout === 'lineage';
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const n of ns) {
-    x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
-    x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y);
+    const x = lin && n.tx != null ? n.tx : n.x, y = lin && n.ty != null ? n.ty : n.y;
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   }
-  const w = canvas.clientWidth, h = canvas.clientHeight - 80;
-  view.k = Math.min(2.2, w / (x1 - x0 + 100), h / (y1 - y0 + 100));
+  const w = canvas.clientWidth, h = canvas.clientHeight - (lin ? 110 : 80);
+  view.k = Math.min(maxK, w / (x1 - x0 + (lin ? 160 : 100)), h / (y1 - y0 + (lin ? 60 : 100)));
   view.x = -((x0 + x1) / 2) * view.k;
-  view.y = -((y0 + y1) / 2) * view.k + 20;
+  view.y = -((y0 + y1) / 2) * view.k + (lin ? 30 : 20);
   draw();
 }
 
@@ -1772,6 +1756,7 @@ function select(id) {
 let pointer = null; // { x, y, node, moved, vx, vy }
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (G.layout === 'lineage' && lineagePointerDown(e)) return;
   canvas.setPointerCapture(e.pointerId);
   const node = hit(e.offsetX, e.offsetY);
   pointer = { x: e.offsetX, y: e.offsetY, node, moved: false, vx: view.x, vy: view.y };
@@ -1786,7 +1771,8 @@ canvas.addEventListener('pointermove', (e) => {
     if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
     if (pointer.node) {
       const [x, y] = toWorld(e.offsetX, e.offsetY);
-      pointer.node.x = x; pointer.node.y = y;
+      if (G.layout === 'lineage') pointer.node.y = pointer.node.ty = y;  // x stays tied to time
+      else { pointer.node.x = x; pointer.node.y = y; }
       kick(0.15);
     } else {
       view.x = pointer.vx + dx;
@@ -1799,9 +1785,9 @@ canvas.addEventListener('pointermove', (e) => {
   const n = hit(e.offsetX, e.offsetY);
   const id = n?.id || null;
   if (id !== G.hover) { G.hover = id; draw(); }
-  canvas.style.cursor = n ? 'pointer' : '';
+  canvas.style.cursor = n || (G.layout === 'lineage' && lineageLabelAt(e.offsetX, e.offsetY)) ? 'pointer' : '';
   if (n) {
-    tip.innerHTML = `<b>${esc(n.p.title)}</b><br>${esc(authorsShort(n.p))} · ${n.p.year ?? '—'} · ${fmt(n.p.citationCount)} cites`;
+    tip.innerHTML = `<b>${esc(n.p.title)}</b><br>${esc(authorsShort(n.p))} · ${n.p.year ?? '—'} · ${fmt(n.p.citationCount)} cites` + (typeof lineageTip === 'function' ? lineageTip(n) : '');
     tip.style.left = Math.min(e.offsetX + 14, canvas.clientWidth - 330) + 'px';
     tip.style.top = (e.offsetY + 14) + 'px';
     tip.classList.remove('hidden');
@@ -1810,12 +1796,16 @@ canvas.addEventListener('pointermove', (e) => {
   }
 });
 
-function endPointer() {
+function endPointer(e) {
   if (!pointer) return;
+  const lin = G.layout === 'lineage';
   if (pointer.node) {
     pointer.node.fixed = false;
-    if (!pointer.moved) select(pointer.node.id);
+    if (pointer.moved) { /* dragged */ }
+    else if (lin && e?.shiftKey && G.selected && G.selected !== pointer.node.id) traceLineage(G.selected, pointer.node.id);
+    else { if (lin) LIN.trace = null; select(pointer.node.id); }
   } else if (!pointer.moved) {
+    if (lin) clearLineageFocus();
     select(null);
   }
   dragging = null;
@@ -1854,11 +1844,6 @@ document.querySelectorAll('.controls input[data-role]').forEach((cb) => cb.addEv
   refreshAll();
   kick(0.5);
 }));
-$('#timeline').addEventListener('change', (e) => {
-  G.timeline = e.target.checked;
-  G.autoFit = true;
-  kick(1);
-});
 $('#limit').addEventListener('change', () => { if (G.centerId) loadGraph(G.centerId, { push: false }); });
 $('#fit').addEventListener('click', fit);
 $('#sort').addEventListener('change', renderNodeList);

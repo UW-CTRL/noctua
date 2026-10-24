@@ -229,6 +229,63 @@ pub fn codex_command(app: &App, mcp_url: Option<&str>, instructions: &str) -> Co
     cmd
 }
 
+/// Runs a prepared one-shot CLI command (no session, no tools), writes `input`
+/// to stdin and returns the final reply text. `what` names the task in errors.
+pub async fn one_shot(app: &App, provider: Provider, mut cmd: Command, input: &str, what: &str) -> Result<String> {
+    std::fs::create_dir_all(&app.chat_dir)?;
+    let mut child = cmd.current_dir(&app.chat_dir)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true)
+        .spawn().with_context(|| provider.missing())?;
+    let stderr = drain_stderr(child.stderr.take().unwrap());
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(input.as_bytes()).await?;
+    drop(stdin);
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut text = String::new();
+    let mut error = None;
+    let mut finished = false;
+    let read = async {
+        while let Some(line) = lines.next_line().await? {
+            if provider == Provider::Codex {
+                for ev in crate::chat::translate_codex(&line, &mut finished) {
+                    if ev["type"] == "text" { text.push_str(ev["text"].as_str().unwrap_or("")); }
+                    if ev["type"] == "error" { error = Some(ev["message"].as_str().unwrap_or("request failed").to_string()); }
+                }
+            } else if let Ok(e) = serde_json::from_str::<Value>(&line) {
+                if e["type"] == "result" {
+                    finished = true;
+                    text = e["result"].as_str().unwrap_or("").to_string();
+                    if e["is_error"].as_bool().unwrap_or(false) { error = Some(text.clone()); }
+                }
+            }
+        }
+        anyhow::Ok(())
+    };
+    tokio::time::timeout(Duration::from_secs(300), read).await.with_context(|| format!("{} timed out trying to {what}", provider.label()))??;
+    let status = child.wait().await?;
+    let err = stderr.await.unwrap_or_default();
+    if let Some(e) = error { anyhow::bail!("{} could not {what}: {e}", provider.label()); }
+    if !status.success() || !finished || text.trim().is_empty() {
+        anyhow::bail!("{} could not {what} ({status}): {}", provider.label(), err.trim());
+    }
+    Ok(text.trim().to_string())
+}
+
+/// A text-only one-shot question to the selected backend.
+pub async fn ask_text(app: &App, provider: Provider, prompt: &str, what: &str) -> Result<String> {
+    let cmd = if provider == Provider::Codex {
+        let mut c = codex_command(app, None, "Answer the request on stdin directly. Do not use tools.");
+        c.args(["--ephemeral", "-"]);
+        c
+    } else {
+        let mut c = provider.command(app);
+        c.args(["-p", "--output-format", "stream-json", "--verbose"])
+            .args(["--tools", "", "--strict-mcp-config", "--no-session-persistence"]);
+        c
+    };
+    one_shot(app, provider, cmd, prompt, what).await
+}
+
 /// Drain stderr concurrently, so a noisy child cannot deadlock on its pipe.
 pub fn drain_stderr(stderr: tokio::process::ChildStderr) -> tokio::task::JoinHandle<String> {
     tokio::spawn(async move {
@@ -682,6 +739,37 @@ mod tests {
         let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert!(!args.iter().any(|a| a == "--model" || a.starts_with("model_reasoning_effort=")));
         assert!(args.iter().any(|a| a == r#"service_tier="default""#));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn threads_are_explained_once_then_cached() -> Result<()> {
+        let f = Fixture::new()?;
+        let calls = || std::fs::read_to_string(f.root.join("invocations.jsonl")).map(|s| s.lines().count()).unwrap_or(0);
+        for provider in ["claude", "codex"] {
+            let body = json!({ "provider": provider, "threads": [{ "id": "t1",
+                "papers": [{ "id": "a", "title": "Seq2seq", "year": 2014, "authors": ["Sutskever"], "abstract": "RNN encoder-decoder." },
+                           { "id": "b", "title": "Attention", "year": 2015 }],
+                "steps": [["a", "b"]] }], "others": ["Unrelated"] });
+            let before = calls();
+            let mut peek = body.clone();
+            peek["cache_only"] = json!(true);
+            assert_eq!(f.json("/api/threads", Some(peek.clone())).await["threads"], json!([]));
+            assert_eq!(calls(), before, "cache_only must not run the CLI");
+            let first = f.json("/api/threads", Some(body.clone())).await;
+            assert_eq!(first["cached"], false);
+            assert_eq!(first["threads"][0]["name"], format!("{provider} thread"));
+            assert_eq!(first["threads"][0]["steps"][0]["relation"], "extends");
+            assert_eq!(calls(), before + 1);
+            let again = f.json("/api/threads", Some(body.clone())).await;
+            assert_eq!(again["cached"], true);
+            assert_eq!(calls(), before + 1, "a cached answer must not run the CLI");
+            assert_eq!(f.json("/api/threads", Some(peek)).await["cached"], true);
+            let mut forced = body;
+            forced["force"] = json!(true);
+            assert_eq!(f.json("/api/threads", Some(forced)).await["cached"], false);
+            assert_eq!(calls(), before + 2);
+        }
         Ok(())
     }
 

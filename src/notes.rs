@@ -5,15 +5,11 @@
 
 use std::{
     path::{Path, PathBuf},
-    process::Stdio,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-};
 
 use crate::{agent::{self, Provider}, App};
 
@@ -228,7 +224,7 @@ pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Resul
     struct Drawing(PathBuf);
     impl Drop for Drawing { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
     let drawing = Drawing(app.chat_dir.join(format!("ink-{}.png", SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos())));
-    let (mut cmd, input) = if provider == Provider::Codex {
+    let (cmd, input) = if provider == Provider::Codex {
         std::fs::write(&drawing.0, &bytes)?;
         crate::paths::restrict(&drawing.0);
         let mut c = agent::codex_command(app, None, INK_PROMPT);
@@ -245,40 +241,6 @@ pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Resul
         ] } });
         (c, format!("{msg}\n"))
     };
-    let mut child = cmd.current_dir(&app.chat_dir)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true)
-        .spawn().with_context(|| provider.missing())?;
-    let stderr = agent::drain_stderr(child.stderr.take().unwrap());
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(input.as_bytes()).await?;
-    drop(stdin);
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let mut text = String::new();
-    let mut error = None;
-    let mut finished = false;
-    let read = async {
-        while let Some(line) = lines.next_line().await? {
-            if provider == Provider::Codex {
-                for ev in crate::chat::translate_codex(&line, &mut finished) {
-                    if ev["type"] == "text" { text.push_str(ev["text"].as_str().unwrap_or("")); }
-                    if ev["type"] == "error" { error = Some(ev["message"].as_str().unwrap_or("conversion failed").to_string()); }
-                }
-            } else if let Ok(e) = serde_json::from_str::<Value>(&line) {
-                if e["type"] == "result" {
-                    finished = true;
-                    text = e["result"].as_str().unwrap_or("").to_string();
-                    if e["is_error"].as_bool().unwrap_or(false) { error = Some(text.clone()); }
-                }
-            }
-        }
-        anyhow::Ok(())
-    };
-    tokio::time::timeout(std::time::Duration::from_secs(300), read).await.context("drawing conversion timed out")??;
-    let status = child.wait().await?;
-    let err = stderr.await.unwrap_or_default();
-    if let Some(e) = error { bail!("conversion failed: {e}"); }
-    if !status.success() || !finished || text.trim().is_empty() {
-        bail!("{} could not transcribe the drawing ({status}): {}", provider.label(), err.trim());
-    }
+    let text = agent::one_shot(app, provider, cmd, &input, "transcribe the drawing").await?;
     Ok(text.trim().trim_start_matches("```latex").trim_start_matches("```").trim_end_matches("```").trim().to_string())
 }
