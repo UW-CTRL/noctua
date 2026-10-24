@@ -24,6 +24,20 @@ launch the app, or test installation. The macOS check covers both architectures
 used in the Universal release; the release workflow still performs the final
 linking and packaging.
 
+For pull requests only, desktop checks are skipped when every changed path is
+exactly `README.md` or under `docs/` (including documentation images). The release
+and workflow job compares the event's base/head commits using their merge base;
+it includes both deleted and added paths for renames. Classification uses the
+whole PR diff, not just the last pushed commit. Any other path requires
+desktop checks, including `src/prompts/*.md`, code, assets, dependencies, tests,
+and workflow files. An empty/failed comparison conservatively runs desktop
+checks. Main pushes and manual runs always run desktop checks. Backend,
+frontend, release/workflow, and security jobs still run for documentation-only
+PRs; desktop setup and compilation steps are skipped. Each desktop runner only
+reports a skip message, keeping all three named checks successful and available
+for branch protection. Keep the documentation allowlist aligned with build
+inputs if future code starts consuming files under `docs/`.
+
 The audit uses cargo-audit 0.22.2 and fetches current advisories on each run.
 Vulnerabilities fail the check; informational/unmaintained-crate warnings remain
 visible in its log. No advisories are ignored by this workflow. Review findings
@@ -57,7 +71,7 @@ From the repository root:
 cargo test --locked -p noctua
 cargo check --locked -p noctua-app
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
-node --test .github/scripts/prepare-release.test.cjs
+node --test .github/scripts/*.test.cjs
 actionlint .github/workflows/*.yml
 ```
 
@@ -88,7 +102,8 @@ Those manual checks are not counted as passing CI checks.
 ## PRs and main
 
 Push a working branch and open a PR into `main`. Review all seven checks before
-merging. Fix failures in the same branch; pushing another commit runs CI again.
+merging, allowing the three desktop checks to be skipped on documentation-only
+PRs as described above. Fix failures in the same branch; pushing another commit runs CI again.
 For an infrastructure-only change such as CI, a PR verifies the workflow itself
 before it reaches `main`.
 
