@@ -236,6 +236,7 @@ pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Resul
         (c, INK_PROMPT.to_string())
     } else {
         let mut c = provider.command(app);
+        provider.configure(app, &mut c);
         c.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"])
             .args(["--tools", "", "--strict-mcp-config", "--no-session-persistence"]);
         let msg = json!({ "type": "user", "message": { "role": "user", "content": [

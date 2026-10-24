@@ -22,7 +22,7 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 use crate::{agent::{self, Provider}, App};
 
-const SYSTEM: &str = "You are the research assistant built into Noctua, the user's personal \
+const SYSTEM: &str = concat!("You are the research assistant built into Noctua, the user's personal \
 paper explorer. Noctua shows Semantic Scholar citation graphs next to this chat and connects to \
 the user's native Noctua library. PDFs are stored locally. When asked to download a paper, use download_pdf with its paper_key or paper_id (or a direct PDF URL). Report a download as successful only if the tool confirms has_pdf. Use read_pdf, search_pdf and view_pdf_page to inspect them. Use annotate_pdf for exact-quote highlights and LaTeX math comments, and comment_on_pdf_annotation to reply. In suggest mode these remain pending until accepted. Link to pages with [page](pdf:PAPER_KEY?page=N).
 
@@ -37,13 +37,10 @@ folders or their contents, add papers to Noctua, get or show a folder's project 
 the folder's papers cite each other: clusters of directly connected papers, and the shared \
 references that link clusters), and list or read the user's notes (LaTeX notes with \
 handwritten drawings, attached to Noctua folders; \\cite keys in them are Noctua item keys). \
-Notes can contain local videos with \\includevideo[width=0.6\\textwidth]{media/…}, including alongside images in subfigures. Video playback is Noctua-specific; view_note_image cannot watch videos. New images and videos share media/ storage; legacy images/ paths still work. Notes can contain images (\\includegraphics{images/…} in a figure): view_note_image shows you one, \
-so you can read, transcribe or interpret it and write the result into the note as LaTeX with \
-edit_note (Noctua's LaTeX subset: math, align, lists, theorem-likes; no TikZ). \
 When the user asks to add a paper without naming a folder, use the 'Add-to folder' from the view. Only add papers the user asked for.
 
 Be concise. When you mention a specific paper whose paperId you know, link it as \
-[Title](paper:PAPER_ID) so the user can click it.";
+[Title](paper:PAPER_ID) so the user can click it.", "\n\n", include_str!("prompts/notes.md"), "\n\n", include_str!("prompts/chat-formatting.md"));
 
 #[derive(Deserialize)]
 pub struct ChatBody {
@@ -160,6 +157,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
         c
     } else {
         let mut c = provider.command(app);
+        provider.configure(app, &mut c);
         c.args(["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"])
             .args(["--tools", "", "--strict-mcp-config", "--mcp-config", &mcp])
             .args(["--allowedTools", "mcp__noctua", "--system-prompt", SYSTEM]);

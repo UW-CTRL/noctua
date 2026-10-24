@@ -9,7 +9,7 @@ context.exceptionHandler = { _, error in
     failed = true
 }
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-for name in ["web/figures.js", "web/latex.js", "web/app.js", "web/setup.js", "web/notes.js", "web/pdf.js", "web/library.js", "web/shell.js", "web/mentions.js"] {
+for name in ["web/figures.js", "web/latex.js", "web/app.js", "web/setup.js", "web/notes.js", "web/library.js", "web/shell.js", "web/mentions.js", "web/select.js", "web/fonts.js", "web/chat-render.js", "web/pdf.js"] {
     let source = try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
     _ = context.objectForKeyedSubscript("Function").call(withArguments: [source])
     if failed { print("FAIL: \(name)"); exit(1) }
@@ -22,7 +22,7 @@ func section(_ start: String, _ end: String) -> String {
 }
 let mocks = #"""
 const elements = new Map();
-const $ = (id) => {
+let $ = (id) => {
   if (!elements.has(id)) elements.set(id, {value:'',disabled:false});
   return elements.get(id);
 };
@@ -66,14 +66,19 @@ let checks = #"""
   await activateAgent('claude');
   assert($('#chat-input').value==='Claude draft','Claude draft was not restored');
   assert(store.get('noctua.chatDraft.codex')==='Codex draft','Codex draft was not saved');
-  assert(!$('#agent-provider').disabled&&!chat.switching,'switch controls stayed disabled');
+  assert(!$('#setup-agent').disabled&&!chat.switching,'switch controls stayed disabled');
   assert(calls.filter(c=>c.path.includes('legacy-claude')).length>=2,'switch did not wait for history persistence');
+  // Provider switching also works when Settings is closed.
+  const lookup=$; $=id=>id==='#setup-agent'?null:lookup(id);
+  await activateAgent('codex');
+  assert(chat.provider==='codex'&&!chat.switching,'switch failed with Settings closed');
+  $=lookup;
   const before=chat.provider;
   const realApi=api;
   api=async (path,body)=>{if(path==='/api/settings/agent')throw new Error('disk full');return realApi(path,body);};
-  try{await activateAgent('codex');throw new Error('expected failure');}catch(e){assert(e.message==='disk full','wrong failure');}
+  try{await activateAgent('claude');throw new Error('expected failure');}catch(e){assert(e.message==='disk full','wrong failure');}
   assert(chat.provider===before,'failed preference save changed the active backend');
-  assert(!$('#agent-provider').disabled&&!chat.switching,'failed switch did not recover controls');
+  assert(!$('#setup-agent').disabled&&!chat.switching,'failed switch did not recover controls');
   globalThis.testResult='PASS: JS syntax, legacy chat restore, backend switching, separate drafts, interrupted-turn persistence, and failure recovery';
 })().catch(e=>{globalThis.testResult='FAIL: '+e.stack;});
 """#

@@ -70,10 +70,10 @@ const Ink = (() => {
         <span class="sep"></span>
         ${WIDTHS.map((w) => `<button data-width="${w}" title="Pen width"><i style="height:${Math.round(w * 1.3)}px"></i></button>`).join('')}
         <span class="sep"></span>
-        <button data-act="eraser" title="Eraser (or flip the Wacom pen)">⌫</button>
-        <button data-act="undo" title="Undo (⌘Z)">↶</button>
-        <button data-act="redo" title="Redo (⇧⌘Z)">↷</button>
-        <button data-act="clear" title="Clear pad">Clear</button>
+        <button data-act="eraser" title="Eraser (or flip the Wacom pen)" data-icon="eraser" aria-label="Eraser (or flip the Wacom pen)" data-icon-only>⌫</button>
+        <button data-act="undo" title="Undo (⌘Z)" data-icon="undo-2" aria-label="Undo (⌘Z)" data-icon-only>↶</button>
+        <button data-act="redo" title="Redo (⇧⌘Z)" data-icon="redo-2" aria-label="Redo (⇧⌘Z)" data-icon-only>↷</button>
+        <button data-act="clear" title="Clear pad" data-icon="eraser">Clear</button>
       </div>
       <canvas></canvas>
       <div class="ink-resize" title="Drag to resize"></div>`;

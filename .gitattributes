@@ -1,0 +1,2 @@
+# Preserve upstream whitespace in bundled distributions, including template strings.
+web/vendor/**/*.min.js -whitespace

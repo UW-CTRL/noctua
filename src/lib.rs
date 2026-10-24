@@ -15,6 +15,7 @@ pub mod paths;
 mod project;
 mod s2;
 mod settings;
+mod storage;
 mod zotero;
 
 use std::{env, future::{Future, IntoFuture}, net::SocketAddr, path::PathBuf, sync::Arc};
@@ -76,6 +77,7 @@ struct App {
     projects: Projects,
     notes: Notes,
     data_dir: PathBuf,
+    _storage_lease: Option<std::fs::File>,
     settings: std::sync::Mutex<Settings>,
     desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
     login_gate: tokio::sync::Mutex<()>,
@@ -475,7 +477,10 @@ async fn guard(State(hosts): State<Arc<Vec<String>>>, req: Request, next: Next) 
 /// Sets up the data folder and starts the server on 127.0.0.1. Returns its
 /// URL and the future that runs it.
 pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Output = std::io::Result<()>>)> {
-    let data = paths::data_dir();
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], opts.port))).await?;
+    let storage_lease = storage::lease()?;
+    let data = paths::data_dir()?;
+    storage::share_lease(&storage_lease)?;
     std::fs::create_dir_all(&data)?;
     let migrated = paths::migrate_legacy(&data)?;
     let mut settings = Settings::load(&data);
@@ -491,7 +496,6 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         println!("No Semantic Scholar key yet: Noctua will ask for one in its window.");
     }
 
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], opts.port))).await?;
     let port = listener.local_addr()?.port();
     let url = format!("http://127.0.0.1:{port}");
     let hosts = Arc::new(vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")]);
@@ -508,6 +512,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         projects: Projects::open(&data.join("noctua-projects.sqlite"))?,
         notes: Notes::new(env::var("NOCTUA_NOTES").map(PathBuf::from).unwrap_or_else(|_| data.join("notes"))),
         data_dir: data,
+        _storage_lease: storage_lease,
         settings: std::sync::Mutex::new(settings),
         desktop: opts.desktop,
         login_gate: tokio::sync::Mutex::new(()),
@@ -521,6 +526,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
     Router::new()
         .route("/", get(|| async { asset(include_str!("../web/index.html"), "text/html; charset=utf-8") }))
         .route("/app.js", get(|| async { asset(include_str!("../web/app.js"), "text/javascript; charset=utf-8") }))
+        .route("/chat-render.js", get(|| async { asset(include_str!("../web/chat-render.js"), "text/javascript; charset=utf-8") }))
+        .route("/vendor/highlight/highlight.min.js", get(|| async { asset(include_str!("../web/vendor/highlight/highlight.min.js"), "text/javascript; charset=utf-8") }))
+        .route("/vendor/highlight/latex.min.js", get(|| async { asset(include_str!("../web/vendor/highlight/latex.min.js"), "text/javascript; charset=utf-8") }))
+        .route("/vendor/mermaid/mermaid.min.js", get(|| async { asset(include_str!("../web/vendor/mermaid/mermaid.min.js"), "text/javascript; charset=utf-8") }))
+        .route("/icons.css", get(|| async { asset(include_str!("../web/icons.css"), "text/css; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(include_str!("../web/style.css"), "text/css; charset=utf-8") }))
         .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
         .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
@@ -528,6 +538,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
         .route("/shell", get(|| async { asset(include_str!("../web/shell.html"), "text/html; charset=utf-8") }))
         .route("/shell.js", get(|| async { asset(include_str!("../web/shell.js"), "text/javascript; charset=utf-8") }))
+        .route("/fonts.js", get(|| async { asset(include_str!("../web/fonts.js"), "text/javascript; charset=utf-8") }))
+        .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
@@ -569,8 +581,10 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/chats/{id}", get(chats_get).delete(chats_delete))
         .route("/mcp", post(mcp_endpoint))
         .route("/api/settings", get(settings::get))
+        .route("/api/settings/storage", post(settings::set_storage))
         .route("/api/settings/agent", post(settings::set_agent))
         .route("/api/agents/{provider}", get(agent::status))
+        .route("/api/agents/{provider}/models", get(agent::models))
         .route("/api/agents/{provider}/login", post(agent::login))
         .route("/api/settings/key", post(settings::set_key).delete(settings::delete_key))
         .route("/api/settings/skip", post(settings::skip_key))
