@@ -61,8 +61,12 @@ A push of a `v*` tag triggers `.github/workflows/release.yml`. Preparation check
 the version, resolves the tagged commit, and creates or reuses one draft release.
 All three builds check out that resolved commit and upload to the same release
 ID. Per-tag concurrency queues overlapping runs. Platform-specific installers
-have distinct names; updater metadata uploads are disabled because Noctua has no
-updater configured and a shared `latest.json` would require serialized merging.
+have distinct names. Platform jobs upload signed updater bundles and signatures;
+the publication job creates a single `latest.json` after all uploads complete,
+mapping the Universal macOS bundle to both Intel and Apple Silicon. This avoids
+concurrent manifest writes. Missing signatures or failed manifest uploads prevent
+publication. Tags predating `app/tauri.release.conf.json` retain the original
+installer-only workflow, including manual rebuilds of older drafts.
 The final `publish` job depends on preparation and the entire build matrix. It runs
 only after they succeed and checks all seven required installers before publishing.
 It preserves the release title, notes, media, and pre-release setting. GitHub chooses
@@ -153,8 +157,97 @@ jobs can reuse successful build outputs. The preparation job continues to refuse
 rebuilding already published releases; retrying publication itself is a no-op for
 an already published release.
 
-Automatic release publication does not configure application auto-updates.
-Installed Noctua apps still require manual replacement with the new version.
+Updater-enabled releases also require completed `.sig` files for the macOS
+archive, Windows NSIS installer, and Linux AppImage. The generated `latest.json`
+is uploaded before the draft is published. It uses the release's existing notes.
+The app checks GitHub's latest published stable release once per launch and when
+the user requests a check in Settings;
+drafts and releases marked as prereleases are not offered. A release without a
+manifest produces a visible check error rather than claiming the app is current.
+
+## Update signing setup
+
+Before tagging the first updater-enabled release, generate a persistent signing
+key pair with the official [Tauri signing CLI](https://v2.tauri.app/plugin/updater/#signing-updates):
+
+```sh
+cargo tauri signer generate -w /secure/path/noctua-updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo UW-CTRL/noctua < /secure/path/noctua-updater.key
+gh variable set NOCTUA_UPDATER_PUBLIC_KEY --repo UW-CTRL/noctua < /secure/path/noctua-updater.key.pub
+```
+
+Keep a secure backup of the private key and its password. If encrypted, also set
+the `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Actions secret. Never commit private
+keys. The workflow refuses to create an updater-enabled draft without both the
+public-key repository variable and private-key secret. Use the same pair for
+every future release: changing the public key prevents installed apps from
+verifying new updates. The public key is compiled into the native app from
+`NOCTUA_UPDATER_PUBLIC_KEY`; it is not supplied by the update server.
+
+The release-only `app/tauri.release.conf.json` enables updater artifact signing.
+The updater disables legacy ZIP support to avoid the vulnerable `zip` dependency.
+Keep Windows updates as raw NSIS `.exe` files and Linux updates as raw AppImages;
+macOS `.app.tar.gz` support remains enabled independently of that feature.
+Ordinary local builds do not require a private key. They show an explanatory
+error when checking for updates unless built with `NOCTUA_UPDATER_PUBLIC_KEY`.
+For a local signed build, export that variable and Tauri's signing environment
+variables, then run `cargo tauri build --config tauri.release.conf.json` in `app/`.
+
+In the desktop app, **Settings → About & shortcuts → Check for updates** checks
+for a strictly newer version. **Update to …** asks the user to save work and
+confirm installation, then downloads and verifies the signed bundle before
+replacing the app. Windows exits and relaunches through its installer; macOS and
+Linux show **Restart Noctua** after installation. All windows share the pending
+update and only one operation can run at a time. Network and installation errors
+are shown in Settings and allow another check. On startup, one window checks for
+updates after first-run setup is complete. A newer release opens a modal showing
+the installed and offered versions, short categorized highlights, and **Update
+to …** / **Not now** buttons. Opening more tabs or windows does not repeat the
+prompt within the same process. **Not now** dismisses it until the next launch;
+Settings remains available. Startup failures and current-version results do not
+interrupt the user. Installation always requires confirmation; there are no
+background installations. Linux supports in-app updates only for AppImage;
+package-manager installations must update through their package manager.
+
+Users of an older release without the updater must manually install a build
+containing this feature once. Test updates between two signed packaged versions
+on each supported OS before relying on them; unit tests and compilation do not
+exercise actual application replacement or Windows installer relaunch.
+
+## Short update summaries
+
+Publication adds structured `release_summaries` to `latest.json` alongside the
+normal full `notes`. It includes the new release and published stable history,
+sorted by numeric version. The app displays only releases newer than the user's
+installed version and no newer than the offered update, so skipped versions are
+covered. Full release notes and a comparison from the installed version remain
+available through links. Older manifests without summaries show a release-notes
+link instead of invented highlights.
+
+By default, summaries use the release body's categorized bullet lists: Breaking
+Changes, New Features, Bug Fixes, Improvements, and Other Changes. Author credits,
+URLs, images, and code blocks are omitted. Each release contains at most six
+highlights, two per category, with each item limited to 110 characters. Review
+the release notes before tagging to keep the automatic summary useful.
+
+For a more focused summary, include this optional block in the draft's release
+body before running the workflow. The marked bullets take precedence over the
+generated list; the rest of the release notes remain intact:
+
+```markdown
+<!-- noctua:update-summary -->
+### New Features
+- Ask before installing updates at startup.
+### Bug Fixes
+- Preserve saved settings when restarting.
+<!-- /noctua:update-summary -->
+```
+
+Summary generation reads all published stable release notes at publication time;
+failure to fetch that history leaves the release in draft. Editing old notes
+after publication does not change an existing manifest; the next release takes
+a new snapshot. Summaries are informational and installation still verifies
+the signed update artifact.
 
 ## Recover from failures
 

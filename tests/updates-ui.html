@@ -1,0 +1,65 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"></head>
+<body><button id="previous-focus">Previous focus</button>
+<script>
+const settings = { desktop: true, skipped: true, version: '0.1.0' };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const keyNeeded = s => !s.skipped;
+let calls = [], fail = false, confirmCalls = 0, status = 'available';
+window.confirm = () => { confirmCalls++; return true; };
+async function api(path, body) {
+  calls.push({path, body});
+  if (fail) throw new Error('Network unavailable');
+  return {status, current_version:'0.1.0', version:'0.3.0', releases:[
+    {version:'0.3.0', changes:[{kind:'features', items:['Startup update prompts']}]},
+    {version:'0.2.0', changes:[{kind:'fixes', items:['Preserve <settings>']}]}]};
+}
+const assert = (value, message) => { if (!value) throw new Error(message); };
+const until = async predicate => {
+  for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
+  throw new Error('Dialog operation did not finish');
+};
+window.addEventListener('load', async () => {
+  try {
+    const previous = document.querySelector('#previous-focus'); previous.focus();
+    await checkStartupUpdate({desktop:false, skipped:true});
+    await checkStartupUpdate({desktop:true, skipped:false});
+    assert(calls.length === 0, 'browser mode or first-run setup checked for updates');
+    fail = true; await checkStartupUpdate(); fail = false;
+    assert(!document.querySelector('dialog'), 'offline startup showed a dialog');
+    await checkStartupUpdate();
+    let dialog = document.querySelector('#app-update-dialog');
+    assert(dialog?.open, 'available update did not show a modal');
+    assert(calls.at(-1).body.action === 'startup_check', 'startup did not use the native once-per-launch action');
+    assert(dialog.textContent.includes('0.1.0 → 0.3.0'), 'current-to-latest version range missing');
+    assert(dialog.querySelectorAll('.update-release').length === 2, 'skipped release summary missing');
+    assert(!dialog.querySelector('settings') && dialog.textContent.includes('Preserve <settings>'), 'highlight markup was interpreted as HTML');
+    assert(document.activeElement === dialog.querySelector('[data-dismiss]'), 'safe dismissal was not focused');
+    showUpdatePrompt({version:'0.4.0'});
+    assert(document.querySelectorAll('#app-update-dialog').length === 1, 'duplicate prompt appeared');
+    const before = calls.length;
+    dialog.querySelector('[data-dismiss]').click();
+    assert(!document.querySelector('dialog') && calls.length === before, 'Not now installed an update');
+    assert(document.activeElement === previous, 'focus not restored after dismissal');
+    status = 'skipped'; await checkStartupUpdate();
+    assert(!document.querySelector('dialog'), 'native skip response showed another prompt');
+    status = 'current'; await checkStartupUpdate();
+    assert(!document.querySelector('dialog'), 'current version showed an update prompt');
+    status = 'available'; await checkStartupUpdate();
+    dialog = document.querySelector('dialog');
+    let button = dialog.querySelector('[data-update-action]');
+    fail = true; button.click(); await until(() => !button.disabled);
+    assert(calls.at(-1).body.version === '0.3.0', 'installation did not pin the displayed version');
+    assert(confirmCalls === 0, 'startup prompt asked for confirmation twice');
+    assert(dialog.textContent.includes('Network unavailable') && button.dataset.updateAction === 'check', 'installation error did not offer retry');
+    fail = false; status = 'available'; button.click(); await until(() => !button.disabled);
+    status = 'installed'; button.click(); await until(() => !button.disabled);
+    assert(button.dataset.updateAction === 'restart' && button.textContent === 'Restart Noctua', 'successful install did not offer restart');
+    button.click(); await until(() => !button.disabled);
+    assert(calls.at(-1).body.action === 'restart', 'restart action missing');
+    dialog.dispatchEvent(new Event('cancel', {cancelable:true}));
+    assert(!document.querySelector('dialog'), 'Escape did not dismiss the prompt');
+    window.webkit.messageHandlers.result.postMessage('PASS: startup eligibility, offline/current/skip handling, modal deduplication, version summaries, escaping, focus, dismissal, install errors, retry and restart');
+  } catch (error) { window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+' '+error.stack); }
+});
+</script></body></html>
