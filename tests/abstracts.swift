@@ -9,6 +9,7 @@ let mocks=#"""
 const enc=encodeURIComponent,esc=String;
 let calls=[],pending=[],renders=0;
 const G={selected:'a',nodes:new Map()},results=[],lib={detail:null};
+const PDF={paper:null},modes=new Set(),document={body:{classList:{contains:k=>modes.has(k)}}};
 function api(path){calls.push(path);return new Promise((resolve,reject)=>pending.push({resolve,reject}));}
 function renderDetails(){renders++;}
 function updateChatContext(){}
@@ -26,7 +27,12 @@ let checks=#"""
  const empty={paperId:'empty'};G.selected='empty';G.nodes.set('empty',{p:empty});ensureAbstract(empty);pending[3].resolve({abstract:null});await tick();await tick();ensureAbstract(empty);assert(calls.length===4,'unavailable abstract repeatedly fetched');assert(abstractHTML(empty).includes('No abstract supplied'),'unavailable state missing');
  const failed={paperId:'failed'};ensureAbstract(failed);pending[4].reject(Error('offline'));await tick();await tick();assert(abstractHTML(failed).includes('Retry'),'failed request has no retry');
  abstractDetails.delete(abstractKey(failed,false));ensureAbstract(failed);assert(calls.length===6,'retry did not request again');pending[5].resolve({abstract:'Recovered'});await tick();await tick();
- globalThis.result='PASS: automatic abstracts, deduplication, selection races, library display, missing records and retry';
+ const reader={key:'reader',s2:'reader-s2'};PDF.paper=reader;modes.add('pdf-mode');const beforeReader=renders;
+ ensureAbstract(reader,true);pending[6].resolve({abstract:'Reader abstract'});await tick();await tick();assert(reader.abstractNote==='Reader abstract'&&renders===beforeReader+1,'reader abstract did not refresh active paper info');
+ const stale={key:'stale',s2:'stale-s2'};PDF.paper=stale;ensureAbstract(stale,true);PDF.paper=reader;const beforeStale=renders;
+ pending[7].resolve({abstract:'Old PDF abstract'});await tick();await tick();assert(renders===beforeStale,'late response from a previous PDF refreshed the current paper info');
+
+ globalThis.result='PASS: automatic abstracts, deduplication, selection races, library display, missing records, retry and reader selection races';
 })().catch(e=>globalThis.result='FAIL: '+e.stack);
 """#
 c.evaluateScript(mocks+String(source[start..<end])+checks)

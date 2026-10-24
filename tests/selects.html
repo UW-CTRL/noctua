@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Web dropdown checks</title>
+<link rel="stylesheet" href="../web/style.css">
+<link rel="stylesheet" href="../web/icons.css">
+<style>body{display:block;overflow:auto;padding:24px}#result{white-space:pre-wrap}form{display:flex;gap:12px;align-items:center}</style>
+<form id="fixture"><label for="theme">App theme</label><select id="theme"><option value="light">Light</option><option value="dark">Dark</option><option disabled>Unavailable</option><option value="system">System</option></select></form>
+<pre id="result">Running dropdown checks…</pre>
+<script src="../web/select.js"></script>
+<script>
+(async()=>{
+ const assert=(value,message)=>{if(!value)throw Error(message);};
+ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+ const key=(trigger,value)=>trigger.dispatchEvent(new KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));
+ const select=document.querySelector('#theme'),trigger=select.parentElement.querySelector('button');
+ let changes=0,inputs=0;select.addEventListener('change',()=>changes++);select.addEventListener('input',()=>inputs++);
+ assert(trigger?.getAttribute('role')==='combobox','select was not enhanced');
+ assert(select.tabIndex===-1&&select.getAttribute('aria-hidden')==='true','native picker still exposed');
+ assert(trigger.textContent==='Light'&&trigger.getAttribute('aria-label').includes('App theme'),'initial label/value missing');
+ key(trigger,'ArrowDown');assert(trigger.getAttribute('aria-expanded')==='true','keyboard did not open');
+ key(trigger,'ArrowDown');assert(select.value==='light','exploring options committed early');
+ key(trigger,'Escape');assert(select.value==='light'&&changes===0&&!document.querySelector('.web-select-list'),'Escape failed to cancel');
+ key(trigger,'ArrowDown');key(trigger,'ArrowDown');key(trigger,'ArrowDown');key(trigger,'Enter');
+ assert(select.value==='system'&&changes===1&&inputs===1,'keyboard selection did not skip disabled option or dispatch events once');
+ select.value='dark';assert(trigger.textContent==='Dark'&&changes===1,'programmatic assignment failed or emitted change');
+ select.selectedIndex=0;assert(trigger.textContent==='Light','selectedIndex assignment did not sync');
+ select.options[0].textContent='Light pages';await tick();assert(trigger.textContent==='Light pages','changed option text did not sync');
+ select.disabled=true;await tick();assert(trigger.disabled,'disabled state did not sync');
+ select.disabled=false;await tick();assert(!trigger.disabled,'enabled state did not sync');
+ select.value='dark';document.querySelector('form').reset();await tick();assert(trigger.textContent==='Light pages','form reset did not sync');
+ document.querySelector('label').click();assert(document.activeElement===trigger,'label did not focus custom control');
+ key(trigger,'d');key(trigger,'Enter');assert(select.value==='dark','typeahead could not commit with Enter');
+ key(trigger,'Enter');key(trigger,'Escape');key(trigger,'Enter');assert(trigger.getAttribute('aria-expanded')==='true','keyboard reopen failed after typeahead');
+ key(trigger,'Tab');assert(trigger.getAttribute('aria-expanded')==='false','Tab did not close popup');
+ const dynamic=document.createElement('select');dynamic.dataset.selectIcon='list-filter';dynamic.setAttribute('data-open-on-hover','');dynamic.innerHTML='<optgroup label="Available"><option value="a">A</option><option value="b">B</option></optgroup><optgroup label="Disabled" disabled><option value="c">C</option></optgroup>';
+ document.body.append(dynamic);await tick();const second=dynamic.parentElement.querySelector('button');assert(second,'dynamic select was not enhanced');
+ assert(second.dataset.icon==='list-filter'&&second.hasAttribute('data-icon-only'),'compact sort icon was not rendered');
+ if(matchMedia('(hover: hover)').matches){
+   const focus=document.activeElement;
+   dynamic.parentElement.dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'}));
+   await new Promise(resolve=>setTimeout(resolve,150));
+   assert(second.getAttribute('aria-expanded')==='true'&&document.activeElement===focus,'hover must open without stealing typing focus');
+   dynamic.parentElement.dispatchEvent(new PointerEvent('pointerleave',{pointerType:'mouse'}));
+   await new Promise(resolve=>setTimeout(resolve,220));
+   assert(second.getAttribute('aria-expanded')==='false'&&dynamic.value==='a','hover exit must close without selecting');
+ }
+ second.click();const popup=document.querySelector('.web-select-list');
+ assert(popup.querySelectorAll('[role="option"]').length===3&&popup.querySelectorAll('.web-select-heading').length===2,'option groups were not preserved');
+ popup.querySelector('[data-index="1"]').click();assert(dynamic.value==='b'&&second.textContent==='B','pointer choice did not update native value');
+ document.documentElement.dataset.theme='dark';second.click();
+ assert(getComputedStyle(document.querySelector('.web-select-list')).backgroundColor==='rgb(27, 29, 34)','dropdown did not follow dark app theme');
+ const box=document.querySelector('.web-select-list').getBoundingClientRect();assert(box.left>=0&&box.right<=innerWidth&&box.bottom<=innerHeight,'popup escaped viewport');
+ dynamic.parentElement.remove();await tick();assert(!document.querySelector('.web-select-list'),'removed control left an orphan popup');
+ const collection=document.createElement('div');collection.className='paper-collection-row';collection.style.width='260px';
+ collection.innerHTML='<select aria-label="Collection"><option>Noctua Library</option></select><button type="button" data-icon-only aria-label="Add to collection">+</button>';
+ document.body.append(collection);await tick();
+ const collectionTrigger=collection.querySelector('.web-select-trigger');
+ assert(collectionTrigger.getBoundingClientRect().width>200,'paper collection dropdown inherited the icon button width');
+ assert(collectionTrigger.textContent==='Noctua Library','paper collection value missing');collection.remove();
+ const result='PASS: keyboard navigation, cancellation, typeahead, disabled options, native events, programmatic changes, reset, labels, dynamic controls, hover-open icon controls, option groups, themes, collection field width and popup cleanup';
+ document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+})().catch(error=>{const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);});
+</script>

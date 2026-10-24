@@ -338,7 +338,7 @@ function applyImgSel() {
   const el = document.querySelector(`.nb[data-id="${N.imgSel.block}"] .nb-view .tex-img[data-img="${N.imgSel.k}"]`);
   if (!el) return;
   el.classList.add('selected');
-  el.insertAdjacentHTML('beforeend', '<button class="img-del" title="Remove media (Delete)">✕</button>');
+  el.insertAdjacentHTML('beforeend', '<button class="img-del" title="Remove media (Delete)" data-icon="trash-2" aria-label="Remove media (Delete)" data-icon-only>✕</button>');
 }
 
 function deleteSelectedImage() {

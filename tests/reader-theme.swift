@@ -18,18 +18,16 @@ function assert(v,m){if(!v)throw Error(m);}
 """#
 let checks=#"""
 setReaderTheme();assert(PDF.theme==='dark'&&PDF.dark,'default theme');
-setReaderTheme('light');assert(PDF.dark&&values.get('noctua.readerTheme')==='light','chrome theme changed pages');
-assert($('#pdf-stage').dataset.readerTheme==='light'&&$('#pdf-sidebar').dataset.readerTheme==='light','reader chrome theme');
+setReaderTheme('light');assert(!PDF.dark&&values.get('noctua.readerTheme')==='light','reader theme must change pages');
+assert(!$('#pdf-stage').dataset.readerTheme&&!$('#pdf-sidebar').dataset.readerTheme,'reader theme must not override app palettes');
 assert($('#setup-reader-theme').value==='light','settings sync');
-PDF.key='fixture';setPDFPageTheme('light');assert(!PDF.dark&&redraws===1,'light page redraw');
-assert(PDF.theme==='light','page toggle changed reader theme');
-assert(values.get('noctua.pdfPageTheme')==='light','page preference not saved');
-setPDFPageTheme('light');assert(redraws===1,'unnecessary redraw');
-setReaderTheme('dark');assert(!PDF.dark&&redraws===1,'reader theme changed pages');
-setReaderTheme('system');assert($('#pdf-stage').dataset.readerTheme==='light','system light mode');
-pdfSystemTheme.matches=true;applyReaderTheme();assert($('#pdf-stage').dataset.readerTheme==='dark'&&!PDF.dark,'system changes changed pages');
-setPDFPageTheme('dark');assert(PDF.dark&&redraws===2,'dark page redraw');
-setReaderTheme('invalid');assert(PDF.theme==='dark','invalid preference fallback');
+PDF.key='fixture';setPDFPageTheme('dark');assert(PDF.dark&&redraws===1,'dark page redraw');
+assert(PDF.theme==='dark'&&values.get('noctua.readerTheme')==='dark','toolbar and settings must share preference');
+setPDFPageTheme('dark');assert(redraws===1,'unnecessary redraw');
+setReaderTheme('system');assert(!PDF.dark&&redraws===2,'system light pages');
+pdfSystemTheme.matches=true;applyReaderTheme();assert(PDF.dark&&redraws===3,'system dark pages');
+assert(!$('#pdf-stage').dataset.readerTheme&&!$('#pdf-sidebar').dataset.readerTheme,'system theme changed app palettes');
+setReaderTheme('invalid');assert(PDF.theme==='dark'&&redraws===3,'invalid preference fallback');
 """#
 c.evaluateScript(mocks+String(source[a..<b])+checks)
-print("PASS: reader theme defaults, saved preferences, chrome, settings sync, system changes and reading position")
+print("PASS: page-only reader theme, shared saved preference, app palette isolation, system changes and reading position")

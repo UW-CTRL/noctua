@@ -1,4 +1,5 @@
 <!doctype html><meta charset="utf-8"><title>Noctua reader integration test</title>
+<link rel="stylesheet" href="../web/style.css">
 <link rel="stylesheet" href="../web/pdf.css">
 <body class="pdf-mode"><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
 <script>
@@ -29,22 +30,28 @@ try{
  document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));assert(PDF.selected===null&&!pdfPageBox(2).querySelector('.pdf-mark.selected'),'outside click left bold highlight');
  const before=pdfPageBox(2).getBoundingClientRect();await zoomPDF(1.75,{page:2,x:.5,y:.3,screenX:450,screenY:200});assert(pdfPageBox(2).getBoundingClientRect().width>before.width,'zoom did not resize continuous pages');
  await pdfNavigate(3);assert(PDF.page===3,'third page navigation failed');
+ document.documentElement.dataset.theme='light';
  await setReaderTheme('dark');
+ const sidebarLight=getComputedStyle($('#pdf-sidebar')).color;
+ const workspaceLight=getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor;
  await $('#pdf-stage [data-dark]').onclick();
- assert(PDF.theme==='dark'&&!PDF.dark&&store.get('noctua.pdfPageTheme')==='light','toolbar did not save separate light page preference');
+ assert(PDF.theme==='light'&&!PDF.dark&&store.get('noctua.readerTheme')==='light','toolbar and settings do not share page preference');
  assert(PDF.page===3,'theme change lost current page');
- assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(209, 211, 214)','light pages need gray surroundings');
- assert(getComputedStyle($('#pdf-sidebar')).color==='rgb(232, 232, 234)','page toggle changed sidebar theme');
+ assert(getComputedStyle($('#pdf-sidebar')).color===sidebarLight,'reader theme changed annotation palette');
+ assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor===workspaceLight,'page theme changed the app background');
  let pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
  assert(pixel[0]>240&&pixel[1]>240&&pixel[2]>240,'light reader did not restore original page colors');
- await setReaderTheme('system');assert($('#pdf-stage').dataset.readerTheme===(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),'system reader theme does not follow OS');
- assert(!PDF.dark,'reader theme changed PDF pages');
+ document.documentElement.dataset.theme='dark';
+ assert(getComputedStyle($('#pdf-sidebar')).color!==sidebarLight&&!PDF.dark,'app theme must change annotations independently of pages');
+ assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(0, 0, 0)','dark app theme needs a black reader background even with light pages');
+ await setReaderTheme('system');
+ assert(PDF.dark===matchMedia('(prefers-color-scheme: dark)').matches,'system reader theme does not follow OS');
  await setPDFPageTheme('dark');
- assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(23, 25, 29)','dark surroundings not restored');
+ assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(0, 0, 0)','page theme changed the dark app background');
  pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
  assert(pixel[0]<60&&pixel[1]<60&&pixel[2]<60,'dark pages not restored');
  store.set('noctua.readerTheme','light');window.dispatchEvent(new StorageEvent('storage',{key:'noctua.readerTheme'}));
- assert(PDF.theme==='light'&&PDF.dark,'reader preference did not sync independently across windows');
- report('PASS: continuous reader, links, selection, zoom, saved reader themes, system appearance and gray light-page background');
+ assert(PDF.theme==='light'&&!PDF.dark,'reader page preference did not sync across windows');
+ report('PASS: continuous reader, links, selection, zoom, page-only themes and independent app palettes');
 }catch(e){report('FAIL: '+e.stack);}
 </script>

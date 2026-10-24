@@ -169,7 +169,9 @@ on its own port, and refuses writes from other websites' pages.
 
 ## PDF reader
 
-Open a library paper with **PDF**, **New tab**, or **New window**. Desktop PDF tabs can be reordered, restored, or moved into windows just like graph/note tabs. Scroll continuously through the document, or use the page controls to jump. Noctua keeps placeholders for all pages and renders a bounded set near the viewport, releasing distant canvases instead of allocating a high-resolution image for every page. Use zoom (40–600%) and the dark/light page toggle. Reader buttons and trackpad pinch re-render the PDF at the new scale and display pixel density; large canvases are bounded to 32 megapixels. Scanned pages remain limited by their source image resolution. Dark mode uses the bundled renderer’s Zotero color transformation at canvas resolution, without a CSS inversion filter. Use the light toggle for original page colors on a gray background. **Settings → Appearance → Reader theme** offers **Dark**, **Light**, and **System**, independently of the app and notes themes. The toolbar page toggle saves a separate preference across reader tabs and windows; it changes only the PDF pages and their surrounding background.
+Open a library paper with **PDF**, **New tab**, or **New window**. Desktop PDF tabs can be reordered, restored, or moved into windows just like graph/note tabs. Scroll continuously through the document, or use the page controls to jump. Noctua keeps placeholders for all pages and renders a bounded set near the viewport, releasing distant canvases instead of allocating a high-resolution image for every page. Use zoom (40–600%) and the dark/light page toggle. Reader buttons and trackpad pinch re-render the PDF at the new scale and display pixel density; large canvases are bounded to 32 megapixels. Scanned pages remain limited by their source image resolution. Dark mode uses the bundled renderer’s Zotero color transformation at canvas resolution, without a CSS inversion filter. Use the light toggle for original page colors. **Settings → Appearance → Reader theme** offers **Dark**, **Light**, and **System** for the PDF pages only. The toolbar page toggle updates the same saved preference across reader tabs and windows. Annotations, document controls, and popovers follow the app theme. The PDF workspace follows the app theme and turns black in dark app mode, independently of the PDF page colors.
+
+**Settings → Appearance → Fonts** lets you choose the app interface, note, and chat typefaces independently, with live previews. Each font picker has a size selector on its right: system UI 11–18px, note body 12–26px, and chat 10–24px. Chat text size can also be adjusted with the A−/A+ buttons in the chat header. Choose a preset or enter an installed font name under **Custom font…**. Choices are saved across sessions and synced between windows. Note titles stay centered; equations and source-code editors keep their own fonts.
 
 Select text and click **Highlight** or **Comment**; choose from six colors. **Draw** enables freehand annotation. Comments and replies support `$inline math$` and `$$display math$$`, with a preview as you type. Selecting or focusing a comment emphasizes its highlight and scrolls to the passage; clicking highlighted text selects its comment. Clicking or focusing outside a comment removes the bold emphasis. Annotations save immediately; comment drafts survive reopening. Multiple windows share saved annotations and detect conflicting edits.
 
@@ -200,13 +202,21 @@ to add a drawing pad after the current block.
   `\newcommand`, `\section`/`\subsection`, `itemize`/`enumerate`, theorem,
   lemma, definition, problem, … with optional titles, `proof`, `\emph`,
   `\textbf`, `\href` and more. Unknown commands are shown in orange.
+  In text, click a resolved `\ref{key}` or `\eqref{key}` to jump to its
+  `\label{key}` in the current note, including labels in other blocks.
+  An align reference jumps to the equation group; missing labels show `??`.
 - **Images and videos**: paste a screenshot or media file (⌘V, when the clipboard
   provides the file), drag files onto the note, or click **+ Image / Video**
-  between cells (🖼 on a text cell). New files share the collection's note
+  between cells. The **?** button beside the note title opens a guide to
+  writing, YouTube embeds, media, blocks, citations, and assistant edits.
+  New files share the collection's note
   `media/` directory; existing `images/` references continue to work.
   Noctua inserts `\includegraphics` for images and its own `\includevideo`
   command for videos, inside a figure with a caption and label. For example:
   `\includevideo[width=0.6\textwidth]{media/<file>.mp4}`.
+  Paste a YouTube video URL on its own line in a text block to embed a player.
+  Watch, short sharing, Shorts, and live links are supported, including start
+  timestamps. Players do not autoplay and include an Open on YouTube link.
   Select an existing figure before pasting to add to it. Adding images or
   videos to that figure creates side-by-side subfigures; hold ⇧ while dropping
   to start a separate figure instead. Drag either edge of an image or video
@@ -264,6 +274,11 @@ to add a drawing pad after the current block.
   - **⚡ Direct edits**: changes apply immediately and are highlighted; "Undo
     assistant's edit" (under the note title) reverts them.
 
+The English note capability guide in `src/prompts/notes.md` is included in both
+assistants' system prompt at build time. Keep it, the in-app note guide, and
+relevant MCP tool descriptions in sync whenever note features change (see
+`AGENTS.md`). Rebuild and restart the backend to activate prompt changes.
+
   Edits go through the open editor, so they never collide with autosave.
 - **@-mentions** in the chat box search your Noctua papers and notes together
   (results tagged PAPER / NOTE, best 4 shown). The picked item's details (a
@@ -282,6 +297,16 @@ and their contents, read or open a folder's project graph, list and read your
 notes, and save papers to Noctua (adding existing papers to the chosen collection). Paper links in its answers are clickable. **New chat** starts a fresh
 conversation, and **Stop** cancels a reply. LaTeX in messages (`$…$`, `$$…$$`,
 `\(…\)`, `\[…\]`) is typeset.
+
+Replies also render Markdown tables, `>` blockquotes, read-only task status
+(`- [ ]` / `- [x]`), and collapsible explanations using `<details>` with a
+`<summary>` on its own line. Language-tagged code fences have syntax highlighting
+and a Copy button. Fenced `mermaid` diagrams render after streaming finishes,
+follow the app theme, and offer Source and Copy controls. Invalid diagrams keep
+their source visible. Mermaid 12.2.0 and Highlight.js 11.12.0 are bundled locally;
+diagram rendering loads on demand without a runtime CDN. These formats apply
+to chat, while notes retain their LaTeX syntax. The shared assistant instructions
+in `src/prompts/chat-formatting.md` describe the supported formats.
 
 Chats are saved to `noctua-chats.sqlite` after every reply (including
 stopped or interrupted ones). **History** lists them; pick one to reopen and
@@ -339,6 +364,13 @@ the graph keeps the most-cited N of those (N = the "Top" selector).
 
 Developer checks: `cargo test --offline` and (on macOS) `swift tests/frontend.swift`.
 `swift tests/abstracts.swift` checks abstract loading, selection races, and retries.
+`swift tests/fonts.swift` checks saved font preferences; `swift tests/reader.swift tests/fonts.html` checks UI/document font isolation and preserved math typography.
+`swift tests/markdown.swift` checks chat tables, streaming, inline math, code fences, and HTML escaping.
+It also checks blockquotes, nested collapsible content, checklist status, and
+completed versus streaming diagrams. `swift tests/chat-rendering.swift` verifies
+the real WebKit renderer, code copying and highlighting, diagram rendering,
+theme changes, and invalid-diagram fallback.
+`swift tests/reader.swift tests/selects.html` checks shared web dropdowns, keyboard controls, native value synchronization, and dynamic options in WebKit.
 `swift tests/pdf-navigation.swift` checks page-window bounds, destination resolution, safe external links, and bibliography matching.
 `swift tests/reader.swift tests/pdf-reader.html` exercises the continuous reader and link popovers in a desktop WebKit session.
 `swift tests/pdf-zoom.swift` checks rendering density, zoom gestures, and canvas limits.

@@ -38,6 +38,7 @@ function setMode(mode) {
     saveNow();
     requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
   }
+  renderDetails();
   updateChatContext();
 }
 
@@ -82,7 +83,7 @@ function renderNoteList() {
     <li data-id="${esc(n.id)}" class="${n.id === N.doc?.id ? 'active' : ''}">
       <div class="n-title">${esc(n.title || 'Untitled note')}</div>
       <div class="n-date">${new Date(n.updated).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
-      <button class="icon n-del" title="Delete note">×</button>
+      <button class="icon n-del" title="Delete note" data-icon="trash-2" aria-label="Delete note" data-icon-only>×</button>
     </li>`).join('');
 }
 
@@ -242,16 +243,16 @@ function renderEditor() {
   if (!N.doc) {
     stage.innerHTML = `<div class="note-page note-empty">
       <p>${N.target ? 'No note open.' : 'Pick a Noctua folder.'}</p>
-      ${N.target ? '<button class="primary" id="note-new-big">New note</button>' : ''}</div>`;
+      ${N.target ? '<button class="primary" id="note-new-big" data-icon="file-plus" data-icon-only title="New note" aria-label="New note"></button>' : ''}</div>`;
     stage.querySelector('#note-new-big')?.addEventListener('click', createNote);
     return;
   }
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
   stage.innerHTML = `<div class="note-page">
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
-      <div class="nb-tools"><button id="note-preamble-toggle" title="Preamble: page margins (\\geometry), \\usepackage, \\newcommand">⚙</button></div>
-      <input class="note-title" value="${esc(N.doc.title)}" placeholder="Untitled note" spellcheck="false">
-      <div class="note-meta">${esc(folder)} · <span id="note-status">Saved</span>${N.agentUndo.length
+      <div class="nb-tools"><button id="note-help" title="Note guide" aria-label="Note guide">?</button><button id="note-preamble-toggle" title="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon="settings" aria-label="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon-only>⚙</button></div>
+      <input class="note-title" value="${esc(N.doc.title)}" placeholder="Untitled note" aria-label="Note title" spellcheck="false">
+      <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span>${N.agentUndo.length
         ? ` · <a href="#" id="note-undo-agent">Undo assistant's edit</a>` : ''}${N.suggestions.length > 1
         ? ` · ${N.suggestions.length} suggestions: <a href="#" id="sg-accept-all">accept all</a> / <a href="#" id="sg-reject-all">reject all</a>` : ''}</div>
       ${N.preambleOpen ? `<div class="note-preamble">
@@ -263,6 +264,7 @@ function renderEditor() {
     </div>
     <div class="note-blocks"></div></div>`;
   wirePreamble(stage);
+  stage.querySelector('#note-help').addEventListener('click', showNoteHelp);
   const wrap = stage.querySelector('.note-blocks');
   wrap.appendChild(inserter(0));
   N.doc.blocks.forEach((b, i) => {
@@ -279,6 +281,44 @@ function renderEditor() {
   N.suggestions = N.suggestions.filter((x) => !x.block_id || blockIndex(x.block_id) >= 0);
   typeset();
   restoreVideos(stage, media);
+}
+
+function showNoteHelp() {
+  let dialog = document.getElementById('note-help-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'note-help-dialog';
+    dialog.setAttribute('aria-labelledby', 'note-help-title');
+    const example = source => `<pre><code>${esc(source)}</code></pre>`;
+    dialog.innerHTML = `<div class="note-help-header"><h2 id="note-help-title">Note guide</h2><form method="dialog"><button data-icon="x" data-icon-only aria-label="Close note guide" title="Close" autofocus></button></form></div>
+      <p class="note-help-intro">Write, add media, and connect your research.</p>
+      <section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically.</p>${example(String.raw`Inline math: $E = mc^2$
+
+\[ a^2 + b^2 = c^2 \]
+
+\section{Introduction}
+\textbf{Bold} and \emph{emphasis}`)}</section>
+      <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear beside the note title opens the preamble for page layout and custom LaTeX commands.</p></section>
+      <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Equations keep their math typeface.</p></section>
+      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
+      <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
+      <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
+See Section \ref{sec:intro}.
+
+\begin{equation}
+E = mc^2 \label{eq:energy}
+\end{equation}
+See Equation \eqref{eq:energy}.`)}</section>
+      <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys are Noctua library item keys.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach a paper or note to your question.</p></section>
+      <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode applies requested edits immediately; use Undo assistant's edit to revert them.</p></section>`;
+    dialog.addEventListener('click', event => {
+      if (event.target !== dialog) return;
+      const rect = dialog.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+    });
+    document.body.appendChild(dialog);
+  }
+  if (!dialog.open) dialog.showModal();
 }
 
 // ---------------------------------------------------------------- preamble (the header cell)
@@ -404,7 +444,7 @@ function suggestionEl(sg) {
     : `<div class="sg-body tex-view">${NoctuaLatex.renderDoc([sg.latex], { cite: citeHtml, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble })[0]}</div>
        <details class="sg-src"><summary>LaTeX</summary><pre>${esc(sg.latex)}</pre></details>`;
   d.innerHTML = `<div class="sg-head">${what}${why ? `: <span class="sg-why">${esc(why)}</span>` : ''}</div>${body}
-    <div class="sg-actions"><button data-act="accept" class="primary">Accept</button><button data-act="reject">Reject</button></div>`;
+    <div class="sg-actions"><button data-act="accept" class="primary" data-icon="check">Accept</button><button data-act="reject" data-icon="x">Reject</button></div>`;
   d.querySelector('.sg-actions').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) resolveSuggestion(sg.id, b.dataset.act === 'accept');
@@ -481,7 +521,7 @@ async function noteEditFromChat(a) {
 function inserter(index) {
   const d = document.createElement('div');
   d.className = 'nb-insert';
-  d.innerHTML = '<button data-type="text">+ Text</button><button data-type="ink">+ Drawing</button><button data-type="image">+ Image / Video</button>';
+  d.innerHTML = '<span class="nb-insert-tools" role="group" aria-label="Insert block"><button data-type="text" data-icon="type">Text</button><button data-type="ink" data-icon="pen-tool">Drawing</button><button data-type="image" data-icon="image-plus">Image / Video</button></span>';
   d.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b?.dataset.type === 'image') pickImages({ index });
@@ -495,17 +535,17 @@ function blockEl(b) {
   el.className = `nb nb-${b.type}`;
   el.dataset.id = b.id;
   el.innerHTML = `<div class="nb-tools">
-      <button data-act="up" title="Move up">↑</button>
-      <button data-act="down" title="Move down">↓</button>
-      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (inserted below)">TeX</button>'
-        : '<button data-act="image" title="Add images or videos (to this figure, or as a new cell below)">🖼</button>'}
-      <button data-act="delete" title="Delete block">✕</button>
+      <button data-act="up" title="Move up" data-icon="arrow-up" aria-label="Move up" data-icon-only>↑</button>
+      <button data-act="down" title="Move down" data-icon="arrow-down" aria-label="Move down" data-icon-only>↓</button>
+      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (inserted below)" data-icon="sigma" aria-label="Convert handwriting to LaTeX (inserted below)" data-icon-only>TeX</button>'
+        : ''}
+      <button data-act="delete" title="Delete block" data-icon="trash-2" aria-label="Delete block" data-icon-only>✕</button>
     </div><div class="nb-body"></div>`;
   const body = el.querySelector('.nb-body');
   if (b.type === 'text') {
-    body.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write (LaTeX: $x^2$, \\section{…}, \\cite{…})"></div>';
+    body.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write…"></div>';
     body.addEventListener('click', (e) => {
-      if (e.target.closest('a, .tex-img')) return;
+      if (e.target.closest('a, .tex-img, .tex-youtube')) return;
       if (N.editing !== b.id) startEdit(b.id);
     });
   } else {
@@ -555,8 +595,6 @@ async function blockAction(id, act, btn) {
     if (!N.doc.blocks.length) N.doc.blocks.push({ id: newId('b'), type: 'text', src: '' });
     markDirty();
     renderEditor();
-  } else if (act === 'image') {
-    pickImages({ blockId: id });
   } else if (act === 'latex') {
     if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
     const doc = N.doc, target = N.target, provider = chat.provider;
@@ -564,6 +602,7 @@ async function blockAction(id, act, btn) {
     if (!png) return toast('Draw something first.');
     btn.disabled = true;
     btn.textContent = '…';
+    btn.dataset.icon = 'loader-circle';
     toast('Converting handwriting to LaTeX…');
     try {
       const { latex } = await api('/api/ink-latex', { png, provider });
@@ -580,6 +619,7 @@ async function blockAction(id, act, btn) {
       toast(e.message, { error: true });
       btn.disabled = false;
       btn.textContent = 'TeX';
+      btn.dataset.icon = 'sigma';
     }
   }
 }
@@ -653,7 +693,7 @@ function stopEdit() {
   closeMentions();
   const el = document.querySelector(`.nb[data-id="${id}"] .nb-body`);
   const media = el ? captureVideos(el) : [];
-  if (el) el.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write (LaTeX: $x^2$, \\section{…}, \\cite{…})"></div>';
+  if (el) el.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write…"></div>';
   typeset();
   if (el) restoreVideos(el, media);
 }
@@ -865,7 +905,24 @@ $('#notes-stage').addEventListener('input', (e) => {
   if (entry) { entry.title = N.doc.title; renderNoteList(); }
   markDirty();
 });
+function followNoteReference(key) {
+  stopEdit();
+  const target = Array.from($('#notes-stage').querySelectorAll('.nb-body [data-tex-label]')).find(anchor => anchor.dataset.texLabel === key);
+  if (target) {
+    target.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
+    (target.closest('.tex-display') || target).scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  } else toast('Reference target not found.');
+}
+
 $('#notes-stage').addEventListener('click', (e) => {
+  const reference = e.target.closest('a.tex-ref');
+  if (reference) {
+    e.preventDefault();
+    e.stopPropagation();
+    followNoteReference(reference.dataset.texRef);
+    return;
+  }
   const act = e.target.closest('#note-undo-agent, #sg-accept-all, #sg-reject-all');
   if (act) {
     e.preventDefault();
@@ -893,7 +950,7 @@ $('#notes-stage').addEventListener('click', (e) => {
 }, true);
 // "Visualize paper graph" on a cited paper takes you back to the graph.
 $('#details').addEventListener('click', (e) => {
-  if (isNotesMode() && e.target.closest('#act-lib-graph')) setMode('graph');
+  if ((isNotesMode() || document.body.classList.contains('pdf-mode')) && e.target.closest('#act-lib-graph')) setMode('graph');
 }, true);
 const cp = $('#cite-picker');
 cp.addEventListener('mouseenter', () => { picker.hovering = true; });

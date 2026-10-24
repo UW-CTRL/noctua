@@ -5,21 +5,17 @@ const pdfDocs=new Map(),pdfIndexes=new Map(),pdfSaves=new Set();
 const pdfSystemTheme=window.matchMedia('(prefers-color-scheme: dark)');
 function applyReaderTheme(){
   const dark=PDF.theme==='dark'||(PDF.theme==='system'&&pdfSystemTheme.matches);
-  for(const selector of ['#pdf-stage','#pdf-sidebar'])$(selector).dataset.readerTheme=dark?'dark':'light';
+  const changed=PDF.dark!==dark,anchor=changed&&PDF.key?pdfZoomAnchor():null;
+  PDF.dark=dark;
   if($('#setup-reader-theme'))$('#setup-reader-theme').value=PDF.theme;
-  const popup=$('#pdf-link-preview');if(popup)popup.dataset.readerTheme=dark?'dark':'light';
+  if(changed&&PDF.key)return renderPDF(anchor);
 }
 function setReaderTheme(theme){
   PDF.theme=['dark','light','system'].includes(theme)?theme:'dark';
   store.set('noctua.readerTheme',PDF.theme);
   return applyReaderTheme();
 }
-function setPDFPageTheme(theme){
-  const dark=theme!=='light',changed=PDF.dark!==dark,anchor=changed&&PDF.key?pdfZoomAnchor():null;
-  PDF.dark=dark;
-  store.set('noctua.pdfPageTheme',dark?'dark':'light');
-  if(changed&&PDF.key)return renderPDF(anchor);
-}
+function setPDFPageTheme(theme){return setReaderTheme(theme==='light'?'light':'dark');}
 let pdfEngine;
 async function pdfjs(){
   if(!Promise.withResolvers)Promise.withResolvers=function(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
@@ -127,10 +123,11 @@ async function pdfPageLayout(doc){
   })());
   return pdfLayouts.get(doc);
 }
+function sizePDFPageInput(input){input.style.width=`calc(${Math.max(1,input.value.length)}ch + 16px)`;}
 function pdfPageBox(number){return pdfPageEntries.find(e=>e.number===number)?.box || null;}
 function pdfSetCurrentPage(number){
   if(PDF.page===number)return;PDF.page=number;
-  const input=$('#pdf-stage [data-page]');if(input&&document.activeElement!==input)input.value=number;
+  const input=$('#pdf-stage [data-page]');if(input&&document.activeElement!==input){input.value=number;sizePDFPageInput(input);}
   history.replaceState({},'','/#pdf='+enc(PDF.key)+'&page='+number);updateChatContext();
 }
 function pdfRenderWindow(metrics,top,bottom){
@@ -195,14 +192,62 @@ async function renderPDF(anchor=null){
   const token=++PDF.token,key=PDF.key;PDF.selection=null;closePDFLinkPreview();
   if(pdfScrollFrame!==null)cancelAnimationFrame(pdfScrollFrame);pdfScrollFrame=null;
   for(const entry of pdfPageEntries)disposePDFPage(entry);pdfPageEntries=[];
-  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar"><button data-prev>‹</button><input data-page type="number" min="1" max="${PDF.doc.numPages}" value="${PDF.page}" aria-label="Page"> / ${PDF.doc.numPages}<button data-next>›</button><button data-zoom="-">−</button><button data-zoom="+">+</button><span class="pdf-zoom-level" aria-label="PDF zoom">${Math.round(PDF.scale*100)}%</span><select data-tool><option value="select">Select text</option><option value="draw">Draw</option></select><button data-highlight>Highlight</button><button data-comment>Comment</button><select data-color aria-label="Annotation color">${pdfColors.map((c,i)=>`<option value="${c}">${['Yellow','Green','Blue','Pink','Purple','Red'][i]}</option>`).join('')}</select><button data-dark>${PDF.dark?'Light':'Dark'} pages</button><button data-tab>New tab</button><button data-window>New window</button><span class="pdf-title">${esc(PDF.paper.title)}</span></div><div class="pdf-scroll" data-page-theme="${PDF.dark?'dark':'light'}" tabindex="0" aria-label="PDF pages"><div class="pdf-document"></div></div>`;
+  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar">
+    <div class="pdf-document-heading">
+      <span class="pdf-title" title="${esc(PDF.paper.title)}">${esc(PDF.paper.title)}</span>
+      <label class="pdf-page-position">Page <input data-page type="number" min="1" max="${PDF.doc.numPages}" value="${PDF.page}" aria-label="Page"> of ${PDF.doc.numPages}</label>
+    </div>
+    <div class="pdf-reader-tools">
+      <div class="pdf-tool-group" role="group" aria-label="Zoom">
+        <button data-zoom="-" title="Zoom out" data-icon="zoom-out" aria-label="Zoom out" data-icon-only></button>
+        <span class="pdf-zoom-level" aria-label="PDF zoom">${Math.round(PDF.scale*100)}%</span>
+        <button data-zoom="+" title="Zoom in" data-icon="zoom-in" aria-label="Zoom in" data-icon-only></button>
+      </div>
+      <div class="pdf-tool-group" role="group" aria-label="Annotation tools">
+        <button data-tool="select" title="Select text" data-icon="type" aria-label="Select text" aria-pressed="${PDF.mode==='select'}" data-icon-only></button>
+        <button data-tool="draw" title="Draw" data-icon="pen-tool" aria-label="Draw" aria-pressed="${PDF.mode==='draw'}" data-icon-only></button>
+        <span class="pdf-tool-divider" aria-hidden="true"></span>
+        <button data-highlight title="Highlight selection" data-icon="highlighter" aria-label="Highlight selection" data-icon-only></button>
+        <button data-comment title="Add comment" data-icon="message-square-plus" aria-label="Add comment" data-icon-only></button>
+        <details class="pdf-color-menu">
+          <summary title="Annotation color" aria-label="Annotation color"><span class="pdf-color-dot" style="--swatch:${PDF.color}" aria-hidden="true"></span></summary>
+          <div class="pdf-color-options" role="group" aria-label="Annotation color">${pdfColors.map((c,i)=>`<button data-color="${c}" style="--swatch:${c}" title="${['Yellow','Green','Blue','Pink','Purple','Red'][i]}" aria-label="${['Yellow','Green','Blue','Pink','Purple','Red'][i]}" aria-pressed="${PDF.color===c}"></button>`).join('')}</div>
+        </details>
+      </div>
+      <details class="pdf-more-menu">
+        <summary title="More document actions" aria-label="More document actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></summary>
+        <div class="pdf-more-options">
+          <button data-dark data-icon="${PDF.dark?'sun':'moon'}">${PDF.dark?'Light':'Dark'} pages</button>
+          <button data-tab data-icon="external-link">Open in new tab</button>
+          <button data-window data-icon="app-window">Open in new window</button>
+        </div>
+      </details>
+    </div>
+  </div><div class="pdf-scroll" tabindex="0" aria-label="PDF pages"><div class="pdf-document"></div></div>`;
   const stage=$('#pdf-stage'),on=(s,fn)=>stage.querySelector(s).onclick=()=>Promise.resolve().then(fn).catch(e=>toast(e.message));
-  on('[data-prev]',()=>pdfNavigate(PDF.page-1));on('[data-next]',()=>pdfNavigate(PDF.page+1));stage.querySelector('[data-page]').onchange=e=>pdfNavigate(+e.target.value);
+  const pageInput=stage.querySelector('[data-page]');sizePDFPageInput(pageInput);
+  pageInput.oninput=()=>sizePDFPageInput(pageInput);pageInput.onchange=e=>pdfNavigate(+e.target.value);
   on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));
   on('[data-highlight]',()=>addPDFAnnotation('highlight'));on('[data-comment]',()=>addPDFAnnotation(PDF.selection?'highlight':'comment'));
-  on('[data-dark]',()=>setPDFPageTheme(PDF.dark?'light':'dark'));on('[data-tab]',()=>openPaperView(key,'tab',{page:PDF.page}));on('[data-window]',()=>openPaperView(key,'window',{page:PDF.page}));
-  stage.querySelector('[data-color]').value=PDF.color;stage.querySelector('[data-color]').onchange=e=>PDF.color=e.target.value;
-  const tool=stage.querySelector('[data-tool]');tool.value=PDF.mode;tool.onchange=e=>{PDF.mode=e.target.value;pdfPageEntries.forEach(e=>e.box.classList.toggle('drawing',PDF.mode==='draw'));closePDFLinkPreview();};
+  const closeMenus=()=>stage.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>menu.open=false);
+  on('[data-dark]',()=>{closeMenus();return setPDFPageTheme(PDF.dark?'light':'dark');});
+  on('[data-tab]',()=>{closeMenus();return openPaperView(key,'tab',{page:PDF.page});});
+  on('[data-window]',()=>{closeMenus();return openPaperView(key,'window',{page:PDF.page});});
+  stage.querySelectorAll('[data-color]').forEach(button=>button.onclick=()=>{
+    PDF.color=button.dataset.color;
+    stage.querySelector('.pdf-color-dot').style.setProperty('--swatch',PDF.color);
+    stage.querySelectorAll('[data-color]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.color===PDF.color));
+    closeMenus();stage.querySelector('.pdf-color-menu summary').focus();
+  });
+  stage.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>{
+    PDF.mode=button.dataset.tool;
+    stage.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===PDF.mode));
+    pdfPageEntries.forEach(e=>e.box.classList.toggle('drawing',PDF.mode==='draw'));closePDFLinkPreview();
+  });
+  stage.querySelectorAll('.pdf-toolbar details').forEach(menu=>{
+    menu.addEventListener('toggle',()=>{if(menu.open)stage.querySelectorAll('.pdf-toolbar details[open]').forEach(other=>{if(other!==menu)other.open=false;});});
+    menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;menu.querySelector('summary').focus();}});
+  });
   const doc=PDF.doc,scale=PDF.scale,sizes=await pdfPageLayout(doc);if(token!==PDF.token)return;
   pdfRenderDensity=pdfPixelDensity();
   const container=stage.querySelector('.pdf-document');
@@ -224,7 +269,7 @@ function scrollPDFPage(number,y=0){
 async function pdfNavigate(page,y=0){
   const number=Math.max(1,Math.min(PDF.doc.numPages,Math.floor(Number(page)||1)));
   closePDFLinkPreview();PDF.page=number;history.replaceState({},'','/#pdf='+enc(PDF.key)+'&page='+number);
-  const input=$('#pdf-stage [data-page]');if(input)input.value=number;
+  const input=$('#pdf-stage [data-page]');if(input){input.value=number;sizePDFPageInput(input);}
   if(!pdfPageEntries.length){await renderPDF();return;}
   scrollPDFPage(number,y);updatePDFViewport();
   const entry=pdfPageEntries[number-1];entry.wanted=true;await ensurePDFPage(entry);updateChatContext();
@@ -313,7 +358,11 @@ function schedulePDFLinkPreview(link,x,y){
   pdfLinkTimer=setTimeout(()=>{pdfLinkPending=null;showPDFLinkPreview(link,x,y).catch(e=>toast(e.message));},300);
 }
 function positionPDFPreview(popup,x,y){
-  popup.style.left=Math.max(12,Math.min(x+12,innerWidth-popup.offsetWidth-12))+'px';
+  const gap=12,margin=12,width=popup.offsetWidth;
+  const rightSpace=innerWidth-x-gap-margin,leftSpace=x-gap-margin;
+  const onRight=rightSpace>=width || (leftSpace<width && rightSpace>=leftSpace);
+  const left=onRight?x+gap:x-gap-width;
+  popup.style.left=Math.max(margin,Math.min(left,innerWidth-width-margin))+'px';
   popup.style.top=Math.max(12,Math.min(y+16,innerHeight-popup.offsetHeight-12))+'px';
 }
 function pdfReferenceCrop(viewport,target,items){
@@ -340,8 +389,8 @@ async function showPDFLinkPreview(link,x,y,pinned=false){
   if(pdfLinkCurrent===link.id){pdfLinkPinned ||= pinned;return;}
   closePDFLinkPreview();pdfLinkCurrent=link.id;pdfLinkPinned=pinned;
   const serial=pdfLinkSerial,doc=PDF.doc,key=PDF.key;
-  const popup=document.createElement('aside');popup.id='pdf-link-preview';popup.dataset.readerTheme=$('#pdf-stage').dataset.readerTheme;popup.classList.toggle('pdf-reference-popover',!link.url);popup.setAttribute('role','dialog');popup.setAttribute('aria-label','PDF link preview');
-  popup.innerHTML='<button class="pdf-preview-close" aria-label="Close preview">×</button><div class="pdf-preview-content">Loading reference…</div>';
+  const popup=document.createElement('aside');popup.id='pdf-link-preview';popup.classList.toggle('pdf-reference-popover',!link.url);popup.setAttribute('role','dialog');popup.setAttribute('aria-label','PDF link preview');
+  popup.innerHTML='<button class="pdf-preview-close" aria-label="Close preview" data-icon="x" title="Close preview" data-icon-only>×</button><div class="pdf-preview-content">Loading reference…</div>';
   document.body.append(popup);positionPDFPreview(popup,x,y);
   popup.querySelector('button').onclick=closePDFLinkPreview;popup.onpointerenter=()=>clearTimeout(pdfLinkCloseTimer);popup.onpointerleave=schedulePDFLinkClose;
   const body=popup.querySelector('.pdf-preview-content'),active=()=>serial===pdfLinkSerial&&key===PDF.key&&popup.isConnected;
@@ -352,7 +401,7 @@ async function showPDFLinkPreview(link,x,y,pinned=false){
   }
   try{
     const target=await resolvePDFDestination(doc,link);if(!active())return;
-    body.innerHTML=`<strong>${link.label?esc(link.label):'Reference / document link'}</strong><div class="hint">Page ${target.page}</div>${link.excerpt?`<p class="pdf-reference-text">${esc(link.excerpt)}</p>`:'<canvas class="pdf-reference-preview"></canvas>'}<button data-follow-reference>Go to passage</button>`;
+    body.innerHTML=`<strong>${link.label?esc(link.label):'Reference / document link'}</strong><div class="hint">Page ${target.page}</div>${link.excerpt?`<p class="pdf-reference-text">${esc(link.excerpt)}</p>`:'<canvas class="pdf-reference-preview"></canvas>'}<button data-follow-reference data-icon="arrow-right">Go to passage</button>`;
     body.querySelector('[data-follow-reference]').onclick=()=>{closePDFLinkPreview();pdfNavigate(target.page,target.y).catch(e=>toast(e.message));};
     positionPDFPreview(popup,x,y);
     const canvas=body.querySelector('canvas');if(!canvas)return;
@@ -400,6 +449,7 @@ function pdfOutsideComment(event){
   if(!event.target.closest?.('#pdf-link-preview,.pdf-document-link'))closePDFLinkPreview();
 }
 document.addEventListener('pointerdown',pdfOutsideComment,true);
+document.addEventListener('pointerdown',event=>{document.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
 document.addEventListener('focusin',event=>{if(!event.target.closest?.('#pdf-sidebar article'))clearPDFAnnotationSelection();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){clearPDFAnnotationSelection();closePDFLinkPreview();}});
 function syncPDFAnnotationSelection(){
@@ -431,7 +481,7 @@ function paintPDFAnnotations(){
 async function addPDFAnnotation(kind){if(kind==='highlight'&&!PDF.selection)throw new Error('Select some PDF text first.');const a=await pdfSave(api(paperURL(PDF.key)+'/annotations',{kind,page:PDF.page,color:PDF.color,...(PDF.selection || {}),comment:''}));PDF.selected=a.id;PDF.selection=null;getSelection().removeAllRanges();await refreshPDFAnnotations();$('#pdf-sidebar [data-id="'+a.id+'"] textarea')?.focus();}
 const pdfMath=src=>{try{return NoctuaLatex.renderDoc([src || ''])[0];}catch{return esc(src || '');}};
 async function refreshPDFAnnotations(){const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;PDF.annotations=list;paintPDFAnnotations();syncPDFAnnotationSelection();if($('#pdf-sidebar').contains(document.activeElement)&&document.activeElement.matches('textarea'))return;
-  const side=$('#pdf-sidebar');side.innerHTML='<h3>Annotations</h3><p class="hint">Select text to highlight it. Comments support $inline$ and $$display$$ math.</p>'+list.map(a=>`<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><div class="tex-view">${pdfMath(a.comment)}</div><textarea aria-label="Comment with LaTeX" placeholder="Comment with $math$">${esc(store.get('pdf-draft:'+a.id) ?? a.comment ?? '')}</textarea><div class="pdf-preview tex-view"></div><button data-save>Save comment</button>${a.status==='pending'?'<button data-accept>Accept</button>':''}<button data-delete>${a.status==='pending'?'Reject':'Delete'}</button>${(a.replies || []).map(r=>`<div class="pdf-reply"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true">Accept</button><button data-reply-id="${r.id}" data-resolve="false">Reject</button>`:''}</div>`).join('')}<textarea data-reply placeholder="Reply with $math$" aria-label="Reply">${esc(store.get('pdf-reply:'+a.id)||'')}</textarea><button data-send>Reply</button></article>`).join('');
+  const side=$('#pdf-sidebar');side.innerHTML='<h3>Annotations</h3><p class="hint">Select text to highlight it. Comments support $inline$ and $$display$$ math.</p>'+list.map(a=>`<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><div class="tex-view">${pdfMath(a.comment)}</div><textarea aria-label="Comment with LaTeX" placeholder="Comment with $math$">${esc(store.get('pdf-draft:'+a.id) ?? a.comment ?? '')}</textarea><div class="pdf-preview tex-view"></div><button data-save data-icon="save">Save comment</button>${a.status==='pending'?'<button data-accept data-icon="check">Accept</button>':''}<button data-delete data-icon="${a.status==='pending'?'x':'trash-2'}">${a.status==='pending'?'Reject':'Delete'}</button>${(a.replies || []).map(r=>`<div class="pdf-reply"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true" data-icon="check">Accept</button><button data-reply-id="${r.id}" data-resolve="false" data-icon="x">Reject</button>`:''}</div>`).join('')}<textarea data-reply placeholder="Reply with $math$" aria-label="Reply">${esc(store.get('pdf-reply:'+a.id)||'')}</textarea><button data-send data-icon="reply">Reply</button></article>`).join('');
   for(const el of side.querySelectorAll('article')){const a=list.find(a=>a.id===el.dataset.id),url=paperURL(key)+'/annotations/'+a.id,input=el.querySelector('textarea');input.oninput=()=>{store.set('pdf-draft:'+a.id,input.value);el.querySelector('.pdf-preview').innerHTML=pdfMath(input.value);};const reply=el.querySelector('[data-reply]');reply.oninput=()=>store.set('pdf-reply:'+a.id,reply.value);
     const select=()=>{if(PDF.selected!==a.id||PDF.page!==a.page)selectPDFAnnotation(a.id).catch(e=>toast(e.message));};
     el.addEventListener('focusin',select);el.addEventListener('click',select);
@@ -443,11 +493,9 @@ async function refreshPDFAnnotations(){const key=PDF.key;if(!key)return;const li
 function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments.'};}
 async function pdfAction(a){if(a.action==='pdf_index')return indexPDF(a.key);if(a.action==='pdf_page')return pdfPageImage(a.key,a.page);if(a.action==='pdf_show')return openPDF(a.key,{page:a.page});if(a.action==='pdf_annotations'){if(PDF.key!==a.key)await openPDF(a.key,{page:a.page,annotation:a.id});else {setMode('pdf');await refreshPDFAnnotations();await selectPDFAnnotation(a.id,{scrollComment:true});}}}
 function pdfRoute(){if(!location.hash.startsWith('#pdf='))return;const q=new URLSearchParams(location.hash.slice(1));openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>toast(e.message));}
-setReaderTheme(store.get('noctua.readerTheme'));
-setPDFPageTheme(store.get('noctua.pdfPageTheme')||$('#pdf-stage').dataset.readerTheme);
+setReaderTheme(store.get('noctua.readerTheme')||store.get('noctua.pdfPageTheme'));
 pdfSystemTheme.addEventListener('change',()=>{if(PDF.theme==='system')Promise.resolve(applyReaderTheme()).catch(e=>toast(e.message));});
 window.addEventListener('storage',e=>{if(e.key==='noctua.readerTheme'||e.key===null)Promise.resolve(setReaderTheme(store.get('noctua.readerTheme'))).catch(e=>toast(e.message));});
-window.addEventListener('storage',e=>{if(e.key==='noctua.pdfPageTheme'||e.key===null)Promise.resolve(setPDFPageTheme(store.get('noctua.pdfPageTheme'))).catch(e=>toast(e.message));});
 window.addEventListener('blur',clearPDFAnnotationSelection);
 window.addEventListener('popstate',pdfRoute);pdfRoute();
 setInterval(()=>{if(PDF.key&&document.body.classList.contains('pdf-mode')&&!document.hidden)refreshPDFAnnotations().catch(()=>{});},3000);

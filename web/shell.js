@@ -34,7 +34,7 @@ function addTab(url = '/', { activate = true, after = null } = {}) {
   const el = document.createElement('div');
   el.className = 'tab';
   el.draggable = true;
-  el.innerHTML = '<span class="t">Noctua</span><button class="x" title="Close tab (⌘W / Ctrl+W)">×</button>';
+  el.innerHTML = '<span class="t">Noctua</span><button class="x" title="Close tab (⌘W / Ctrl+W)" data-icon="x" aria-label="Close tab (⌘W / Ctrl+W)" data-icon-only>×</button>';
   const frame = document.createElement('iframe');
   frame.src = url.startsWith('/') && !url.startsWith('/shell') ? url : '/';
   const t = { id, el, frame };
@@ -121,7 +121,7 @@ function tabMenu(t, x, y) {
   document.getElementById('menu')?.remove();
   const m = document.createElement('div');
   m.id = 'menu';
-  m.innerHTML = '<button data-a="new">New tab to the right</button><button data-a="move">Move to new window</button><button data-a="close">Close tab</button>';
+  m.innerHTML = '<button data-a="new" data-icon="plus">New tab to the right</button><button data-a="move" data-icon="app-window">Move to new window</button><button data-a="close" data-icon="x">Close tab</button>';
   m.style.left = `${x}px`;
   m.style.top = `${y}px`;
   document.body.appendChild(m);

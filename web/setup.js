@@ -15,7 +15,7 @@ function keySection(s, firstRun) {
   if (s.key_source === 'file') {
     return `<section data-step="key">${intro}
       <div class="setup-key-row"><p class="setup-current">Current key: <code>${esc(s.key_hint || '')}</code></p>
-        <button data-act="remove-key">Remove key</button></div>
+        <button data-act="remove-key" data-icon="key-round">Remove key</button></div>
       <p class="setup-msg" role="status"></p></section>`;
   }
   return `<section data-step="key">
@@ -23,7 +23,7 @@ function keySection(s, firstRun) {
     <input class="setup-input" id="setup-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key">
     <p class="setup-msg"></p>
     <div class="setup-actions">
-      <button class="primary" data-act="save-key">${firstRun ? 'Save & continue' : 'Save key'}</button>
+      <button class="primary" data-act="save-key" data-icon="${firstRun ? 'arrow-right' : 'save'}">${firstRun ? 'Save & continue' : 'Save key'}</button>
       <a href="${S2_KEY_URL}" target="_blank" rel="noopener">Request API key</a>
       ${firstRun ? '<a href="#" data-act="skip-key">Continue without a key (slow, shared and rate-limited)</a>' : ''}
     </div></section>`;
@@ -31,9 +31,11 @@ function keySection(s, firstRun) {
 
 function zoteroSection(s, firstRun) {
   const intro = '<h2>Import from Zotero</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
-      <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p></section>`;
+      <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p>
+      <p class="setup-msg" role="status"></p><div class="setup-actions">${importAction}</div></section>`;
   }
   const value = s.zotero_dir || s.zotero_suggested || '';
   return `<section data-step="zotero">
@@ -41,11 +43,12 @@ function zoteroSection(s, firstRun) {
     ${s.zotero_disabled ? '<p class="setup-current">Zotero is turned off.</p>' : ''}
     <div class="setup-row">
       <input class="setup-input" id="setup-zotero" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}">
-      ${s.desktop ? '<button data-act="browse">Browse…</button>' : ''}
+      ${s.desktop ? '<button data-act="browse" data-icon="folder-open">Browse…</button>' : ''}
     </div>
     <p class="setup-msg"></p>
     <div class="setup-actions">
-      <button class="primary" data-act="save-zotero">${firstRun ? 'Use this folder' : 'Save folder'}</button>
+      <button class="primary" data-act="save-zotero" data-icon="${firstRun ? 'folder-open' : 'save'}">${firstRun ? 'Use this folder' : 'Save folder'}</button>
+      ${importAction}
       <a href="#" data-act="no-zotero">I don't use Zotero</a>
     </div></section>`;
 }
@@ -124,8 +127,8 @@ function agentSection(s) {
     <div class="settings-group" role="group" aria-labelledby="settings-connection-title"><h3 id="settings-connection-title">Connection</h3>
     <div class="agent-connection-row">
     <p id="agent-status" class="setup-current" role="status">Checking sign-in…</p>
-    <div class="setup-actions"><button data-act="agent-login">Sign in</button>
-      <button data-act="agent-check">Check connection</button><button data-act="agent-cancel" class="hidden">Cancel sign-in</button></div>
+    <div class="setup-actions"><button data-act="agent-login" data-icon="log-in">Sign in</button>
+      <button data-act="agent-check" data-icon="refresh-cw">Check connection</button><button data-act="agent-cancel" class="hidden" data-icon="x">Cancel sign-in</button></div>
     </div>
     <p class="setup-msg"></p>
     <div id="agent-login-output" class="agent-login-output" aria-live="polite"></div>
@@ -137,6 +140,26 @@ const SETTINGS_TABS = [
   ['appearance', 'Appearance'], ['agent', 'Research assistant'],
   ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
 ];
+
+function fontSetting(kind, label) {
+  const preference = NoctuaFonts.get(kind);
+  const choices = NoctuaFonts.choices(kind).map(option => `<option value="${option.id}" ${option.id === preference.id ? 'selected' : ''}>${esc(option.label)}</option>`).join('');
+  const size = `<select id="setup-${kind}-font-size" aria-label="${label} size">${NoctuaFonts.sizeChoices(kind).map(value => `<option value="${value}" ${value === NoctuaFonts.getSize(kind) ? 'selected' : ''}>${value}px</option>`).join('')}</select>`;
+  return `<div class="setting-field"><label for="setup-${kind}-font">${label}</label><div class="font-setting-controls"><select id="setup-${kind}-font">${choices}</select>${size}</div></div>
+    <label class="setting-field" id="setup-${kind}-font-name-field" for="setup-${kind}-font-name" ${preference.id === 'custom' ? '' : 'hidden'}><span>Font name</span><input class="setup-input" id="setup-${kind}-font-name" value="${esc(preference.name)}" placeholder="e.g. Pretendard" autocomplete="off" spellcheck="false"></label>
+    <p class="font-preview font-preview-${kind}"><span title="The quick brown fox jumps over the lazy dog. 0123456789">The quick brown fox jumps over the lazy dog. 0123456789</span></p>`;
+}
+function syncFontSetting(kind) {
+  const select = $(`#setup-${kind}-font`); if (!select) return;
+  const preference = NoctuaFonts.get(kind); select.value = preference.id;
+  $(`#setup-${kind}-font-name-field`).hidden = preference.id !== 'custom';
+  $(`#setup-${kind}-font-name`).value = preference.name;
+}
+document.addEventListener('noctua-font-change', event => syncFontSetting(event.detail.kind));
+document.addEventListener('noctua-font-size-change', event => {
+  const kind = event.detail.kind, select = $(`#setup-${kind}-font-size`);
+  if (select) select.value = String(NoctuaFonts.getSize(kind));
+});
 
 function appearanceSection() {
   const options = (value) => ['system', 'light', 'dark'].map((v) =>
@@ -150,6 +173,11 @@ function appearanceSection() {
     <label class="setting-field" for="setup-reader-theme"><span>Reader theme</span>
       <select id="setup-reader-theme">${options(PDF.theme || 'dark')}</select></label>
     </div>
+    <div class="settings-group" role="group" aria-labelledby="settings-fonts-title"><h3 id="settings-fonts-title">Fonts</h3>
+      ${fontSetting('ui', 'System font')}
+      ${fontSetting('note', 'Note font')}
+      ${fontSetting('chat', 'Chat font')}
+    </div>
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
@@ -162,11 +190,11 @@ function dataSection(s) {
     ${s.storage_override ? '<p class="setup-current">Environment override: <code>NOCTUA_HOME</code> / <code>NOCTUA_NOTES</code></p>' : `
     <label for="setup-storage">Storage location</label>
     <div class="setup-row"><input class="setup-input" id="setup-storage" spellcheck="false" placeholder="Enter an absolute folder path" value="${esc(s.storage_pending || s.data_dir)}">
-      ${s.desktop ? '<button data-act="browse-storage">Browse…</button>' : ''}</div>
+      ${s.desktop ? '<button data-act="browse-storage" data-icon="folder-open">Browse…</button>' : ''}</div>
     ${s.storage_pending ? '<p class="setup-current">The saved location takes effect after restart.</p>' : ''}
     ${s.storage_error ? `<p class="settings-warning">${esc(s.storage_error)}</p>` : ''}
-    <div class="setup-actions"><button class="primary" data-act="save-storage">Save location</button>
-      ${s.storage_pending ? '<button data-act="cancel-storage">Cancel change</button>' : ''}</div>`}
+    <div class="setup-actions"><button class="primary" data-act="save-storage" data-icon="save">Save location</button>
+      ${s.storage_pending ? '<button data-act="cancel-storage" data-icon="x">Cancel change</button>' : ''}</div>`}
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
@@ -291,9 +319,9 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
     const panels = { appearance: appearanceSection(), agent: agentSection(settings),
       connections: keySection(settings, false) + zoteroSection(settings, false), data: dataSection(settings), about: aboutSection(settings) };
-    card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings">✕</button></div>
+    card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',agent:'bot',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
@@ -367,6 +395,11 @@ function openSetup({ firstRun = false, tab } = {}) {
           }
           break;
         }
+        case 'import-zotero':
+          msg(section, 'Importing Zotero collections and available PDFs…', true);
+          await importZoteroLibrary();
+          msg(section, 'Import complete.', true);
+          break;
         case 'save-zotero': {
           const dir = $('#setup-zotero').value.trim();
           if (!dir) { msg(section, 'Enter the folder, or choose “I don’t use Zotero”.'); break; }
@@ -384,6 +417,19 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   });
   card.addEventListener('change', async (e) => {
+    const fontSize = e.target.id.match(/^setup-(ui|note|chat)-font-size$/);
+    if (fontSize) {
+      NoctuaFonts.setSize(fontSize[1], e.target.value); msg(e.target.closest('section'), 'Saved.', true); return;
+    }
+    const font = e.target.id.match(/^setup-(ui|note|chat)-font(?:-name)?$/);
+    if (font) {
+      const kind = font[1], id = $(`#setup-${kind}-font`).value;
+      const input = $(`#setup-${kind}-font-name`);
+      $(`#setup-${kind}-font-name-field`).hidden = id !== 'custom';
+      if (id === 'custom' && !input.value.trim()) { input.focus(); msg(e.target.closest('section'), 'Enter an installed font name.'); return; }
+      NoctuaFonts.set(kind, id, input.value);
+      msg(e.target.closest('section'), 'Saved.', true); return;
+    }
     if (['setup-app-theme', 'setup-notes-theme', 'setup-reader-theme'].includes(e.target.id)) {
       if (e.target.id === 'setup-app-theme') setAppTheme(e.target.value);
       else if (e.target.id === 'setup-notes-theme') setNotesTheme(e.target.value);
@@ -439,6 +485,9 @@ function openSetup({ firstRun = false, tab } = {}) {
     finally { e.target.disabled = false; }
   });
   card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && /^setup-(ui|note|chat)-font-name$/.test(e.target.id)) {
+      e.preventDefault(); e.target.dispatchEvent(new Event('change', {bubbles:true})); return;
+    }
     if (e.key === 'Enter' && e.target.matches('.setup-input')) e.target.closest('section').querySelector('button.primary')?.click();
     if (e.key === 'Escape' && !firstRun) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.target.matches('[data-settings-tab]') && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
@@ -468,7 +517,7 @@ function renderKeyBanner() {
   if (settings.key_source || !settings.skipped || sessionStorage.getItem('noctua.bannerClosed')) return;
   const b = document.createElement('div');
   b.id = 's2-banner';
-  b.innerHTML = 'Using Semantic Scholar’s shared pool, which is slow and often rate-limited. <a href="#" class="open-settings" data-settings-open="connections">Add your API key</a><button class="icon" title="Hide for now">✕</button>';
+  b.innerHTML = 'Using Semantic Scholar’s shared pool, which is slow and often rate-limited. <a href="#" class="open-settings" data-settings-open="connections">Add your API key</a><button class="icon" title="Hide for now" data-icon="x" aria-label="Hide for now" data-icon-only>✕</button>';
   b.querySelector('button').addEventListener('click', () => {
     try { sessionStorage.setItem('noctua.bannerClosed', '1'); } catch { /* storage unavailable */ }
     b.remove();

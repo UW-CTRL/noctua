@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Chat rendering checks</title>
+<link rel="stylesheet" href="../web/style.css">
+<style>body{display:block;overflow:auto;padding:24px}.msg{max-width:600px}</style>
+<div class="msg assistant" id="fixture"></div>
+<script src="../web/vendor/katex/katex.min.js"></script>
+<script src="../web/vendor/highlight/highlight.min.js"></script>
+<script src="../web/vendor/highlight/latex.min.js"></script>
+<script src="../web/vendor/mermaid/mermaid.min.js"></script>
+<script src="../web/chat-render.js"></script>
+<script>
+setTimeout(async () => {
+  try {
+    const assert=(ok,message)=>{if(!ok)throw Error(message)}, fixture=document.getElementById('fixture');
+    const tick=()=>new Promise(resolve=>setTimeout(resolve,50));
+    const sample='> Quoted **result**\n\n- [ ] Read\n- [x] Download\n\n<details>\n<summary>Proof</summary>\n$x^2$\n</details>\n\n```python\ndef square(x):\n    return x ** 2\n```\n\n```latex\n\\frac{a}{b}\n```';
+    NoctuaChatRender.update(fixture,sample);
+    assert(fixture.querySelector('blockquote b')?.textContent==='result','quote missing');
+    const tasks=fixture.querySelectorAll('.chat-task input');
+    assert(tasks.length===2&&!tasks[0].checked&&tasks[1].checked&&tasks[0].disabled,'checklist status wrong');
+    assert(Array.from(fixture.querySelectorAll('.chat-code')).every(block=>block.querySelector('.hljs-keyword')),'Python or LaTeX syntax highlighting missing');
+    const details=fixture.querySelector('details'); details.open=true;
+    NoctuaChatRender.update(fixture,sample+'\nMore text');
+    assert(fixture.querySelector('details').open&&fixture.querySelector('.katex'),'stream lost expanded details or math');
+    let copied='';
+    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{copied=text}}});
+    fixture.querySelector('.chat-copy').click(); await tick();
+    assert(copied==='def square(x):\n    return x ** 2','copy did not preserve raw code');
+    const diagram='```mermaid\nflowchart LR\nA[Paper] --> B[Notes]\n```';
+    NoctuaChatRender.update(fixture,diagram);
+    NoctuaChatRender.enhance(fixture);
+    for(let i=0;i<200&&!fixture.querySelector('.diagram-ready');i++)await tick();
+    const image=fixture.querySelector('.chat-diagram-view img');
+    assert(image&&image.src.startsWith('data:image/svg+xml'),'Mermaid diagram failed: '+fixture.textContent);
+    for(let i=0;i<40&&!image.complete;i++)await tick();
+    assert(image.naturalWidth>0,'diagram SVG image failed to load');
+    fixture.querySelector('.chat-source-toggle').click();
+    assert(fixture.querySelector('.show-source')&&getComputedStyle(fixture.querySelector('pre')).display!=='none','diagram source toggle failed');
+    document.documentElement.dataset.theme='dark';
+    for(let i=0;i<200&&(!fixture.querySelector('.diagram-ready')||fixture.querySelector('[data-diagram]').dataset.renderTheme!=='dark');i++)await tick();
+    assert(fixture.querySelector('.diagram-ready')?.dataset.renderTheme==='dark','diagram did not follow theme');
+    NoctuaChatRender.update(fixture,'```mermaid\nnot a valid diagram\n```');
+    NoctuaChatRender.enhance(fixture);
+    for(let i=0;i<100&&!fixture.textContent.includes('Diagram unavailable');i++)await tick();
+    assert(fixture.textContent.includes('Diagram unavailable')&&getComputedStyle(fixture.querySelector('pre')).display!=='none','invalid diagram did not retain source');
+    window.webkit.messageHandlers.result.postMessage('PASS: quotes, checklist, highlighting, copy, streaming details, diagrams, theme, and error fallback');
+  } catch(error) { window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message); }
+}, 0);
+</script>
