@@ -96,7 +96,7 @@ fn tools(mode: &str) -> Value {
         tool("view_pdf_page","View a PDF page as an image to interpret figures, equations, or scans.",json!({"paper_key":key,"page":page}), &["paper_key","page"]),
         tool("show_pdf","Open the paper in the user's reader.",json!({"paper_key":key,"page":page}), &["paper_key"]),
         tool("list_pdf_annotations","Read highlights, drawings, and comment threads including pending suggestions.",json!({"paper_key":key}), &["paper_key"]),
-        tool("annotate_pdf","Add a highlight anchored to an exact quote from read_pdf, or a page comment. In suggest mode it is pending user acceptance. Comments support LaTeX $math$ and $$math$$.",json!({"paper_key":key,"page":page,"kind":{"type":"string","enum":["highlight","comment"]},"quote":{"type":"string"},"occurrence":{"type":"integer","minimum":0},"color":{"type":"string","enum":crate::library::COLORS},"comment":{"type":"string"}}), &["paper_key","page","comment"]),
+        tool("annotate_pdf","Add a highlight anchored to an exact quote from read_pdf, or a page comment. In suggest mode it is pending user acceptance. Comments support LaTeX $math$ and $$math$$. Optional category labels the highlight as novelty, method, results, or limitations and uses its default color from Settings when color is omitted.",json!({"paper_key":key,"page":page,"category":{"type":"string","enum":crate::library::HIGHLIGHT_CATEGORIES},"kind":{"type":"string","enum":["highlight","comment"]},"quote":{"type":"string"},"occurrence":{"type":"integer","minimum":0},"color":{"type":"string","pattern":"^#[0-9a-fA-F]{6}$","description":"Optional six-digit hex color; categorized highlights default to the user palette in Settings"},"comment":{"type":"string"}}), &["paper_key","page","comment"]),
         tool("comment_on_pdf_annotation","Reply to a PDF annotation with a comment, including LaTeX math. Suggest mode creates a pending reply.",json!({"paper_key":key,"annotation_id":{"type":"string"},"comment":{"type":"string"}}), &["paper_key","annotation_id","comment"]),
     ];
     list.as_array_mut().unwrap().extend(extra);
@@ -323,6 +323,7 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str, chat_id: Option<&s
         "annotate_pdf" => {
             let key=arg("paper_key")?;crate::reader::ensure_index(app,key,chat_id).await?;
             let mut body=args.clone();if body["kind"].is_null(){body["kind"]=json!("highlight");}
+            if body["color"].is_null() {if let Some(color)=app.settings.lock().unwrap().highlight_colors.color(body["category"].as_str().unwrap_or("")) {body["color"]=json!(color);}}
             let a=app.library.annotate(key,&body,"assistant",mode!="direct")?;
             ui(json!({"action":"pdf_annotations","key":key,"id":a["id"],"page":a["page"]}));Ok(a)
         }

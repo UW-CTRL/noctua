@@ -1,6 +1,32 @@
 'use strict';
 const PDF={key:null,paper:null,page:1,scale:1.25,mode:'select',color:'#ffd400',annotations:[],selection:null,selected:null,token:0,dark:true};
-const pdfColors=['#ffd400','#5fb236','#2ea8e5','#e56eee','#a28ae5','#ff6666'];
+const pdfCategories={novelty:{label:'Novelty',color:'#ff6666'},method:{label:'Method',color:'#5fb236'},results:{label:'Results',color:'#a28ae5'},limitations:{label:'Limitations',color:'#ffd400'}};
+const pdfDefaultCategoryColors=Object.freeze(Object.fromEntries(Object.entries(pdfCategories).map(([key,value])=>[key,value.color])));
+const pdfDefaultColors=Object.freeze(['#ffd400','#5fb236','#2ea8e5','#e56eee','#a28ae5','#ff6666']);
+const pdfColors=[...pdfDefaultColors];
+function applyPDFHighlightColors(colors,palette=pdfColors){
+  const oldIndex=pdfColors.indexOf(PDF.color);
+  const valid=Array.isArray(palette)&&palette.length===6&&palette.every(color=>/^#[0-9a-f]{6}$/i.test(color));
+  pdfColors.splice(0,6,...(valid?palette:pdfDefaultColors).map(color=>color.toLowerCase()));
+  PDF.color=pdfColors[oldIndex<0?0:oldIndex];
+  for(const [key,category] of Object.entries(pdfCategories)){
+    const color=(colors?.[key]||'').toLowerCase();
+    category.color=pdfColors.includes(color)?color:pdfColors[pdfDefaultColors.indexOf(pdfDefaultCategoryColors[key])];
+  }
+  document.querySelectorAll('.pdf-toolbar [data-color]').forEach((button,index)=>{
+    const color=pdfColors[index];button.dataset.color=color;button.style.setProperty('--swatch',color);
+    button.title=`Color ${index+1} · ${color}`;button.setAttribute('aria-label',button.title);button.setAttribute('aria-pressed',String(PDF.color===color));
+  });
+  document.querySelector('.pdf-toolbar .pdf-color-dot')?.style.setProperty('--swatch',PDF.color);
+  for(const annotation of PDF.annotations||[])if(annotation.author==='assistant'&&annotation.kind==='highlight'&&pdfCategories[annotation.category])annotation.color=pdfCategories[annotation.category].color;
+  if(PDF.key){
+    updatePDFAutoHighlightUI();
+    if(typeof updatePDFAnnotationControls==='function')updatePDFAnnotationControls();
+    if(typeof paintPDFAnnotations==='function')paintPDFAnnotations();
+    for(const card of document.querySelectorAll('#pdf-annotation-list article')){const annotation=PDF.annotations.find(item=>item.id===card.dataset.id);if(annotation?.author==='assistant')card.querySelector('.pdf-category-badge')?.style.setProperty('--category-color',annotation.color);}
+  }
+}
+const pdfAutoHighlights=new Map();
 const pdfDocs=new Map(),pdfIndexes=new Map(),pdfSaves=new Set();
 const pdfSystemTheme=window.matchMedia('(prefers-color-scheme: dark)');
 function applyReaderTheme(){
@@ -26,7 +52,7 @@ async function pdfDocument(key){
   return pdfDocs.get(key);
 }
 function pdfSave(promise){pdfSaves.add(promise);promise.finally(()=>pdfSaves.delete(promise)).catch(()=>{});return promise;}
-window.flushPDF=()=>Promise.all([...pdfSaves]);
+window.flushPDF=async()=>{await Promise.all([...pdfCommentEdits.values()].map(edit=>savePDFComment(edit)));await Promise.all([...pdfSaves]);};
 function normalizedRect(r,b){const x=Math.max(0,Math.min(1,(r.left-b.left)/b.width)),y=Math.max(0,Math.min(1,(r.top-b.top)/b.height));return [x,y,Math.max(0,Math.min(1-x,r.width/b.width)),Math.max(0,Math.min(1-y,r.height/b.height))];}
 async function textLayer(page,container,viewport){const m=await pdfjs();container.style.setProperty('--total-scale-factor',viewport.scale);const layer=new m.TextLayer({textContentSource:await page.getTextContent(),container,viewport});// PDF.js sets dimensions using CSS round() and its scale-round variables.
   // Also pin the computed dimensions: an offscreen layer must never stretch to the window.
@@ -47,8 +73,190 @@ async function indexPDF(key){
 async function pdfPageImage(key,n){const doc=await pdfDocument(key),page=await doc.getPage(n),base=page.getViewport({scale:1});let scale=Math.min(2,1500/base.width);for(let i=0;i<4;i++){const v=page.getViewport({scale}),c=document.createElement('canvas');c.width=Math.ceil(v.width);c.height=Math.ceil(v.height);await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;const blob=await new Promise(r=>c.toBlob(r,'image/png'));if(blob&&blob.size<=5*1024*1024)return libraryRequest(paperURL(key)+'/page-image/'+n,'POST',blob);scale*=.65;}throw new Error('Page preview is too large');}
 async function openPDF(key,{page=1,annotation=null,push=true}={}){
   const token=++PDF.token;const paper=await api(paperURL(key));if(!paper.has_pdf)throw new Error('Attach a PDF to this paper in Library first.');const doc=await pdfDocument(key);if(token!==PDF.token)return;
-  Object.assign(PDF,{key,paper,doc,page:Math.max(1,Math.min(doc.numPages,Number(page)||1)),selection:null,selected:annotation});$('#reader-mode').disabled=false;setMode('pdf');document.title=paper.title+' · Noctua';
-  if(push)history.pushState({},'', '/#pdf='+enc(key)+'&page='+PDF.page);await renderPDF();await refreshPDFAnnotations();if(annotation)$('#pdf-sidebar [data-id="'+annotation+'"]')?.scrollIntoView({block:'nearest'});indexPDF(key).then(()=>{if(PDF.key===key)return refreshPDFAnnotations();}).catch(e=>toast('PDF text: '+e.message));
+  Object.assign(PDF,{annotationFilter:key===PDF.key?PDF.annotationFilter:null,annotations:key===PDF.key?PDF.annotations:[],key,paper,doc,page:Math.max(1,Math.min(doc.numPages,Number(page)||1)),selection:null,selected:annotation});$('#reader-mode').disabled=false;setMode('pdf');document.title=paper.title+' · Noctua';
+  PDF.outlineSource='document';ensurePDFSidebar();renderPDFOutline();loadPDFOutline(key,doc);
+  if(push)history.pushState({},'', '/#pdf='+enc(key)+'&page='+PDF.page);await renderPDF();await refreshPDFAnnotations();if(annotation)setPDFSidebarTab('annotations');if(annotation)$('#pdf-sidebar [data-id="'+annotation+'"]')?.scrollIntoView({block:'nearest'});indexPDF(key).then(()=>{if(PDF.key===key)return refreshPDFAnnotations();}).catch(e=>toast('PDF text: '+e.message));
+}
+const pdfOutlines=new Map();
+function ensurePDFSidebar(){
+  const side=$('#pdf-sidebar');if(side.querySelector('.pdf-sidebar-tabs'))return;
+  side.innerHTML='<div class="tabs pdf-sidebar-tabs" role="tablist" aria-label="Reader navigation"><button id="pdf-outline-tab" role="tab" aria-controls="pdf-outline-panel" data-sidebar="outline" data-icon="book-open">Outline</button><button id="pdf-annotations-tab" role="tab" aria-controls="pdf-annotations-panel" data-sidebar="annotations" data-icon="highlighter">Annotations</button></div><section id="pdf-outline-panel" role="tabpanel" aria-labelledby="pdf-outline-tab"></section><section id="pdf-annotations-panel" role="tabpanel" aria-labelledby="pdf-annotations-tab"><div class="pdf-annotation-toolbar"><div class="pdf-highlight-counts" aria-label="Highlight counts"><span>User highlights <strong data-highlight-count="user">0</strong></span><span>AI highlights <strong data-highlight-count="assistant">0</strong></span></div><div class="pdf-annotation-filters" role="group" aria-label="Filter annotations"><button data-annotation-filter="user" aria-pressed="false">User</button><button data-annotation-filter="novelty" aria-pressed="false">Novelty</button><button data-annotation-filter="method" aria-pressed="false">Methods</button><button data-annotation-filter="results" aria-pressed="false">Results</button><button data-annotation-filter="limitations" aria-pressed="false">Limitations</button></div></div><div id="pdf-auto-highlight-status" role="status"></div><div id="pdf-annotation-list"></div></section>';
+  for(const button of side.querySelectorAll('[data-sidebar]')){
+    button.onclick=()=>setPDFSidebarTab(button.dataset.sidebar);
+    button.onkeydown=event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const tab=event.key==='Home'?'outline':event.key==='End'?'annotations':button.dataset.sidebar==='outline'?'annotations':'outline';
+      setPDFSidebarTab(tab);side.querySelector(`[data-sidebar="${tab}"]`).focus();
+    };
+  }
+  side.querySelector('.pdf-annotation-filters').onclick=event=>{const button=event.target.closest('[data-annotation-filter]');if(button)setPDFAnnotationFilter(button.dataset.annotationFilter,{toggle:true});};
+  setPDFSidebarTab(PDF.sidebar||store.get('noctua.pdfSidebar')||'outline');renderPDFOutline();updatePDFAnnotationControls();
+}
+function setPDFSidebarTab(tab){
+  PDF.sidebar=tab==='annotations'?'annotations':'outline';store.set('noctua.pdfSidebar',PDF.sidebar);
+  for(const button of document.querySelectorAll('#pdf-sidebar [data-sidebar]')){
+    const selected=button.dataset.sidebar===PDF.sidebar;button.setAttribute('aria-selected',String(selected));button.classList.toggle('active',selected);button.tabIndex=selected?0:-1;
+    document.getElementById(button.getAttribute('aria-controls')).hidden=!selected;
+  }
+}
+async function nativePDFOutline(doc){
+  const entries=[];
+  async function visit(items,level){
+    for(const item of items||[]){
+      if(entries.length>=300)return;
+      let target=null;try{if(item.dest)target=await resolvePDFDestination(doc,{dest:item.dest});}catch{}
+      if(item.title?.trim())entries.push({title:item.title.trim(),level:Math.min(level,6),page:target?.page??null,y:target?.y??0});
+      if(item.items?.length)await visit(item.items,Math.min(level+1,6));
+    }
+  }
+  await visit(await doc.getOutline(),1);
+  return entries.some(e=>e.page)?{source:'document',entries}:null;
+}
+function pdfOutlineState(key){
+  if(!pdfOutlines.has(key))pdfOutlines.set(key,{status:'idle',outline:null,error:null,documentStatus:'idle',documentOutline:null});
+  return pdfOutlines.get(key);
+}
+function setPDFOutlineSource(source){
+  PDF.outlineSource=source==='ai'?'ai':'document';renderPDFOutline();
+  return loadPDFOutline(PDF.key,PDF.doc,{forceAI:PDF.outlineSource==='ai'});
+}
+function loadPDFOutline(key,doc,{forceAI=false,regenerate=false}={}){
+  const state=pdfOutlineState(key),update=()=>{if(PDF.key===key)renderPDFOutline();};
+  if(!forceAI&&!regenerate){
+    if(state.documentPromise)return state.documentPromise;
+    state.documentStatus='loading';update();
+    state.documentPromise=nativePDFOutline(doc).then(outline=>{state.documentOutline=outline;state.documentStatus='ready';}).catch(error=>{
+      state.documentStatus='error';if(PDF.key===key&&PDF.outlineSource!=='ai')toast(error.message,{error:true,duration:5000});
+    }).finally(update);
+    return state.documentPromise;
+  }
+  if(PDF.key===key)PDF.outlineSource='ai';
+  if(['loading','indexing','generating','deleting'].includes(state.status))return state.deletePromise||state.promise;
+  if(!regenerate&&state.status==='ready'&&state.outline?.entries?.length){update();return state.promise||Promise.resolve();}
+  state.status='loading';state.error=null;update();
+  state.promise=(async()=>{
+    if(!regenerate){const saved=await api(paperURL(key)+'/outline');if(saved?.entries?.length){state.outline=saved;state.status='ready';return;}}
+    state.status='indexing';update();await indexPDF(key);
+    state.status='generating';update();
+    state.outline=await api(paperURL(key)+'/outline',{regenerate});state.status='ready';
+  })().catch(error=>{state.status='error';state.error=error.message;if(PDF.key===key&&PDF.outlineSource==='ai')toast(error.message,{error:true,duration:5000});}).finally(update);
+  return state.promise;
+}
+async function deletePDFOutline(){
+  const key=PDF.key,state=pdfOutlineState(key);
+  if(!state.outline?.entries?.length||['loading','indexing','generating','deleting'].includes(state.status))return;
+  const previousStatus=state.status;state.status='deleting';renderPDFOutline();
+  state.deletePromise=(async()=>{
+    await libraryRequest(paperURL(key)+'/outline','DELETE');
+    state.outline=null;state.status='deleted';state.error=null;state.promise=null;
+  })().catch(error=>{
+    state.status=previousStatus;state.error=error.message;
+    if(PDF.key===key&&PDF.outlineSource==='ai')toast(error.message,{error:true,duration:5000});
+  }).finally(()=>{state.deletePromise=null;if(PDF.key===key)renderPDFOutline();});
+  return state.deletePromise;
+}
+function renderPDFOutline(){
+  const panel=$('#pdf-outline-panel');if(!panel)return;
+  const state=pdfOutlines.get(PDF.key),ai=PDF.outlineSource==='ai',outline=ai?state?.outline:state?.documentOutline;
+  const status=ai?state?.status:state?.documentStatus,busy=['loading','indexing','generating','deleting'].includes(status);
+  const progress=ai?(status==='deleting'?'Deleting AI outline…':status==='indexing'?'Preparing paper text…':'Generating outline…'):'Loading document outline…';
+  const sourceId=ai?'ai':'document';
+  let content=ai?`<div class="pdf-outline-head pdf-outline-actions"><button data-outline-retry ${busy?'disabled':''}>Regenerate</button><button data-outline-delete data-icon="trash-2" data-icon-only aria-label="Delete AI-generated outline" title="Delete AI-generated outline" ${busy||!outline?.entries?.length?'disabled':''}></button></div>`:'';
+  if(outline?.entries?.length){
+    const roots=[],stack=[];
+    outline.entries.forEach((entry,index)=>{
+      const node={...entry,index,children:[]};while(stack.length&&stack.at(-1).level>=node.level)stack.pop();
+      (stack.length?stack.at(-1).children:roots).push(node);stack.push(node);
+    });
+    const list=nodes=>'<ol>'+nodes.map(node=>`<li>${node.page?`<button data-outline-entry="${node.index}" title="Page ${node.page}"><span>${esc(node.title)}</span><small>${node.page}</small></button>`:`<span class="pdf-outline-group">${esc(node.title)}</span>`}${node.children.length?list(node.children):''}</li>`).join('')+'</ol>';
+    content+=`<nav class="pdf-outline-list" aria-label="Paper outline">${list(roots)}</nav>`;
+  }else if(status==='error'&&!ai)content+='<div class="pdf-outline-empty"><button data-outline-retry>Try again</button></div>';
+  else if(!busy)content+=`<p class="pdf-outline-empty">${ai?'No AI-generated outline.':'This PDF has no document outline.'}</p>`;
+  if(busy)content=`<p class="pdf-outline-status" role="status">${progress}</p>`+content;
+  panel.innerHTML=`<div class="pdf-outline-source-tabs" role="tablist" aria-label="Outline source"><button id="pdf-outline-source-document" role="tab" aria-controls="pdf-outline-content" data-outline-source="document" aria-selected="${!ai}" tabindex="${ai?-1:0}" class="${ai?'':'active'}" aria-label="Document outline" title="Document outline">Document</button><span class="pdf-outline-source-divider" aria-hidden="true">/</span><button id="pdf-outline-source-ai" role="tab" aria-controls="pdf-outline-content" data-outline-source="ai" aria-selected="${ai}" tabindex="${ai?0:-1}" class="${ai?'active':''}" aria-label="AI-generated outline" title="AI-generated outline">AI-generated</button></div><div id="pdf-outline-content" role="tabpanel" aria-labelledby="pdf-outline-source-${sourceId}" aria-busy="${busy}">${content}</div>`;
+  for(const button of panel.querySelectorAll('[data-outline-source]')){
+    button.onclick=()=>setPDFOutlineSource(button.dataset.outlineSource);
+    button.onkeydown=event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const source=event.key==='Home'?'document':event.key==='End'?'ai':button.dataset.outlineSource==='document'?'ai':'document';
+      setPDFOutlineSource(source);panel.querySelector(`[data-outline-source="${source}"]`)?.focus();
+    };
+  }
+  panel.querySelector('[data-outline-retry]')?.addEventListener('click',()=>{
+    if(ai)return loadPDFOutline(PDF.key,PDF.doc,{forceAI:true,regenerate:!!state?.outline?.entries?.length});
+    state.documentPromise=null;return loadPDFOutline(PDF.key,PDF.doc);
+  });
+  panel.querySelector('[data-outline-delete]')?.addEventListener('click',deletePDFOutline);
+  panel.querySelectorAll('[data-outline-entry]').forEach(button=>button.onclick=()=>{
+    const entry=outline.entries[Number(button.dataset.outlineEntry)];return pdfNavigate(entry.page,entry.y||0).catch(e=>toast(e.message));
+  });
+  updatePDFOutlineSelection();
+}
+function updatePDFOutlineSelection(){
+  const state=pdfOutlines.get(PDF.key),entries=(PDF.outlineSource==='ai'?state?.outline:state?.documentOutline)?.entries;if(!entries)return;
+  const box=pdfPageBox(PDF.page),scroll=$('#pdf-stage .pdf-scroll');
+  const y=box&&scroll?Math.max(0,(scroll.getBoundingClientRect().top-box.getBoundingClientRect().top+24)/box.getBoundingClientRect().height):0;
+  let active=-1;entries.forEach((entry,i)=>{if(entry.page&&(entry.page<PDF.page||(entry.page===PDF.page&&(entry.y||0)<=y)))active=i;});
+  for(const button of document.querySelectorAll('#pdf-outline-panel [data-outline-entry]')){
+    if(Number(button.dataset.outlineEntry)===active)button.setAttribute('aria-current','location');else button.removeAttribute('aria-current');
+  }
+}
+async function autoHighlightPDF(){
+  const key=PDF.key;if(!key)return;
+  const previous=pdfAutoHighlights.get(key);if(previous&&['indexing','analyzing'].includes(previous.status))return previous.promise;
+  ensurePDFSidebar();setPDFSidebarTab('annotations');setPDFAnnotationFilter(null);
+  const job={status:'indexing',error:null};pdfAutoHighlights.set(key,job);updatePDFAutoHighlightUI();
+  job.promise=(async()=>{
+    await indexPDF(key);job.status='analyzing';if(PDF.key===key)updatePDFAutoHighlightUI();
+    job.result=await api(paperURL(key)+'/auto-highlight',{});job.status='ready';
+    if(PDF.key===key)await refreshPDFAnnotations();
+  })().catch(error=>{job.status='error';job.error=error.message;}).finally(()=>{if(PDF.key===key)updatePDFAutoHighlightUI();});
+  return job.promise;
+}
+function updatePDFAutoHighlightUI(){
+  updatePDFAnnotationControls();
+  const job=pdfAutoHighlights.get(PDF.key),busy=job&&['indexing','analyzing'].includes(job.status);
+  const saved=PDF.annotations.filter(a=>a.source==='auto-highlight');
+  const button=$('#pdf-stage [data-auto-highlight]');
+  if(button){button.disabled=!!busy;button.setAttribute('aria-busy',String(!!busy));button.dataset.complete=String(!!saved.length);button.title=busy?'Auto-highlight agent is analyzing this paper…':'Auto-highlight paper';}
+  const status=$('#pdf-auto-highlight-status');if(!status)return;
+  if(busy)status.innerHTML=`<p class="pdf-auto-progress">${job.status==='indexing'?'Preparing paper text…':'Auto-highlight agent is finding key points…'}</p>`;
+  else if(job?.status==='error')status.innerHTML=`<p role="alert">${esc(job.error)}</p><button data-auto-retry>Retry auto-highlight</button>`;
+  else if(job?.status==='ready'&&job.result?.total===0)status.innerHTML='<p>No grounded key passages found.</p>';
+  else status.innerHTML='';
+  status.querySelector('[data-auto-retry]')?.addEventListener('click',autoHighlightPDF);
+}
+function updatePDFAnnotationControls(){
+  for(const author of ['user','assistant']){
+    const count=document.querySelector(`[data-highlight-count="${author}"]`);
+    if(count)count.textContent=PDF.annotations.filter(a=>a.kind==='highlight'&&a.author===author).length;
+  }
+  for(const button of document.querySelectorAll('#pdf-sidebar [data-annotation-filter]')){
+    const filter=button.dataset.annotationFilter;
+    button.setAttribute('aria-pressed',String(PDF.annotationFilter===filter));
+    const color=filter==='user'?'var(--accent)':pdfCategories[filter].color;
+    button.style.setProperty('--filter-color',color);
+  }
+}
+function setPDFAnnotationFilter(filter,{toggle=false}={}){
+  if(filter!=='user'&&!pdfCategories[filter])filter=null;
+  PDF.annotationFilter=toggle&&PDF.annotationFilter===filter?null:filter;
+  const selected=PDF.annotations.find(a=>a.id===PDF.selected);
+  if(selected&&!pdfAnnotationMatchesFilter(selected,PDF.annotationFilter))clearPDFAnnotationSelection();
+  updatePDFAnnotationControls();applyPDFAnnotationFilter();
+}
+function applyPDFAnnotationFilter(){
+  const list=$('#pdf-annotation-list');if(!list)return;
+  const annotations=new Map(PDF.annotations.map(a=>[a.id,a]));let visible=0;
+  for(const card of list.querySelectorAll('article')){
+    const annotation=annotations.get(card.dataset.id);card.hidden=!annotation||!pdfAnnotationMatchesFilter(annotation,PDF.annotationFilter);if(!card.hidden)visible++;
+  }
+  let empty=list.querySelector('.pdf-annotation-empty');
+  if(!empty){empty=document.createElement('p');empty.className='pdf-annotation-empty';list.append(empty);}
+  empty.hidden=visible>0;empty.textContent=PDF.annotations.length?'No annotations match this filter.':'No annotations yet.';
+}
+function pdfCategoryBadge(a){
+  const category=pdfCategories[a.category];return category?`<span class="pdf-category-badge" style="--category-color:${esc(a.color)}">${category.label}</span>`:'';
 }
 // Re-rasterize PDF vectors at the display's pixel density, rather than magnifying
 // an existing bitmap. Bound large pages to avoid exceeding WebKit canvas limits.
@@ -147,7 +355,7 @@ function pdfRenderWindow(metrics,top,bottom){
 function disposePDFPage(entry){
   entry.epoch++;entry.task?.cancel();entry.task=null;entry.text?.cancel();entry.text=null;
   const canvas=entry.box.querySelector('canvas');if(canvas)canvas.width=canvas.height=0;
-  entry.box.replaceChildren();entry.box.dataset.loaded='false';entry.loaded=false;entry.loading=null;
+  entry.objects=[];entry.box.classList.remove('over-pdf-object');entry.box.replaceChildren();entry.box.dataset.loaded='false';entry.loaded=false;entry.loading=null;
 }
 function updatePDFViewport(){
   pdfScrollFrame=null;
@@ -156,7 +364,7 @@ function updatePDFViewport(){
   const metrics=pdfPageEntries.map(e=>{const b=e.box.getBoundingClientRect(),r=pdfRasterSize(e.viewport.width,e.viewport.height,pdfRenderDensity);return {number:e.number,top:b.top,bottom:b.bottom,pixels:r.width*r.height};});
   let current=metrics[0],overlap=-1;
   for(const e of metrics){const size=Math.max(0,Math.min(e.bottom,bounds.bottom)-Math.max(e.top,bounds.top));if(size>overlap){overlap=size;current=e;}}
-  if(overlap>0)pdfSetCurrentPage(current.number);
+  if(overlap>0)pdfSetCurrentPage(current.number);updatePDFOutlineSelection();
   const wanted=new Set(pdfRenderWindow(metrics,bounds.top,bounds.bottom));
   for(const e of pdfPageEntries){
     e.wanted=wanted.has(e.number)||e.drawing;
@@ -175,19 +383,43 @@ async function ensurePDFPage(entry){
   const work=(async()=>{
     const page=await doc.getPage(entry.number);if(!active())return;
     const box=entry.box,viewport=page.getViewport({scale:PDF.scale});entry.viewport=viewport;
-    box.innerHTML='<canvas></canvas><div class="textLayer"></div><svg class="pdf-overlay" viewBox="0 0 1 1" preserveAspectRatio="none"></svg><div class="pdf-document-links"></div>';
+    box.innerHTML='<canvas></canvas><div class="textLayer"></div><svg class="pdf-highlights" viewBox="0 0 1 1" preserveAspectRatio="none"></svg><svg class="pdf-text-selection" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg><svg class="pdf-overlay" viewBox="0 0 1 1" preserveAspectRatio="none"></svg><div class="pdf-auto-labels"></div><div class="pdf-document-links"></div>';
     const canvas=box.querySelector('canvas'),raster=pdfRasterSize(viewport.width,viewport.height,pdfRenderDensity);
     canvas.width=raster.width;canvas.height=raster.height;canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';
-    const context=canvas.getContext('2d',{alpha:false});context.noctuaTheme=PDF.dark?{background:'#202124',foreground:'#e8eaed',invertImages:false}:null;
-    entry.task=page.render({canvasContext:context,viewport,transform:raster.transform});
+    const context=canvas.getContext('2d');context.noctuaTheme=PDF.dark?{background:'#202124',foreground:'#e8eaed',invertImages:false}:null;
+    // Keep the page transparent so annotations sit behind its original text and graphics.
+    entry.task=page.render({canvasContext:context,viewport,transform:raster.transform,background:'rgba(0,0,0,0)'});
     await entry.task.promise;if(!active())return;entry.task=null;
     entry.text=await textLayer(page,box.querySelector('.textLayer'),viewport);if(!active())return;
     entry.links=await pdfPageLinks(page,viewport).catch(()=>[]);if(!active())return;
-    entry.loaded=true;box.dataset.loaded='true';paintPDFAnnotations();bindPDFPage(entry,key,token);renderPDFLinkTargets(entry);
+    schedulePDFTextSelection();entry.loaded=true;box.dataset.loaded='true';paintPDFAnnotations();bindPDFPage(entry,key,token);renderPDFLinkTargets(entry);
+    if(window.NoctuaPDFObjects)pdfjs().then(engine=>NoctuaPDFObjects.mount(entry,page,engine,active)).catch(()=>{});
   })().catch(error=>{if(error.name!=='RenderingCancelledException'&&error.name!=='AbortException'&&active()){entry.box.textContent='Could not render page '+entry.number+'. Use the page control to retry.';throw error;}})
     .finally(()=>{if(entry.epoch===epoch)entry.loading=null;});
   entry.loading=work;return work;
 }
+// Paint the native selection behind the PDF canvas, keeping its original glyphs opaque.
+let pdfTextSelectionFrame=null;
+function paintPDFTextSelection(){
+  pdfTextSelectionFrame=null;
+  const selection=getSelection(),range=selection?.rangeCount&&!selection.isCollapsed?selection.getRangeAt(0):null;
+  for(const svg of document.querySelectorAll('#pdf-stage .pdf-text-selection')){
+    const box=svg.parentElement,layer=box.querySelector('.textLayer');let markup='';
+    if(range&&layer&&range.intersectsNode(layer)){
+      const selected=range.cloneRange();
+      if(!layer.contains(selected.startContainer))selected.setStart(layer,0);
+      if(!layer.contains(selected.endContainer))selected.setEnd(layer,layer.childNodes.length);
+      const bounds=box.getBoundingClientRect();
+      if(bounds.width&&bounds.height){
+        const rects=[...selected.getClientRects()].filter(rect=>rect.width>0&&rect.height>0&&rect.right>bounds.left&&rect.left<bounds.right&&rect.bottom>bounds.top&&rect.top<bounds.bottom).map(rect=>normalizedRect({left:Math.max(rect.left,bounds.left),top:Math.max(rect.top,bounds.top),width:Math.min(rect.right,bounds.right)-Math.max(rect.left,bounds.left),height:Math.min(rect.bottom,bounds.bottom)-Math.max(rect.top,bounds.top)},bounds));
+        markup='<g fill="#5799ff" opacity="0.32">'+mergePDFHighlightRects(rects,bounds.height/bounds.width).map(([x,y,width,height])=>`<rect x="${x}" y="${y}" width="${width}" height="${height}"/>`).join('')+'</g>';
+      }
+    }
+    if(svg.innerHTML!==markup)svg.innerHTML=markup;
+  }
+}
+function schedulePDFTextSelection(){if(pdfTextSelectionFrame===null)pdfTextSelectionFrame=requestAnimationFrame(paintPDFTextSelection);}
+document.addEventListener('selectionchange',schedulePDFTextSelection);
 async function renderPDF(anchor=null){
   const token=++PDF.token,key=PDF.key;PDF.selection=null;closePDFLinkPreview();
   if(pdfScrollFrame!==null)cancelAnimationFrame(pdfScrollFrame);pdfScrollFrame=null;
@@ -211,9 +443,10 @@ async function renderPDF(anchor=null){
         <button data-comment title="Add comment" data-icon="message-square-plus" aria-label="Add comment" data-icon-only></button>
         <details class="pdf-color-menu">
           <summary title="Annotation color" aria-label="Annotation color"><span class="pdf-color-dot" style="--swatch:${PDF.color}" aria-hidden="true"></span></summary>
-          <div class="pdf-color-options" role="group" aria-label="Annotation color">${pdfColors.map((c,i)=>`<button data-color="${c}" style="--swatch:${c}" title="${['Yellow','Green','Blue','Pink','Purple','Red'][i]}" aria-label="${['Yellow','Green','Blue','Pink','Purple','Red'][i]}" aria-pressed="${PDF.color===c}"></button>`).join('')}</div>
+          <div class="pdf-color-options" role="group" aria-label="Annotation color">${pdfColors.map((c,i)=>`<button data-color="${c}" style="--swatch:${c}" title="${`Color ${i+1} · ${c}`}" aria-label="${`Color ${i+1} · ${c}`}" aria-pressed="${PDF.color===c}"></button>`).join('')}</div>
         </details>
       </div>
+      <button class="pdf-standalone-tool" data-auto-highlight title="Auto-highlight paper" data-icon="sparkles" aria-label="Auto-highlight paper" data-icon-only></button>
       <details class="pdf-more-menu">
         <summary title="More document actions" aria-label="More document actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></summary>
         <div class="pdf-more-options">
@@ -228,6 +461,7 @@ async function renderPDF(anchor=null){
   const pageInput=stage.querySelector('[data-page]');sizePDFPageInput(pageInput);
   pageInput.oninput=()=>sizePDFPageInput(pageInput);pageInput.onchange=e=>pdfNavigate(+e.target.value);
   on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));
+  on('[data-auto-highlight]',autoHighlightPDF);updatePDFAutoHighlightUI();
   on('[data-highlight]',()=>addPDFAnnotation('highlight'));on('[data-comment]',()=>addPDFAnnotation(PDF.selection?'highlight':'comment'));
   const closeMenus=()=>stage.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>menu.open=false);
   on('[data-dark]',()=>{closeMenus();return setPDFPageTheme(PDF.dark?'light':'dark');});
@@ -276,32 +510,38 @@ async function pdfNavigate(page,y=0){
 }
 function bindPDFPage(entry,key,token){
   const box=entry.box,pageNumber=entry.number;
+  box.onpointerdown=event=>{entry.objectPointerStart={x:event.clientX,y:event.clientY};window.NoctuaPDFObjects?.clear(entry);};
   box.onpointerup=event=>{
-    if(PDF.mode==='draw')return;
+    if(PDF.mode==='draw'||event.button!==undefined&&event.button!==0||event.target.closest?.('.pdf-auto-labels,.pdf-document-link'))return;
+    const clickedSelection=getSelection(),clickedBounds=box.getBoundingClientRect();
+    if((event.button===undefined||event.button===0)&&(!clickedSelection.rangeCount||clickedSelection.isCollapsed)){
+      const x=(event.clientX-clickedBounds.left)/clickedBounds.width,y=(event.clientY-clickedBounds.top)/clickedBounds.height;
+      const link=entry.links.find(link=>pdfPointInRect(x,y,link.rect));
+      if(link){followPDFLink(link).catch(error=>toast(error.message));return;}
+      const object=window.NoctuaPDFObjects?.hit(entry,x,y),start=entry.objectPointerStart;
+      if(object&&start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)<=5&&NoctuaPDFObjects.attach(entry,object)){event.noctuaObjectSelection=true;return;}
+    }
     setTimeout(()=>{
       if(token!==PDF.token)return;
       const selection=getSelection(),bounds=box.getBoundingClientRect(),x=(event.clientX-bounds.left)/bounds.width,y=(event.clientY-bounds.top)/bounds.height;
       if(!selection.rangeCount||selection.isCollapsed){
         const link=entry.links.find(a=>pdfPointInRect(x,y,a.rect));
-        if(link){showPDFLinkPreview(link,event.clientX,event.clientY,true).catch(e=>toast(e.message));return;}
-        const hit=[...PDF.annotations].reverse().find(a=>a.page===pageNumber&&(a.rects||[]).some(r=>pdfPointInRect(x,y,r)));
+        if(link){followPDFLink(link).catch(e=>toast(e.message));return;}
+        const hit=[...PDF.annotations].reverse().find(a=>a.page===pageNumber&&mergePDFHighlightRects(a.rects||[],bounds.height/bounds.width).some(r=>pdfPointInRect(x,y,r)));
         if(hit)selectPDFAnnotation(hit.id,{scrollComment:true}).catch(e=>toast(e.message));return;
       }
       const range=selection.getRangeAt(0);if(!box.contains(range.commonAncestorContainer)){PDF.selection=null;toast('For a saved highlight, select text within one page at a time.');return;}
       PDF.selection={page:pageNumber,quote:selection.toString(),rects:[...range.getClientRects()].map(r=>normalizedRect(r,bounds)).filter(r=>r[2]>0&&r[3]>0)};updateChatContext();
-      const link=entry.links.find(a=>PDF.selection.rects.some(r=>pdfRectsOverlap(r,a.rect)));
-      if(link)showPDFLinkPreview(link,event.clientX,event.clientY,true).catch(e=>toast(e.message));
-      else previewNumberedCitation(PDF.selection.quote,event.clientX,event.clientY).catch(()=>{});
     },0);
   };
   box.onpointermove=event=>{
-    if(PDF.mode==='draw'||event.buttons)return;
+    if(PDF.mode==='draw'||event.buttons){window.NoctuaPDFObjects?.clear(entry);return;}
     const b=box.getBoundingClientRect(),x=(event.clientX-b.left)/b.width,y=(event.clientY-b.top)/b.height;
     const link=entry.links.find(a=>pdfPointInRect(x,y,a.rect));box.classList.toggle('over-pdf-link',!!link);
-    if(link)schedulePDFLinkPreview(link,event.clientX,event.clientY);else schedulePDFLinkClose();
+    if(link){window.NoctuaPDFObjects?.clear(entry);schedulePDFLinkPreview(link,event.clientX,event.clientY);}else{schedulePDFLinkClose();window.NoctuaPDFObjects?.hover(entry,x,y);}
   };
-  box.onpointerleave=schedulePDFLinkClose;
-  const svg=box.querySelector('svg');let points=null;
+  box.onpointerleave=()=>{schedulePDFLinkClose();window.NoctuaPDFObjects?.clear(entry);};
+  const svg=box.querySelector('.pdf-overlay');let points=null;
   const point=e=>{const b=svg.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-b.left)/b.width)),Math.max(0,Math.min(1,(e.clientY-b.top)/b.height))];};
   svg.onpointerdown=e=>{if(PDF.mode!=='draw')return;e.preventDefault();entry.drawing=true;svg.setPointerCapture(e.pointerId);points=[point(e)];};
   svg.onpointermove=e=>{if(!points)return;points.push(point(e));paintPDFAnnotations();svg.insertAdjacentHTML('beforeend',inkSVG({points,color:PDF.color,width:.003}));};
@@ -311,6 +551,18 @@ function bindPDFPage(entry,key,token){
 function pdfPointInRect(x,y,r){return x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3];}
 function pdfRectsOverlap(a,b){return a[0]<b[0]+b[2]&&a[0]+a[2]>b[0]&&a[1]<b[1]+b[3]&&a[1]+a[3]>b[1];}
 function safePDFLinkURL(value){try{const url=new URL(value);return ['http:','https:','mailto:'].includes(url.protocol)?url.href:null;}catch{return null;}}
+function openPDFExternalLink(value){
+  const url=safePDFLinkURL(value);if(!url){toast('This link type cannot be opened from Noctua.');return;}
+  closePDFLinkPreview();
+  if(typeof settings!=='undefined'&&settings?.desktop)api('/api/desktop/open',{url}).catch(error=>toast(error.message));
+  else window.open(url,'_blank','noopener,noreferrer');
+}
+async function followPDFLink(link){
+  if(link.url){openPDFExternalLink(link.url);return;}
+  const key=PDF.key,doc=PDF.doc;closePDFLinkPreview();
+  const target=await resolvePDFDestination(doc,link);
+  if(PDF.key===key&&PDF.doc===doc)await pdfNavigate(target.page,target.y);
+}
 async function pdfPageLinks(page,viewport){
   const annotations=await page.getAnnotations({intent:'display'});
   return annotations.filter(a=>a.subtype==='Link'&&a.rect&&(a.url||a.unsafeUrl||a.dest||a.action)).map(a=>{
@@ -321,10 +573,10 @@ async function pdfPageLinks(page,viewport){
 }
 function renderPDFLinkTargets(entry){
   const layer=entry.box.querySelector('.pdf-document-links');
-  layer.innerHTML=entry.links.map((link,i)=>`<button class="pdf-document-link" data-link="${i}" aria-label="${link.url?'Preview external link':'Preview reference or document link'}" style="left:${link.rect[0]*100}%;top:${link.rect[1]*100}%;width:${link.rect[2]*100}%;height:${link.rect[3]*100}%"></button>`).join('');
+  layer.innerHTML=entry.links.map((link,i)=>`<button class="pdf-document-link" data-link="${i}" aria-label="${link.url?'Open external link in a new tab':'Go to reference or document passage'}" style="left:${link.rect[0]*100}%;top:${link.rect[1]*100}%;width:${link.rect[2]*100}%;height:${link.rect[3]*100}%"></button>`).join('');
   layer.querySelectorAll('button').forEach(button=>{
-    button.onfocus=()=>{const b=button.getBoundingClientRect();showPDFLinkPreview(entry.links[+button.dataset.link],b.left,b.bottom,true).catch(e=>toast(e.message));};
-    button.onclick=event=>{event.preventDefault();button.onfocus();};
+    button.onclick=event=>{event.preventDefault();const link=entry.links[+button.dataset.link];followPDFLink(link).catch(error=>toast(error.message));};
+    button.onblur=schedulePDFLinkClose;
   });
 }
 async function resolvePDFDestination(doc,link){
@@ -342,20 +594,56 @@ async function resolvePDFDestination(doc,link){
   const [left,top]=viewport.convertToViewportPoint(Number.isFinite(x)?x:page.view[0],Number.isFinite(y)?y:page.view[3]);
   return {page:index+1,x:Math.max(0,Math.min(1,left/viewport.width)),y:Math.max(0,Math.min(1,top/viewport.height))};
 }
-let pdfLinkTimer=null,pdfLinkCloseTimer=null,pdfLinkCurrent=null,pdfLinkPending=null,pdfLinkPinned=false,pdfLinkSerial=0,pdfPreviewTask=null;
+let pdfPreviewLink=null;
+let pdfLinkTimer=null,pdfLinkCloseTimer=null,pdfLinkCurrent=null,pdfLinkPending=null,pdfLinkPinned=false,pdfLinkSerial=0;
 function closePDFLinkPreview(){
-  clearTimeout(pdfLinkTimer);clearTimeout(pdfLinkCloseTimer);pdfLinkPending=null;pdfLinkCurrent=null;pdfLinkPinned=false;pdfLinkSerial++;
-  pdfPreviewTask?.cancel();pdfPreviewTask=null;$('#pdf-link-preview')?.remove();
+  clearTimeout(pdfLinkTimer);clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;pdfLinkPending=null;pdfLinkCurrent=null;pdfLinkPinned=false;pdfLinkSerial++;
+  pdfPreviewLink=null;
+  $('#pdf-link-preview')?.remove();
 }
 function schedulePDFLinkClose(){
-  clearTimeout(pdfLinkTimer);pdfLinkPending=null;if(pdfLinkPinned)return;
-  clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=setTimeout(closePDFLinkPreview,250);
+  clearTimeout(pdfLinkTimer);pdfLinkPending=null;if(pdfLinkPinned||$('#pdf-link-preview')?.dataset.resizing)return;
+  if(pdfLinkCloseTimer===null)pdfLinkCloseTimer=setTimeout(closePDFLinkPreview,250);
 }
 function schedulePDFLinkPreview(link,x,y){
-  clearTimeout(pdfLinkCloseTimer);
+  if(link.url){closePDFLinkPreview();return;}
+  clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;
   if(pdfLinkCurrent===link.id||pdfLinkPending===link.id||pdfLinkPinned)return;
   clearTimeout(pdfLinkTimer);pdfLinkPending=link.id;
   pdfLinkTimer=setTimeout(()=>{pdfLinkPending=null;showPDFLinkPreview(link,x,y).catch(e=>toast(e.message));},300);
+}
+function pdfPreviewSizeKey(){return 'noctua.pdfPreviewSize.reference';}
+function applyPDFPreviewSize(popup,size){
+  if(!Number.isFinite(size?.width)||!Number.isFinite(size?.height)||size.width<=0||size.height<=0)return;
+  const width=Math.max(Math.min(260,innerWidth-24),Math.min(size.width,innerWidth-24));
+  const height=Math.max(Math.min(120,innerHeight-24),Math.min(size.height,innerHeight-24));
+  popup.classList.add('pdf-preview-sized');popup.style.width=width+'px';popup.style.height=height+'px';
+}
+function bindPDFPreviewResize(popup){
+  try{applyPDFPreviewSize(popup,JSON.parse(store.get(pdfPreviewSizeKey(popup))||'null'));}catch{}
+  const grip=document.createElement('div');grip.className='pdf-preview-resize';grip.tabIndex=0;grip.setAttribute('role','separator');grip.setAttribute('aria-label','Resize preview');grip.title='Drag to resize preview';popup.append(grip);
+  let start=null;
+  const save=()=>{if(!popup.isConnected)return;const rect=popup.getBoundingClientRect();store.set(pdfPreviewSizeKey(popup),JSON.stringify({width:rect.width,height:rect.height}));};
+  const resize=(width,height)=>{
+    const rect=popup.getBoundingClientRect();
+    applyPDFPreviewSize(popup,{width:Math.min(width,innerWidth-rect.left-12),height:Math.min(height,innerHeight-rect.top-12)});
+  };
+  grip.onpointerdown=event=>{
+    if(event.button!==0)return;event.preventDefault();event.stopPropagation();
+    const rect=popup.getBoundingClientRect();start={x:event.clientX,y:event.clientY,width:rect.width,height:rect.height};
+    popup.dataset.resizing='true';clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;grip.setPointerCapture(event.pointerId);
+  };
+  grip.onpointermove=event=>{if(!start)return;event.preventDefault();resize(start.width+event.clientX-start.x,start.height+event.clientY-start.y);};
+  const finish=event=>{
+    if(!start)return;start=null;delete popup.dataset.resizing;save();
+    if(grip.hasPointerCapture(event.pointerId))grip.releasePointerCapture(event.pointerId);
+    trackPDFReferencePreview(event);
+  };
+  grip.onpointerup=finish;grip.onpointercancel=finish;grip.onlostpointercapture=finish;
+  grip.onkeydown=event=>{
+    const dx={ArrowLeft:-20,ArrowRight:20}[event.key]||0,dy={ArrowUp:-20,ArrowDown:20}[event.key]||0;if(!dx&&!dy)return;
+    event.preventDefault();const rect=popup.getBoundingClientRect();resize(rect.width+dx,rect.height+dy);save();
+  };
 }
 function positionPDFPreview(popup,x,y){
   const gap=12,margin=12,width=popup.offsetWidth;
@@ -365,80 +653,104 @@ function positionPDFPreview(popup,x,y){
   popup.style.left=Math.max(margin,Math.min(left,innerWidth-width-margin))+'px';
   popup.style.top=Math.max(12,Math.min(y+16,innerHeight-popup.offsetHeight-12))+'px';
 }
-function pdfReferenceCrop(viewport,target,items){
-  const tx=target.x*viewport.width,ty=target.y*viewport.height;
-  const boxes=items.filter(item=>item.str?.trim()&&item.transform).map(item=>{
-    const [x,y]=[item.transform[4],item.transform[5]],h=item.height || Math.hypot(item.transform[2],item.transform[3]);
-    const r=viewport.convertToViewportRectangle([x,y,x+item.width,y+h]);
-    return {left:Math.min(r[0],r[2]),right:Math.max(r[0],r[2]),top:Math.min(r[1],r[3]),bottom:Math.max(r[1],r[3])};
-  });
-  const nearest=boxes.slice().sort((a,b)=>(Math.abs(a.top-ty)+Math.abs(a.left-tx)*.15)-(Math.abs(b.top-ty)+Math.abs(b.left-tx)*.15))[0];
-  let left=tx,right=tx+360,centerY=ty+24;
-  if(nearest){
-    // Follow the destination's text line, stopping at the gutter between columns.
-    const row=boxes.filter(b=>Math.abs(b.top-nearest.top)<Math.max(5,(nearest.bottom-nearest.top)*.7)).sort((a,b)=>a.left-b.left);
-    const index=row.indexOf(nearest);left=nearest.left;right=nearest.right;
-    for(let i=index-1;i>=0&&left-row[i].right<24;i--)left=Math.min(left,row[i].left);
-    for(let i=index+1;i<row.length&&row[i].left-right<24;i++)right=Math.max(right,row[i].right);
-    centerY=nearest.top+Math.max(24,(nearest.bottom-nearest.top)*2);
-  }
-  const width=Math.min(viewport.width,Math.max(400,right-left+32)),height=Math.min(190,viewport.height);
-  return {width,height,x:Math.max(0,Math.min(viewport.width-width,(left+right)/2-width/2)),y:Math.max(0,Math.min(viewport.height-height,centerY-height/2))};
-}
-async function showPDFLinkPreview(link,x,y,pinned=false){
-  if(pdfLinkCurrent===link.id){pdfLinkPinned ||= pinned;return;}
-  closePDFLinkPreview();pdfLinkCurrent=link.id;pdfLinkPinned=pinned;
+async function showPDFLinkPreview(link,x,y){
+  if(link.url){closePDFLinkPreview();return;}
+  if(pdfLinkCurrent===link.id)return;
+  closePDFLinkPreview();pdfLinkCurrent=link.id;pdfPreviewLink=link;
   const serial=pdfLinkSerial,doc=PDF.doc,key=PDF.key;
-  const popup=document.createElement('aside');popup.id='pdf-link-preview';popup.classList.toggle('pdf-reference-popover',!link.url);popup.setAttribute('role','dialog');popup.setAttribute('aria-label','PDF link preview');
-  popup.innerHTML='<button class="pdf-preview-close" aria-label="Close preview" data-icon="x" title="Close preview" data-icon-only>×</button><div class="pdf-preview-content">Loading reference…</div>';
-  document.body.append(popup);positionPDFPreview(popup,x,y);
-  popup.querySelector('button').onclick=closePDFLinkPreview;popup.onpointerenter=()=>clearTimeout(pdfLinkCloseTimer);popup.onpointerleave=schedulePDFLinkClose;
+  const popup=document.createElement('aside');popup.id='pdf-link-preview';popup.classList.add('pdf-reference-popover');popup.setAttribute('role','dialog');popup.setAttribute('aria-label','PDF link preview');
+  popup.hidden=true;popup.innerHTML='<div class="pdf-preview-content"></div>';
+  document.body.append(popup);bindPDFPreviewResize(popup);positionPDFPreview(popup,x,y);
+  popup.onpointerenter=()=>{clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;};popup.onpointerleave=schedulePDFLinkClose;
   const body=popup.querySelector('.pdf-preview-content'),active=()=>serial===pdfLinkSerial&&key===PDF.key&&popup.isConnected;
-  if(link.url){
-    const url=safePDFLinkURL(link.url);
-    body.innerHTML=`<strong>External link</strong><p class="pdf-link-url">${esc(link.url)}</p>${url?`<a class="button" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Follow link ↗</a>`:'<p>This link type cannot be opened from Noctua.</p>'}`;
-    positionPDFPreview(popup,x,y);return;
-  }
   try{
-    const target=await resolvePDFDestination(doc,link);if(!active())return;
-    body.innerHTML=`<strong>${link.label?esc(link.label):'Reference / document link'}</strong><div class="hint">Page ${target.page}</div>${link.excerpt?`<p class="pdf-reference-text">${esc(link.excerpt)}</p>`:'<canvas class="pdf-reference-preview"></canvas>'}<button data-follow-reference data-icon="arrow-right">Go to passage</button>`;
-    body.querySelector('[data-follow-reference]').onclick=()=>{closePDFLinkPreview();pdfNavigate(target.page,target.y).catch(e=>toast(e.message));};
-    positionPDFPreview(popup,x,y);
-    const canvas=body.querySelector('canvas');if(!canvas)return;
-    const page=await doc.getPage(target.page);if(!active())return;
-    const viewport=page.getViewport({scale:1}),text=await page.getTextContent();if(!active())return;
-    const {width,height,x:cropX,y:cropY}=pdfReferenceCrop(viewport,target,text.items);
-    const displayWidth=body.clientWidth || width,raster=pdfRasterSize(displayWidth,displayWidth*height/width,pdfPixelDensity());
-    const sx=raster.width/width,sy=raster.height/height;canvas.width=raster.width;canvas.height=raster.height;canvas.style.aspectRatio=String(width/height);
-    const context=canvas.getContext('2d',{alpha:false});context.noctuaTheme=PDF.dark?{background:'#202124',foreground:'#e8eaed',invertImages:false}:null;
-    const task=page.render({canvasContext:context,viewport,transform:[sx,0,0,sy,-cropX*sx,-cropY*sy]});pdfPreviewTask=task;
-    try{await task.promise;}finally{if(pdfPreviewTask===task)pdfPreviewTask=null;}
-    if(active())positionPDFPreview(popup,x,y);
-  }catch(e){if(active()&&e.name!=='RenderingCancelledException'){body.textContent=e.message;positionPDFPreview(popup,x,y);}}
+    const index=await indexPDF(key);if(!active())return;
+    const numbers=pdfLinkCitationNumbers(index,link);
+    if(numbers.length){
+      body.classList.add('pdf-citation-list');
+      for(const number of numbers){
+        const reference=findNumberedPDFReference(index,number),row=document.createElement('button');row.className='pdf-citation-row';
+        const label=document.createElement('span');label.className='pdf-citation-number';label.textContent=`[${number}]`;
+        const title=document.createElement('span');title.textContent=reference?.title||'Reference title unavailable';row.append(label,title);body.append(row);
+        row.disabled=!reference;if(reference){row.title=reference.excerpt;row.onclick=()=>{closePDFLinkPreview();pdfNavigate(reference.page,reference.y).catch(error=>toast(error.message));};}
+      }
+    }else{
+      const target=await resolvePDFDestination(doc,link);if(!active())return;
+      const row=document.createElement('button');row.className='pdf-citation-row';row.textContent=`Page ${target.page}`;
+      row.onclick=()=>{closePDFLinkPreview();pdfNavigate(target.page,target.y).catch(error=>toast(error.message));};body.append(row);
+    }
+    if(active()){popup.hidden=false;positionPDFPreview(popup,x,y);}
+  }catch(e){if(active())closePDFLinkPreview();}
 }
-function findNumberedPDFReference(index,number){
-  const pages=index.pages || [];let start=-1,startOffset=0;
-  for(let i=Math.floor(pages.length*.4);i<pages.length;i++){const heading=/(?:^|\n)\s*(?:\d+\.?\s+)?(?:references|bibliography)\s*(?:\n|$)/i.exec(pages[i].text);if(heading){start=i;startOffset=heading.index+heading[0].length;break;}}
-  if(start<0)return null;
-  const pattern=new RegExp('(?:^|\\n)\\s*(?:\\['+number+'\\]|'+number+'\\.)\\s+','g');
-  for(let i=start;i<pages.length;i++){
-    const page=pages[i],text=page.text || '';pattern.lastIndex=0;
-    for(const match of text.matchAll(pattern)){
-      if(i===start&&match.index+match[0].length<startOffset)continue;
-      const offset=match.index+match[0].length,word=(page.words||[]).find(w=>w.end>offset);if(!word)continue;
-      let excerpt=text.slice(match.index,match.index+1200).trim();const next=excerpt.slice(1).search(/\n\s*(?:\[\d+\]|\d+\.)\s+/);if(next>=0)excerpt=excerpt.slice(0,next+1);
-      return {page:page.page,x:word.rect[0],y:word.rect[1],excerpt};
+function trackPDFReferencePreview(event){
+  const link=pdfPreviewLink;if(!link||pdfLinkPending&&pdfLinkPending!==pdfLinkCurrent)return;
+  const popup=$('#pdf-link-preview'),box=pdfPageBox(link.sourcePage),margin=24;
+  if(popup?.dataset.resizing){clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;return;}
+  const within=r=>event.clientX>=r.left-margin&&event.clientX<=r.right+margin&&event.clientY>=r.top-margin&&event.clientY<=r.bottom+margin;
+  let onLink=false;
+  if(box&&link.rect){const r=box.getBoundingClientRect();onLink=within({left:r.left+link.rect[0]*r.width,right:r.left+(link.rect[0]+link.rect[2])*r.width,top:r.top+link.rect[1]*r.height,bottom:r.top+(link.rect[1]+link.rect[3])*r.height});}
+  if(onLink||(popup&&!popup.hidden&&within(popup.getBoundingClientRect()))){clearTimeout(pdfLinkCloseTimer);pdfLinkCloseTimer=null;}
+  else if(pdfLinkCloseTimer===null)pdfLinkCloseTimer=setTimeout(closePDFLinkPreview,250);
+}
+document.addEventListener('pointermove',trackPDFReferencePreview);
+window.addEventListener('resize',()=>{
+  const popup=$('#pdf-link-preview');if(!popup||popup.hidden)return;
+  const rect=popup.getBoundingClientRect();if(popup.classList.contains('pdf-preview-sized'))applyPDFPreviewSize(popup,{width:rect.width,height:rect.height});
+  popup.style.left=Math.max(12,Math.min(rect.left,innerWidth-popup.offsetWidth-12))+'px';popup.style.top=Math.max(12,Math.min(rect.top,innerHeight-popup.offsetHeight-12))+'px';
+});
+
+function findNumberedPDFReference(index,number){return pdfBibliography(index).get(number)||null;}
+const pdfBibliographies=new WeakMap();
+function pdfBibliography(index){
+  if(pdfBibliographies.has(index))return pdfBibliographies.get(index);
+  const references=new Map(),pages=index.pages||[];let started=false,current=null,bracketStyle=null;
+  const finish=()=>{if(current){current.excerpt=current.text.trim();current.title=pdfReferenceTitle(current.excerpt);references.set(current.number,current);}};
+  for(const page of pages){
+    const text=page.text||'';let offset=0;
+    if(!started){const heading=/(?:^|\n)\s*(?:\d+\.?\s+)?(?:references|bibliography)\s*(?:\n|$)/i.exec(text);if(!heading)continue;started=true;offset=heading.index+heading[0].length;}
+    const tail=text.slice(offset),appendix=/^\s*(?:appendix|appendices)\b/im.exec(tail),content=appendix?tail.slice(0,appendix.index):tail;
+    let markers=[...content.matchAll(/(?:^|\n)\s*(?:\[(\d{1,4})\]|(\d{1,4})\.)\s+/g)];
+    if(bracketStyle===null&&markers.length)bracketStyle=!!markers[0][1];markers=markers.filter(marker=>!!marker[1]===bracketStyle);
+    if(!markers.length){if(current&&!/^\s*(?:appendix|appendices|[A-Z]\s+[A-Z])/m.test(content))current.text+='\n'+content;else if(current)break;continue;}
+    if(current)current.text+='\n'+content.slice(0,markers[0].index);
+    for(let i=0;i<markers.length;i++){
+      finish();const marker=markers[i],start=offset+marker.index+marker[0].length,end=i+1<markers.length?offset+markers[i+1].index:offset+content.length;
+      const word=(page.words||[]).find(word=>word.end>start);
+      current={number:Number(marker[1]||marker[2]),page:page.page,x:word?.rect[0]||0,y:word?.rect[1]||0,text:text.slice(start,end)};
+    }
+    if(appendix)break;
+  }
+  finish();pdfBibliographies.set(index,references);return references;
+}
+function pdfReferenceTitle(raw){
+  const text=raw.replace(/-\s*\n\s*/g,'-').replace(/\s+/g,' ').trim();
+  const quoted=/[“"]([^”"]{8,})[”"]/.exec(text);if(quoted)return quoted[1].trim();
+  const boundaries=[...text.matchAll(/\.\s+/g)].filter(match=>!/(?:\b[A-Z]|\b(?:Dr|Prof|Jr|Sr|St))$/.test(text.slice(0,match.index)));
+  if(!boundaries.length)return text.replace(/,?\s*(?:19|20)\d{2}[a-z]?\.?$/,'').trim();
+  const start=boundaries[0].index+boundaries[0][0].length;
+  const end=boundaries[1]?.index??text.length;
+  return text.slice(start,end).replace(/,?\s*(?:19|20)\d{2}[a-z]?(?:[.,].*)?$/,'').trim()||'Reference title unavailable';
+}
+function pdfCitationNumbers(value){
+  const match=value.trim().match(/^\[\s*(\d[\d\s,;–—-]*)\s*\]$/);if(!match)return [];
+  const numbers=new Set();
+  for(const part of match[1].split(/[,;]/)){
+    const range=part.trim().match(/^(\d{1,4})(?:\s*[-–—]\s*(\d{1,4}))?$/);if(!range)return [];
+    const first=Number(range[1]),last=Number(range[2]||range[1]);if(first<1||last<first||last-first>100)return [];
+    for(let number=first;number<=last;number++)numbers.add(number);
+  }
+  return [...numbers].sort((a,b)=>a-b);
+}
+function pdfLinkCitationNumbers(index,link){
+  if(link.citationNumbers)return [...new Set(link.citationNumbers)].sort((a,b)=>a-b);
+  const page=(index.pages||[]).find(page=>page.page===link.sourcePage);
+  if(page&&link.rect){
+    const words=(page.words||[]).filter(word=>pdfRectsOverlap(word.rect,link.rect));
+    for(const match of (page.text||'').matchAll(/\[\s*\d[\d\s,;–—-]*\]/g)){
+      if(words.some(word=>word.start<match.index+match[0].length&&word.end>match.index))return pdfCitationNumbers(match[0]);
     }
   }
-  return null;
-}
-async function previewNumberedCitation(quote,x,y){
-  const url=safePDFLinkURL(quote.trim());if(url)return showPDFLinkPreview({id:PDF.key+':url:'+url,url},x,y,true);
-  const match=quote.trim().match(/^\[(\d{1,4})\]$/);if(!match)return;
-  const key=PDF.key,selected=PDF.selection;
-  const index=await indexPDF(key);if(PDF.key!==key||PDF.selection!==selected)return;
-  const target=findNumberedPDFReference(index,Number(match[1]));if(!target)return;
-  return showPDFLinkPreview({id:`${key}:reference:${match[1]}`,label:`Reference [${match[1]}]`,target,excerpt:target.excerpt},x,y,true);
+  const named=typeof link.dest==='string'&&link.dest.match(/^(?:cite|citation)[.:](\d+)$/i);return named?[Number(named[1])]:[];
 }
 function inkSVG(a){return `<polyline points="${a.points.map(p=>p[0]+','+p[1]).join(' ')}" fill="none" stroke="${esc(a.color)}" stroke-width="${a.width}" stroke-linecap="round" stroke-linejoin="round"/>`;}
 function clearPDFAnnotationSelection(){
@@ -446,7 +758,7 @@ function clearPDFAnnotationSelection(){
 }
 function pdfOutsideComment(event){
   if(!event.target.closest?.('#pdf-sidebar article'))clearPDFAnnotationSelection();
-  if(!event.target.closest?.('#pdf-link-preview,.pdf-document-link'))closePDFLinkPreview();
+  if(!event.target.closest?.('#pdf-link-preview'))closePDFLinkPreview();
 }
 document.addEventListener('pointerdown',pdfOutsideComment,true);
 document.addEventListener('pointerdown',event=>{document.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
@@ -459,38 +771,179 @@ function syncPDFAnnotationSelection(){
     el.setAttribute('aria-current',String(selected));
   });
 }
+function pdfAnnotationMatchesFilter(annotation,filter){
+  if(!filter)return true;
+  return filter==='user'?annotation.author==='user':annotation.author==='assistant'&&annotation.category===filter;
+}
 async function selectPDFAnnotation(id,{scrollComment=false}={}){
   const a=PDF.annotations.find(a=>a.id===id);if(!a)return;
-  PDF.selected=id;syncPDFAnnotationSelection();
-  if(PDF.page!==a.page)await pdfNavigate(a.page);else {const entry=pdfPageEntries.find(e=>e.number===a.page);if(entry){entry.wanted=true;await ensurePDFPage(entry);}paintPDFAnnotations();}
+  if(!pdfAnnotationMatchesFilter(a,PDF.annotationFilter))setPDFAnnotationFilter(null);
+  setPDFSidebarTab('annotations');PDF.selected=id;syncPDFAnnotationSelection();
+  if(PDF.page!==a.page)await pdfNavigate(a.page);else {const entry=pdfPageEntries.find(e=>e.number===a.page);if(entry){entry.wanted=true;await ensurePDFPage(entry);}}
+  paintPDFAnnotations();
   const mark=$('#pdf-stage .pdf-mark.selected');
   mark?.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});
   if(scrollComment)document.querySelectorAll('#pdf-sidebar article').forEach(el=>{if(el.dataset.id===id)el.scrollIntoView({block:'nearest',behavior:'smooth'});});
   updateChatContext();
 }
-function paintPDFAnnotations(){
-  for(const svg of document.querySelectorAll('#pdf-stage .pdf-overlay')){
-  const page=Number(svg.closest('.pdf-page').dataset.page);
-  svg.innerHTML=PDF.annotations.filter(a=>a.page===page).map(a=>{
-    const selected=a.id===PDF.selected;
-    const geometry=a.kind==='ink'?inkSVG({...a,width:a.width*(selected?1.6:1)}):(a.rects || []).map(r=>`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="${esc(a.color)}" fill-opacity="${selected?.6:a.status==='pending'?.25:.35}" ${selected?`stroke="${esc(a.color)}" stroke-opacity="1" stroke-width="2" vector-effect="non-scaling-stroke"`:''}/>`).join('');
-    return `<g class="pdf-mark${selected?' selected':''}" data-annotation="${esc(a.id)}">${geometry}</g>`;
+const pdfHighlightGeometry=new WeakMap();
+function mergePDFHighlightRects(rects,aspect=1){
+  const cached=pdfHighlightGeometry.get(rects);if(cached?.aspect===aspect)return cached.rects;
+  const rows=[];
+  const sorted=rects.filter(r=>r.length===4&&r.every(Number.isFinite)&&r[2]>0&&r[3]>0).map(r=>r.slice()).sort((a,b)=>a[1]+a[3]/2-b[1]-b[3]/2||a[0]-b[0]);
+  for(const rect of sorted){
+    const row=rows.find(({reference:r})=>Math.min(r[1]+r[3],rect[1]+rect[3])-Math.max(r[1],rect[1])>=Math.min(r[3],rect[3])*.5&&Math.abs(r[1]+r[3]/2-rect[1]-rect[3]/2)<=Math.max(r[3],rect[3])*.5);
+    if(row){row.rects.push(rect);if(rect[3]>row.reference[3])row.reference=rect;}
+    else rows.push({reference:rect,rects:[rect]});
+  }
+  const result=[];
+  for(const row of rows){
+    let previous=null;
+    for(const rect of row.rects.sort((a,b)=>a[0]-b[0])){
+      // Measure word gaps in page pixels; normalized x/y have different scales.
+      const gap=rect[0]-(previous?previous[0]+previous[2]:0);
+      if(previous&&gap<=row.reference[3]*aspect*.6){
+        const right=Math.max(previous[0]+previous[2],rect[0]+rect[2]),bottom=Math.max(previous[1]+previous[3],rect[1]+rect[3]);
+        previous[0]=Math.min(previous[0],rect[0]);previous[1]=Math.min(previous[1],rect[1]);previous[2]=right-previous[0];previous[3]=bottom-previous[1];
+      }else{previous=rect.slice();result.push(previous);}
+    }
+  }
+  result.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  pdfHighlightGeometry.set(rects,{aspect,rects:result});return result;
+}
+function paintPDFAutoLabels(box){
+  const layer=box.querySelector('.pdf-auto-labels');if(!layer)return;
+  const marks=PDF.annotations.filter(a=>a.page===Number(box.dataset.page)&&a.kind==='highlight'&&pdfCategories[a.category]&&a.rects?.length).sort((a,b)=>a.rects[0][1]-b.rects[0][1]);
+  const last={left:-24,right:-24},height=box.clientHeight,width=box.clientWidth;
+  const markup=marks.map(a=>{
+    const r=a.rects[0],side=r[0]+r[2]/2<.5?'left':'right',gutter=side==='left'?r[0]:1-r[0]-r[2];
+    const top=Math.min(Math.max(0,height-22),Math.max(r[1]*height,last[side]+22));last[side]=top;
+    const maxWidth=Math.max(16,Math.min(88,gutter*width-8)),compact=maxWidth<48,category=pdfCategories[a.category];
+    return `<button class="pdf-auto-tag${compact?' compact':''}${a.id===PDF.selected?' selected':''}" data-annotation="${esc(a.id)}" style="--category-color:${esc(a.color)};top:${top}px;${side}:4px;max-width:${maxWidth}px" aria-label="${category.label}, page ${a.page}" title="${category.label}: ${esc(a.quote)}">${compact?'●':category.label}</button>`;
   }).join('');
+  if(layer.noctuaMarkup===markup)return;layer.noctuaMarkup=markup;layer.innerHTML=markup;
+  layer.querySelectorAll('button').forEach(button=>button.onclick=()=>selectPDFAnnotation(button.dataset.annotation,{scrollComment:true}).catch(e=>toast(e.message)));
+}
+function paintPDFAnnotations(){
+  for(const svg of document.querySelectorAll('#pdf-stage .pdf-overlay, #pdf-stage .pdf-highlights')){
+    const box=svg.closest('.pdf-page'),aspect=box.clientWidth?box.clientHeight/box.clientWidth:1;
+    const page=Number(box.dataset.page),highlights=svg.classList.contains('pdf-highlights');
+    const annotations=PDF.annotations.filter(a=>a.page===page&&(a.kind!=='ink')===highlights);
+    if(!highlights){
+      svg.innerHTML=annotations.map(a=>`<g class="pdf-mark${a.id===PDF.selected?' selected':''}" data-annotation="${esc(a.id)}">${inkSVG({...a,width:a.width*(a.id===PDF.selected?1.6:1)})}</g>`).join('');
+      continue;
+    }
+    // Composite opaque fills first, then apply transparency once to the entire page.
+    // Later annotations own overlaps; pending colors retain their subdued appearance.
+    paintPDFAutoLabels(svg.closest('.pdf-page'));
+    const opacity=PDF.dark?.2:.35,background=PDF.dark?'#202124':'#ffffff';
+    const fills=annotations.map(a=>{
+      const color=a.status==='pending'?`color-mix(in srgb, ${a.color} ${PDF.dark?60:100*5/7}%, ${background})`:a.color;
+      const rects=mergePDFHighlightRects(a.rects||[],aspect).map(r=>`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="${esc(color)}"/>`).join('');
+      return `<g class="pdf-mark${a.id===PDF.selected?' selected':''}" data-annotation="${esc(a.id)}">${rects}</g>`;
+    }).join('');
+    const selected=annotations.find(a=>a.id===PDF.selected);
+    const outline=selected?mergePDFHighlightRects(selected.rects||[],aspect).map(r=>`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="none" stroke="${esc(selected.color)}" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join(''):'';
+    svg.innerHTML=`<g class="pdf-highlight-fills" opacity="${opacity}">${fills}</g>${outline}`;
   }
 }
-async function addPDFAnnotation(kind){if(kind==='highlight'&&!PDF.selection)throw new Error('Select some PDF text first.');const a=await pdfSave(api(paperURL(PDF.key)+'/annotations',{kind,page:PDF.page,color:PDF.color,...(PDF.selection || {}),comment:''}));PDF.selected=a.id;PDF.selection=null;getSelection().removeAllRanges();await refreshPDFAnnotations();$('#pdf-sidebar [data-id="'+a.id+'"] textarea')?.focus();}
+async function addPDFAnnotation(kind){if(kind==='highlight'&&!PDF.selection)throw new Error('Select some PDF text first.');const a=await pdfSave(api(paperURL(PDF.key)+'/annotations',{kind,page:PDF.page,color:PDF.color,...(PDF.selection || {}),comment:''}));PDF.selected=a.id;if(!pdfAnnotationMatchesFilter(a,PDF.annotationFilter))setPDFAnnotationFilter(null);PDF.selection=null;getSelection().removeAllRanges();await refreshPDFAnnotations();$('#pdf-sidebar [data-id="'+a.id+'"] textarea')?.focus();}
 const pdfMath=src=>{try{return NoctuaLatex.renderDoc([src || ''])[0];}catch{return esc(src || '');}};
-async function refreshPDFAnnotations(){const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;PDF.annotations=list;paintPDFAnnotations();syncPDFAnnotationSelection();if($('#pdf-sidebar').contains(document.activeElement)&&document.activeElement.matches('textarea'))return;
-  const side=$('#pdf-sidebar');side.innerHTML='<h3>Annotations</h3><p class="hint">Select text to highlight it. Comments support $inline$ and $$display$$ math.</p>'+list.map(a=>`<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><div class="tex-view">${pdfMath(a.comment)}</div><textarea aria-label="Comment with LaTeX" placeholder="Comment with $math$">${esc(store.get('pdf-draft:'+a.id) ?? a.comment ?? '')}</textarea><div class="pdf-preview tex-view"></div><button data-save data-icon="save">Save comment</button>${a.status==='pending'?'<button data-accept data-icon="check">Accept</button>':''}<button data-delete data-icon="${a.status==='pending'?'x':'trash-2'}">${a.status==='pending'?'Reject':'Delete'}</button>${(a.replies || []).map(r=>`<div class="pdf-reply"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true" data-icon="check">Accept</button><button data-reply-id="${r.id}" data-resolve="false" data-icon="x">Reject</button>`:''}</div>`).join('')}<textarea data-reply placeholder="Reply with $math$" aria-label="Reply">${esc(store.get('pdf-reply:'+a.id)||'')}</textarea><button data-send data-icon="reply">Reply</button></article>`).join('');
-  for(const el of side.querySelectorAll('article')){const a=list.find(a=>a.id===el.dataset.id),url=paperURL(key)+'/annotations/'+a.id,input=el.querySelector('textarea');input.oninput=()=>{store.set('pdf-draft:'+a.id,input.value);el.querySelector('.pdf-preview').innerHTML=pdfMath(input.value);};const reply=el.querySelector('[data-reply]');reply.oninput=()=>store.set('pdf-reply:'+a.id,reply.value);
+// Keep one writer per comment so an older response cannot erase a newer draft.
+const pdfCommentEdits=new Map();
+function pdfCommentEdit(key,a){
+  const id=key+':'+a.id;let edit=pdfCommentEdits.get(id);
+  if(!edit){const draft=store.get('pdf-draft:'+a.id),base=store.get('pdf-draft-base:'+a.id);edit={key,id:a.id,revision:a.revision,base:a.comment||'',value:draft??a.comment??'',timer:null,running:null,error:'',conflict:draft!=null&&base!=null&&base!==(a.comment||'')&&draft!==(a.comment||''),deleted:false};if(edit.conflict)edit.error='This comment changed in another window. Your draft is kept.';pdfCommentEdits.set(id,edit);}
+  else if(!edit.running&&a.revision>edit.revision){
+    if(edit.value===edit.base){edit.value=a.comment||'';edit.base=edit.value;}
+    else if((a.comment||'')!==edit.base){edit.conflict=true;edit.error='This comment changed in another window. Your draft is kept.';}
+    edit.revision=a.revision;
+  }
+  return edit;
+}
+function showPDFCommentState(edit){
+  if(PDF.key!==edit.key)return;
+  const card=[...document.querySelectorAll('#pdf-annotation-list article')].find(el=>el.dataset.id===edit.id);if(!card)return;
+  const status=card.querySelector('[data-comment-status]');if(!status)return;
+  status.textContent=edit.error||'';
+  status.classList.toggle('error',!!edit.error);
+  card.querySelector('[data-comment-conflict]').hidden=!edit.conflict;
+}
+function queuePDFComment(edit,value){
+  edit.value=value;store.set('pdf-draft:'+edit.id,value);store.set('pdf-draft-base:'+edit.id,edit.base);clearTimeout(edit.timer);
+  if(edit.conflict){showPDFCommentState(edit);return;}
+  edit.error='';edit.timer=setTimeout(()=>savePDFComment(edit).catch(()=>{}),450);showPDFCommentState(edit);
+}
+async function savePDFComment(edit,retries=0){
+  clearTimeout(edit.timer);edit.timer=null;
+  if(edit.running){await edit.running;return savePDFComment(edit);}
+  if(edit.deleted||edit.conflict||edit.value===edit.base){
+    if(!edit.conflict&&edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}
+    showPDFCommentState(edit);return;
+  }
+  const value=edit.value,base=edit.base;
+  const work=(async()=>{
+    try{
+      const body=JSON.stringify({revision:edit.revision,comment:value});
+      const response=await fetch(paperURL(edit.key)+'/annotations/'+enc(edit.id),{method:'PUT',headers:{'Content-Type':'application/json'},body,keepalive:new TextEncoder().encode(body).length<60000});
+      const saved=await response.json().catch(()=>({}));
+      if(!response.ok){
+        if(response.status===409){
+          const list=await api(paperURL(edit.key)+'/annotations'),latest=list.find(a=>a.id===edit.id);
+          if(latest){
+            edit.revision=latest.revision;
+            if((latest.comment||'')===value){edit.base=value;return;}
+            if((latest.comment||'')===base&&retries<2)return; // A status/color change can safely be rebased.
+            edit.conflict=true;
+          }
+        }
+        throw new Error(edit.conflict?'This comment changed in another window. Your draft is kept.':saved.error||'Could not save comment. Your draft is kept; edit it to retry.');
+      }
+      edit.revision=saved.revision;edit.base=value;edit.error='';
+      if(PDF.key===edit.key){const annotation=PDF.annotations.find(a=>a.id===edit.id);if(annotation&&!(annotation.revision>saved.revision))Object.assign(annotation,saved);}
+    }catch(error){edit.error=error.message;throw error;}
+    finally{if(edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}else if(!edit.conflict)store.set('pdf-draft-base:'+edit.id,edit.base);}
+  })();
+  edit.running=pdfSave(work);showPDFCommentState(edit);
+  try{await edit.running;}finally{edit.running=null;showPDFCommentState(edit);}
+  if(edit.value!==edit.base&&!edit.conflict&&!edit.deleted)return savePDFComment(edit,retries+1);
+}
+async function changePDFAnnotation(edit,method,body){
+  // Finish an in-flight comment before using the annotation's revision to delete or accept it.
+  clearTimeout(edit.timer);edit.timer=null;
+  await savePDFComment(edit);
+  if(edit.conflict)throw new Error(edit.error);
+  const url=paperURL(edit.key)+'/annotations/'+enc(edit.id);
+  const result=await libraryRequest(url+(method==='DELETE'?'?revision='+edit.revision:''),method,body?{revision:edit.revision,...body}:undefined);
+  if(method==='DELETE'){edit.deleted=true;localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);pdfCommentEdits.delete(edit.key+':'+edit.id);}
+  else {edit.revision=result.revision;}
+  return result;
+}
+window.addEventListener('pagehide',()=>{for(const edit of pdfCommentEdits.values())savePDFComment(edit).catch(()=>{});});
+async function refreshPDFAnnotations(){ensurePDFSidebar();const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;
+  for(const a of list)showPDFCommentState(pdfCommentEdit(key,a));
+  PDF.annotations=list;paintPDFAnnotations();syncPDFAnnotationSelection();updatePDFAutoHighlightUI();applyPDFAnnotationFilter();if($('#pdf-sidebar').contains(document.activeElement)&&document.activeElement.matches('textarea'))return;
+  const side=$('#pdf-annotation-list');side.innerHTML=list.map(a=>{const edit=pdfCommentEdit(key,a);return `<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><div class="pdf-annotation-header"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><button data-delete data-icon="trash-2" data-icon-only aria-label="${a.status==='pending'?'Reject suggestion':'Delete annotation'}" title="${a.status==='pending'?'Reject suggestion':'Delete annotation'}"></button></div>${pdfCategoryBadge(a)}<blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><textarea rows="1" aria-label="Comment with LaTeX" placeholder="Comment…">${esc(edit.value)}</textarea><div class="pdf-preview tex-view">${edit.value.includes('$')?pdfMath(edit.value):''}</div><small data-comment-status role="status"></small><div data-comment-conflict hidden><button data-use-saved>Use saved comment</button><button data-keep-draft>Keep my draft</button></div>${a.status==='pending'?'<button data-accept data-icon="check">Accept</button>':''}${(a.replies || []).map(r=>`<div class="pdf-comment-history"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true" data-icon="check">Accept</button><button data-reply-id="${r.id}" data-resolve="false" data-icon="x">Reject</button>`:''}</div>`).join('')}</article>`;}).join('');
+  for(const el of side.querySelectorAll('article')){const a=list.find(a=>a.id===el.dataset.id),url=paperURL(key)+'/annotations/'+a.id,input=el.querySelector('textarea'),edit=pdfCommentEdit(key,a);
+    input.oninput=()=>{queuePDFComment(edit,input.value);el.querySelector('.pdf-preview').innerHTML=input.value.includes('$')?pdfMath(input.value):'';};
+    input.onblur=()=>savePDFComment(edit).catch(()=>{});
     const select=()=>{if(PDF.selected!==a.id||PDF.page!==a.page)selectPDFAnnotation(a.id).catch(e=>toast(e.message));};
     el.addEventListener('focusin',select);el.addEventListener('click',select);
-    const bind=(selector,fn)=>{const b=el.querySelector(selector);if(b)b.onclick=async()=>{try{await pdfSave(Promise.resolve().then(fn));await refreshPDFAnnotations();}catch(e){toast(e.message);}};};
-    bind('[data-jump]',()=>selectPDFAnnotation(a.id));bind('[data-save]',async()=>{await libraryRequest(url,'PUT',{revision:a.revision,comment:input.value});localStorage.removeItem('pdf-draft:'+a.id);});bind('[data-delete]',()=>libraryRequest(url+'?revision='+a.revision,'DELETE'));bind('[data-accept]',()=>libraryRequest(url,'PUT',{revision:a.revision,status:'accepted'}));bind('[data-send]',async()=>{await api(url+'/reply',{comment:reply.value});localStorage.removeItem('pdf-reply:'+a.id);});
-    el.querySelectorAll('[data-resolve]').forEach(b=>b.onclick=async()=>{try{await pdfSave(api(url+'/resolve-reply',{reply_id:b.dataset.replyId,accept:b.dataset.resolve==='true'}));await refreshPDFAnnotations();}catch(e){toast(e.message);}});
+    const bind=(selector,fn)=>{const b=el.querySelector(selector);if(b)b.onclick=async()=>{b.disabled=true;try{await pdfSave(Promise.resolve().then(fn));await refreshPDFAnnotations();}catch(e){toast(e.message);}finally{b.disabled=false;}};};
+    bind('[data-jump]',()=>selectPDFAnnotation(a.id));
+    for(const [selector,method,body] of [['[data-delete]','DELETE'],['[data-accept]','PUT',{status:'accepted'}]])bind(selector,async()=>{input.disabled=true;try{return await changePDFAnnotation(edit,method,body);}finally{input.disabled=false;}});
+    for(const [selector,keep] of [['[data-use-saved]',false],['[data-keep-draft]',true]])bind(selector,async()=>{
+      const latest=(await api(paperURL(key)+'/annotations')).find(item=>item.id===edit.id);if(!latest)throw new Error('This annotation was deleted. Your draft is kept.');
+      edit.revision=latest.revision;edit.base=latest.comment||'';edit.conflict=false;edit.error='';
+      if(keep)await savePDFComment(edit);else {edit.value=edit.base;input.value=edit.value;localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}
+    });
+    el.querySelectorAll('[data-resolve]').forEach(b=>b.onclick=async()=>{try{await savePDFComment(edit);await pdfSave(api(url+'/resolve-reply',{reply_id:b.dataset.replyId,accept:b.dataset.resolve==='true'}));await refreshPDFAnnotations();}catch(e){toast(e.message);}});
+    showPDFCommentState(edit);
+    if(edit.value!==edit.base&&!edit.timer&&!edit.running&&!edit.error&&!edit.conflict)queuePDFComment(edit,edit.value);
   }
+  applyPDFAnnotationFilter();
 }
-function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments.'};}
+function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab defaults to Document outline; choosing its AI-generated outline tab starts or loads a separate AI outline; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating, regenerating, or deleting the AI outline are UI-only controls, with no MCP outline-editing tool.'};}
 async function pdfAction(a){if(a.action==='pdf_index')return indexPDF(a.key);if(a.action==='pdf_page')return pdfPageImage(a.key,a.page);if(a.action==='pdf_show')return openPDF(a.key,{page:a.page});if(a.action==='pdf_annotations'){if(PDF.key!==a.key)await openPDF(a.key,{page:a.page,annotation:a.id});else {setMode('pdf');await refreshPDFAnnotations();await selectPDFAnnotation(a.id,{scrollComment:true});}}}
 function pdfRoute(){if(!location.hash.startsWith('#pdf='))return;const q=new URLSearchParams(location.hash.slice(1));openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>toast(e.message));}
 setReaderTheme(store.get('noctua.readerTheme')||store.get('noctua.pdfPageTheme'));

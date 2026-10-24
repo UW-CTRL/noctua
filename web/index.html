@@ -159,6 +159,7 @@
         <ul id="chat-history" class="chat-history hidden"></ul>
         <div id="chat-log" class="chat-log"></div>
         <div id="chat-resize" class="chat-resize" role="separator" tabindex="0" aria-label="Resize chat input" aria-orientation="horizontal" aria-controls="chat-input" aria-valuemin="60" aria-valuemax="400" aria-valuenow="60" title="Drag to resize chat input"></div>
+        <div id="chat-selections" class="chat-selections" hidden></div>
         <form id="chat-form" class="chat-form">
           <textarea id="chat-input" rows="2" placeholder="Ask about these papers, or ask me to find, graph or save papers…"></textarea>
           <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
@@ -181,12 +182,14 @@
   <script src="/vendor/highlight/highlight.min.js"></script>
   <script src="/vendor/highlight/latex.min.js"></script>
   <script src="/chat-render.js"></script>
+  <script src="/chat-selections.js"></script>
   <script src="/app.js"></script>
   <script src="/lineage.js"></script>
   <script src="/notes.js"></script>
   <script src="/mentions.js"></script>
   <script src="/figures.js"></script>
   <script src="/library.js"></script>
+  <script src="/pdf-objects.js"></script>
   <script src="/pdf.js"></script>
   <script src="/setup.js"></script>
   <script src="/select.js"></script>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<meta charset="utf-8"><title>Noctua Reader recordings</title>
+<link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/pdf.css"><link rel="stylesheet" href="../web/icons.css">
+<style>
+body{margin:0;width:1400px;height:900px}header{height:52px;box-sizing:border-box}main{height:848px!important}#left{width:280px;min-width:280px}#right{width:300px;min-width:300px}#pdf-stage{min-width:0}.recording-label{margin-left:auto;color:var(--muted);font-size:12px}.pdf-scroll{padding:18px 20px}#chat{display:flex;flex-direction:column;height:calc(100% - 38px)}#chat-log{flex:1;padding:18px}#chat-form{padding:12px}#chat-input{width:100%;box-sizing:border-box;min-height:84px}#recording-caption{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#202124ed;color:#fff;padding:10px 18px;border-radius:6px;z-index:10000;font-size:14px;pointer-events:none;box-shadow:0 3px 15px #0002}#recording-cursor{position:fixed;z-index:10001;pointer-events:none;width:22px;height:27px;filter:drop-shadow(0 1px 2px #0006)}#recording-cursor.clicked{filter:drop-shadow(0 0 5px var(--accent));transform:scale(.9)}
+</style>
+<body class="pdf-mode">
+<header><div class="brand">🦉 <span>Noctua</span></div><div class="mode-switch"><button data-icon="network">Graph</button><button data-icon="notebook-pen">Notes</button><button class="active" data-icon="book-open">Reader</button></div><span class="recording-label">LeWorldModel · Reader demo</span></header>
+<main><aside id="left"><div id="pdf-sidebar"></div></aside><section id="pdf-stage"></section><aside id="right"><div class="tabs"><button data-rtab="paper">Paper</button><button data-rtab="chat" class="active">Chat</button></div><section id="chat"><div id="chat-log"><p class="hint">Ask about this paper</p></div><div id="chat-selections" hidden></div><form id="chat-form"><textarea id="chat-input" placeholder="Ask about this paper…"></textarea><button data-icon="send" data-icon-only aria-label="Send"></button></form></section><section id="details" hidden></section></aside></main>
+<div id="recording-caption"></div><svg id="recording-cursor" viewBox="0 0 22 27"><path d="M2 1 L2 21 L7 17 L11 25 L15 23 L11 15 L18 15 Z" fill="white" stroke="#202124" stroke-width="1.5"/></svg>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)},chat={provider:'codex',id:'recording'};
+const NoctuaLatex={renderDoc:blocks=>blocks.map(esc)},paperURL=k=>'/recording/'+k;
+let savedAnnotations=[],recordingOutline=null,recordingAnnotations=[],releaseAnalysis=null;
+async function api(path,body){
+ if(path.endsWith('/outline')){if(!body)return null;await new Promise(resolve=>releaseAnalysis=resolve);return recordingOutline;}
+ if(path.endsWith('/auto-highlight')){await new Promise(resolve=>releaseAnalysis=resolve);savedAnnotations=structuredClone(recordingAnnotations);return {total:savedAnnotations.length};}
+ if(path.endsWith('/annotations')){if(body){const item={...body,id:crypto.randomUUID(),author:'user',status:'accepted',revision:1,replies:[]};savedAnnotations.push(item);return item;}return savedAnnotations;}
+ throw Error('Unexpected recording request: '+path);
+}
+function updateChatContext(){}function setMode(){}function showRightTab(){}function toast(message){window.recordingError=message;}function openPaperView(){}
+history.replaceState=()=>{};
+</script>
+<script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
+<script type="module">
+try{
+ const input=new URL('../target/pr3-recording/',location.href),read=async name=>(await fetch(new URL(name,input))).json();
+ const [paper,index]=await Promise.all([read('paper.json'),read('index.json')]);
+ // Record saved AI results through the real UI lifecycle with the waiting period shortened.
+ try{recordingOutline=await read('outline.json');}catch{}
+ try{recordingAnnotations=await read('annotations.json');}catch{}
+ const engine=await import('../web/vendor/pdfjs/build/pdf.mjs');engine.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(engine);
+ const doc=await engine.getDocument({url:new URL('paper.pdf',input).href,standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
+ Object.assign(PDF,{key:'7WWP3NTJ',paper,doc,page:1,scale:1.15,dark:false,annotations:[]});pdfIndexes.set(PDF.key,Promise.resolve(index));
+ ensurePDFSidebar();await loadPDFOutline(PDF.key,doc);await renderPDF();await refreshPDFAnnotations();
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+ const settle=async()=>{await pause(150);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));};
+ let activeJob=null,chosenRegion=null,selectionRange=null;
+ const caption=text=>$('#recording-caption').textContent=text;
+ function point(element,clicked=false){const b=typeof element==='string'?$(element).getBoundingClientRect():element.getBoundingClientRect();$('#recording-cursor').style.left=(b.left+b.width/2)+'px';$('#recording-cursor').style.top=(b.top+b.height/2)+'px';$('#recording-cursor').classList.toggle('clicked',clicked);}
+ async function region(kind){
+  const page=kind==='figure'?4:9;await pdfNavigate(page);const entry=pdfPageEntries[page-1];await NoctuaPDFObjects.mount(entry,await doc.getPage(page),engine,()=>true);
+  chosenRegion=entry.objects.find(object=>object.kind===kind);if(!chosenRegion)throw Error('No '+kind+' found on page '+page);
+  scrollPDFPage(page,Math.max(0,chosenRegion.rect[1]-.05));await settle();NoctuaPDFObjects.hover(entry,chosenRegion.rect[0]+chosenRegion.rect[2]/2,chosenRegion.rect[1]+.02);point(chosenRegion.button);return entry;
+ }
+ function selectPart(fraction){
+  const spans=[...pdfPageBox(1).querySelectorAll('.textLayer span')].filter(span=>span.firstChild?.nodeType===3),start=spans.findIndex(span=>span.textContent.includes('Joint Embedding Predictive'));
+  if(start<0)throw Error('Abstract passage not found');
+  const end=spans[Math.min(spans.length-1,start+Math.round(4*fraction))];selectionRange=document.createRange();selectionRange.setStart(spans[start].firstChild,0);selectionRange.setEnd(end.firstChild,Math.max(1,Math.round(end.textContent.length*fraction)));getSelection().removeAllRanges();getSelection().addRange(selectionRange);point(end);
+ }
+ window.recordingSteps={outline:7,'auto-highlight':9,attachments:14};
+ window.recordingStep=async(scene,step)=>{
+  $('#recording-cursor').classList.remove('clicked');let duration=1400;
+  if(scene==='outline'){
+   if(!recordingOutline?.entries?.length)throw Error('A generated outline is required');
+   if(step===0){caption('Start with the document outline');point('#pdf-outline-source-document');}
+   if(step===1){caption('Choose AI-generated to analyze the paper');point('#pdf-outline-source-ai');}
+   if(step===2){point('#pdf-outline-source-ai',true);activeJob=setPDFOutlineSource('ai');await settle();caption('Generating a grounded outline · wait shortened');duration=2200;}
+   if(step===3){releaseAnalysis();await activeJob;caption('The saved outline follows the paper’s reading order');point('[data-outline-entry="0"]');duration=2800;}
+   if(step===4){const button=[...document.querySelectorAll('[data-outline-entry]')].find(b=>/Method/i.test(b.textContent));if(!button)throw Error('Method section not found');point(button);}
+   if(step===5){const state=pdfOutlineState(PDF.key),at=state.outline.entries.findIndex(e=>/Method/i.test(e.title));await pdfNavigate(state.outline.entries[at].page,state.outline.entries[at].y||0);point('[data-outline-entry="'+at+'"]',true);caption('Click a section to jump to its source passage');duration=2600;}
+   if(step===6){caption('Document bookmarks and AI navigation stay separate');point('#pdf-outline-source-document');duration=1800;}
+  }
+  if(scene==='auto-highlight'){
+   if(!recordingAnnotations.length)throw Error('Generated auto-highlights are required');
+   if(step===0){caption('Find the paper’s key points automatically');setPDFSidebarTab('annotations');point('[data-auto-highlight]');}
+   if(step===1){point('[data-auto-highlight]',true);activeJob=autoHighlightPDF();await settle();caption('A separate AI worker analyzes the paper · wait shortened');duration=2200;}
+   if(step===2){releaseAnalysis();await activeJob;caption('Grounded passages become categorized highlights');const a=savedAnnotations.find(a=>a.page===1)||savedAnnotations[0];await pdfNavigate(a.page,Math.max(0,a.rects[0][1]-.15));point('[data-annotation-filter="novelty"]');duration=2800;}
+   const categories=['novelty','method','results','limitations'];
+   if(step>=3&&step<=6){const category=categories[step-3];setPDFAnnotationFilter(category);const a=savedAnnotations.find(a=>a.category===category);if(a){await selectPDFAnnotation(a.id,{scrollComment:true});await pdfNavigate(a.page,Math.max(0,a.rects[0][1]-.12));}caption(pdfCategories[category].label+' · source passage and explanation');point('[data-annotation-filter="'+category+'"]',true);duration=2200;}
+   if(step===7){setPDFAnnotationFilter(null);await pdfNavigate(1,.23);caption('Review every category in Annotations');point('[data-highlight-count="assistant"]');duration=2000;}
+   if(step===8){caption('Highlights stay readable behind the original PDF text');point('[data-auto-highlight]');duration=1600;}
+  }
+  if(scene==='attachments'){
+   if(step===0){caption('Bring passages, figures, and tables into the existing chat');setPDFSidebarTab('annotations');await pdfNavigate(1,.28);point('#chat-input');}
+   if(step===1){caption('Drag to select a passage');selectPart(.25);duration=450;}
+   if(step===2){selectPart(.6);duration=450;}
+   if(step===3){selectPart(1);document.body.dispatchEvent(new PointerEvent('pointerup',{button:0,bubbles:true}));await settle();caption('Add to chat, or save a highlight using a color');point('[data-add-selection]');duration=1800;}
+   if(step===4){point('[data-add-selection]',true);$('[data-add-selection]').click();caption('The selected passage is attached with its source');duration=1800;}
+   if(step===5){await region('figure');caption('Hover over a figure to reveal its bounds');duration=1800;}
+   if(step===6){point(chosenRegion.button,true);chosenRegion.button.click();caption('One click adds the figure and its caption');duration=1800;}
+   if(step===7){point('[data-quote-preview]');$('[data-quote-preview]').click();caption('Preview multiple attachments before sending');duration=2400;}
+   if(step===8){document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0}));await region('table');caption('Tables work the same way');duration=1800;}
+   if(step===9){point(chosenRegion.button,true);chosenRegion.button.click();caption('The table keeps its paper, page, and region');duration=1800;}
+   if(step===10){point('[data-quote-preview]');$('[data-quote-preview]').click();caption('Text, figure, and table together in one conversation');duration=2800;}
+   if(step===11){document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0}));$('#chat-input').value='Compare the selected passage with the figure and table.';point('#chat-input');caption('Add a question using all three sources');duration=2200;}
+   if(step===12){await pdfNavigate(1,.28);selectPart(1);document.body.dispatchEvent(new PointerEvent('pointerup',{button:0,bubbles:true}));await settle();point('[data-selection-highlight]');caption('Or choose a color to save a regular PDF highlight');duration=1800;}
+   if(step===13){const button=$('[data-selection-highlight]');point(button,true);button.click();await settle();caption('The highlight appears in Annotations immediately');duration=2600;}
+  }
+  await settle();if(window.recordingError)throw Error(window.recordingError);return {duration};
+ };
+ window.recordingReady=true;
+}catch(error){window.recordingError=error.stack;document.body.textContent=error.stack;}
+</script>
+</html>

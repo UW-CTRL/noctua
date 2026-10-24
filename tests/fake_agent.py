@@ -48,7 +48,13 @@ if args == ['login'] or args == ['auth','login']:
     print('Sign in at https://example.com/login?test=true&provider='+provider, flush=True)
     (home / (provider+'-signed-in')).touch()
     sys.exit(0)
+if (home / 'analysis-start-failure').exists():
+    print('The selected model is unavailable for this account.', file=sys.stderr)
+    sys.exit(1)
 prompt = sys.stdin.read()
+if 'verify-selected-passages' in prompt:
+    assert '<selected_passages>' in prompt and 'A grounded passage.' in prompt and 'note-1' in prompt
+    (home / (provider+'-selected.txt')).write_text(prompt)
 if '--image' in args:
     assert Path(args[args.index('--image')+1]).read_bytes().startswith(b'\x89PNG'), 'missing image attachment'
 if '--input-format' in args:
@@ -56,6 +62,14 @@ if '--input-format' in args:
     assert msg['message']['content'][0]['type'] == 'image'
 transcribe = '--image' in args or '--input-format' in args
 text = r'\[x^2\]' if transcribe else ('Partial' if 'slow' in prompt else provider+' reply')
+if any('Build a concise navigable outline' in arg for arg in args):
+    paper = json.loads(prompt)
+    text = json.dumps({'entries':[{'title':'Introduction','page':1,'level':1,'quote':paper['pages'][0]['text'][:60]}]})
+if any("You are Noctua's Auto-highlight agent" in arg for arg in args):
+    paper = json.loads(prompt)
+    text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':paper['pages'][0]['text'][:60],'comment':'Principal contribution.'}]})
+    if (home / 'auto-highlight-invalid').exists():
+        text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':'An invented source passage.'}]})
 if 'Name each research thread' in prompt:
     text = 'Here are the threads:\n```json\n' + json.dumps({'common':'Both use attention.','threads':[{'id':'t1','name':provider+' thread','problem':'Long-range dependencies.','summary':'Recurrence gave way to attention.','steps':[{'from':'a','to':'b','relation':'extends','note':'adds attention'}]}]}) + '\n```'
 session = provider+'-session'

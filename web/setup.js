@@ -161,6 +161,36 @@ document.addEventListener('noctua-font-size-change', event => {
   if (select) select.value = String(NoctuaFonts.getSize(kind));
 });
 
+function highlightColorOptions(selected,category){
+  return pdfColors.map((color,index)=>`<button type="button" data-highlight-color="${category}" value="${color}" style="--swatch:${color}" aria-label="${pdfCategories[category].label}: color ${index+1}" aria-pressed="${color===selected}"></button>`).join('');
+}
+function highlightColorSettings(){
+  return `<div class="settings-group highlight-settings" role="group" aria-labelledby="settings-highlight-colors-title"><h3 id="settings-highlight-colors-title">Highlight colors</h3><div class="settings-highlight-rows">
+    <div class="settings-highlight-palette" role="group" aria-label="Reader highlight palette">${pdfColors.map((color,index)=>`<input type="color" id="setup-palette-${index}" data-highlight-palette="${index}" value="${color}" aria-label="Highlight color ${index+1}">`).join('')}</div>
+    <div class="settings-ai-highlights" role="group" aria-label="AI highlight colors">${Object.entries(pdfCategories).map(([key,category])=>`<div class="settings-ai-highlight"><span id="setup-highlight-label-${key}">${category.label}</span><details class="settings-ai-color-picker"><summary data-category-swatch="${key}" style="--swatch:${category.color}" aria-label="Choose ${category.label} highlight color" title="Choose ${category.label} highlight color"></summary><div class="settings-ai-color-options" id="setup-highlight-${key}" role="group" aria-labelledby="setup-highlight-label-${key}">${highlightColorOptions(category.color,key)}</div></details></div>`).join('')}</div>
+  </div></div>`;
+}
+function syncHighlightColorSettings(){
+  pdfColors.forEach((color,index)=>{
+    const input=$(`#setup-palette-${index}`);if(input)input.value=color;
+  });
+  for(const [key,category] of Object.entries(pdfCategories)){
+    const input=$(`#setup-highlight-${key}`);if(input){input.innerHTML=highlightColorOptions(category.color,key);input.value=category.color;}
+    document.querySelector(`[data-category-swatch="${key}"]`)?.style.setProperty('--swatch',category.color);
+  }
+}
+async function saveHighlightColors(patch){
+  const result=await api('/api/settings/highlight-colors',patch);
+  settings.highlight_colors=result.highlight_colors;settings.highlight_palette=result.highlight_palette;
+  applyPDFHighlightColors(result.highlight_colors,result.highlight_palette);syncHighlightColorSettings();
+  if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
+}
+async function saveHighlightPalette(colors){
+  const result=await api('/api/settings/highlight-palette',{colors});
+  settings.highlight_palette=result.highlight_palette;settings.highlight_colors=result.highlight_colors;
+  applyPDFHighlightColors(result.highlight_colors,result.highlight_palette);syncHighlightColorSettings();
+  if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
+}
 function appearanceSection() {
   const options = (value) => ['system', 'light', 'dark'].map((v) =>
     `<option value="${v}" ${v === value ? 'selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join('');
@@ -173,6 +203,7 @@ function appearanceSection() {
     <label class="setting-field" for="setup-reader-theme"><span>Reader theme</span>
       <select id="setup-reader-theme">${options(PDF.theme || 'dark')}</select></label>
     </div>
+    ${highlightColorSettings()}
     <div class="settings-group" role="group" aria-labelledby="settings-fonts-title"><h3 id="settings-fonts-title">Fonts</h3>
       ${fontSetting('ui', 'System font')}
       ${fontSetting('note', 'Note font')}
@@ -344,6 +375,12 @@ function openSetup({ firstRun = false, tab } = {}) {
     m.textContent = text; m.classList.toggle('ok', !!ok);
   };
   card.addEventListener('click', async (e) => {
+    card.querySelectorAll('.settings-ai-color-picker[open]').forEach(picker=>{if(!picker.contains(e.target))picker.open=false;});
+    const colorChoice=e.target.closest('[data-highlight-color]');
+    if(colorChoice){
+      e.preventDefault();const picker=colorChoice.closest('details');picker.open=false;picker.querySelector('summary').focus();
+      colorChoice.dispatchEvent(new Event('change',{bubbles:true}));return;
+    }
     const nav = e.target.closest('[data-settings-tab]');
     if (nav) { selectTab(nav.dataset.settingsTab); return; }
     const t = e.target.closest('[data-act]');
@@ -417,6 +454,15 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   });
   card.addEventListener('change', async (e) => {
+    const category=e.target.dataset?.highlightColor,paletteIndex=e.target.dataset?.highlightPalette;
+    if(category||paletteIndex!==undefined){
+      const section=e.target.closest('section'),group=e.target.closest('section'),controls=[...group.querySelectorAll('[data-highlight-color],[data-highlight-palette]')];
+      controls.forEach(control=>control.disabled=true);
+      try{if(category)await saveHighlightColors({[category]:e.target.value});else {const colors=[...pdfColors];colors[Number(paletteIndex)]=e.target.value;await saveHighlightPalette(colors);}msg(section,'',true);}
+      catch(error){syncHighlightColorSettings();msg(section,error.message);}
+      finally{controls.forEach(control=>control.disabled=false);}
+      return;
+    }
     const fontSize = e.target.id.match(/^setup-(ui|note|chat)-font-size$/);
     if (fontSize) {
       NoctuaFonts.setSize(fontSize[1], e.target.value); msg(e.target.closest('section'), 'Saved.', true); return;
@@ -485,6 +531,10 @@ function openSetup({ firstRun = false, tab } = {}) {
     finally { e.target.disabled = false; }
   });
   card.addEventListener('keydown', (e) => {
+    if(e.key==='Escape'){
+      const picker=card.querySelector('.settings-ai-color-picker[open]');
+      if(picker){e.preventDefault();e.stopPropagation();picker.open=false;picker.querySelector('summary').focus();return;}
+    }
     if (e.key === 'Enter' && /^setup-(ui|note|chat)-font-name$/.test(e.target.id)) {
       e.preventDefault(); e.target.dispatchEvent(new Event('change', {bubbles:true})); return;
     }
@@ -527,6 +577,7 @@ function renderKeyBanner() {
 
 async function loadSettings() {
   settings = await api('/api/settings');
+  applyPDFHighlightColors(settings.highlight_colors,settings.highlight_palette);
   return settings;
 }
 

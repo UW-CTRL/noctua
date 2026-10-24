@@ -1,13 +1,11 @@
-#pdf-stage,#pdf-sidebar{display:none}.pdf-mode #stage,.pdf-mode #notes-stage,.pdf-mode #left>.tabs,.pdf-mode #left>.tab-body,.pdf-mode #notes-side{display:none!important}.pdf-mode #pdf-stage{display:flex;flex:1;min-width:0;flex-direction:column;overflow:hidden}.pdf-mode #pdf-sidebar{display:block;padding:12px;overflow:auto;height:100%}.library-tools{display:flex;gap:6px;padding:8px;align-items:center;flex-wrap:wrap}.pdf-toolbar [data-page]{width:calc(1ch + 16px);padding:3px 6px;border:0;border-radius:0;background:transparent;font-variant-numeric:tabular-nums;appearance:textfield;-moz-appearance:textfield}.pdf-toolbar [data-page]::-webkit-inner-spin-button,.pdf-toolbar [data-page]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.pdf-scroll{flex:1;overflow:auto;padding:24px;background:var(--bg,#17191d)}.pdf-page{position:relative;margin:0 auto;background:white;isolation:isolate}.pdf-page canvas{display:block}.pdf-page.dark{background:#202124}.textLayer{position:absolute;inset:0;overflow:clip;line-height:1;text-align:initial;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}.textLayer>span{font-size:calc(var(--total-scale-factor) * var(--font-height));transform:rotate(var(--rotate,0deg)) scaleX(var(--scale-x,1))}.textLayer ::selection{background:#5799ff80}.pdf-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}.drawing .pdf-overlay{pointer-events:auto;touch-action:none;cursor:crosshair}.drawing .textLayer{pointer-events:none}.pdf-annotation{border:1px solid var(--line,#444);border-left:3px solid #8290ad;border-radius:6px;padding:10px;margin-bottom:12px;overflow-wrap:anywhere}.pdf-annotation.pending{border-style:dashed}.pdf-annotation textarea{display:block;box-sizing:border-box;width:100%;min-height:65px;margin:8px 0;background:var(--bg,#20232a);color:var(--ink,#eee);border:1px solid var(--line,#555);padding:6px;resize:vertical}.pdf-annotation button{margin:2px}.pdf-annotation blockquote{margin:8px 0;font-size:calc(12px * var(--ui-font-scale,1));color:var(--muted,#aaa)}.pdf-reply{border-top:1px solid var(--line,#444);margin-top:10px;padding-top:8px}.pdf-preview:empty{display:none}.paper-editor{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;max-width:600px;width:80vw;max-height:85vh;overflow:auto}.paper-editor label{display:block;margin:8px}.paper-editor textarea{display:block;width:95%;background:var(--bg);color:var(--ink);border:1px solid var(--line)}.pdf-index-layer{pointer-events:none}.reader-empty{padding:30px}
+#pdf-stage,#pdf-sidebar{display:none}.pdf-mode #stage,.pdf-mode #notes-stage,.pdf-mode #left>.tabs,.pdf-mode #left>.tab-body,.pdf-mode #notes-side{display:none!important}.pdf-mode #pdf-stage{display:flex;flex:1;min-width:0;flex-direction:column;overflow:hidden}.pdf-mode #pdf-sidebar{display:flex;flex-direction:column;padding:0;overflow:hidden;height:100%;box-sizing:border-box}.library-tools{display:flex;gap:6px;padding:8px;align-items:center;flex-wrap:wrap}.pdf-toolbar [data-page]{width:calc(1ch + 16px);padding:3px 6px;border:0;border-radius:0;background:transparent;font-variant-numeric:tabular-nums;appearance:textfield;-moz-appearance:textfield}.pdf-toolbar [data-page]::-webkit-inner-spin-button,.pdf-toolbar [data-page]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.pdf-scroll{flex:1;overflow:auto;padding:24px;background:var(--bg,#17191d)}.pdf-page{position:relative;margin:0 auto;background:white;isolation:isolate}.pdf-page canvas{display:block}.pdf-page.dark{background:#202124}.textLayer{position:absolute;inset:0;overflow:clip;line-height:1;text-align:initial;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}.textLayer>span{font-size:calc(var(--total-scale-factor) * var(--font-height));transform:rotate(var(--rotate,0deg)) scaleX(var(--scale-x,1))}.textLayer ::selection{background:transparent;color:transparent;text-shadow:none}.pdf-overlay,.pdf-highlights{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}.drawing .pdf-overlay{pointer-events:auto;touch-action:none;cursor:crosshair}.drawing .textLayer{pointer-events:none}.pdf-annotation{border:1px solid var(--line,#444);border-left:3px solid #8290ad;border-radius:6px;padding:10px;margin-bottom:12px;overflow-wrap:anywhere}.pdf-annotation.pending{border-style:dashed}.pdf-annotation textarea{display:block;box-sizing:border-box;width:100%;min-height:65px;margin:8px 0;background:var(--bg,#20232a);color:var(--ink,#eee);border:1px solid var(--line,#555);padding:6px;resize:vertical}.pdf-annotation button{margin:2px}.pdf-annotation blockquote{margin:8px 0;font-size:calc(12px * var(--ui-font-scale,1));color:var(--muted,#aaa)}.pdf-comment-history{border-top:1px solid var(--line,#444);margin-top:10px;padding-top:8px}.pdf-preview:empty{display:none}.paper-editor{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;max-width:600px;width:80vw;max-height:85vh;overflow:auto}.paper-editor label{display:block;margin:8px}.paper-editor textarea{display:block;width:95%;background:var(--bg);color:var(--ink);border:1px solid var(--line)}.pdf-index-layer{pointer-events:none}.reader-empty{padding:30px}
 .textLayer{--min-font-size:1;--text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));--min-font-size-inv:calc(1 / var(--min-font-size));user-select:text;-webkit-user-select:text}.textLayer>:not(.markedContent),.textLayer .markedContent span:not(.markedContent){font-size:calc(var(--text-scale-factor) * var(--font-height));transform:rotate(var(--rotate,0deg)) scaleX(var(--scale-x,1)) scale(var(--min-font-size-inv))}.textLayer .markedContent{display:contents}
 /* PDF.js uses these when sizing text layers with CSS round(). */
 .textLayer{--scale-round-x:1px;--scale-round-y:1px}
 .pdf-annotation.selected{border-color:var(--accent,#91b6ff);box-shadow:0 0 0 2px var(--accent,#91b6ff);background:rgba(120,160,240,.09)}
-.pdf-document{width:max-content;min-width:100%;position:relative}.pdf-document>.pdf-page{margin-bottom:24px;overflow:hidden;overflow-anchor:none}.pdf-page[data-loaded="false"]::before{content:attr(aria-label);position:absolute;top:45%;width:100%;text-align:center;color:#888;font-size:calc(14px * var(--ui-font-scale,1))}.pdf-page.over-pdf-link .textLayer span{cursor:pointer}.pdf-document-links{position:absolute;inset:0;z-index:4;pointer-events:none}.pdf-document-link{position:absolute;pointer-events:none;border:0;background:transparent;padding:0;border-radius:0}.pdf-document-link:focus-visible{outline:2px solid #719de8;background:#719de833}.pdf-scroll{overflow-anchor:none}#pdf-link-preview{position:fixed;z-index:1000;width:min(430px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box;padding:16px;background:var(--panel,#252830);color:var(--ink,#eee);border:1px solid var(--line,#555);border-radius:10px;box-shadow:0 6px 30px #0007}#pdf-link-preview .pdf-preview-close{position:absolute;right:5px;top:4px}.pdf-preview-content{padding-top:6px}.pdf-link-url{overflow-wrap:anywhere;font-size:calc(13px * var(--ui-font-scale,1))}.pdf-reference-preview{display:block;width:100%;height:auto;margin:10px 0;border:1px solid var(--line,#555)}.pdf-reference-text{white-space:pre-wrap;font-size:calc(18px * var(--ui-font-scale,1));line-height:1.5;max-height:360px;overflow:auto}.pdf-preview-content button,.pdf-preview-content .button{display:inline-block;margin-top:8px}
+.pdf-document{width:max-content;min-width:100%;position:relative}.pdf-document>.pdf-page{margin-bottom:24px;overflow:hidden;overflow-anchor:none}.pdf-page[data-loaded="false"]::before{content:attr(aria-label);position:absolute;top:45%;width:100%;text-align:center;color:#888;font-size:calc(14px * var(--ui-font-scale,1))}.pdf-page.over-pdf-link .textLayer span{cursor:pointer}.pdf-document-links{position:absolute;inset:0;z-index:4;pointer-events:none}.pdf-document-link{position:absolute;pointer-events:none;border:0;background:transparent;padding:0;border-radius:0}.pdf-document-link:focus-visible{outline:2px solid #719de8;background:#719de833}.pdf-scroll{overflow-anchor:none}#pdf-link-preview{position:fixed;z-index:1000;width:min(430px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box;padding:16px;background:var(--panel,#252830);color:var(--ink,#eee);border:1px solid var(--line,#555);border-radius:10px;box-shadow:0 6px 30px #0007}.pdf-preview-content{padding-top:6px}.pdf-preview-content button,.pdf-preview-content .button{display:inline-block;margin-top:8px}
 
-#pdf-link-preview.pdf-reference-popover{width:min(480px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 24px));padding:12px}
-.pdf-reference-popover .pdf-reference-preview{max-height:240px;object-fit:contain}
-.pdf-reference-popover .pdf-reference-text{font-size:calc(13px * var(--ui-font-scale,1));max-height:220px}
+#pdf-link-preview.pdf-reference-popover{width:min(420px,calc(100vw - 24px));max-height:min(280px,calc(100vh - 24px));padding:10px}
 
 /* Reader chrome inherits the app palette; the reader theme colors PDF canvases only. */
 #pdf-stage,#pdf-sidebar{background:var(--panel);color:var(--ink)}
@@ -21,8 +19,8 @@
 .pdf-toolbar .pdf-page-position [data-page]{font:inherit;color:inherit;padding:0 2px;height:18px;text-align:center}
 .pdf-reader-tools{display:flex;align-items:center;gap:8px;flex:none}
 .pdf-tool-group{display:flex;align-items:center;padding:2px;border:1px solid var(--line);border-radius:20px;background:var(--bg)}
-.pdf-toolbar .pdf-tool-group>button,.pdf-toolbar summary{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;flex:none}
-.pdf-toolbar .pdf-tool-group>button:hover,.pdf-toolbar summary:hover{background:color-mix(in srgb,var(--muted) 12%,transparent)}
+.pdf-toolbar .pdf-tool-group>button,.pdf-toolbar .pdf-standalone-tool,.pdf-toolbar summary{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;flex:none}
+.pdf-toolbar .pdf-tool-group>button:hover,.pdf-toolbar .pdf-standalone-tool:hover,.pdf-toolbar summary:hover{background:color-mix(in srgb,var(--muted) 12%,transparent)}
 .pdf-toolbar button[aria-pressed="true"][data-tool]{background:var(--panel);color:var(--accent);box-shadow:0 1px 3px #0001}
 .pdf-zoom-level{min-width:38px;text-align:center;font-size:calc(10px * var(--ui-font-scale,1));color:var(--muted);font-variant-numeric:tabular-nums}
 .pdf-tool-divider{height:16px;width:1px;background:var(--line);margin:0 3px}
@@ -30,7 +28,7 @@
 .pdf-toolbar summary{list-style:none}
 .pdf-toolbar summary::-webkit-details-marker{display:none}
 .pdf-toolbar summary:focus-visible,.pdf-page-position input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-.pdf-more-menu>summary{width:34px;height:34px;border:1px solid var(--line);background:var(--bg)}
+.pdf-toolbar .pdf-standalone-tool,.pdf-more-menu>summary{width:34px;height:34px;border:1px solid var(--line);background:var(--bg)}
 .pdf-more-options,.pdf-color-options{position:absolute;right:0;top:calc(100% + 8px);padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 22px #0002;z-index:10}
 .pdf-more-options{min-width:192px}
 .pdf-more-options button{display:block;width:100%;padding:8px 10px;border:0;border-radius:7px;background:transparent;text-align:left;font-size:calc(12px * var(--ui-font-scale,1));white-space:nowrap}
@@ -45,13 +43,102 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pdf-scroll{background:#000}}
 
 /* Keep the document toolbar compact within the shared control sizing. */
-.pdf-tool-group>button,.pdf-toolbar summary { min-height: 0; }
+.pdf-tool-group>button,.pdf-toolbar .pdf-standalone-tool,.pdf-toolbar summary { min-height: 0; }
 .pdf-color-options button { min-height: 20px; }
 .pdf-more-options button { min-height: var(--control-compact); border-radius: 8px; }
-.pdf-annotation { border-radius: 14px; padding: 12px; border-left-width: 2px; }
+.pdf-annotation { border-radius: 8px; padding: 8px; margin-bottom: 6px; border-left-width: 2px; }
 .pdf-annotation.selected { box-shadow: 0 0 0 1px var(--accent); background: color-mix(in srgb,var(--accent) 5%,var(--panel)); }
 .pdf-annotation button { min-height: var(--control-compact); padding: 5px 10px; font-size:calc(12px * var(--ui-font-scale,1)); }
-.pdf-annotation textarea { border-radius: 10px; }
-.pdf-annotation blockquote { padding-left: 10px; border-left: 2px solid var(--line); }
+.pdf-annotation textarea { border-radius: 7px; min-height: 36px; max-height: 160px; margin: 4px 0 0; padding: 6px 8px; field-sizing: content; font-size: calc(12px * var(--ui-font-scale,1)); line-height: 1.4; }
+.pdf-annotation blockquote { margin: 4px 0; padding-left: 8px; border-left: 1px solid var(--line); font-size: calc(11px * var(--ui-font-scale,1)); line-height: 1.4; }
+.pdf-annotation blockquote:empty { display: none; }
 .paper-editor { border-radius: 18px; padding: 20px; }
 .paper-editor textarea { padding: 8px 10px; border-radius: 10px; }
+
+/* Render original PDF text and graphics above the highlight background. */
+.pdf-page>canvas{position:relative;z-index:1;pointer-events:none}
+.pdf-highlights{z-index:0}.pdf-text-selection{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+
+.pdf-sidebar-tabs{flex:none;position:relative;z-index:5}
+#pdf-sidebar>[role="tabpanel"]{flex:1;min-height:0;overflow:auto;padding:12px}
+#pdf-sidebar [role="tabpanel"][hidden]{display:none!important}
+.pdf-outline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:calc(11px * var(--ui-font-scale,1));margin:12px 0}
+.pdf-outline-head button{font-size:inherit;padding:4px 7px;min-height:0}
+.pdf-outline-list ol{list-style:none;padding:0;margin:0}
+.pdf-outline-list ol ol{padding-left:14px;border-left:1px solid var(--line);margin-left:8px}
+.pdf-outline-list li{margin:3px 0}
+.pdf-outline-list button{display:flex;width:100%;gap:12px;align-items:baseline;text-align:left;background:transparent;border:0;padding:9px 8px;white-space:normal;line-height:1.4;font-size:calc(13px * var(--ui-font-scale,1));border-radius:8px}
+.pdf-outline-list button span{flex:1;overflow-wrap:anywhere}
+.pdf-outline-list button small{flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+.pdf-outline-list button:hover,.pdf-outline-list button[aria-current="location"]{background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.pdf-outline-list button[aria-current="location"]{color:var(--accent)}
+.pdf-outline-group{display:block;padding:9px 8px;font-size:calc(13px * var(--ui-font-scale,1));color:var(--muted)}
+.pdf-outline-status,.pdf-outline-empty{color:var(--muted);font-size:calc(13px * var(--ui-font-scale,1));line-height:1.6;padding:8px}
+
+.pdf-toolbar [data-auto-highlight][data-complete="true"]{color:var(--accent)}
+.pdf-toolbar [data-auto-highlight][aria-busy="true"]::before{animation:pdf-analysis-pulse 1.4s ease-in-out infinite}
+@keyframes pdf-analysis-pulse{50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.pdf-toolbar [data-auto-highlight][aria-busy="true"]::before{animation:none}}
+.pdf-auto-labels{position:absolute;inset:0;pointer-events:none;z-index:4}
+.pdf-auto-tag,.pdf-auto-tag:hover{position:absolute;pointer-events:auto;padding:2px 5px;min-height:0;border:1px solid color-mix(in srgb,var(--category-color) 70%,var(--line));background:color-mix(in srgb,var(--category-color) 26%,var(--panel));color:var(--ink);font-size:10px;line-height:16px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+.pdf-auto-tag{transition:none;animation:none}
+.pdf-auto-tag.selected{outline:2px solid var(--accent);outline-offset:1px}
+.pdf-auto-tag.compact{padding:0 3px;font-size:10px;color:var(--category-color)}
+.pdf-category-badge{display:inline-block;margin:4px 2px;padding:2px 7px;border-radius:10px;background:color-mix(in srgb,var(--category-color) 22%,var(--panel));color:var(--ink);font-size:calc(11px * var(--ui-font-scale,1))}
+#pdf-auto-highlight-status:not(:empty){padding:6px 2px 14px;color:var(--muted);font-size:calc(12px * var(--ui-font-scale,1));line-height:1.5}
+.pdf-auto-progress{margin:4px 0}
+#pdf-annotations-panel{display:flex;flex-direction:column;overflow:hidden!important}
+.pdf-annotation-toolbar{flex:none;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.pdf-highlight-counts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;font-size:calc(12px * var(--ui-font-scale,1));color:var(--muted);margin-bottom:10px}
+.pdf-highlight-counts strong{margin-left:5px;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+.pdf-annotation-filters{display:flex;flex-wrap:wrap;gap:6px}
+.pdf-annotation-filters button{min-height:var(--control-dense);padding:4px 8px;border-radius:var(--control-radius);font-size:calc(11px * var(--ui-font-scale,1));border-color:color-mix(in srgb,var(--filter-color) 35%,var(--line));background:color-mix(in srgb,var(--filter-color) 10%,var(--panel));color:var(--ink)}
+.pdf-annotation-filters button:hover{background:color-mix(in srgb,var(--filter-color) 20%,var(--panel))}
+.pdf-annotation-filters button[aria-pressed="true"]{border-color:var(--filter-color);background:color-mix(in srgb,var(--filter-color) 26%,var(--panel));box-shadow:inset 0 0 0 1px var(--filter-color);font-weight:600}
+#pdf-auto-highlight-status{flex:none}
+#pdf-annotation-list{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable;padding-right:4px}
+.pdf-annotation[hidden]{display:none!important}
+.pdf-annotation-empty{font-size:calc(13px * var(--ui-font-scale,1));color:var(--muted);padding:8px 0;line-height:1.5}
+
+#pdf-link-preview[hidden]{display:none!important}
+
+.pdf-annotation-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0;border:0;background:transparent}
+.pdf-annotation-header [data-jump]{min-width:0;min-height:24px;padding:2px 0;margin:0;border:0;border-radius:4px;background:transparent;text-align:left;font-size:calc(11px * var(--ui-font-scale,1));color:var(--muted)}
+.pdf-annotation-header [data-jump]:hover{color:var(--ink)}
+#pdf-annotation-list .pdf-annotation-header button[data-delete]{flex:none;width:24px;height:24px;min-height:0;padding:4px;margin:0 0 0 auto;border:0;border-radius:4px;box-shadow:none;background:transparent;color:var(--muted)}
+#pdf-annotation-list .pdf-annotation-header button[data-delete]:hover{background:transparent;box-shadow:none;color:var(--muted)}
+#pdf-annotation-list .pdf-annotation-header button[data-delete]::before{color:var(--muted)}
+#pdf-annotation-list .pdf-annotation-header button[data-delete]:hover::before{color:var(--danger,#e06666)}
+.pdf-annotation [data-comment-status]{display:block;margin-top:6px;color:var(--muted);font-size:calc(11px * var(--ui-font-scale,1))}
+.pdf-annotation [data-comment-status]:empty{display:none}
+.pdf-annotation [data-comment-status].error{color:var(--danger,#d76b63)}
+
+.pdf-preview-resize{position:absolute;right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;touch-action:none;user-select:none;z-index:2}
+.pdf-preview-resize::after{content:"";position:absolute;right:5px;bottom:5px;width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);border-radius:0 0 2px 0;opacity:.7}
+.pdf-preview-resize:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:4px}
+#pdf-link-preview.pdf-preview-sized{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);min-width:min(260px,calc(100vw - 24px));min-height:min(120px,calc(100vh - 24px));overflow:hidden}
+.pdf-preview-sized .pdf-preview-content{height:100%;box-sizing:border-box;display:flex;flex-direction:column;min-height:0}
+.pdf-preview-sized .pdf-preview-content>.hint{flex:none}
+
+.pdf-reference-popover .pdf-citation-list{display:flex;flex-direction:column;gap:2px;overflow:auto;padding:0}
+.pdf-reference-popover .pdf-citation-row{display:flex;align-items:baseline;gap:8px;flex:none;width:100%;min-height:0;margin:0;padding:7px 5px;background:transparent;border:0;border-radius:5px;text-align:left;font-size:calc(12px * var(--ui-font-scale,1));line-height:1.45;color:var(--ink)}
+.pdf-reference-popover .pdf-citation-row:hover{background:var(--bg)}
+.pdf-citation-number{flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.pdf-object-regions{position:absolute;inset:0;z-index:3;pointer-events:none}
+.pdf-object-target{position:absolute;pointer-events:none;min-height:0;padding:0;border:1px solid transparent;border-radius:4px;background:transparent;opacity:0}
+.pdf-object-target.hovered,.pdf-object-target:focus-visible{opacity:1;background:color-mix(in srgb,var(--accent) 5%,transparent);border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+.pdf-page.over-pdf-object,.pdf-page.over-pdf-object .textLayer span{cursor:pointer}
+
+.pdf-outline-source-tabs{display:flex;align-items:stretch;gap:8px;margin:0 0 14px;padding:0;position:sticky;top:0;z-index:2;background:var(--panel)}
+.pdf-outline-source-tabs::before{content:"";position:absolute;inset:-12px -12px -8px;z-index:-1;background:var(--panel)}
+.pdf-outline-source-tabs button{flex:1;min-width:0;min-height:32px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--muted);font-size:calc(12px * var(--ui-font-scale,1));font-weight:500;line-height:1.35;white-space:nowrap;box-shadow:none}
+.pdf-outline-source-tabs button:hover{background:var(--bg);color:var(--ink)}
+.pdf-outline-source-tabs button[aria-selected="true"]{border-color:color-mix(in srgb,var(--accent) 65%,var(--line));background:color-mix(in srgb,var(--accent) 9%,var(--panel));color:var(--accent);font-weight:600;box-shadow:none}
+.pdf-outline-source-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pdf-outline-source-divider{display:none}
+.pdf-outline-head.pdf-outline-actions{justify-content:space-between}
+.pdf-outline-actions [data-outline-delete]{width:24px;height:24px;min-height:0;padding:4px;margin:0;border:0;background:transparent;box-shadow:none;color:var(--muted)}
+.pdf-outline-actions [data-outline-delete]:hover{background:transparent;box-shadow:none}
+.pdf-outline-actions [data-outline-delete]::before{color:var(--muted)}
+.pdf-outline-actions [data-outline-delete]:not(:disabled):hover::before{color:var(--danger)}

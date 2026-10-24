@@ -23,11 +23,6 @@ let checks=#"""
  positionPDFPreview(popup,600,700);assert(popup.style.left==='612px'&&popup.style.top==='488px','right preference or vertical bounds failed');
  globalThis.innerWidth=600;
  positionPDFPreview(popup,500,100);assert(popup.style.left==='12px','narrow viewport did not clamp left placement');
- const viewport={width:612,height:792,convertToViewportRectangle:r=>r};
- const crop=pdfReferenceCrop(viewport,{x:60/612,y:400/792},[{str:'[7]',transform:[1,0,0,10,60,400],width:15,height:10},{str:'Author and title',transform:[1,0,0,10,80,400],width:420,height:10}]);
- assert(crop.width<500&&Math.abs(crop.x+crop.width/2-280)<1,'reference text not centered in a tighter crop');
- assert(crop.y<400&&crop.y+crop.height>430,'preview does not surround the reference');
- const fallback=pdfReferenceCrop(viewport,{x:.2,y:.95},[]);assert(Number.isFinite(fallback.x)&&fallback.y+fallback.height<=792,'empty/edge crop invalid');
  const metrics=Array.from({length:100},(_,i)=>({number:i+1,top:i*1024,bottom:i*1024+1000,pixels:3000000}));
  const first=pdfRenderWindow(metrics,0,900);assert(first.includes(1)&&first.length<=5&&!first.includes(50),'whole document rasterized');
  const middle=pdfRenderWindow(metrics,50*1024,50*1024+900);assert(middle.includes(51)&&!middle.includes(1),'old pages retained after distant scroll');
@@ -43,10 +38,17 @@ let checks=#"""
  const index={pages:[{page:1,text,words:[{start:offset,end:offset+6,rect:[.1,.7,.2,.02]}]}]};
  const ref=findNumberedPDFReference(index,2);assert(ref&&ref.y===.7&&ref.excerpt.includes('Second reference')&&!ref.excerpt.includes('Third reference'),'bibliography preview matched wrong entry');
  assert(findNumberedPDFReference({pages:[{page:1,text:'[2]\nAn inline citation',words:[]}]},2)===null,'unlinked inline citation invented a reference');
- globalThis.result='PASS: bounded page rendering, scroll eviction, link safety, named destinations and bibliography previews';
+ assert(JSON.stringify(pdfCitationNumbers('[5, 2, 4, 2]'))==='[2,4,5]','group citations must sort and deduplicate');
+ assert(JSON.stringify(pdfCitationNumbers('[2, 4–5]'))==='[2,4,5]','citation ranges must expand');
+ assert(pdfCitationNumbers('[5-2]').length===0&&pdfCitationNumbers('[1-9000]').length===0,'invalid citation ranges must be rejected');
+ assert(pdfReferenceTitle('D. Ha and J. Schmidhuber. World models. arXiv preprint, 2018.')==='World models','initials must not be mistaken for the author/title separator');
+ assert(pdfReferenceTitle('Danijar Hafner and Wilson Yan. Training agents inside of scalable world models, 2025. URL https://example.org')==='Training agents inside of scalable world models','publication year must not appear in the title');
+ const grouped={pages:[{page:1,text:'Prior work [2, 4–5].',words:[{start:12,end:13,rect:[.1,.2,.03,.02]}]}]};
+ assert(JSON.stringify(pdfLinkCitationNumbers(grouped,{sourcePage:1,rect:[.1,.2,.03,.02]}))==='[2,4,5]','hovering one linked number must resolve the complete bracket group');
+ globalThis.result='PASS: bounded page rendering, scroll eviction, link safety, named destinations, grouped citation ranges and bibliography titles';
 })().catch(e=>globalThis.result='FAIL: '+e.stack);
 """#
-c.evaluateScript(mocks+section("function pdfRenderWindow", "function disposePDFPage")+section("function safePDFLinkURL", "async function pdfPageLinks")+section("async function resolvePDFDestination", "let pdfLinkTimer")+section("function findNumberedPDFReference", "async function previewNumberedCitation")+section("function positionPDFPreview", "function pdfReferenceCrop")+section("function pdfReferenceCrop", "async function showPDFLinkPreview")+checks)
+c.evaluateScript(mocks+section("function pdfRenderWindow", "function disposePDFPage")+section("function pdfPointInRect", "async function pdfPageLinks")+section("async function resolvePDFDestination", "let pdfLinkTimer")+section("function findNumberedPDFReference", "function inkSVG")+section("function positionPDFPreview", "async function showPDFLinkPreview")+checks)
 let deadline=Date().addingTimeInterval(5)
 while c.objectForKeyedSubscript("result").isUndefined && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}
 let result=c.objectForKeyedSubscript("result").toString() ?? "FAIL: timeout"

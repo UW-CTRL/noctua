@@ -20,6 +20,8 @@ pub fn routes()->Router<Arc<App>> {
         .route("/api/library/papers/{key}/download",post(download))
         .route("/api/library/papers/{key}/pdf",get(pdf).put(attach_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
         .route("/api/library/papers/{key}/index",get(index).put(save_index).layer(DefaultBodyLimit::max(64<<20)))
+        .route("/api/library/papers/{key}/outline",get(outline).post(generate_outline).delete(delete_outline))
+        .route("/api/library/papers/{key}/auto-highlight",post(auto_highlight))
         .route("/api/library/papers/{key}/page-image/{page}",post(page_image).layer(DefaultBodyLimit::max(5<<20)))
         .route("/api/library/papers/{key}/annotations",get(annotations).post(annotate))
         .route("/api/library/papers/{key}/annotations/{id}",axum::routing::put(update_annotation).delete(delete_annotation))
@@ -53,9 +55,23 @@ async fn pdf(State(app):Shared,Path(key):Path<String>)->Result<Response,ApiError
 async fn attach_pdf(State(app):Shared,Path(key):Path<String>,body:Bytes)->ApiResult {app.library.attach_pdf(&key,&body)?;Ok(Json(app.library.paper(&key)?))}
 async fn index(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(app.library.index(&key)?.unwrap_or(Value::Null)))}
 async fn save_index(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult {app.library.save_index(&key,&b)?;Ok(Json(json!({"ok":true})))}
+async fn outline(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(json!(app.library.outline(&key)?)))}
+async fn delete_outline(State(app):Shared,Path(key):Path<String>)->ApiResult {
+    crate::pdf_outline::delete(&app,&key).await?;Ok(Json(json!({"ok":true})))
+}
+#[derive(Deserialize)]struct OutlineRequest {#[serde(default)] regenerate:bool}
+async fn generate_outline(State(app):Shared,Path(key):Path<String>,Json(body):Json<OutlineRequest>)->ApiResult {
+    Ok(Json(crate::pdf_outline::generate(&app,&key,body.regenerate).await?))
+}
+async fn auto_highlight(State(app):Shared,Path(key):Path<String>)->ApiResult {
+    Ok(Json(crate::pdf_autohighlight::generate(&app,&key).await?))
+}
 async fn page_image(State(app):Shared,Path((key,page)):Path<(String,u32)>,body:Bytes)->ApiResult {app.library.save_page_image(&key,page,&body)?;Ok(Json(json!({"ok":true})))}
 async fn annotations(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(json!(app.library.annotations(&key)?)))}
-async fn annotate(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult {Ok(Json(app.library.annotate(&key,&b,"user",false)?))}
+async fn annotate(State(app):Shared,Path(key):Path<String>,Json(mut b):Json<Value>)->ApiResult {
+    if b["color"].is_null() {if let Some(color)=app.settings.lock().unwrap().highlight_colors.color(b["category"].as_str().unwrap_or("")) {b["color"]=json!(color);}}
+    Ok(Json(app.library.annotate(&key,&b,"user",false)?))
+}
 async fn update_annotation(State(app):Shared,Path((key,id)):Path<(String,String)>,Json(b):Json<Value>)->ApiResult {Ok(Json(app.library.update_annotation(&key,&id,&b)?))}
 #[derive(Deserialize)]struct Revision {revision:i64}
 async fn delete_annotation(State(app):Shared,Path((key,id)):Path<(String,String)>,Query(q):Query<Revision>)->ApiResult {app.library.delete_annotation(&key,&id,q.revision)?;Ok(Json(json!({"ok":true})))}

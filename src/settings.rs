@@ -18,6 +18,10 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
     #[serde(default)]
+    pub highlight_palette: HighlightPalette,
+    #[serde(default)]
+    pub highlight_colors: HighlightColors,
+    #[serde(default)]
     pub assistant: AssistantSettings,
     #[serde(default)]
     pub agent: Provider,
@@ -33,6 +37,36 @@ pub struct Settings {
     pub zotero_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct HighlightPalette(pub Vec<String>);
+impl Default for HighlightPalette {
+    fn default()->Self {Self(["#ffd400","#5fb236","#2ea8e5","#e56eee","#a28ae5","#ff6666"].map(str::to_string).to_vec())}
+}
+impl Settings {
+    fn normalize_highlight_colors(&mut self) {
+        for color in &mut self.highlight_palette.0 {*color=color.to_ascii_lowercase();}
+        if self.highlight_palette.0.len()!=6||self.highlight_palette.0.iter().any(|color|!crate::library::valid_color(color))||self.highlight_palette.0.iter().collect::<std::collections::HashSet<_>>().len()!=6 {self.highlight_palette=HighlightPalette::default();}
+        for (category,index) in [("novelty",5),("method",1),("results",4),("limitations",0)] {
+            let color=self.highlight_colors.color(category).unwrap().to_ascii_lowercase();
+            self.highlight_colors.0.insert(category.to_string(),if self.highlight_palette.0.contains(&color){color}else{self.highlight_palette.0[index].clone()});
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct HighlightColors(pub std::collections::BTreeMap<String,String>);
+impl Default for HighlightColors {
+    fn default()->Self {Self(crate::library::HIGHLIGHT_CATEGORIES.iter().map(|category|((*category).to_string(),crate::library::category_color(category).unwrap().to_string())).collect())}
+}
+impl HighlightColors {
+    pub fn color(&self,category:&str)->Option<&str> {
+        let fallback=crate::library::category_color(category)?;
+        Some(self.0.get(category).map(String::as_str).filter(|color|crate::library::valid_color(color)).unwrap_or(fallback))
+    }
 }
 
 /// Choices are independent for each CLI; old settings retain provider defaults.
@@ -74,10 +108,12 @@ impl AssistantOptions {
 
 impl Settings {
     pub fn load(data: &Path) -> Self {
-        std::fs::read_to_string(data.join("settings.json"))
+        let mut settings:Self=std::fs::read_to_string(data.join("settings.json"))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        settings.normalize_highlight_colors();
+        settings
     }
 
     pub fn save(&self, data: &Path) -> Result<()> {
@@ -138,6 +174,8 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "agent": s.agent,
         "assistant": s.assistant,
+        "highlight_colors": s.highlight_colors,
+        "highlight_palette": s.highlight_palette,
         "key_source": key_source,
         "key_hint": app.s2.key_hint(),
         "skipped": s.s2_key_skipped,
@@ -151,6 +189,45 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "storage_error": crate::storage::migration_error(),
         "storage_override": env_set("NOCTUA_HOME") || env_set("NOCTUA_NOTES"),
     }))
+}
+
+pub async fn set_highlight_colors(State(app):State<Arc<App>>,Json(colors):Json<std::collections::BTreeMap<String,String>>)->ApiResult {
+    if colors.is_empty()||colors.len()>4 {return Err(bad("Choose at least one highlight category color").into());}
+    for (category,color) in &colors {
+        if crate::library::category_color(category).is_none() {return Err(bad("Unknown highlight category").into());}
+        if !crate::library::valid_color(color) {return Err(bad("Use a six-digit hex color, such as #ff6666").into());}
+    }
+    let mut saved=app.settings.lock().unwrap();
+    let mut next=saved.clone();
+    let mut recolor=std::collections::BTreeMap::new();
+    for (category,color) in colors {
+        let color=color.to_ascii_lowercase();
+        if !next.highlight_palette.0.contains(&color){return Err(bad("Choose an AI highlight color from the six-color palette").into());}
+        recolor.insert(category.clone(),color.clone());next.highlight_colors.0.insert(category,color);
+    }
+    next.save(&app.data_dir)?;
+    if let Err(error)=app.library.recolor_ai_highlights(&recolor){saved.save(&app.data_dir)?;return Err(error.into());}
+    *saved=next;
+    Ok(Json(json!({"highlight_colors":saved.highlight_colors,"highlight_palette":saved.highlight_palette})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HighlightPaletteBody {colors:Vec<String>}
+pub async fn set_highlight_palette(State(app):State<Arc<App>>,Json(body):Json<HighlightPaletteBody>)->ApiResult {
+    if body.colors.len()!=6||body.colors.iter().any(|color|!crate::library::valid_color(color)) {return Err(bad("Choose exactly six six-digit hex colors").into());}
+    let colors:Vec<String>=body.colors.iter().map(|color|color.to_ascii_lowercase()).collect();
+    if colors.iter().collect::<std::collections::HashSet<_>>().len()!=6 {return Err(bad("Choose six different highlight colors").into());}
+    let mut saved=app.settings.lock().unwrap();let mut next=saved.clone();
+    for color in next.highlight_colors.0.values_mut(){
+        if let Some(index)=next.highlight_palette.0.iter().position(|old|old==color){*color=colors[index].clone();}
+    }
+    next.highlight_palette=HighlightPalette(colors);next.normalize_highlight_colors();
+    let recolor=next.highlight_colors.0.iter().filter(|(category,color)|saved.highlight_colors.0.get(*category)!=Some(*color)).map(|(category,color)|(category.clone(),color.clone())).collect();
+    next.save(&app.data_dir)?;
+    if let Err(error)=app.library.recolor_ai_highlights(&recolor){saved.save(&app.data_dir)?;return Err(error.into());}
+    *saved=next;
+    Ok(Json(json!({"highlight_palette":saved.highlight_palette,"highlight_colors":saved.highlight_colors})))
 }
 
 #[derive(Deserialize)]
@@ -277,4 +354,23 @@ pub async fn set_agent(State(app): State<Arc<App>>, Json(b): Json<AgentBody>) ->
         }
     })?;
     Ok(Json(json!({ "ok": true, "agent": b.provider })))
+}
+
+#[cfg(test)]
+mod highlight_palette_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_colors_and_invalid_palettes_use_supported_slots() {
+        let mut settings:Settings=serde_json::from_value(json!({"highlight_colors":{"novelty":"#123abc","method":"#5FB236"},"s2_key_skipped":true})).unwrap();
+        settings.normalize_highlight_colors();
+        assert_eq!(settings.highlight_palette.0.len(),6);
+        assert_eq!(settings.highlight_colors.color("novelty"),Some("#ff6666"));
+        assert_eq!(settings.highlight_colors.color("method"),Some("#5fb236"));
+        assert!(settings.s2_key_skipped);
+        settings.highlight_palette=HighlightPalette(vec!["#112233".into();6]);
+        settings.normalize_highlight_colors();
+        assert_eq!(settings.highlight_palette.0,HighlightPalette::default().0);
+        for color in settings.highlight_colors.0.values(){assert!(settings.highlight_palette.0.contains(color));}
+    }
 }

@@ -1,18 +1,309 @@
 <!doctype html><meta charset="utf-8"><title>Noctua reader integration test</title>
 <link rel="stylesheet" href="../web/style.css">
 <link rel="stylesheet" href="../web/pdf.css">
-<body class="pdf-mode"><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
+<link rel="stylesheet" href="../web/icons.css">
+<body class="pdf-mode"><div id="chat-selections" hidden></div><textarea id="chat-input"></textarea><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const preferences=new Map(),store={get:k=>preferences.get(k),set:(k,v)=>preferences.set(k,v)},paperURL=key=>'/api/papers/'+key;
+const preferences=new Map(),localStorage={removeItem:k=>preferences.delete(k)},store={get:k=>preferences.get(k),set:(k,v)=>preferences.set(k,v)},paperURL=key=>'/api/papers/'+key;
 const NoctuaLatex={renderDoc:s=>s.map(esc)};
 async function api(){return PDF.annotations;}
-function updateChatContext(){}function setMode(){}function toast(e){console.error(e);}function openPaperView(){}
+const nativeFetch=window.fetch;
+window.fetch=async(url,options)=>{
+ if(options?.method==='PUT'&&/^\/api\/papers\/[^/]+\/annotations\//.test(url)){
+  const body=JSON.parse(options.body),a=PDF.annotations.find(a=>a.id===decodeURIComponent(url.split('/').pop()));
+  if(!a)return new Response(JSON.stringify({error:'Not found'}),{status:404});
+  Object.assign(a,{comment:body.comment,revision:(a.revision||0)+1});return new Response(JSON.stringify(a));
+ }
+ return nativeFetch(url,options);
+};
+const chat={provider:'claude',id:null};function showRightTab(){}function updateChatContext(){}function setMode(){}function toast(e,options){window.lastOutlineToast={message:e,options};console.error(e);}function openPaperView(){}
 </script>
-<script src="../web/pdf.js"></script>
+<script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
 <script type="module">
 const report=s=>window.webkit?.messageHandlers.result.postMessage(s);
 const assert=(v,m)=>{if(!v)throw Error(m);};
+async function waitFor(check){const end=Date.now()+10000;while(!check()&&Date.now()<end)await new Promise(resolve=>setTimeout(resolve,50));}
+async function checkAnnotationFilters(){
+ const original={annotations:PDF.annotations,annotationFilter:PDF.annotationFilter,selected:PDF.selected};
+ try{
+  const extra=Object.entries(pdfCategories).map(([category,info])=>({id:'filter-'+category,author:'assistant',kind:'highlight',category,color:info.color,page:2,rects:[[.1,.2,.2,.03]],quote:'Filter passage',comment:'Test',status:'accepted',replies:[]}));
+  PDF.annotations=[...original.annotations,{id:'user-comment',author:'user',kind:'comment',page:2,color:'#ffd400',comment:'User comment',status:'accepted',replies:[]},...extra,{...extra[0],id:'uncategorized',category:null}];
+  await refreshPDFAnnotations();setPDFSidebarTab('annotations');setPDFAnnotationFilter(null);
+  assert(document.querySelector('[data-highlight-count="user"]').textContent==='1'&&document.querySelector('[data-highlight-count="assistant"]').textContent==='5','highlight totals must include all authors and exclude plain comments');
+  const visible=()=>[...document.querySelectorAll('#pdf-annotation-list article')].filter(card=>!card.hidden);
+  const toolbar=$('.pdf-annotation-filters'),user=toolbar.querySelector('[data-annotation-filter="user"]'),draft=$('#pdf-annotation-list article[data-id="a"] textarea');
+  draft.value='Draft preserved while filtering';draft.oninput();user.click();
+  assert(visible().length===2&&visible().every(card=>['a','user-comment'].includes(card.dataset.id)),'User filter must show user highlights and comments');
+  for(const category of Object.keys(pdfCategories)){
+   const button=toolbar.querySelector(`[data-annotation-filter="${category}"]`);button.click();
+   assert(visible().length===1&&visible()[0].dataset.id==='filter-'+category,'category filter included unrelated annotations');
+   assert(button.getAttribute('aria-pressed')==='true'&&user.getAttribute('aria-pressed')==='false','filter selection state incorrect');
+   assert(document.querySelector('[data-highlight-count="assistant"]').textContent==='5','totals changed with list filtering');
+   button.click();assert(visible().length===7,'clicking active filter must restore all annotations');
+  }
+  assert($('#pdf-annotation-list article[data-id="a"] textarea')===draft&&draft.value==='Draft preserved while filtering','filter changes replaced an unsaved draft');
+  user.click();await selectPDFAnnotation('filter-method',{scrollComment:true});
+  assert(PDF.annotationFilter===null&&!$('#pdf-annotation-list article[data-id="filter-method"]').hidden,'selecting a hidden passage must reveal its annotation');
+  const methods=toolbar.querySelector('[data-annotation-filter="method"]');methods.click();methods.focus();await refreshPDFAnnotations();
+  assert(document.activeElement===methods&&PDF.annotationFilter==='method','refresh reset the filter or stole its focus');
+  setPDFAnnotationFilter('limitations');PDF.annotations=PDF.annotations.filter(a=>a.category!=='limitations');await refreshPDFAnnotations();
+  assert(visible().length===0&&!$('#pdf-annotation-list .pdf-annotation-empty').hidden,'empty filter needs a visible empty state');
+ }finally{Object.assign(PDF,original);await refreshPDFAnnotations();}
+}
+async function checkPDFObjects(){
+ await pdfNavigate(2);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ const entry=pdfPageEntries[1],span=entry.box.querySelector('.textLayer span'),original=span.textContent,oldObjects=entry.objects,oldLayer=entry.box.querySelector('.pdf-object-regions');
+ try{
+  span.textContent='Figure 1: A fixture diagram';
+  const bounds=entry.box.getBoundingClientRect(),caption=normalizedRect(span.getBoundingClientRect(),bounds),top=Math.max(.005,caption[1]-.065);
+  const ops={constructPath:91},page={getOperatorList:async()=>({fnArray:[91],argsArray:[[0,[],[caption[0],top,caption[0]+Math.max(caption[2],.3),caption[1]-.005]]]}),getViewport:()=>({width:1,height:1,transform:[1,0,0,1,0,0]})};
+  await NoctuaPDFObjects.mount(entry,page,{OPS:ops},()=>true);assert(entry.objects.length===1&&entry.objects[0].kind==='figure','caption and graphic geometry must produce a figure target');
+  const object=entry.objects[0],x=bounds.left+(object.rect[0]+object.rect[2]/2)*bounds.width,y=bounds.top+(object.rect[1]+.01)*bounds.height;
+  entry.box.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:0,clientX:x,clientY:y}));assert(object.button.classList.contains('hovered'),'hover must reveal the object box');
+  getSelection().removeAllRanges();entry.box.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:x,clientY:y}));entry.box.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:x,clientY:y}));
+  await new Promise(resolve=>setTimeout(resolve,50));assert(NoctuaChatSelections.count()===1&&$('#selection-add-chat').hidden,'clicking an object must directly add a chat annotation without an intermediate popup');
+  await waitFor(()=>entry.box.querySelector('.chat-source-highlights g'));assert(entry.box.querySelector('.chat-source-highlights g').getAttribute('opacity')==='0.08','attached figure boxes must remain faint');
+  const attached=NoctuaChatSelections.snapshot().items[0];assert(attached.source.region_kind==='figure'&&attached.source.page===2&&attached.source.rect.length===4&&attached.text.includes('A fixture diagram'),'object attachment must include caption, region and original page');
+  NoctuaChatSelections.consume(NoctuaChatSelections.snapshot());
+  await pdfNavigate(2);span.scrollIntoView({block:'center'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const range=document.createRange();range.setStart(span.firstChild,0);range.setEnd(span.firstChild,span.textContent.length);getSelection().removeAllRanges();getSelection().addRange(range);entry.box.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:x,clientY:y}));entry.box.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:x+30,clientY:y}));
+  await waitFor(()=>!$('#selection-add-chat').hidden);assert(document.querySelectorAll('[data-selection-highlight]').length===6,'dragging text within an object must retain normal selection controls');
+  entry.box.dispatchEvent(new PointerEvent('pointerleave'));assert(!object.button.classList.contains('hovered'),'leaving the object must clear its box');
+ }finally{
+  getSelection().removeAllRanges();span.textContent=original;entry.box.querySelector('.pdf-object-regions')?.remove();if(oldLayer)entry.box.append(oldLayer);entry.objects=oldObjects||[];document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0}));NoctuaChatSelections.consume(NoctuaChatSelections.snapshot());
+ }
+}
+async function checkChatSelections(){
+ const originalAPI=api,originalAnnotations=[...PDF.annotations];
+ try{
+  await pdfNavigate(2);const textNode=pdfPageBox(2).querySelector('.textLayer span').firstChild;
+  const select=async end=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const range=document.createRange();range.setStart(textNode,0);range.setEnd(textNode,end);getSelection().removeAllRanges();getSelection().addRange(range);document.body.dispatchEvent(new PointerEvent('pointerup',{button:0,bubbles:true}));await waitFor(()=>!$('#selection-add-chat').hidden);};
+  await select(12);assert($('#selection-add-chat [data-add-selection]')&&document.querySelectorAll('[data-selection-highlight]').length===6&&!$('#selection-add-chat').textContent.includes('side chat'),'PDF selection needs Add to chat and six direct highlight circles only');
+  $('#selection-add-chat [data-add-selection]').click();assert(NoctuaChatSelections.count()===1,'selected passage was not attached');await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===1);assert($('[data-chat-selection-marker]').textContent==='1','attached PDF passage needs a numbered source badge');
+  const badgeBounds=$('[data-chat-selection-marker]').getBoundingClientRect(),textBounds=pdfPageBox(2).querySelector('.textLayer span').getBoundingClientRect();assert(badgeBounds.right<=textBounds.left-3||badgeBounds.left>=textBounds.right+3||badgeBounds.bottom<=textBounds.top-3||badgeBounds.top>=textBounds.bottom+3,'PDF attachment badges must not overlap the original text, even when zoomed');
+  const attached=pdfPageBox(2).querySelector('.chat-source-highlights');assert(attached?.querySelector('rect')&&attached.querySelector('g').getAttribute('opacity')==='0.18','attached PDF text needs a faint source highlight');assert(Number(getComputedStyle(attached).zIndex)<Number(getComputedStyle(pdfPageBox(2).querySelector('canvas')).zIndex),'attachment highlights must stay beneath opaque PDF glyphs');
+  const oldTheme=document.documentElement.dataset.theme,probe=document.createElement('div');probe.style.backgroundColor='var(--accent)';document.body.append(probe);
+  for(const theme of ['light','dark']){document.documentElement.dataset.theme=theme;assert(getComputedStyle($('[data-chat-selection-marker]')).backgroundColor===getComputedStyle(probe).backgroundColor,'attachment badge must follow the active theme accent');}
+  if(oldTheme===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=oldTheme;probe.remove();
+  await select(20);$('#selection-add-chat [data-add-selection]').click();assert(NoctuaChatSelections.count()===2,'multiple passages must accumulate');await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===2);assert([...document.querySelectorAll('[data-chat-selection-marker]')].map(marker=>marker.textContent).join(',')==='1,2','source badge order must match the composer');const badgeRects=[...document.querySelectorAll('[data-chat-selection-marker]')].map(b=>b.getBoundingClientRect());assert(badgeRects[0].bottom<=badgeRects[1].top||badgeRects[1].bottom<=badgeRects[0].top||badgeRects[0].right<=badgeRects[1].left||badgeRects[1].right<=badgeRects[0].left,'nearby source badges must not overlap');assert(pdfPageBox(2).querySelectorAll('.chat-source-highlights g').length===1,'overlapping attachments must share one highlight opacity group');
+  $('#chat-selections').dispatchEvent(new PointerEvent('pointerenter'));assert(!$('.chat-selection-preview').hidden&&document.querySelectorAll('.chat-selection-entry').length===2,'attachment hover preview missing');
+  document.querySelector('[data-quote-remove]').click();assert(NoctuaChatSelections.count()===1,'individual attachment removal failed');await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===1);assert($('[data-chat-selection-marker]').textContent==='1','remaining source badges must renumber after removal');
+  NoctuaChatSelections.restore();assert(NoctuaChatSelections.count()===1,'pending passages must survive a draft restore');await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===1);assert(!('anchor' in NoctuaChatSelections.snapshot().items[0]),'local marker geometry must not be sent as chat content');
+  chat.provider='codex';NoctuaChatSelections.restore();assert(NoctuaChatSelections.count()===0,'passages leaked to another assistant');chat.provider='claude';NoctuaChatSelections.restore();
+  const sent=NoctuaChatSelections.snapshot();NoctuaChatSelections.add({text:'A later passage',source:{kind:'note',label:'Note',note_id:'note',folder_id:'L1'}});NoctuaChatSelections.consume(sent);assert(NoctuaChatSelections.count()===1&&NoctuaChatSelections.snapshot().items[0].text==='A later passage','sending must retain passages added while the request was pending');
+  const oldKey=NoctuaChatSelections.storageKey();chat.id='assigned-conversation';NoctuaChatSelections.moveDraft(oldKey);assert(NoctuaChatSelections.count()===1,'assigning a new conversation ID lost a later draft');
+  const html=NoctuaChatSelections.sentHTML([{text:'<img src=x onerror=alert(1)>',source:{label:'<b>Untrusted</b>'}}]);assert(html.includes('&lt;img')&&!html.includes('<img'),'saved excerpts must render as escaped source text');
+  api=async(path,body)=>{if(body?.kind==='highlight'){const annotation={...body,id:'selection-highlight',author:'user',status:'accepted',revision:1,replies:[]};PDF.annotations.push(annotation);return annotation;}return originalAPI(path,body);};
+  await select(15);const swatch=$('[data-selection-highlight]'),color=swatch.dataset.selectionHighlight;swatch.click();await waitFor(()=>PDF.annotations.some(annotation=>annotation.id==='selection-highlight'));
+  const annotation=PDF.annotations.find(annotation=>annotation.id==='selection-highlight');assert(annotation.color===color&&annotation.rects.length&&annotation.page===2,'clicking a selection color must immediately create an anchored user highlight');assert(NoctuaChatSelections.count()===1,'direct highlighting must not add a chat attachment');
+  await waitFor(()=>$('#selection-add-chat').hidden);
+  const source=document.createElement('div');source.id='chat-log';source.className='chat-log';source.style.cssText='position:fixed;left:20px;top:100px;width:350px;height:120px;z-index:5';source.innerHTML='<div class="msg assistant"><p>A source paragraph selected for the conversation.</p></div>';document.body.append(source);
+  try{
+   const text=source.querySelector('p').firstChild,range=document.createRange();range.setStart(text,2);range.setEnd(text,28);getSelection().removeAllRanges();getSelection().addRange(range);document.body.dispatchEvent(new PointerEvent('pointerup',{button:0,bubbles:true}));await waitFor(()=>!$('#selection-add-chat').hidden);$('#selection-add-chat [data-add-selection]').click();
+   await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===1);assert($('[data-chat-selection-marker]').textContent==='2','chat source badge must use its attachment number');assert(CSS.highlights.get('chat-attachments')?.size===1,'attached chat text must retain a faint highlight');
+   const before=source.textContent;source.querySelector('.msg').innerHTML='<p>A source paragraph selected for the conversation.</p>';NoctuaChatSelections.restore();await waitFor(()=>document.querySelectorAll('[data-chat-selection-marker]').length===1);assert(source.textContent===before,'source markers must not modify chat text');
+   $('[data-chat-selection-marker]').click();assert(!$('.chat-selection-preview').hidden,'source badge must open the attachment preview');
+   NoctuaChatSelections.consume(NoctuaChatSelections.snapshot());await waitFor(()=>!$('[data-chat-selection-marker]'));assert(!$('[data-chat-selection-marker]')&&!$('.chat-source-highlights')&&!CSS.highlights.has('chat-attachments'),'sending passages must clear source badges and temporary highlights');
+  }finally{source.remove();}
+ }finally{api=originalAPI;PDF.annotations=originalAnnotations;$('#chat-selections [data-quote-clear]')?.click();chat.id=null;NoctuaChatSelections.restore();$('#chat-selections [data-quote-clear]')?.click();getSelection().removeAllRanges();await refreshPDFAnnotations();}
+}
+async function checkPreviewResize(link){
+ const popup=$('#pdf-link-preview'),key=pdfPreviewSizeKey(popup),old=store.get(key);
+ const grip=popup.querySelector('.pdf-preview-resize');assert(grip&&grip.getAttribute('aria-label')==='Resize preview','preview resize handle missing');
+ try{
+  const before=popup.getBoundingClientRect();
+  const captures=new Set();grip.setPointerCapture=id=>captures.add(id);grip.hasPointerCapture=id=>captures.has(id);grip.releasePointerCapture=id=>captures.delete(id);
+  grip.onpointerdown({button:0,pointerId:7,clientX:before.right-5,clientY:before.bottom-5,preventDefault(){},stopPropagation(){}});
+  grip.onpointermove({clientX:before.right+65,clientY:before.bottom+45,preventDefault(){}});
+  trackPDFReferencePreview({clientX:10000,clientY:10000});schedulePDFLinkClose();await new Promise(resolve=>setTimeout(resolve,300));
+  assert(popup.isConnected&&popup.dataset.resizing==='true','dragging outside the preview must not dismiss it');
+  const resized=popup.getBoundingClientRect();assert(resized.width>before.width&&resized.height>before.height,'drag did not resize both dimensions');
+  grip.onpointerup({pointerId:7,clientX:resized.right-5,clientY:resized.bottom-5});
+  const saved=JSON.parse(store.get(key));assert(Math.abs(saved.width-resized.width)<1&&Math.abs(saved.height-resized.height)<1,'new preview size was not saved');
+  closePDFLinkPreview();await showPDFLinkPreview(link,100,100);
+  const reopened=$('#pdf-link-preview'),rect=reopened.getBoundingClientRect();
+  assert(Math.abs(rect.width-saved.width)<1&&Math.abs(rect.height-saved.height)<1,'next preview did not restore saved dimensions');
+  reopened.querySelector('.pdf-preview-resize').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+  assert(JSON.parse(store.get(key)).width>saved.width,'keyboard resizing must save the new size');
+  applyPDFPreviewSize(reopened,{width:innerWidth*2,height:innerHeight*2});const bounded=reopened.getBoundingClientRect();
+  assert(bounded.width<=innerWidth-23&&bounded.height<=innerHeight-23,'restored sizes must fit the viewport');
+ }finally{if(old===undefined)localStorage.removeItem(key);else store.set(key,old);closePDFLinkPreview();await showPDFLinkPreview(link,100,100);}
+}
+async function checkDragSelection(){
+ const originalTheme=PDF.theme;
+ try{
+  for(const theme of ['light','dark']){
+   await setReaderTheme(theme);const box=pdfPageBox(PDF.page),span=box.querySelector('.textLayer span'),node=span.firstChild,range=document.createRange();
+   const canvas=box.querySelector('canvas'),context=canvas.getContext('2d'),before=context.getImageData(0,0,canvas.width,canvas.height).data;
+   range.setStart(node,0);range.setEnd(node,Math.min(12,node.textContent.length));getSelection().removeAllRanges();getSelection().addRange(range);
+   await waitFor(()=>box.querySelector('.pdf-text-selection rect'));
+   const background=box.querySelector('.pdf-text-selection');
+   assert(background.querySelector('rect'),'drag selection background missing: '+theme);
+   assert(Number(getComputedStyle(background).zIndex)<Number(getComputedStyle(canvas).zIndex),'selection must stay behind original PDF glyphs');
+   assert(getComputedStyle(span,'::selection').backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(span,'::selection').color==='rgba(0, 0, 0, 0)','native selection paint must not cover or duplicate glyphs');
+   assert(getSelection().toString()===node.textContent.slice(0,12),'visual selection changed copyable text');
+   const after=context.getImageData(0,0,canvas.width,canvas.height).data;assert(before.every((value,index)=>value===after[index]),'dragging changed the original PDF pixels');
+   getSelection().removeAllRanges();await waitFor(()=>!background.querySelector('rect'));assert(!background.querySelector('rect'),'clearing selection left a blue background');
+  }
+ }finally{getSelection().removeAllRanges();await setReaderTheme(originalTheme);}
+}
+function checkHighlightPalette(){
+ const originalColors=[...pdfColors],originalCategories=Object.fromEntries(Object.entries(pdfCategories).map(([key,value])=>[key,value.color])),selected=PDF.color;
+ const existing=PDF.annotations.map(a=>a.color),custom=['#aabb11','#bbcc22','#ccdd33','#ddee44','#eeff55','#112233'];
+ try{
+  PDF.color=pdfColors[2];applyPDFHighlightColors({novelty:custom[5],method:custom[1],results:custom[4],limitations:'#ffffff'},custom);
+  const buttons=[...document.querySelectorAll('.pdf-toolbar [data-color]')];
+  assert(buttons.length===6&&buttons.every((button,index)=>button.dataset.color===custom[index]),'Reader toolbar must track the six configured colors');
+  assert(PDF.color===custom[2]&&buttons[2].getAttribute('aria-pressed')==='true','palette changes must preserve the selected slot');
+  assert(pdfCategories.novelty.color===custom[5]&&pdfCategories.limitations.color===custom[0],'AI colors must remain inside the configured palette');
+  assert(PDF.annotations.every((annotation,index)=>annotation.color===existing[index]),'changing palette must preserve existing annotation colors');
+ }finally{applyPDFHighlightColors(originalCategories,originalColors);PDF.color=selected;applyPDFHighlightColors(originalCategories,originalColors);}
+}
+async function checkCommentEditor(){
+ await refreshPDFAnnotations();setPDFSidebarTab('annotations');setPDFAnnotationFilter(null);
+ const card=$('#pdf-annotation-list article'),input=card.querySelector('textarea'),del=card.querySelector('[data-delete]');
+ assert(card.querySelectorAll('textarea').length===1&&!card.querySelector('[data-save],[data-send],[data-reply]'),'Reply and Save controls must be removed');
+ assert(del.hasAttribute('data-icon-only')&&del.getAttribute('aria-label')&&del.textContent==='','delete must be an accessible icon-only button');
+ const header=card.querySelector('.pdf-annotation-header').getBoundingClientRect(),button=del.getBoundingClientRect();
+ assert(button.right<=header.right+1&&header.right-button.right<5&&button.top-header.top<5,'delete must sit at the card upper right');
+ input.value='Automatically saved $x^2$';input.oninput();
+ assert(store.get('pdf-draft:'+card.dataset.id)===input.value,'typing must retain a local draft immediately');
+ await waitFor(()=>PDF.annotations.find(a=>a.id===card.dataset.id).comment===input.value);
+ assert(PDF.annotations.find(a=>a.id===card.dataset.id).comment===input.value,'typing pause must save without a button');
+ input.value='Saved when leaving';input.oninput();await input.onblur();
+ assert(PDF.annotations.find(a=>a.id===card.dataset.id).comment===input.value,'blur must flush a pending comment');
+ input.value='Saved when closing';input.oninput();await window.flushPDF();
+ assert(PDF.annotations.find(a=>a.id===card.dataset.id).comment===input.value,'tab close flush must include debounce timers');
+}
+function checkSidebarTabStyles(){
+ const originalTheme=document.documentElement.dataset.theme,originalTab=PDF.sidebar;
+ const host=document.createElement('div');host.style.cssText='position:fixed;left:0;bottom:0;width:650px;height:90px;display:flex;gap:20px;z-index:100';
+ host.innerHTML='<aside style="width:280px"><nav class="tabs" data-graph-tabs><button class="active" data-icon="search" aria-label="Search"></button><button data-icon="library" aria-label="Library"></button></nav></aside><aside id="right" style="width:280px"><nav class="tabs"><button class="active" data-icon="file-text">Paper</button><button data-icon="messages-square">Chat</button></nav></aside>';
+ document.body.append(host);
+ try{
+  const current=$('#pdf-sidebar .tabs'),selected=$('#pdf-outline-tab'),inactive=$('#pdf-annotations-tab');
+  const groups=[host.querySelector('[data-graph-tabs]'),host.querySelector('#right .tabs')];
+  for(const theme of ['light','dark']){
+   document.documentElement.dataset.theme=theme;setPDFSidebarTab('outline');document.activeElement?.blur();
+   for(const reference of groups){
+    for(const [actual,expected] of [[selected,reference.children[0]],[inactive,reference.children[1]]]){
+     const a=getComputedStyle(actual),b=getComputedStyle(expected);
+     for(const key of ['fontFamily','fontSize','fontWeight','borderRadius','color','backgroundColor','borderBottomWidth','borderBottomColor','borderRightWidth'])assert(a[key]===b[key],`sidebar tab style mismatch: ${theme}/${actual.id||actual.getAttribute('aria-label')||actual.textContent}/${key}: ${a[key]} vs ${b[key]}`);
+     assert(Math.abs(actual.getBoundingClientRect().height-expected.getBoundingClientRect().height)<1,'sidebar tab heights must match');
+    }
+   }
+   for(const button of [selected,groups[0].children[0],groups[1].children[0]]){
+    button.focus();assert(getComputedStyle(button).outlineStyle==='solid'&&getComputedStyle(button).outlineWidth==='2px','sidebar tabs need consistent keyboard focus');button.blur();
+   }
+  }
+  const top=current.getBoundingClientRect().top;setPDFSidebarTab('annotations');const panel=$('#pdf-annotations-panel');panel.scrollTop=60;
+  assert(current.getBoundingClientRect().top===top,'Reader tab header moved while scrolling annotations');panel.scrollTop=0;
+ }finally{host.remove();if(originalTheme===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=originalTheme;setPDFSidebarTab(originalTab);}
+}
+async function checkPDFAutoHighlight(){
+ const original={key:PDF.key,annotations:PDF.annotations,sidebar:PDF.sidebar,selected:PDF.selected},originalAPI=api,originalIndex=indexPDF;
+ const generated=Object.entries(pdfCategories).map(([category,info],i)=>({id:'auto-'+category,kind:'highlight',source:'auto-highlight',category,color:info.color,page:2,rects:[[.1,.2+i*.06,.25,.03]],quote:'An exact category passage.',comment:'A grounded explanation.',author:'assistant',status:'accepted',replies:[]}));
+ try{
+  let release,calls=0;
+  indexPDF=async()=>({version:2,pages:[]});
+  api=async(path,body)=>{
+   if(path.endsWith('/auto-highlight')){calls++;return new Promise(r=>release=r);}
+   if(path.endsWith('/annotations'))return generated;
+   return originalAPI(path,body);
+  };
+  assert(getComputedStyle($('#pdf-stage [data-auto-highlight]'),'::before').getPropertyValue('--button-icon').includes('data:image/svg+xml'),'auto-highlight toolbar icon missing');
+  const run=autoHighlightPDF();while(!release)await Promise.resolve();
+  assert($('#pdf-stage [data-auto-highlight]').disabled&&$('#pdf-auto-highlight-status').textContent.includes('finding key points'),'auto-highlight progress missing');
+  const duplicate=autoHighlightPDF();assert(calls===1,'repeated clicks spawned duplicate auto-highlight workers');
+  release({created:4,existing:0,total:4});await run;await duplicate;
+  assert(!$('#pdf-stage [data-auto-highlight]').disabled&&document.querySelector('[data-highlight-count="assistant"]').textContent==='4','auto-highlight completion missing');
+  await pdfNavigate(2);paintPDFAnnotations();
+  assert(pdfPageBox(2).querySelectorAll('.pdf-auto-tag').length===4,'category margin labels missing');
+  assert($('#pdf-annotations-panel').querySelectorAll('.pdf-category-badge').length===4,'annotation category badges missing');
+  await pdfPageBox(2).querySelector('.pdf-auto-tag').onclick();
+  assert(PDF.selected==='auto-novelty'&&PDF.sidebar==='annotations','category label did not open its annotation');
+  api=async(path,body)=>{if(path.endsWith('/auto-highlight'))throw Error('Analysis unavailable');if(path.endsWith('/annotations'))return generated;return originalAPI(path,body);};
+  await autoHighlightPDF();assert($('#pdf-auto-highlight-status [role="alert"]').textContent==='Analysis unavailable','auto-highlight errors must remain retryable');
+  assert(PDF.annotations.length===4,'failed analysis changed existing annotations');
+  api=async(path,body)=>path.endsWith('/auto-highlight')?{created:0,existing:4,total:4}:path.endsWith('/annotations')?generated:originalAPI(path,body);
+  $('#pdf-auto-highlight-status [data-auto-retry]').click();await pdfAutoHighlights.get(PDF.key).promise;
+  assert(pdfAutoHighlights.get(PDF.key).status==='ready','auto-highlight retry did not recover');
+  release=null;
+  api=async(path,body)=>path.endsWith('/auto-highlight')?await new Promise(r=>release=r):originalAPI(path,body);
+  const pending=autoHighlightPDF();while(!release)await Promise.resolve();
+  PDF.key='other-auto-paper';PDF.annotations=[];setPDFSidebarTab('outline');
+  release({created:4,total:4});await pending;
+  assert(PDF.annotations.length===0&&PDF.sidebar==='outline','background analysis replaced another paper or sidebar selection');
+ }finally{api=originalAPI;indexPDF=originalIndex;pdfAutoHighlights.delete(original.key);Object.assign(PDF,original);await refreshPDFAnnotations();}
+}
+async function checkPDFOutline(){
+ const original={key:PDF.key,sidebar:PDF.sidebar,outlineSource:PDF.outlineSource},originalAPI=api,originalIndex=indexPDF;
+ try{
+  ensurePDFSidebar();setPDFSidebarTab('annotations');
+  const draft=$('#pdf-annotations-panel textarea');draft.value='Unsaved outline-switch draft';draft.oninput();
+  setPDFSidebarTab('outline');
+  assert($('#pdf-annotations-panel').hidden&&!$('#pdf-outline-panel').hidden,'sidebar tabs did not switch panels');
+  $('#pdf-outline-tab').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+  assert(PDF.sidebar==='annotations'&&$('#pdf-annotations-tab').classList.contains('active')&&$('#pdf-annotations-panel textarea')===draft&&draft.value==='Unsaved outline-switch draft','tab switching lost an unsaved comment draft');
+  const nativeDoc={getOutline:async()=>[{title:'Overview',dest:[0,{name:'Fit'}],items:[{title:'Methods',dest:[1,{name:'Fit'}],items:[]}]}],getPage:n=>PDF.doc.getPage(n)};
+  await loadPDFOutline(PDF.key,nativeDoc);setPDFSidebarTab('outline');
+  assert($('#pdf-outline-panel [data-outline-source="document"]').getAttribute('aria-selected')==='true'&&$('#pdf-outline-panel ol ol'),'document outline must be the default source with its embedded hierarchy');
+  await $('#pdf-outline-panel [data-outline-entry="1"]').onclick();
+  assert(PDF.page===2,'outline click did not navigate to its page');
+  await selectPDFAnnotation('a');assert(PDF.sidebar==='annotations','annotation selection did not reveal its panel');
+  let generationCalls=0,rejectGeneration=false;
+  const generated={source:'ai',entries:[{title:'Introduction <safe>',level:1,page:1,y:.1},{title:'Results',level:1,page:3,y:.2}]};
+  api=async(path,body)=>{
+   if(path.endsWith('/outline')){
+    if(body){generationCalls++;if(rejectGeneration)throw Error('No selectable text');return generated;}
+    return null;
+   }
+   return originalAPI(path,body);
+  };
+  indexPDF=async()=>({version:2,pages:[]});
+  await $('#pdf-outline-panel [data-outline-source="ai"]').onclick();setPDFSidebarTab('outline');
+  assert($('#pdf-outline-panel [data-outline-source="ai"]').getAttribute('aria-selected')==='true'&&$('#pdf-outline-panel').textContent.includes('Introduction <safe>')&&!$('#pdf-outline-panel safe'),'generated outline missing or unescaped');
+  await $('#pdf-outline-panel [data-outline-entry="1"]').onclick();assert(PDF.page===3,'AI outline destination ignored');
+  await loadPDFOutline(PDF.key,PDF.doc);assert(generationCalls===1,'reopening an outline triggered duplicate generation');
+  pdfOutlines.delete(PDF.key);rejectGeneration=true;
+  await loadPDFOutline(PDF.key,PDF.doc,{forceAI:true});
+  assert(window.lastOutlineToast?.message==='No selectable text'&&window.lastOutlineToast.options.duration===5000&&!$('#pdf-outline-panel [role="alert"]')&&$('#pdf-outline-panel [data-outline-retry]'),'outline errors need a brief toast and a retry button without a persistent sidebar alert');
+  rejectGeneration=false;$('#pdf-outline-panel [data-outline-retry]').click();await pdfOutlines.get(PDF.key).promise;
+  assert($('#pdf-outline-panel [data-outline-source="ai"]').getAttribute('aria-selected')==='true','outline retry did not recover');
+  let release;
+  api=async(path,body)=>path.endsWith('/outline')&&body?await new Promise(r=>release=r):originalAPI(path,body);
+  const pending=loadPDFOutline(PDF.key,PDF.doc,{forceAI:true,regenerate:true});
+  while(!release)await Promise.resolve();
+  PDF.key='other-paper';pdfOutlines.set(PDF.key,{status:'ready',outline:{source:'ai',entries:[{title:'Other paper section',level:1,page:1,y:0}]}});renderPDFOutline();
+  release(generated);await pending;
+  assert($('#pdf-outline-panel').textContent.includes('Other paper section')&&!$('#pdf-outline-panel').textContent.includes('Results'),'late outline result replaced another paper');
+ }finally{api=originalAPI;indexPDF=originalIndex;pdfOutlines.delete('other-paper');Object.assign(PDF,original);renderPDFOutline();}
+}
+async function checkHighlightOverlap(){
+ const previous={annotations:PDF.annotations,selected:PDF.selected,dark:PDF.dark};
+ const box=document.createElement('div');box.className='pdf-page';box.dataset.page=99;box.style.cssText='width:200px;height:200px';
+ box.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="pdf-highlights" width="200" height="200" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>';
+ $('#pdf-stage').append(box);
+ try{
+  for(const dark of [false,true])for(const variant of ['duplicate','same','different','pending','word-gap']){
+   PDF.dark=dark;PDF.selected=null;
+   PDF.annotations=[{id:'base',page:99,kind:'highlight',color:'#ffd400',status:'accepted',rects:[[.1,.1,.4,.2],...variant==='duplicate'?[[.3,.1,.4,.2]]:[]]}];
+   if(variant==='word-gap')PDF.annotations[0].rects=[[.1,.1,.2,.04],[.31,.1,.2,.04],[.52,.1,.18,.04]];
+   if(!['duplicate','word-gap'].includes(variant))PDF.annotations.push({id:'top',page:99,kind:'highlight',color:variant==='different'?'#ff3366':'#ffd400',status:variant==='pending'?'pending':'accepted',rects:[[.3,.1,.4,.2]]});
+   paintPDFAnnotations();
+   const img=new Image();img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(box.querySelector('svg')));await img.decode();
+   const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
+   const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+   const sampleY=variant==='word-gap'?24:30;
+   const left=ctx.getImageData(40,sampleY,1,1).data,overlap=ctx.getImageData(80,sampleY,1,1).data,right=ctx.getImageData(120,sampleY,1,1).data;
+   if(variant==='word-gap')assert(ctx.getImageData(61,sampleY,1,1).data[3]===left[3]&&ctx.getImageData(103,sampleY,1,1).data[3]===left[3],'spaces between adjacent words must have the same highlight opacity');
+   assert(Math.abs(left[3]-(dark?.2:.35)*255)<2,'wrong highlight opacity');
+   assert(left[3]===overlap[3]&&overlap[3]===right[3],`overlap accumulated opacity: ${dark}/${variant}`);
+   assert(overlap.every((v,i)=>v===right[i]),`overlap must use the later color without mixing: ${dark}/${variant}`);
+  }
+ }finally{box.remove();Object.assign(PDF,previous);paintPDFAnnotations();}
+}
 try{
  const m=await import('../web/vendor/pdfjs/build/pdf.mjs');m.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(m);
  const page='<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R';
@@ -20,13 +311,53 @@ try{
  const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R 6 0 R 7 0 R] /Count 3 >>',page+' /Annots [8 0 R 9 0 R] >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream',page+' >>',page+' >>','<< /Type /Annot /Subtype /Link /Rect [72 690 140 725] /Dest [6 0 R /XYZ 72 700 0] >>','<< /Type /Annot /Subtype /Link /Rect [145 690 240 725] /A << /S /URI /URI (https://example.org/paper) >> >>'];
  let pdf='%PDF-1.7\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+o+'\nendobj\n';});const xref=pdf.length;pdf+='xref\n0 10\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 10 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
  const doc=await m.getDocument({data:new TextEncoder().encode(pdf),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
- Object.assign(PDF,{key:'fixture',paper:{title:'Fixture'},doc,page:1,dark:true,annotations:[{id:'a',kind:'highlight',page:2,color:'#ffd400',rects:[[.1,.1,.2,.04]],status:'accepted',comment:'Test',replies:[]}]});
+ Object.assign(PDF,{key:'fixture',paper:{title:'Fixture'},doc,page:1,dark:true,annotations:[{id:'a',author:'user',kind:'highlight',page:2,color:'#ffd400',rects:[[.1,.1,.2,.04]],status:'accepted',comment:'Test',replies:[]}]});
+ await checkHighlightOverlap();
  await renderPDF();assert(document.querySelectorAll('.pdf-page').length===3,'missing continuous page placeholders');
  const first=pdfPageEntries[0];await ensurePDFPage(first);assert(first.links.length===2,'embedded PDF links missing');
- await showPDFLinkPreview(first.links.find(l=>l.url),100,100,true);assert($('#pdf-link-preview').textContent.includes('External link'),'external link not labeled');assert($('#pdf-link-preview a').href==='https://example.org/paper','wrong external target');
- await showPDFLinkPreview(first.links.find(l=>l.dest),100,100,true);assert($('#pdf-link-preview').textContent.includes('Page 2'),'citation did not resolve');assert($('#pdf-link-preview canvas').width>0,'citation crop missing');closePDFLinkPreview();
+ const originalFetch=window.fetch,originalOpen=window.open;let opened=null,previewCalls=0;
+ window.fetch=async(url,options)=>{previewCalls++;throw Error('External link hover must not make a network request');};
+ window.open=(...args)=>{opened=args;return null;};
+ try{
+  const external=first.links.find(l=>l.url);
+  schedulePDFLinkPreview(external,100,100);await new Promise(resolve=>setTimeout(resolve,350));
+  await showPDFLinkPreview(external,100,100);assert(!$('#pdf-link-preview')&&previewCalls===0,'external hover must not show a preview or request a capture');
+  const externalButton=pdfPageBox(1).querySelector(`[data-link="${first.links.indexOf(external)}"]`);externalButton.dispatchEvent(new FocusEvent('focus'));await Promise.resolve();assert(!$('#pdf-link-preview')&&previewCalls===0,'external keyboard focus must not load a website preview');
+  await followPDFLink(external);assert(opened[0]===external.url&&opened[1]==='_blank'&&opened[2].includes('noopener'),'external click must still open a separate tab');
+  opened=null;openPDFExternalLink('javascript:alert(1)');assert(opened===null,'unsafe external link opened');
+ }finally{window.fetch=originalFetch;window.open=originalOpen;closePDFLinkPreview();}
+
+ const reference=first.links.find(l=>l.dest);reference.citationNumbers=[5,2,4];
+ const citationIndex=indexPDF;
+ indexPDF=async()=>({pages:[{page:2,text:'References\n[2] Alice Author. First paper title. Journal, 2020.\n[4] Bob Author. Second paper title. Journal, 2021.\n[5] Carol Author. Third paper title. Journal, 2022.',words:[]}]});
+ await showPDFLinkPreview(reference,100,100);
+ assert(!$('#pdf-link-preview canvas,#pdf-link-preview img'),'image citation previews must be removed');
+ const rows=[...document.querySelectorAll('.pdf-citation-row')];assert(rows.map(row=>row.textContent).join('|')==='[2]First paper title|[4]Second paper title|[5]Third paper title','citation popup must show sorted numbered titles');
+ assert(!pdfLinkPinned,'citation list must not remain pinned');await checkPreviewResize(reference);
+ indexPDF=citationIndex;
+ trackPDFReferencePreview({clientX:10000,clientY:10000});await waitFor(()=>!$('#pdf-link-preview'));assert(!$('#pdf-link-preview'),'reference preview did not dismiss on pointer departure');
+ await followPDFLink(reference);assert(PDF.page===2&&!$('#pdf-link-preview'),'clicking a reference must navigate directly without a popup');
+ await pdfNavigate(1);const sourceBox=pdfPageBox(1),sourceBounds=sourceBox.getBoundingClientRect();getSelection().removeAllRanges();sourceBox.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:sourceBounds.left+(reference.rect[0]+reference.rect[2]/2)*sourceBounds.width,clientY:sourceBounds.top+(reference.rect[1]+reference.rect[3]/2)*sourceBounds.height}));await waitFor(()=>PDF.page===2);assert(PDF.page===2&&!$('#pdf-link-preview'),'pointer click must jump directly to a reference');
+ await pdfNavigate(1);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ const citationBox=pdfPageBox(1),citationText=citationBox.querySelector('.textLayer span').firstChild,citationRange=document.createRange();citationRange.selectNodeContents(citationText);getSelection().removeAllRanges();getSelection().addRange(citationRange);
+ citationBox.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:100,clientY:100}));await new Promise(resolve=>setTimeout(resolve,350));
+ assert(PDF.selection?.quote&&!$('#pdf-link-preview'),'dragging citation text must select it without opening a citation preview');
+ getSelection().removeAllRanges();const citationBounds=citationBox.getBoundingClientRect(),hoverX=citationBounds.left+(reference.rect[0]+reference.rect[2]/2)*citationBounds.width,hoverY=citationBounds.top+(reference.rect[1]+reference.rect[3]/2)*citationBounds.height;
+ indexPDF=async()=>({pages:[]});citationBox.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:0,clientX:hoverX,clientY:hoverY}));await waitFor(()=>$('#pdf-link-preview')&&!$('#pdf-link-preview').hidden);assert($('#pdf-link-preview'),'hovering the reference must still open its preview');
+ citationBox.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,buttons:1}));assert(!$('#pdf-link-preview'),'starting a drag must cancel an existing preview');indexPDF=citationIndex;
+ await pdfNavigate(1);const referenceButton=pdfPageBox(1).querySelector(`[data-link="${first.links.indexOf(reference)}"]`);referenceButton.click();await waitFor(()=>PDF.page===2);assert(PDF.page===2,'keyboard reference activation did not navigate directly');
  await pdfNavigate(2);assert(PDF.page===2&&pdfPageEntries[1].loaded,'scroll navigation did not load page');
  await refreshPDFAnnotations();await selectPDFAnnotation('a');assert(pdfPageBox(2).querySelector('.pdf-mark.selected'),'wrong page for highlighted comment');
+ const selectedMark=pdfPageBox(2).querySelector('.pdf-mark.selected');
+ assert(selectedMark.closest('.pdf-highlights'),'text highlight must use the background layer');
+ assert(getComputedStyle(selectedMark.closest('.pdf-highlights')).mixBlendMode==='normal','highlights must not blend with text');
+ assert(Number(getComputedStyle(pdfPageBox(2).querySelector('canvas')).zIndex)>Number(getComputedStyle(selectedMark.closest('.pdf-highlights')).zIndex),'PDF text must render above highlights');
+ const darkCanvas=pdfPageBox(2).querySelector('canvas'),darkContext=darkCanvas.getContext('2d');
+ assert(darkContext.getImageData(0,0,1,1).data[3]===0,'page canvas must have a transparent background');
+ const darkGlyphs=darkContext.getImageData(0,0,darkCanvas.width,darkCanvas.height).data;
+ assert(darkGlyphs.some((v,i)=>i%4===0&&v>200&&darkGlyphs[i+3]===255),'dark-page text must remain opaque and light above highlights');
+ assert(getComputedStyle(pdfPageBox(2).querySelector('.pdf-overlay')).mixBlendMode==='normal','freehand ink must retain its original colors');
+ assert(pdfPageBox(2).querySelector('.pdf-overlay').onpointerdown&&!pdfPageBox(2).querySelector('.pdf-highlights').onpointerdown,'drawing handlers must stay on the ink layer');
  document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));assert(PDF.selected===null&&!pdfPageBox(2).querySelector('.pdf-mark.selected'),'outside click left bold highlight');
  const before=pdfPageBox(2).getBoundingClientRect();await zoomPDF(1.75,{page:2,x:.5,y:.3,screenX:450,screenY:200});assert(pdfPageBox(2).getBoundingClientRect().width>before.width,'zoom did not resize continuous pages');
  await pdfNavigate(3);assert(PDF.page===3,'third page navigation failed');
@@ -37,10 +368,13 @@ try{
  await $('#pdf-stage [data-dark]').onclick();
  assert(PDF.theme==='light'&&!PDF.dark&&store.get('noctua.readerTheme')==='light','toolbar and settings do not share page preference');
  assert(PDF.page===3,'theme change lost current page');
+ assert(getComputedStyle(pdfPageBox(3).querySelector('.pdf-highlights')).mixBlendMode==='normal','light page highlights must stay behind text');
  assert(getComputedStyle($('#pdf-sidebar')).color===sidebarLight,'reader theme changed annotation palette');
  assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor===workspaceLight,'page theme changed the app background');
  let pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
- assert(pixel[0]>240&&pixel[1]>240&&pixel[2]>240,'light reader did not restore original page colors');
+ assert(pixel[3]===0&&getComputedStyle(pdfPageBox(3)).backgroundColor==='rgb(255, 255, 255)','light reader must use a white page behind a transparent canvas');
+ const lightCanvas=pdfPageBox(3).querySelector('canvas'),lightGlyphs=lightCanvas.getContext('2d').getImageData(0,0,lightCanvas.width,lightCanvas.height).data;
+ assert(lightGlyphs.some((v,i)=>i%4===0&&v<30&&lightGlyphs[i+3]===255),'light-page text must remain opaque and dark above highlights');
  document.documentElement.dataset.theme='dark';
  assert(getComputedStyle($('#pdf-sidebar')).color!==sidebarLight&&!PDF.dark,'app theme must change annotations independently of pages');
  assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(0, 0, 0)','dark app theme needs a black reader background even with light pages');
@@ -49,9 +383,10 @@ try{
  await setPDFPageTheme('dark');
  assert(getComputedStyle($('#pdf-stage .pdf-scroll')).backgroundColor==='rgb(0, 0, 0)','page theme changed the dark app background');
  pixel=pdfPageBox(3).querySelector('canvas').getContext('2d').getImageData(0,0,1,1).data;
- assert(pixel[0]<60&&pixel[1]<60&&pixel[2]<60,'dark pages not restored');
+ assert(pixel[3]===0&&getComputedStyle(pdfPageBox(3)).backgroundColor==='rgb(32, 33, 36)','dark reader must use a dark page behind a transparent canvas');
  store.set('noctua.readerTheme','light');window.dispatchEvent(new StorageEvent('storage',{key:'noctua.readerTheme'}));
  assert(PDF.theme==='light'&&!PDF.dark,'reader page preference did not sync across windows');
- report('PASS: continuous reader, links, selection, zoom, page-only themes and independent app palettes');
+ await checkPDFOutline();await checkPDFAutoHighlight();await checkAnnotationFilters();await checkCommentEditor();checkHighlightPalette();await checkDragSelection();await checkPDFObjects();await checkChatSelections();checkSidebarTabStyles();
+ report('PASS: captioned PDF object hover boxes, region attachment metadata, ordinary drag selection inside figures, numbered source badges, restored anchors, marker removal and renumbering, Add to chat, multiple passage drafts and previews, safe history rendering, direct selection highlights, resizable previews, persistent reference dimensions, viewport bounds, keyboard sizing, sharp live drag selections in light/dark themes, configurable six-color palette, palette-only AI defaults, unchanged existing marks, comment autosave, blur/close flushing, icon-only card deletion, no Reply/Save controls, annotation counts and filters, direct external tabs without hover requests, text-only numbered citation titles and grouped references, consistent light/dark sidebar tab styles and keyboard focus, auto-highlight progress, categories, retries and worker isolation, Outline/Annotations tabs, native and AI outline navigation, drafts, retries, stale-result isolation, continuous word-gap pixels, non-stacking highlight pixels, continuous reader, links, selection, zoom, page-only themes and independent app palettes');
 }catch(e){report('FAIL: '+e.stack);}
 </script>

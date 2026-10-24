@@ -8,6 +8,9 @@ mod chat;
 mod history;
 mod library;
 mod reader;
+mod pdf_outline;
+mod pdf_agent;
+mod pdf_autohighlight;
 mod media;
 mod mcp;
 mod notes;
@@ -552,6 +555,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
         .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
         .route("/notes.js", get(|| async { asset(include_str!("../web/notes.js"), "text/javascript; charset=utf-8") }))
+        .route("/chat-selections.js", get(|| async { asset(include_str!("../web/chat-selections.js"), "text/javascript; charset=utf-8") }))
+        .route("/pdf-objects.js", get(|| async { asset(include_str!("../web/pdf-objects.js"), "text/javascript; charset=utf-8") }))
         .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
         .route("/shell", get(|| async { asset(include_str!("../web/shell.html"), "text/html; charset=utf-8") }))
         .route("/shell.js", get(|| async { asset(include_str!("../web/shell.js"), "text/javascript; charset=utf-8") }))
@@ -602,6 +607,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/settings", get(settings::get))
         .route("/api/settings/storage", post(settings::set_storage))
         .route("/api/settings/agent", post(settings::set_agent))
+        .route("/api/settings/highlight-colors", post(settings::set_highlight_colors))
+        .route("/api/settings/highlight-palette", post(settings::set_highlight_palette))
         .route("/api/agents/{provider}", get(agent::status))
         .route("/api/agents/{provider}/models", get(agent::models))
         .route("/api/agents/{provider}/login", post(agent::login))
