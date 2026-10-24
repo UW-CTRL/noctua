@@ -324,6 +324,55 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
 .proj-info .warn { color: var(--danger); }
 .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 
+/* Lineage layout (lineage.js) */
+body:not(.lineage) .lineage-only, body.lineage .network-only { display: none !important; }
+body.lineage #left > .tabs button { padding: 10px 4px; }
+.seg { pointer-events: auto; display: inline-flex; padding: 2px; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; font-size: 12px; }
+.seg button { border: 0; border-radius: 99px; padding: 3px 11px; background: none; color: var(--muted); }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+.legend .dot.thread { background: var(--accent); }
+.legend .dot.related { border: 2px solid var(--accent); box-sizing: border-box; }
+.legend .dash { width: 16px; border-top: 1.5px dashed var(--muted); display: inline-block; }
+.tip-lineage { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--line); line-height: 1.6; }
+.tip-lineage .swatch, .lin-thread .swatch { vertical-align: -1px; }
+.muted { color: var(--muted); }
+.rel { display: inline-block; font-size: 10.5px; line-height: 1.5; padding: 0 6px; margin-right: 5px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.rel-extends, .rel-refines { border-color: var(--ref); color: var(--ref); }
+.rel-challenges { border-color: var(--danger); color: var(--danger); }
+.rel-applies, .rel-combines { border-color: var(--ok); color: var(--ok); }
+.rel-surveys { border-color: var(--sim); color: var(--sim); }
+.threads { font-size: 13px; }
+.threads-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.threads-common { background: var(--bg); border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px; }
+.thread-card { --c: var(--accent); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 10px; margin: 10px 0; }
+.thread-card.focused { box-shadow: 0 0 0 1.5px var(--c); }
+.thread-card.dim { opacity: 0.55; }
+.thread-head { display: flex; align-items: baseline; gap: 6px; cursor: pointer; }
+.thread-head b { flex: 1; min-width: 0; }
+.thread-card.trace .thread-head { cursor: default; }
+.thread-problem, .thread-summary { margin: 6px 0; }
+.thread-problem > span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 6px; }
+.thread-summary { color: var(--muted); }
+.thread-steps { list-style: none; margin: 8px 0 4px 5px; padding: 0 0 0 12px; border-left: 2px solid var(--c); }
+.thread-steps li[data-lin-id] { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.thread-steps li[data-lin-id]:hover { background: var(--bg); }
+.thread-steps li[data-lin-id]::before { content: ''; position: absolute; left: -20px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--c); border: 2px solid var(--panel); }
+.thread-steps li.junction::before { background: var(--panel); border-color: var(--c); }
+.thread-steps .t { flex: 1; min-width: 0; }
+.thread-steps .from { --c: var(--muted); flex-basis: 100%; font-size: 11px; color: var(--c); }
+.thread-steps .from::before { content: 'joins from '; color: var(--muted); }
+.thread-steps .step-link { font-size: 12px; color: var(--muted); padding: 1px 4px 3px; }
+.threads .p-year, .lineage-info .p-year { color: var(--muted); font-size: 11px; margin-left: auto; padding-left: 6px; white-space: nowrap; }
+.lineage-info { font-size: 13px; }
+.lineage-info .lin-thread { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.lineage-info .lin-thread .muted { font-size: 11px; margin-left: auto; }
+.lineage-info .sub { font-size: 11px; color: var(--muted); margin: 8px 0 2px; }
+.lineage-info ul { list-style: none; margin: 0; padding: 0; }
+.lineage-info li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.lineage-info li:hover { background: var(--bg); }
+.lineage-info li .t { flex: 1; min-width: 0; }
+.lineage-info .step-note { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+
 /* ---------------------------------------------------------------- notes */
 .mode-switch { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex: none; }
 .mode-switch button { border: 0; border-radius: 0; padding: 5px 12px; background: none; color: var(--muted); }
