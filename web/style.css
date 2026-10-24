@@ -744,6 +744,20 @@ header .library-box select { border-radius: 8px; }
 header .mode-switch { padding: 2px; border-radius: 12px; background: var(--bg); gap: 2px; }
 header .mode-switch button { min-height: 0; border-radius: 9px; padding: 0 12px; }
 header .mode-switch button.active { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px #0001; }
+header .mode-switch button { transition: background-color .16s ease, color .16s ease, box-shadow .16s ease, transform .12s ease; }
+header .mode-switch button[data-icon]::before { transition: transform .18s ease; }
+@media (hover:hover) and (pointer:fine) {
+  header .mode-switch button:not(:disabled):hover { background: color-mix(in srgb,var(--accent) 7%,var(--panel)); color: var(--accent); box-shadow: 0 2px 5px #0001; }
+  header .mode-switch button:not(:disabled):hover::before { transform: translateY(-1px) scale(1.08); }
+  header .mode-switch button.active:not(:disabled):hover { background: var(--panel); box-shadow: 0 2px 6px #0002; }
+}
+header .mode-switch button:not(:disabled):active { transform: scale(.97); box-shadow: none; }
+header .mode-switch button:not(:disabled):active::before { transform: none; }
+header .mode-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; color: var(--accent); }
+@media (prefers-reduced-motion:reduce) {
+  header .mode-switch button,header .mode-switch button[data-icon]::before { transition: none; }
+  header .mode-switch button:not(:disabled):active,header .mode-switch button:not(:disabled):hover::before { transform: none; }
+}
 header button.icon { background: var(--bg); }
 header #clear-graph { min-height: var(--control-compact); font-size: calc(12px * var(--ui-font-scale)); }
 
