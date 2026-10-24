@@ -2,6 +2,8 @@ import Foundation
 import JavaScriptCore
 let c=JSContext()!
 c.exceptionHandler={_,e in print(e?.toString() ?? "JS error");exit(1)}
+c.evaluateScript("const window=globalThis;")
+c.evaluateScript(try String(contentsOfFile:"web/pdf-objects.js",encoding:.utf8))
 let source=try String(contentsOfFile:"web/pdf.js",encoding:.utf8)
 func section(_ start:String,_ end:String)->String {
  let a=source.range(of:start)!.lowerBound,b=source.range(of:end,range:a..<source.endIndex)!.lowerBound
@@ -43,8 +45,42 @@ let checks=#"""
  assert(pdfCitationNumbers('[5-2]').length===0&&pdfCitationNumbers('[1-9000]').length===0,'invalid citation ranges must be rejected');
  assert(pdfReferenceTitle('D. Ha and J. Schmidhuber. World models. arXiv preprint, 2018.')==='World models','initials must not be mistaken for the author/title separator');
  assert(pdfReferenceTitle('Danijar Hafner and Wilson Yan. Training agents inside of scalable world models, 2025. URL https://example.org')==='Training agents inside of scalable world models','publication year must not appear in the title');
+ assert(pdfReferenceTitle('S. Author, “A general safety framework for learning-based control in uncertain robotic systems,” Journal, 2020.')==='A general safety framework for learning-based control in uncertain robotic systems','quoted citation titles must omit the bibliography comma');
+ assert(pdfReferenceTitle('S. Author. Safety, learning, and control,. Journal, 2020.')==='Safety, learning, and control','unquoted citation titles must omit only the trailing comma');
+ const crop=pdfReferenceCrop({width:612,height:792,convertToViewportPoint:(x,y)=>[x,y]},{x:60/612,y:400/792},[{str:'Target',transform:[1,0,0,10,60,400],width:350,height:10}]);
+ assert(crop.x<=60&&crop.x+crop.width>=410&&crop.y<=400&&crop.y+crop.height>=410,'internal reference crop must include the destination text');
  const grouped={pages:[{page:1,text:'Prior work [2, 4–5].',words:[{start:12,end:13,rect:[.1,.2,.03,.02]}]}]};
  assert(JSON.stringify(pdfLinkCitationNumbers(grouped,{sourcePage:1,rect:[.1,.2,.03,.02]}))==='[2,4,5]','hovering one linked number must resolve the complete bracket group');
+ assert(pdfIsNamedCitation('cite.JMLR:v16:garcia15a')&&pdfIsNamedCitation('citation.author2020'),'author-year citation keys must be recognized');
+ assert(!pdfIsNamedCitation('section.5')&&!pdfIsNamedCitation('equation.3.2')&&!pdfIsNamedCitation(null),'ordinary internal references must keep page previews');
+ const firstTitle='A. Author. First paper title. Journal, 2020.',secondTitle='B. Author. Second paper title. Journal, 2021.';
+ const bibliography={pages:[{page:2,text:firstTitle+'\n'+secondTitle,words:[{start:0,end:2,rect:[.1,.2,.1,.02]},{start:firstTitle.length+1,end:firstTitle.length+3,rect:[.1,.5,.1,.02]}]}]};
+ let destinationsRead=0;
+ const namedDoc={...doc,getDestinations:async()=>{destinationsRead++;return {'cite.namespace:author20':[1,{name:'XYZ'},60,640,null],'cite.author21':[1,{name:'XYZ'},60,400,null]};}};
+ const namedRef=await pdfNamedCitationReference(bibliography,namedDoc,'cite.namespace:author20');
+ assert(namedRef?.title==='First paper title'&&!namedRef.excerpt.includes('Second paper title'),'named citations must extract only their own bibliography entry');
+ const secondRef=await pdfNamedCitationReference(bibliography,namedDoc,'cite.author21');
+ assert(secondRef?.title==='Second paper title'&&destinationsRead===1,'bibliography destination lookup must be cached');
+ assert(await pdfNamedCitationReference({pages:[]},namedDoc,'cite.namespace:author20')===null,'missing bibliography text must not invent a title');
+ const sourceFixture=text=>{
+  const words=[...text.matchAll(/\S+/g)].map((match,i)=>({start:match.index,end:match.index+match[0].length,rect:[.05+(i%8)*.1,.1+Math.floor(i/8)*.025,.085,.02]}));
+  const links=words.flatMap(word=>{
+    const token=text.slice(word.start,word.end),name=/Alpha|2020/.test(token)?'cite.alpha':/Beta|2021/.test(token)?'cite.beta':/Gamma|2022/.test(token)?'cite.gamma':/Delta|2023/.test(token)?'cite.delta':null;
+    return name?[{dest:name,sourcePage:1,rect:word.rect}]:[];
+  });
+  return {index:{pages:[{page:1,text,words}]},links};
+ };
+ const group=sourceFixture('Prior work (Alpha et al., 2020; Beta et al.,\n2021) and other work (Gamma, 2022; Delta, 2023).');
+ for(const link of group.links.filter(link=>link.dest==='cite.alpha'||link.dest==='cite.beta'))assert(JSON.stringify(pdfLinkCitationNames(group.index,link,group.links))==='["cite.alpha","cite.beta"]','hovering an author or year in a wrapped group must show all citations once, without adjoining groups');
+ const nested=sourceFixture('Prior work (e.g., Alpha (2020); Beta (2021)).');
+ assert(JSON.stringify(pdfLinkCitationNames(nested.index,nested.links[1],nested.links))==='["cite.alpha","cite.beta"]','nested year parentheses must retain the enclosing citation group');
+ const separate=sourceFixture('Alpha (2020); Beta (2021).');
+ assert(JSON.stringify(pdfLinkCitationNames(separate.index,separate.links[1],separate.links))==='["cite.alpha"]','separate citation parentheses must stay separate');
+ const abbreviated=sourceFixture('(Alpha, 2020; 2021)');
+ assert(JSON.stringify(pdfLinkCitationNames(abbreviated.index,abbreviated.links[1],abbreviated.links))==='["cite.alpha","cite.beta"]','repeated-author year links must be included in the group');
+ const adjacent=sourceFixture('(Alpha, 2020; Beta, 2021)'),edge=adjacent.links[0].rect;
+ const spill={dest:'cite.gamma',sourcePage:1,rect:[edge[0],edge[1]-.019,edge[2],edge[3]]};
+ assert(JSON.stringify(pdfLinkCitationNames(adjacent.index,adjacent.links[0],[...adjacent.links,spill]))==='["cite.alpha","cite.beta"]','small annotation overlaps from the adjacent line must not join the group');
  globalThis.result='PASS: bounded page rendering, scroll eviction, link safety, named destinations, grouped citation ranges and bibliography titles';
 })().catch(e=>globalThis.result='FAIL: '+e.stack);
 """#

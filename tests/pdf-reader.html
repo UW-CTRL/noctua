@@ -329,11 +329,27 @@ try{
 
  const reference=first.links.find(l=>l.dest);reference.citationNumbers=[5,2,4];
  const citationIndex=indexPDF;
- indexPDF=async()=>({pages:[{page:2,text:'References\n[2] Alice Author. First paper title. Journal, 2020.\n[4] Bob Author. Second paper title. Journal, 2021.\n[5] Carol Author. Third paper title. Journal, 2022.',words:[]}]});
+ indexPDF=async()=>({pages:[{page:2,text:'References\n[2] Alice Author. “First paper title,” Journal, 2020.\n[4] Bob Author. Second paper title. Journal, 2021.\n[5] Carol Author. Third paper title. Journal, 2022.',words:[]}]});
  await showPDFLinkPreview(reference,100,100);
  assert(!$('#pdf-link-preview canvas,#pdf-link-preview img'),'image citation previews must be removed');
  const rows=[...document.querySelectorAll('.pdf-citation-row')];assert(rows.map(row=>row.textContent).join('|')==='[2]First paper title|[4]Second paper title|[5]Third paper title','citation popup must show sorted numbered titles');
  assert(!pdfLinkPinned,'citation list must not remain pinned');await checkPreviewResize(reference);
+ closePDFLinkPreview();
+ await showPDFLinkPreview({...reference,id:'internal-passage',citationNumbers:[],dest:[1,{name:'XYZ'},72,700,null]},100,100);
+ const passageCanvas=$('#pdf-link-preview canvas');
+ assert(passageCanvas&&passageCanvas.width>0&&passageCanvas.height>0,'ordinary internal references must render a page preview');
+ const passagePixels=passageCanvas.getContext('2d').getImageData(0,0,passageCanvas.width,passageCanvas.height).data;
+ assert(passagePixels.some((v,i)=>i%4!==3&&v<100)&&passagePixels.some((v,i)=>i%4!==3&&v>180),'internal reference preview must contain rendered page content');
+ const originalDestinations=doc.getDestinations,originalDestination=doc.getDestination;
+ try{
+  closePDFLinkPreview();
+  doc.getDestinations=async()=>({'cite.author2020':[1,{name:'XYZ'},72,700,null]});
+  doc.getDestination=async name=>name==='cite.author2020'?[1,{name:'XYZ'},72,700,null]:originalDestination.call(doc,name);
+  indexPDF=async()=>({pages:[{page:2,text:'Alice Author. A linked author-year title. Journal, 2020.',words:[{start:0,end:5,rect:[.12,.12,.1,.02]}]}]});
+  await showPDFLinkPreview({...reference,id:'author-year',citationNumbers:undefined,dest:'cite.author2020'},100,100);
+  assert(!$('#pdf-link-preview canvas,#pdf-link-preview img'),'author-year citations must not show page images');
+  assert($('#pdf-link-preview .pdf-citation-row')?.textContent==='A linked author-year title','author-year popup must show its bibliography title');
+ }finally{doc.getDestinations=originalDestinations;doc.getDestination=originalDestination;}
  indexPDF=citationIndex;
  trackPDFReferencePreview({clientX:10000,clientY:10000});await waitFor(()=>!$('#pdf-link-preview'));assert(!$('#pdf-link-preview'),'reference preview did not dismiss on pointer departure');
  await followPDFLink(reference);assert(PDF.page===2&&!$('#pdf-link-preview'),'clicking a reference must navigate directly without a popup');

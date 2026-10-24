@@ -142,3 +142,6 @@
 .pdf-outline-actions [data-outline-delete]:hover{background:transparent;box-shadow:none}
 .pdf-outline-actions [data-outline-delete]::before{color:var(--muted)}
 .pdf-outline-actions [data-outline-delete]:not(:disabled):hover::before{color:var(--danger)}
+
+.pdf-reference-preview{display:block;width:100%;height:auto;flex:none;margin-top:8px}
+.pdf-preview-sized .pdf-preview-content:has(.pdf-reference-preview){overflow:auto}
