@@ -17,6 +17,8 @@ for version tags or an explicit manual release run.
 Backend assistant tests use the fake CLI fixture; CI does not log into assistant
 accounts or make real model inference requests. Frontend tests use mocks or
 bundled browser assets rather than testing live third-party services. The
+WebKit launchers use nonpersistent browser storage so saved preferences from
+another test or local session cannot change the results. The
 workflow does not produce or upload installers, create tags, or publish releases.
 
 The frontend runner automatically includes `tests/*.swift` except the two
