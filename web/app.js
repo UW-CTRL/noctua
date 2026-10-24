@@ -798,8 +798,10 @@ function renderLibItems() {
         <div class="p-meta">${esc(libAuthors(it))}</div>
         <div class="p-meta">${esc([it.venue, it.year].filter(Boolean).join(' · ') || it.itemType)}</div>
       </div>
-      ${it.has_pdf ? '<button class="read-btn" title="Read PDF (⌘/Ctrl-click opens a new tab)">PDF</button>' : ''}
-      <button class="graph-btn" title="Build this paper's citation graph">Graph</button>
+      <div class="p-actions">
+        ${it.has_pdf ? '<button class="read-btn" title="Read PDF (⌘/Ctrl-click opens a new tab)">PDF</button>' : ''}
+        <button class="graph-btn" title="Build this paper's citation graph">Graph</button>
+      </div>
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     const it = lib.items.find((x) => x.key === li.dataset.key);
