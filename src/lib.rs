@@ -8,6 +8,9 @@ mod chat;
 mod history;
 mod library;
 mod reader;
+mod pdf_outline;
+mod pdf_agent;
+mod pdf_autohighlight;
 mod media;
 mod mcp;
 mod notes;
@@ -583,6 +586,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/settings", get(settings::get))
         .route("/api/settings/storage", post(settings::set_storage))
         .route("/api/settings/agent", post(settings::set_agent))
+        .route("/api/settings/highlight-colors", post(settings::set_highlight_colors))
+        .route("/api/settings/highlight-palette", post(settings::set_highlight_palette))
         .route("/api/agents/{provider}", get(agent::status))
         .route("/api/agents/{provider}/models", get(agent::models))
         .route("/api/agents/{provider}/login", post(agent::login))

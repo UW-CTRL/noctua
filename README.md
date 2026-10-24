@@ -376,3 +376,5 @@ theme changes, and invalid-diagram fallback.
 `swift tests/pdf-zoom.swift` checks rendering density, zoom gestures, and canvas limits.
 `swift tests/pdf-selection.swift` checks comment/highlight selection and agent page navigation.
 `swift tests/reader.swift` exercises bundled PDF.js canvas rendering and text-selection geometry in WebKit; it requires a desktop session that permits WebKit subprocesses.
+
+Reader analysis uses independent AI workers for grounded outlines and categorized auto-highlights. Analysis is cached by PDF hash, validated against selectable source text, and saved separately from chat sessions. Highlight palette and category defaults persist in Settings.

@@ -56,6 +56,14 @@ if '--input-format' in args:
     assert msg['message']['content'][0]['type'] == 'image'
 transcribe = '--image' in args or '--input-format' in args
 text = r'\[x^2\]' if transcribe else ('Partial' if 'slow' in prompt else provider+' reply')
+if any('Build a concise navigable outline' in arg for arg in args):
+    paper = json.loads(prompt)
+    text = json.dumps({'entries':[{'title':'Introduction','page':1,'level':1,'quote':paper['pages'][0]['text'][:60]}]})
+if any("You are Noctua's Auto-highlight agent" in arg for arg in args):
+    paper = json.loads(prompt)
+    text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':paper['pages'][0]['text'][:60],'comment':'Principal contribution.'}]})
+    if (home / 'auto-highlight-invalid').exists():
+        text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':'An invented source passage.'}]})
 session = provider+'-session'
 if provider == 'codex':
     print(json.dumps({'type':'thread.started','thread_id':session}), flush=True)

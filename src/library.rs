@@ -8,6 +8,11 @@ use sha2::{Digest, Sha256};
 
 pub const PDF_LIMIT: usize = 128 << 20;
 pub const COLORS: [&str; 6] = ["#ffd400", "#5fb236", "#2ea8e5", "#e56eee", "#a28ae5", "#ff6666"];
+pub const HIGHLIGHT_CATEGORIES:[&str;4]=["novelty","method","results","limitations"];
+pub fn category_color(category:&str)->Option<&'static str> {
+    match category {"novelty"=>Some("#ff6666"),"method"=>Some("#5fb236"),"results"=>Some("#a28ae5"),"limitations"=>Some("#ffd400"),_=>None}
+}
+pub fn valid_color(color:&str)->bool {color.len()==7&&color.starts_with('#')&&color[1..].bytes().all(|c|c.is_ascii_hexdigit())}
 pub fn id(prefix: &str) -> String { format!("{prefix}{}", uuid::Uuid::new_v4().simple()) }
 fn now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64 }
 fn bad(message: &str) -> anyhow::Error { crate::Status(axum::http::StatusCode::BAD_REQUEST, message.into()).into() }
@@ -29,6 +34,8 @@ impl Library {
             CREATE INDEX IF NOT EXISTS papers_hash ON papers(pdf_hash);
             CREATE TABLE IF NOT EXISTS memberships (collection TEXT REFERENCES collections(id), paper TEXT REFERENCES papers(key), PRIMARY KEY(collection,paper));
             CREATE TABLE IF NOT EXISTS pdf_index (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS pdf_outlines (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS pdf_auto_highlights (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS page_images (hash TEXT NOT NULL, page INTEGER NOT NULL, png BLOB NOT NULL, PRIMARY KEY(hash,page));
             CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY, paper TEXT NOT NULL REFERENCES papers(key), data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -169,6 +176,45 @@ impl Library {
         let index:Option<Value>=body.map(|s|serde_json::from_str(&s)).transpose()?;
         Ok(index.filter(|v|v["version"]==2))
     }
+    pub fn outline(&self,key:&str)->Result<Option<Value>> {
+        let hash=self.hash(key)?;
+        let body:Option<String>=self.conn.lock().unwrap().query_row("SELECT data FROM pdf_outlines WHERE hash=?1",[hash],|r|r.get(0)).optional()?;
+        body.map(|s|serde_json::from_str(&s).map_err(Into::into)).transpose()
+    }
+    pub fn save_outline(&self,key:&str,outline:&Value)->Result<()> {
+        let hash=self.hash(key)?;
+        if outline["hash"]!=hash {return Err(conflict("PDF changed while generating its outline"));}
+        self.conn.lock().unwrap().execute("INSERT OR REPLACE INTO pdf_outlines VALUES(?1,?2)",params![hash,outline.to_string()])?;
+        Ok(())
+    }
+    pub fn auto_highlights(&self,key:&str)->Result<Option<Value>> {
+        let hash=self.hash(key)?;
+        let body:Option<String>=self.conn.lock().unwrap().query_row("SELECT data FROM pdf_auto_highlights WHERE hash=?1",[hash],|r|r.get(0)).optional()?;
+        body.map(|s|serde_json::from_str(&s).map_err(Into::into)).transpose()
+    }
+    pub fn save_auto_highlights(&self,key:&str,analysis:&Value,colors:&crate::settings::HighlightColors)->Result<Value> {
+        let hash=self.hash(key)?;if analysis["hash"]!=hash {return Err(conflict("PDF changed during auto-highlight analysis"));}
+        let bodies=analysis["highlights"].as_array().filter(|a|a.len()<=48).context("Invalid auto-highlight analysis")?;
+        // Validate the whole result before opening a transaction or writing any annotations.
+        let mut prepared=Vec::new();
+        for body in bodies {
+            if body["source"]!="auto-highlight"||body["kind"]!="highlight"||category_color(text(body,"category")).is_none() {return Err(bad("Invalid auto-highlight category"));}
+            let mut body=body.clone();body["color"]=json!(colors.color(text(&body,"category")).unwrap());
+            let mut a=self.prepare_annotation(key,&body,"assistant",false)?;
+            let quote=text(&a,"quote").split_whitespace().collect::<Vec<_>>().join(" ");
+            a["auto_key"]=json!(format!("{:x}",Sha256::digest(format!("{}|{}|{}",a["page"],a["occurrence"],quote))));
+            prepared.push(a);
+        }
+        let mut conn=self.conn.lock().unwrap();let tx=conn.transaction()?;
+        let (mut created,mut existing)=(0,0);
+        for a in prepared {
+            let duplicate:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM annotations WHERE paper=?1 AND json_extract(data,'$.auto_key')=?2)",params![key,text(&a,"auto_key")],|r|r.get(0))?;
+            if duplicate {existing+=1;continue;}
+            tx.execute("INSERT INTO annotations(id,paper,data) VALUES(?1,?2,?3)",params![text(&a,"id"),key,a.to_string()])?;created+=1;
+        }
+        tx.execute("INSERT OR REPLACE INTO pdf_auto_highlights VALUES(?1,?2)",params![hash,analysis.to_string()])?;tx.commit()?;
+        Ok(json!({"created":created,"existing":existing,"total":created+existing}))
+    }
     pub fn save_index(&self,key:&str,index:&Value)->Result<()> {
         if index["version"]!=2{return Err(bad("PDF text index is outdated. Reload Noctua to rebuild it."));}
         let hash=self.hash(key)?;if index["hash"]!=hash{return Err(conflict("PDF changed while indexing"));}
@@ -208,11 +254,19 @@ impl Library {
         rows.map(|r|{let (s,rev)=r?;let mut v:Value=serde_json::from_str(&s)?;v["revision"]=json!(rev);Ok(v)}).collect()
     }
     pub fn annotate(&self,key:&str,body:&Value,author:&str,pending:bool)->Result<Value> {
+        let a=self.prepare_annotation(key,body,author,pending)?;
+        self.conn.lock().unwrap().execute("INSERT INTO annotations(id,paper,data) VALUES(?1,?2,?3)",params![text(&a,"id"),key,a.to_string()])?;Ok(a)
+    }
+    fn prepare_annotation(&self,key:&str,body:&Value,author:&str,pending:bool)->Result<Value> {
         self.hash(key)?;let mut a=body.clone();if !a.is_object(){return Err(bad("Invalid annotation"));}
         let kind=text(&a,"kind");if !["highlight","ink","comment"].contains(&kind){return Err(bad("Choose highlight, ink, or comment"));}
         let page=a["page"].as_u64().filter(|p|*p>0&&*p<=10000).context("Choose a PDF page")?;
         if let Some(index)=self.index(key)? {if page as usize>index["pages"].as_array().map_or(0,Vec::len){return Err(bad("Page is outside the PDF"));}}
-        if a["color"].is_null(){a["color"]=json!(COLORS[0]);}if !COLORS.contains(&text(&a,"color")){return Err(bad("Unknown annotation color"));}
+        let default_color=if a["category"].is_null(){COLORS[0]}else{
+            if kind!="highlight" {return Err(bad("Only highlights can have a category"));}
+            category_color(text(&a,"category")).ok_or_else(||bad("Unknown highlight category"))?
+        };
+        if a["color"].is_null(){a["color"]=json!(default_color);}if !valid_color(text(&a,"color")){return Err(bad("Use a six-digit hex annotation color"));}
         if a["kind"]=="highlight" && a["rects"].as_array().is_none_or(Vec::is_empty) {
             let quote=text(&a,"quote");if quote.trim().is_empty(){return Err(bad("A highlight needs selected text or rectangles"));}
             let index=self.index(key)?.context("Open the PDF first so its text can be indexed")?;
@@ -227,7 +281,15 @@ impl Library {
         if text(&a,"comment").len()>100000{return Err(bad("Comment is too long"));}
         if author=="assistant" && a["kind"]=="highlight" {a["anchor_version"]=json!(2);}
         a["id"]=json!(id("a"));a["paper"]=json!(key);a["author"]=json!(author);a["created"]=json!(now());a["status"]=json!(if pending{"pending"}else{"accepted"});a["replies"]=json!([]);a["revision"]=json!(1);
-        self.conn.lock().unwrap().execute("INSERT INTO annotations(id,paper,data) VALUES(?1,?2,?3)",params![text(&a,"id"),key,a.to_string()])?;Ok(a)
+        Ok(a)
+    }
+    pub fn recolor_ai_highlights(&self,colors:&std::collections::BTreeMap<String,String>)->Result<usize> {
+        let mut connection=self.conn.lock().unwrap();let tx=connection.transaction()?;let mut count=0;
+        for (category,color) in colors {
+            if category_color(category).is_none()||!valid_color(color){return Err(bad("Invalid AI highlight color"));}
+            count+=tx.execute("UPDATE annotations SET data=json_set(data,'$.color',?1,'$.revision',revision+1),revision=revision+1 WHERE json_extract(data,'$.author')='assistant' AND json_extract(data,'$.kind')='highlight' AND json_extract(data,'$.category')=?2 AND json_extract(data,'$.color')<>?1",params![color,category])?;
+        }
+        tx.commit()?;Ok(count)
     }
     pub fn update_annotation(&self,key:&str,aid:&str,body:&Value)->Result<Value> {
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
@@ -235,7 +297,7 @@ impl Library {
         if body["revision"].as_i64()!=Some(rev){return Err(conflict("This annotation changed in another tab. Reload it before saving."));}
         let mut a:Value=serde_json::from_str(&s)?;
         if let Some(v)=body.get("comment"){if !v.is_string()||v.as_str().unwrap().len()>100000{return Err(bad("Invalid comment"));}a["comment"]=v.clone();}
-        if let Some(v)=body.get("color"){if !COLORS.contains(&v.as_str().unwrap_or("")){return Err(bad("Unknown annotation color"));}a["color"]=v.clone();}
+        if let Some(v)=body.get("color"){if !valid_color(v.as_str().unwrap_or("")){return Err(bad("Use a six-digit hex annotation color"));}a["color"]=v.clone();}
         if let Some(v)=body.get("status"){if v!="accepted"{return Err(bad("Only pending suggestions can be accepted"));}a["status"]=v.clone();}
         a["revision"]=json!(rev+1);tx.execute("UPDATE annotations SET data=?1,revision=revision+1 WHERE id=?2",params![a.to_string(),aid])?;tx.commit()?;Ok(a)
     }
@@ -301,7 +363,7 @@ fn normalize_paper(p:&Value)->Value {
 }
 fn unit(v:&Value)->Result<f64>{let n=v.as_f64().filter(|n|n.is_finite()&&(0.0..=1.0).contains(n)).ok_or_else(||bad("Annotation coordinates must be between 0 and 1"))?;Ok(n)}
 fn validate_rect(v:&Value)->Result<()> {let r=v.as_array().filter(|r|r.len()==4).ok_or_else(||bad("Invalid highlight rectangle"))?;for n in r{unit(n)?;}if r[0].as_f64().unwrap()+r[2].as_f64().unwrap()>1.001||r[1].as_f64().unwrap()+r[3].as_f64().unwrap()>1.001{return Err(bad("Highlight rectangle lies outside the page"));}Ok(())}
-fn quote_rects(page:&Value,quote:&str,occurrence:usize)->Result<Value> {
+pub(crate) fn quote_rects(page:&Value,quote:&str,occurrence:usize)->Result<Value> {
     // Browser indexes offsets in UTF-16 code units (JavaScript string offsets).
     let content=text(page,"text");let (start,_)=content.match_indices(quote).nth(occurrence).context("That exact quote was not found on this page. Use read_pdf to copy the text, or select it in the reader.")?;
     let a=content[..start].encode_utf16().count();let b=a+quote.encode_utf16().count();

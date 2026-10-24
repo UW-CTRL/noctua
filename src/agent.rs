@@ -364,6 +364,127 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pdf_outlines_use_selected_backend_and_persist_without_duplicate_inference() -> Result<()> {
+        let f=Fixture::new()?;
+        let key=f.app.library.upload("L1","outline.pdf",b"%PDF-1.7\noutline fixture")?;
+        let hash=f.app.library.paper(&key)?["pdf_hash"].clone();
+        let path=format!("/api/library/papers/{key}/outline");
+        assert!(f.json(&path,None).await.is_null());
+        assert!(!f.request(&path,Some(json!({})),None).await.status().is_success());
+        f.app.library.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"Introduction to grounded outlines","words":[{"start":0,"end":12,"rect":[0.1,0.2,0.4,0.03]}]}]}))?;
+        for provider in ["claude","codex"] {
+            f.app.settings.lock().unwrap().agent=if provider=="claude" {Provider::Claude}else{Provider::Codex};
+            let outline=f.json(&path,Some(json!({"regenerate":true}))).await;
+            assert_eq!(outline["provider"],provider);assert_eq!(outline["entries"][0]["y"],0.2);
+            assert_eq!(f.json(&path,None).await,outline);
+            let before=std::fs::read_to_string(f.root.join("invocations.jsonl"))?;
+            let (left,right)=tokio::join!(f.json(&path,Some(json!({}))),f.json(&path,Some(json!({}))));
+            assert_eq!(left,outline);assert_eq!(right,outline);
+            assert_eq!(std::fs::read_to_string(f.root.join("invocations.jsonl"))?,before);
+        }
+        let reopened=crate::library::Library::open(f.root.join("library"))?;
+        assert_eq!(reopened.outline(&key)?,f.app.library.outline(&key)?);
+        let other=f.app.library.upload("L1","scan.pdf",b"%PDF-1.7\nscan fixture")?;
+        let other_hash=f.app.library.paper(&other)?["pdf_hash"].clone();
+        f.app.library.save_index(&other,&json!({"version":2,"hash":other_hash,"pages":[{"page":1,"text":"","words":[]}]}))?;
+        assert!(!f.request(&format!("/api/library/papers/{other}/outline"),Some(json!({})),None).await.status().is_success());
+        assert!(f.app.library.outline(&other)?.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn auto_highlight_workers_are_independent_grounded_cached_and_atomic() -> Result<()> {
+        let f=Fixture::new()?;
+        for provider in ["claude","codex"] {
+            f.app.settings.lock().unwrap().agent=if provider=="claude" {Provider::Claude}else{Provider::Codex};
+            let key=f.app.library.upload("L1","analysis.pdf",format!("%PDF-1.7\n{provider}").as_bytes())?;
+            let hash=f.app.library.paper(&key)?["pdf_hash"].clone();
+            let index=json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"A novel method improves predictive performance.","words":[{"start":0,"end":46,"rect":[0.1,0.2,0.7,0.03]}]}]});
+            f.app.library.save_index(&key,&index)?;
+            let manual=f.app.library.annotate(&key,&json!({"kind":"comment","page":1,"comment":"Keep my own note."}),"user",false)?;
+            let path=format!("/api/library/papers/{key}/auto-highlight");
+            std::fs::write(f.root.join("auto-highlight-invalid"),"")?;
+            assert!(!f.request(&path,Some(json!({})),None).await.status().is_success());
+            assert_eq!(f.app.library.annotations(&key)?.len(),1);assert!(f.app.library.auto_highlights(&key)?.is_none());
+            std::fs::remove_file(f.root.join("auto-highlight-invalid"))?;
+            let result=f.json(&path,Some(json!({}))).await;assert_eq!(result["created"],1);
+            let saved=f.app.library.annotations(&key)?;let generated=saved.iter().find(|a|a["source"]=="auto-highlight").unwrap();
+            assert_eq!(generated["category"],"novelty");assert_eq!(generated["color"],"#ff6666");assert_eq!(generated["rects"][0][1],0.2);
+            assert!(saved.iter().any(|a|a["id"]==manual["id"]));
+            f.app.library.update_annotation(&key,generated["id"].as_str().unwrap(),&json!({"revision":1,"comment":"My edited explanation."}))?;
+            let invocations=std::fs::read_to_string(f.root.join("invocations.jsonl"))?;
+            let repeated=f.json(&path,Some(json!({}))).await;assert_eq!(repeated["created"],0);assert_eq!(repeated["existing"],1);
+            assert_eq!(std::fs::read_to_string(f.root.join("invocations.jsonl"))?,invocations);
+            assert!(f.app.library.annotations(&key)?.iter().any(|a|a["comment"]=="My edited explanation."));
+            assert!(f.json(&format!("/api/chats?provider={provider}"),None).await.as_array().unwrap().is_empty());
+            let analysis=f.app.library.auto_highlights(&key)?.unwrap();let mut bad=analysis.clone();
+            let mut invalid=analysis["highlights"][0].clone();invalid["category"]=json!("invalid");bad["highlights"].as_array_mut().unwrap().push(invalid);
+            assert!(f.app.library.save_auto_highlights(&key,&bad,&Default::default()).is_err());assert_eq!(f.app.library.annotations(&key)?.len(),2);
+            let calls:Vec<Value>=invocations.lines().map(|s|serde_json::from_str(s).unwrap()).collect();
+            let args=calls.last().unwrap()["args"].as_array().unwrap();
+            assert!(!args.contains(&json!("resume"))&&!args.contains(&json!("--resume")));
+            assert!(args.contains(&json!(if provider=="codex"{"--ephemeral"}else{"--no-session-persistence"})));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn highlight_colors_persist_and_recolor_existing_ai_annotations() -> Result<()> {
+        let f=Fixture::new()?;
+        let defaults=f.json("/api/settings",None).await["highlight_colors"].clone();
+        assert_eq!(defaults["novelty"],"#ff6666");assert_eq!(defaults["method"],"#5fb236");
+        let custom=json!(["#456def","#234bcd","#abcdef","#6789ab","#345cde","#123abc"]);
+        f.json("/api/settings/highlight-palette",Some(json!({"colors":custom}))).await;
+        let palette=json!({"novelty":"#123ABC","method":"#234bcd","results":"#345cde","limitations":"#456def"});
+        let saved=f.json("/api/settings/highlight-colors",Some(palette)).await;
+        assert_eq!(saved["highlight_colors"]["novelty"],"#123abc");
+        assert_eq!(crate::settings::Settings::load(&f.root).highlight_colors.color("novelty"),Some("#123abc"));
+        for invalid in [json!({"novelty":"red"}),json!({"method":"#abc"}),json!({"results":"#123456;"}),json!({"unknown":"#112233"}),json!({"novelty":"#111111"}),json!({})] {
+            assert_eq!(f.request("/api/settings/highlight-colors",Some(invalid),None).await.status(),StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings",None).await["highlight_colors"],saved["highlight_colors"]);
+        let key=f.app.library.upload("L1","colors.pdf",b"%PDF-1.7\ncolors fixture")?;
+        let hash=f.app.library.paper(&key)?["pdf_hash"].clone();
+        f.app.library.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"A novel method improves predictive performance.","words":[{"start":0,"end":46,"rect":[0.1,0.2,0.7,0.03]}]}]}))?;
+        let annotation_path=format!("/api/library/papers/{key}/annotations");
+        let manual=f.json(&annotation_path,Some(json!({"kind":"highlight","category":"method","page":1,"quote":"A novel method"}))).await;
+        assert_eq!(manual["color"],"#234bcd");
+        let tool=json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"annotate_pdf","arguments":{"paper_key":key,"page":1,"category":"results","quote":"A novel method","comment":"Result."}}});
+        let response=crate::mcp::handle(&f.app,&tool,"direct",None).await.unwrap();assert_ne!(response["result"]["isError"],true);
+        assert!(f.app.library.annotations(&key)?.iter().any(|a|a["color"]=="#345cde"));
+        let other_key=f.app.library.upload("L1","other.pdf",b"%PDF-1.7\nother colors")?;
+        let other=f.app.library.annotate(&other_key,&json!({"kind":"highlight","category":"novelty","color":"#123abc","page":1,"rects":[[0.1,0.2,0.2,0.03]],"comment":"Keep this comment"}),"assistant",true)?;
+        let path=format!("/api/library/papers/{key}/auto-highlight");
+        f.json(&path,Some(json!({}))).await;
+        let original=f.app.library.annotations(&key)?.into_iter().find(|a|a["source"]=="auto-highlight").unwrap();
+        assert_eq!(original["color"],"#123abc");
+        f.json("/api/settings/highlight-colors",Some(json!({"novelty":"#abcdef"}))).await;
+        assert_eq!(f.app.settings.lock().unwrap().highlight_colors.color("method"),Some("#234bcd"));
+        let recolored=f.app.library.annotations(&other_key)?.into_iter().find(|a|a["id"]==other["id"]).unwrap();
+        assert_eq!(recolored["color"],"#abcdef");assert_eq!(recolored["comment"],"Keep this comment");assert_eq!(recolored["status"],"pending");assert_eq!(recolored["revision"],2);
+        let invocations=std::fs::read_to_string(f.root.join("invocations.jsonl"))?;
+        f.json(&path,Some(json!({}))).await;
+        assert_eq!(f.app.library.annotations(&key)?.into_iter().find(|a|a["id"]==original["id"]).unwrap()["color"],"#abcdef");
+        f.app.library.delete_annotation(&key,original["id"].as_str().unwrap(),2)?;
+        f.json(&path,Some(json!({}))).await;
+        assert_eq!(f.app.library.annotations(&key)?.into_iter().find(|a|a["source"]=="auto-highlight").unwrap()["color"],"#abcdef");
+        assert_eq!(std::fs::read_to_string(f.root.join("invocations.jsonl"))?,invocations);
+        for colors in [json!([]),json!(["#123abc"]),json!(["#123abc","#123abc","#123abc","#123abc","#123abc","#123abc"]),json!(["red","#234bcd","#abcdef","#6789ab","#345cde","#123abc"])] {
+            assert_eq!(f.request("/api/settings/highlight-palette",Some(json!({"colors":colors})),None).await.status(),StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings",None).await["highlight_palette"],custom);
+        let changed=json!(["#456def","#112233","#abcdef","#6789ab","#345cde","#123abc"]);
+        let remapped=f.json("/api/settings/highlight-palette",Some(json!({"colors":changed}))).await;
+        assert_eq!(remapped["highlight_colors"]["method"],"#112233");
+        assert_eq!(crate::settings::Settings::load(&f.root).highlight_palette.0[1],"#112233");
+        assert_eq!(f.app.library.annotations(&key)?.into_iter().find(|a|a["id"]==manual["id"]).unwrap()["color"],"#234bcd");
+        f.json("/api/settings/highlight-palette",Some(json!({"colors":crate::settings::HighlightPalette::default()}))).await;
+        f.json("/api/settings/highlight-colors",Some(defaults.clone())).await;
+        assert_eq!(f.json("/api/settings",None).await["highlight_colors"],defaults);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_pdf_tools_and_http_assets() -> Result<()> {
         let f=Fixture::new()?;
         let key=f.app.library.upload("L1","test.pdf",b"%PDF-1.7\nfixture")?;
