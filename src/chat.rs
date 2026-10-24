@@ -160,6 +160,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
         c
     } else {
         let mut c = provider.command(app);
+        provider.configure(app, &mut c);
         c.args(["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"])
             .args(["--tools", "", "--strict-mcp-config", "--mcp-config", &mcp])
             .args(["--allowedTools", "mcp__noctua", "--system-prompt", SYSTEM]);

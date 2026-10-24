@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <title>Noctua</title>
   <style>
-    :root { --bg: #e9e7e1; --tab: #f7f6f2; --ink: #1d1f24; --muted: #6b6f78; --line: #d6d3ca; --accent: #4f46e5; }
+    :root { --bg: #e9e7e1; --tab: #f7f6f2; --ink: #1d1f24; --muted: #6b6f78; --line: #d6d3ca; --accent: #805536; }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #0d0e11; --tab: #121317; --ink: #e8e8ea; --muted: #9a9ea8; --line: #2c2f36; --accent: #8b85ff; }
+      :root:not([data-theme="light"]) { --bg: #0d0e11; --tab: #121317; --ink: #e8e8ea; --muted: #9a9ea8; --line: #2c2f36; --accent: #8b85ff; }
     }
+    :root[data-theme="dark"] { --bg: #0d0e11; --tab: #121317; --ink: #e8e8ea; --muted: #9a9ea8; --line: #2c2f36; --accent: #8b85ff; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--tab); color: var(--ink); overflow: hidden;
       font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }

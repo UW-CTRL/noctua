@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use axum::{body::Body, extract::{Path, State}, http::header, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::{io::{AsyncReadExt, AsyncBufReadExt, BufReader}, process::Command, sync::mpsc};
+use tokio::{io::{AsyncReadExt, AsyncBufReadExt, AsyncWriteExt, BufReader, Lines}, process::{ChildStdin, ChildStdout, Command}, sync::mpsc};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use crate::App;
+use crate::{ApiResult, App};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -20,6 +20,24 @@ impl Provider {
         crate::paths::cli_command(self.key(), match self {
             Self::Claude => settings.claude_path.as_deref(), Self::Codex => settings.codex_path.as_deref(),
         })
+    }
+    /// Apply only to inference commands, never login or status probes.
+    pub fn configure(self, app: &App, cmd: &mut Command) {
+        let settings = app.settings.lock().unwrap();
+        let options = settings.assistant.for_provider(self);
+        if !options.model.is_empty() { cmd.arg("--model").arg(&options.model); }
+        match self {
+            Self::Claude => {
+                if !options.reasoning.is_empty() { cmd.arg("--effort").arg(&options.reasoning); }
+                cmd.arg("--settings").arg(json!({"fastMode": options.fast}).to_string());
+            }
+            Self::Codex => {
+                if !options.reasoning.is_empty() {
+                    cmd.arg("-c").arg(format!("model_reasoning_effort={}", json!(options.reasoning)));
+                }
+                cmd.arg("-c").arg(format!("service_tier={}", json!(if options.fast { "fast" } else { "default" })));
+            }
+        }
     }
     pub fn missing(self) -> String {
         format!("Could not start {}. Install the {} CLI, or set {}_path in settings.json (or NOCTUA_{}), then sign in from Settings → Research assistant.", self.label(), self.key(), self.key(), self.key().to_uppercase())
@@ -36,6 +54,122 @@ pub async fn status(State(app): State<Arc<App>>, Path(provider): Path<Provider>)
         Err(_) => json!({ "installed": true, "signed_in": false, "message": "Checking sign-in timed out. Try again." }),
     };
     Json(value)
+}
+
+#[derive(Serialize)]
+struct ModelChoice {
+    id: String,
+    label: String,
+    reasoning_efforts: Vec<String>,
+    is_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_fast: Option<bool>,
+}
+
+/// Ask the installed CLI; never read credentials or infer model names from a screenshot.
+pub async fn models(State(app): State<Arc<App>>, Path(provider): Path<Provider>) -> ApiResult {
+    if provider == Provider::Claude {
+        return Ok(Json(json!({ "models": claude_models(&app).await? })));
+    }
+    let mut cmd = provider.command(&app);
+    let mut child = cmd.args(["app-server", "--listen", "stdio://"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true)
+        .spawn().with_context(|| provider.missing())?;
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let result = tokio::time::timeout(Duration::from_secs(20), async {
+        rpc(&mut stdin, &mut lines, 1, "initialize", json!({
+            "clientInfo": { "name": "noctua", "title": "Noctua", "version": env!("CARGO_PKG_VERSION") }
+        })).await?;
+        stdin.write_all(b"{\"method\":\"initialized\",\"params\":{}}\n").await?;
+        let mut models = Vec::new();
+        let mut cursor = None::<String>;
+        let mut cursors = std::collections::HashSet::new();
+        let mut ids = std::collections::HashSet::new();
+        for page in 0..100 {
+            let response = rpc(&mut stdin, &mut lines, page + 2, "model/list", json!({
+                "limit": 100, "includeHidden": false, "cursor": cursor,
+            })).await?;
+            let entries = response["data"].as_array().context("Codex returned an invalid model catalog")?;
+            for entry in entries {
+                if entry["hidden"].as_bool() == Some(true) { continue; }
+                let id = entry["model"].as_str().filter(|id| !id.is_empty()).context("Codex returned a model without an ID")?;
+                if !ids.insert(id.to_string()) { continue; }
+                let efforts = entry["supportedReasoningEfforts"].as_array().map(|efforts| efforts.iter()
+                    .filter_map(|effort| effort["reasoningEffort"].as_str().map(str::to_string)).collect()).unwrap_or_default();
+                models.push(ModelChoice { id: id.into(), label: id.into(), reasoning_efforts: efforts,
+                    is_default: entry["isDefault"].as_bool().unwrap_or(false), supports_fast: None });
+            }
+            cursor = response["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_string);
+            if cursor.is_none() { return Ok::<_, anyhow::Error>(models); }
+            if !cursors.insert(cursor.clone()) { anyhow::bail!("Codex returned a repeated model-list cursor"); }
+        }
+        anyhow::bail!("Codex returned too many model-list pages")
+    }).await;
+    // A discovery process must not remain running after success, errors, or a timeout.
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    let models = result.context("Loading Codex models timed out. Try Check connection again.")??;
+    Ok(Json(json!({ "models": models })))
+}
+
+async fn claude_models(app: &App) -> Result<Vec<ModelChoice>> {
+    let mut cmd = Provider::Claude.command(app);
+    let mut child = cmd.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+        "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
+        "--settings", "{\"disableAllHooks\":true}"])
+        .current_dir(&app.data_dir)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true)
+        .spawn().with_context(|| Provider::Claude.missing())?;
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let result = tokio::time::timeout(Duration::from_secs(20), async {
+        // Only initialize the SDK control protocol. No user message or inference turn is sent.
+        let request = json!({ "type": "control_request", "request_id": "noctua-models",
+            "request": { "subtype": "initialize", "hooks": {} } });
+        stdin.write_all(format!("{request}\n").as_bytes()).await?;
+        stdin.flush().await?;
+        while let Some(line) = lines.next_line().await? {
+            let message: Value = serde_json::from_str(&line).context("Claude returned an invalid discovery response")?;
+            let response = &message["response"];
+            if message["type"] != "control_response" || response["request_id"] != "noctua-models" { continue; }
+            if response["subtype"] == "error" {
+                anyhow::bail!("Claude model discovery: {}", response["error"].as_str().unwrap_or("request failed"));
+            }
+            let entries = response["response"]["models"].as_array().context("Claude returned an invalid model catalog")?;
+            let mut models = Vec::new();
+            let mut ids = std::collections::HashSet::new();
+            for entry in entries {
+                let id = entry["value"].as_str().filter(|id| !id.is_empty()).context("Claude returned a model without an ID")?;
+                if !ids.insert(id.to_string()) { continue; }
+                let efforts = entry["supportedEffortLevels"].as_array().map(|efforts| efforts.iter()
+                    .filter_map(|effort| effort.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                models.push(ModelChoice { id: id.into(), label: entry["displayName"].as_str().unwrap_or(id).into(),
+                    reasoning_efforts: efforts, is_default: id == "default",
+                    supports_fast: Some(entry["supportsFastMode"].as_bool().unwrap_or(false)) });
+            }
+            return Ok::<_, anyhow::Error>(models);
+        }
+        anyhow::bail!("Claude model discovery stopped. Check your CLI installation and sign-in.")
+    }).await;
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    result.context("Loading Claude models timed out. Try Check connection again.")?
+}
+
+async fn rpc(stdin: &mut ChildStdin, lines: &mut Lines<BufReader<ChildStdout>>, id: u64, method: &str, params: Value) -> Result<Value> {
+    let request = json!({ "id": id, "method": method, "params": params });
+    stdin.write_all(format!("{request}\n").as_bytes()).await?;
+    stdin.flush().await?;
+    while let Some(line) = lines.next_line().await? {
+        let message: Value = serde_json::from_str(&line).context("Codex returned an invalid discovery response")?;
+        if message["id"].as_u64() != Some(id) { continue; }
+        if let Some(error) = message.get("error") {
+            anyhow::bail!("Codex model discovery: {}", error["message"].as_str().unwrap_or("request failed"));
+        }
+        return message.get("result").cloned().context("Codex returned an empty discovery response");
+    }
+    anyhow::bail!("Codex model discovery stopped. Check your CLI installation and sign-in.")
 }
 
 /// Starts the CLI's own browser login; streams instructions/URLs without
@@ -86,6 +220,7 @@ pub fn codex_command(app: &App, mcp_url: Option<&str>, instructions: &str) -> Co
         .args(["-c", "features.shell_tool=false", "-c", "web_search=\"disabled\""])
         .args(["-c", "project_doc_max_bytes=0"])
         .arg("-c").arg(format!("developer_instructions={}", json!(instructions)));
+    Provider::Codex.configure(app, &mut cmd);
     if let Some(url) = mcp_url {
         cmd.arg("-c").arg(format!("mcp_servers.noctua.url={}", json!(url)))
             .args(["-c", "mcp_servers.noctua.required=true", "-c", "mcp_servers.noctua.tool_timeout_sec=600"])
@@ -133,7 +268,7 @@ mod tests {
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
-                notes: Notes::new(root.join("notes")), data_dir: root.clone(), settings: std::sync::Mutex::new(settings),
+                notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, settings: std::sync::Mutex::new(settings),
                 desktop: None, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
@@ -248,6 +383,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn discovers_codex_models_with_pagination_and_surfaces_cli_failures() -> Result<()> {
+        let f = Fixture::new()?;
+        let catalog = f.json("/api/agents/codex/models", None).await;
+        let models = catalog["models"].as_array().unwrap();
+        assert_eq!(models.len(), 2, "hidden and duplicate entries must be excluded");
+        assert_eq!(models[0]["id"], "catalog-model");
+        assert_eq!(models[1]["id"], "second-model");
+        assert_eq!(models[0]["reasoning_efforts"], json!(["low", "high"]));
+        assert_eq!(models[0]["is_default"], true);
+        std::fs::write(f.root.join("model-list-fail"), "")?;
+        assert!(!f.request("/api/agents/codex/models", None, None).await.status().is_success());
+        std::fs::remove_file(f.root.join("model-list-fail"))?;
+        std::fs::write(f.root.join("model-list-eof"), "")?;
+        assert!(!f.request("/api/agents/codex/models", None, None).await.status().is_success());
+        let calls: Vec<Value> = std::fs::read_to_string(f.root.join("invocations.jsonl"))?
+            .lines().map(|s| serde_json::from_str(s).unwrap()).collect();
+        assert!(calls.iter().all(|call| call["args"][0] == "app-server"), "discovery must never run inference");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn discovers_claude_models_without_inference_and_reads_capabilities() -> Result<()> {
+        let f = Fixture::new()?;
+        let catalog = f.json("/api/agents/claude/models", None).await;
+        let models = catalog["models"].as_array().unwrap();
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0]["is_default"], true);
+        assert_eq!(models[1]["id"], "new-opus");
+        assert_eq!(models[1]["label"], "New Opus");
+        assert_eq!(models[1]["supports_fast"], true);
+        assert_eq!(models[1]["reasoning_efforts"], json!(["low", "high"]));
+        assert_eq!(models[2]["supports_fast"], false);
+        assert_eq!(models[2]["reasoning_efforts"], json!([]));
+        std::fs::write(f.root.join("model-list-fail"), "")?;
+        assert!(!f.request("/api/agents/claude/models", None, None).await.status().is_success());
+        std::fs::remove_file(f.root.join("model-list-fail"))?;
+        std::fs::write(f.root.join("model-list-eof"), "")?;
+        assert!(!f.request("/api/agents/claude/models", None, None).await.status().is_success());
+        let calls: Vec<Value> = std::fs::read_to_string(f.root.join("invocations.jsonl"))?
+            .lines().map(|s| serde_json::from_str(s).unwrap()).collect();
+        assert!(calls.iter().all(|call| call["args"].as_array().unwrap().contains(&json!("--no-session-persistence"))));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn both_backends_login_resume_transcribe_and_keep_separate_histories() -> Result<()> {
         use base64::Engine;
         let f = Fixture::new()?;
@@ -258,7 +438,10 @@ mod tests {
             let login = f.events(&format!("/api/agents/{provider}/login"), json!({})).await;
             assert_eq!(login.last().unwrap()["type"], "done", "{login:?}");
             assert_eq!(f.json(&format!("/api/agents/{provider}"), None).await["signed_in"], true);
-            f.json("/api/settings/agent", Some(json!({ "provider": provider }))).await;
+            let model = if provider == "claude" { "opus" } else { "gpt-6.1-sol" };
+            f.json("/api/settings/agent", Some(json!({ "provider": provider, "options": { "model": model, "reasoning": "high", "fast": true } }))).await;
+            let saved = crate::settings::Settings::load(&f.root);
+            assert_eq!(saved.assistant.for_provider(if provider == "claude" { Provider::Claude } else { Provider::Codex }).model, model);
             let events = f.events("/api/chat", json!({ "message": "hello", "provider": provider })).await;
             let id = events.iter().find(|e| e["type"] == "chat").unwrap()["id"].as_str().unwrap().to_string();
             assert!(events.iter().any(|e| e["text"] == format!("{provider} reply")), "{events:?}");
@@ -284,6 +467,37 @@ mod tests {
         for (provider, flag, session) in [("claude", "--resume", "claude-session"), ("codex", "resume", "codex-session")] {
             assert!(calls.iter().any(|c| c["provider"] == provider && c["args"].as_array().unwrap().contains(&json!(flag)) && c["args"].as_array().unwrap().contains(&json!(session))));
         }
+        for provider in ["claude", "codex"] {
+            let inference: Vec<_> = calls.iter().filter(|c| c["provider"] == provider && c["args"].as_array().unwrap().iter().any(|a| a == "-p" || a == "exec")).collect();
+            assert_eq!(inference.len(), 3, "initial, resumed, and drawing requests");
+            for call in inference {
+                let args = call["args"].as_array().unwrap();
+                let has_pair = |flag: &str, value: &str| args.windows(2).any(|p| p[0] == flag && p[1] == value);
+                if provider == "claude" {
+                    assert!(has_pair("--model", "opus"));
+                    assert!(has_pair("--effort", "high"));
+                    assert!(has_pair("--settings", r#"{"fastMode":true}"#));
+                } else {
+                    assert!(has_pair("--model", "gpt-6.1-sol"));
+                    assert!(has_pair("-c", r#"model_reasoning_effort="high""#));
+                    assert!(has_pair("-c", r#"service_tier="fast""#));
+                }
+            }
+        }
+        // Provider-only updates preserve both saved configurations.
+        f.json("/api/settings/agent", Some(json!({"provider":"claude"}))).await;
+        let settings = f.json("/api/settings", None).await;
+        assert_eq!(settings["assistant"]["claude"]["model"], "opus");
+        assert_eq!(settings["assistant"]["codex"]["model"], "gpt-6.1-sol");
+        for options in [json!({"model":"--bad"}), json!({"model":"a\nb"}), json!({"reasoning":"ultra"})] {
+            assert_eq!(f.request("/api/settings/agent", Some(json!({"provider":"claude","options":options})), None).await.status(), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings", None).await["assistant"], settings["assistant"]);
+        f.json("/api/settings/agent", Some(json!({"provider":"codex","options":{}}))).await;
+        let cmd = codex_command(&f.app, None, "test");
+        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert!(!args.iter().any(|a| a == "--model" || a.starts_with("model_reasoning_effort=")));
+        assert!(args.iter().any(|a| a == r#"service_tier="default""#));
         Ok(())
     }
 

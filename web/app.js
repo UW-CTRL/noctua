@@ -914,7 +914,7 @@ async function stopChat() {
 async function activateAgent(provider, { persist = true } = {}) {
   if (chat.switching) return;
   chat.switching = true;
-  $('#agent-provider').disabled = true;
+  if ($('#setup-agent')) $('#setup-agent').disabled = true;
   $('#chat-input').disabled = true;
   $('#chat-send').disabled = true;
   try {
@@ -925,7 +925,6 @@ async function activateAgent(provider, { persist = true } = {}) {
     chat.ready = true;
     chat.sentGraphKey = null; chat.sentNoteKey = null;
     $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
-    $('#agent-provider').value = provider;
     toggleChatHistory(false);
     const id = store.get('noctua.chat.' + provider) || (provider === 'claude' ? store.get('noctua.chat') : null);
     chat.id = null;
@@ -936,8 +935,10 @@ async function activateAgent(provider, { persist = true } = {}) {
     refreshAgentBadge();
   } finally {
     chat.switching = false;
-    $('#agent-provider').value = chat.provider;
-    $('#agent-provider').disabled = false;
+    if ($('#setup-agent')) {
+      $('#setup-agent').value = chat.provider;
+      $('#setup-agent').disabled = false;
+    }
     $('#chat-input').disabled = false;
     $('#chat-send').disabled = false;
   }
@@ -945,18 +946,12 @@ async function activateAgent(provider, { persist = true } = {}) {
 
 async function refreshAgentBadge() {
   const provider = chat.provider;
-  $('#agent-signin').textContent = 'Account';
   try {
     const s = await api('/api/agents/' + provider);
     if (provider !== chat.provider) return;
-    $('#agent-signin').textContent = s.signed_in ? 'Connected' : 'Sign in';
-    $('#agent-signin').title = s.signed_in ? `${agentLabel()} is signed in. Manage in Settings.` : `Sign in to ${agentLabel()}`;
+    if ($('#agent-status')) $('#agent-status').textContent = s.signed_in ? 'Signed in' : s.installed ? 'Not signed in' : 'CLI not found';
   } catch { /* account details remain available in Settings */ }
 }
-
-$('#agent-provider').addEventListener('change', (e) => {
-  activateAgent(e.target.value).catch((err) => toast(err.message, { error: true }));
-});
 
 // What the assistant may do to notes: suggest edits (accept/reject), plan (read-only), or edit directly.
 const CHAT_MODES = {
@@ -1841,7 +1836,18 @@ window.addEventListener('popstate', () => {
 new ResizeObserver(() => draw()).observe($('#stage'));
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
 
-readColors();
+function setAppTheme(theme) {
+  const next = ['light', 'dark', 'system'].includes(theme) ? theme : 'system';
+  document.documentElement.dataset.theme = next;
+  store.set('noctua.theme', next);
+  if ($('#setup-app-theme')) $('#setup-app-theme').value = next;
+  readColors();
+  draw();
+}
+setAppTheme(store.get('noctua.theme'));
+window.addEventListener('storage', (e) => {
+  if (e.key === 'noctua.theme' || e.key === null) setAppTheme(store.get('noctua.theme'));
+});
 setChatMode(chat.mode);
 chatWelcome();
 

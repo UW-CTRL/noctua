@@ -3,6 +3,12 @@
 // iframe (same origin, so the shell can read each tab's title and location).
 // The app's menu calls noctuaShell.cmd(…) for New Tab, Close Tab, etc.
 
+function syncShellTheme() {
+  try { document.documentElement.dataset.theme = localStorage.getItem('noctua.theme') || 'system'; } catch { /* system appearance */ }
+}
+syncShellTheme();
+window.addEventListener('storage', (e) => { if (e.key === 'noctua.theme' || e.key === null) syncShellTheme(); });
+
 const params = new URLSearchParams(location.search);
 const WIN = params.get('w') || 'w1';
 const STORE = `noctua.shell.${WIN}`;

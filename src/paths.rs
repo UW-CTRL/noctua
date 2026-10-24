@@ -10,14 +10,19 @@ use std::{
 
 use anyhow::Result;
 
-/// `$NOCTUA_HOME`, else the platform's per-user data folder:
+/// The platform's per-user data folder:
 /// ~/Library/Application Support/Noctua, %APPDATA%\Noctua, ~/.local/share/noctua.
-pub fn data_dir() -> PathBuf {
-    if let Some(h) = env::var_os("NOCTUA_HOME") {
-        return h.into();
-    }
+pub fn default_data_dir() -> PathBuf {
     let name = if cfg!(target_os = "linux") { "noctua" } else { "Noctua" };
     dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(name)
+}
+
+/// Environment overrides take precedence over the location saved in Settings.
+pub fn data_dir() -> Result<PathBuf> {
+    if let Some(h) = env::var_os("NOCTUA_HOME").filter(|h| !h.is_empty()) {
+        return Ok(h.into());
+    }
+    crate::storage::resolve(&default_data_dir())
 }
 
 const LEGACY_DBS: [&str; 3] = ["noctua-cache.sqlite", "noctua-chats.sqlite", "noctua-projects.sqlite"];
@@ -54,11 +59,16 @@ pub fn migrate_legacy(data: &Path) -> Result<Option<PathBuf>> {
     copy_dir(&old.join(".noctua-chat"), &data.join(".noctua-chat"))?;
     // Claude keeps resumable sessions per working directory; copy them so old
     // chats can still be continued from the new location.
+    copy_agent_sessions(&old, data)?;
+    Ok(Some(old))
+}
+
+pub(crate) fn copy_agent_sessions(old: &Path, data: &Path) -> Result<()> {
     if let Some(projects) = dirs::home_dir().map(|h| h.join(".claude").join("projects")) {
         let from = projects.join(claude_project_name(&old.join(".noctua-chat")));
         copy_dir(&from, &projects.join(claude_project_name(&data.join(".noctua-chat"))))?;
     }
-    Ok(Some(old))
+    Ok(())
 }
 
 /// How Claude Code names a working directory's session folder.

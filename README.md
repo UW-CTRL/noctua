@@ -28,7 +28,7 @@ Use a current CLI version. In **Settings → Research assistant**, choose a back
 If a CLI is installed but not found, set `"codex_path"` or `"claude_path"` in
 `settings.json` (see *Your data* below).
 
-The header's **Claude Code / Codex** selector switches the backend for both chat and
+The **Settings → Research assistant** selector switches the backend for both chat and
 handwriting-to-LaTeX. Each backend has its own saved conversations, CLI sessions, and
 message draft. Switching restores that backend's last open conversation. If a reply is
 running, switching stops it and waits for the interrupted turn to be saved. Existing
@@ -39,6 +39,36 @@ conversations are retained as Claude Code chats when upgrading.
 Noctua asks for your **Semantic Scholar API key**. You can continue without one to use the slower shared pool. Configure the selected assistant in **Settings**.
 
 Zotero is optional: configure its data folder in **Settings**, then choose **Library → Import from Zotero** to copy collections, metadata, and locally available PDFs. The source is read-only. Close Zotero before importing for the freshest database snapshot; it is never needed to open papers afterward.
+
+## Settings
+
+The header's **⚙ Settings** button opens a dialog with tabs on the left:
+
+- **Appearance**: Light, Dark, or System for the app and independently for Notes.
+  Appearance saves automatically in this browser and updates other tabs at the same address.
+- **Research assistant**: choose Codex or Claude Code, a model (or custom model ID), reasoning
+  effort, and fast mode. Choices save automatically per provider and apply to the next chat
+  message or handwriting transcription. Provider defaults are available for model and effort.
+  Supported efforts and fast mode availability depend on your model, CLI, and account; fast
+  mode may use additional credits or incur extra charges. Sign in and check the connection here.
+  Model choices and supported reasoning efforts are loaded from each installed CLI when
+  Settings opens, after sign-in, and when checking the connection. Codex uses its `model/list`
+  catalog; Claude uses its SDK initialization catalog, including fast-mode capabilities.
+  Catalog entries can be cached by the CLI; successful inference confirms access. Saved model IDs
+  outside the catalog remain available as custom models. Discovery failures are shown in Settings.
+- **Connections**: save or remove a Semantic Scholar key and configure the Zotero import source.
+- **Data & storage**: change the storage location.
+  Choose an empty folder and save, then quit all Noctua apps and servers and restart.
+  Noctua copies your library, PDFs, notes, settings, and chats to the new folder and keeps
+  the original copy. You can cancel a pending change before restarting. The selection
+  is saved in `storage-location.json` in the default data folder. Environment overrides
+  (`NOCTUA_HOME` or `NOCTUA_NOTES`) must be unset before choosing a folder in Settings.
+- **About & shortcuts**: app version and common keyboard shortcuts.
+
+Switching settings tabs preserves unfinished fields. Keys and folder paths use explicit
+Save buttons. Settings remembers its last tab; links such as **Add your API key** open
+the relevant tab directly. Arrow Up/Down, Home, and End navigate the tabs; Esc closes the dialog.
+The collection picker and Suggest / Plan / Direct controls stay in the workspace.
 
 ## Your data
 
@@ -153,8 +183,12 @@ The optional Zotero import preserves nested collections and citation keys, and r
 
 ## Notes
 
-Switch the header to **Notes** for a dark writing page attached to a Zotero
-folder. Each folder holds any number of notes (**New note**, click to open, ×
+Switch the header to **Notes** for a writing page attached to a Noctua
+collection. Use **Settings → Appearance → Notes theme** to choose **Dark**, **Light**,
+or **System** (follows your system appearance). Dark is the default. Your choice
+is remembered in this browser and shared with other tabs at the same address.
+Drawing colors adapt for readability without changing saved strokes.
+Each folder holds any number of notes (**New note**, click to open, ×
 to delete; the title is edited at the top of the page). A note mixes two kinds
 of blocks; hover between blocks for **+ Text** / **+ Drawing**, or press ⌘⇧D
 to add a drawing pad after the current block.
@@ -268,6 +302,7 @@ Development checks:
 ```sh
 cargo test                         # migration, stream events, HTTP handlers and fake CLI integration
 swift tests/frontend.swift         # macOS: JavaScript syntax and backend switching, using JavaScriptCore
+swift tests/assistant-settings.swift # model, reasoning, fast mode, and preference save recovery
 ```
 
 The backend integration tests use temporary data and fake CLIs; they do not sign in

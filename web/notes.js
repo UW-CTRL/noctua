@@ -837,6 +837,18 @@ function notesContext(sentKey) {
 
 // ---------------------------------------------------------------- wiring
 
+// CSS follows system changes automatically; changing palettes never rewrites note content.
+function setNotesTheme(theme) {
+  const next = ['dark', 'light', 'system'].includes(theme) ? theme : 'dark';
+  $('#notes-stage').dataset.notesTheme = next;
+  if ($('#setup-notes-theme')) $('#setup-notes-theme').value = next;
+  store.set('noctua.notesTheme', next);
+}
+setNotesTheme(store.get('noctua.notesTheme'));
+window.addEventListener('storage', (e) => {
+  if (e.key === 'noctua.notesTheme' || e.key === null) setNotesTheme(store.get('noctua.notesTheme'));
+});
+
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('#notes-target').addEventListener('change', (e) => { N.target = null; loadNoteFolder(e.target.value); });
 $('#note-new').addEventListener('click', createNote);
