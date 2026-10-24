@@ -59,7 +59,7 @@ const Ink = (() => {
 
   // Mounts a pad for `block` ({ h, strokes }) into `el`. `onChange` fires after
   // every finished stroke, erase, undo, clear or resize.
-  function mount(el, block, onChange) {
+  function mount(el, block, onChange, history = null) {
     block.strokes = block.strokes || [];
     block.h = block.h || 0.35;
     el.classList.add('ink');
@@ -181,8 +181,8 @@ const Ink = (() => {
       changed();
     }
     // Undo of an undo is a redo: the inverse op goes onto the other stack.
-    const undoOnce = () => doUndo(undo, redo);
-    const redoOnce = () => doUndo(redo, undo);
+    const undoOnce = () => history ? history.undo() : doUndo(undo, redo);
+    const redoOnce = () => history ? history.redo() : doUndo(redo, undo);
 
     el.querySelector('.ink-tools').addEventListener('click', (e) => {
       const b = e.target.closest('button');

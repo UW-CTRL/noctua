@@ -14,6 +14,10 @@ mod pdf_autohighlight;
 mod media;
 mod mcp;
 mod notes;
+mod editing;
+mod workspace;
+mod bibliography;
+mod skills;
 pub mod paths;
 mod project;
 mod s2;
@@ -344,6 +348,9 @@ async fn notes_save(State(app): Shared, Path((target, id)): Path<(String, String
     Ok(Json(json!({ "updated": app.notes.save(&folder, &id, doc)? })))
 }
 
+async fn notes_history(State(app):Shared,Path((target,id)):Path<(String,String)>)->ApiResult {Ok(Json(app.notes.history(&app.library.folder_id(&target)?,&id,None,None)?))}
+async fn notes_undo(State(app):Shared,Path((target,id)):Path<(String,String)>,Json(b):Json<Value>)->ApiResult {Ok(Json(app.notes.history(&app.library.folder_id(&target)?,&id,Some(b["redo"]==true),b["updated"].as_u64())?))}
+
 async fn notes_delete(State(app): Shared, Path((target, id)): Path<(String, String)>) -> ApiResult {
     let folder = app.library.folder_id(&target)?;
     app.notes.delete(&folder, &id)?;
@@ -589,6 +596,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/fonts.js", get(|| async { asset(include_str!("../web/fonts.js"), "text/javascript; charset=utf-8") }))
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
+        .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
+        .route("/workspace.js",get(||async{asset(include_str!("../web/workspace.js"),"text/javascript; charset=utf-8")}))
         .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
         .route("/lineage.js", get(|| async { asset(include_str!("../web/lineage.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
@@ -622,6 +631,17 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
             "/api/notes/{target}/{id}",
             get(notes_get).put(notes_save).delete(notes_delete).layer(DefaultBodyLimit::max(32 << 20)),
         )
+        .route("/api/skills",get(skills::get).post(skills::upload).layer(DefaultBodyLimit::max(48 << 20)))
+        .route("/api/skills/import-zip",post(skills::upload_zip).layer(DefaultBodyLimit::max(32 << 20)))
+        .route("/api/skills/{id}/files/{*path}",get(skills::resource))
+        .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))
+        .route("/api/workspaces/{target}",get(workspace::get).post(workspace::edit))
+        .route("/api/workspaces/{target}/history",post(workspace::undo))
+        .route("/api/workspaces/{target}/upload",post(workspace::upload).layer(DefaultBodyLimit::max(32 << 20)))
+        .route("/api/workspaces/{target}/files/{id}",get(workspace::text))
+        .route("/api/workspaces/{target}/files/{id}/content",get(workspace::download))
+        .route("/api/workspaces/{target}/files/{id}/history",post(workspace::file_undo))
+        .route("/api/notes/{target}/{id}/history",get(notes_history).post(notes_undo))
         .route("/api/note-media/{target}", post(media::upload).layer(DefaultBodyLimit::disable()))
         .route("/api/note-media/{target}/{file}", get(media::get))
         .route("/api/note-images/{target}", post(note_image_upload).layer(DefaultBodyLimit::max(32 << 20)))

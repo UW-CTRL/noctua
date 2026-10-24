@@ -21,7 +21,7 @@ fn missing() -> anyhow::Error { crate::Status(axum::http::StatusCode::NOT_FOUND,
 fn norm(s: &str) -> String { s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect() }
 fn text<'a>(v: &'a Value, key: &str) -> &'a str { v[key].as_str().unwrap_or("") }
 
-pub struct Library { conn: Mutex<Connection>, root: PathBuf }
+pub struct Library { edit_gate: Mutex<()>, conn: Mutex<Connection>, root: PathBuf }
 impl Library {
     pub fn open(root: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(root.join("pdfs"))?;
@@ -39,7 +39,7 @@ impl Library {
             CREATE TABLE IF NOT EXISTS page_images (hash TEXT NOT NULL, page INTEGER NOT NULL, png BLOB NOT NULL, PRIMARY KEY(hash,page));
             CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY, paper TEXT NOT NULL REFERENCES papers(key), data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        Ok(Self { conn: Mutex::new(conn), root })
+        Ok(Self { edit_gate:Mutex::new(()), conn: Mutex::new(conn), root })
     }
     pub fn collections(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
@@ -197,7 +197,7 @@ impl Library {
         let body:Option<String>=self.conn.lock().unwrap().query_row("SELECT data FROM pdf_auto_highlights WHERE hash=?1",[hash],|r|r.get(0)).optional()?;
         body.map(|s|serde_json::from_str(&s).map_err(Into::into)).transpose()
     }
-    pub fn save_auto_highlights(&self,key:&str,analysis:&Value,colors:&crate::settings::HighlightColors)->Result<Value> {
+    fn save_auto_highlights_inner(&self,key:&str,analysis:&Value,colors:&crate::settings::HighlightColors)->Result<Value> {
         let hash=self.hash(key)?;if analysis["hash"]!=hash {return Err(conflict("PDF changed during auto-highlight analysis"));}
         let bodies=analysis["highlights"].as_array().filter(|a|a.len()<=48).context("Invalid auto-highlight analysis")?;
         // Validate the whole result before opening a transaction or writing any annotations.
@@ -258,7 +258,7 @@ impl Library {
         let rows=stmt.query_map([key],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?)))?;
         rows.map(|r|{let (s,rev)=r?;let mut v:Value=serde_json::from_str(&s)?;v["revision"]=json!(rev);Ok(v)}).collect()
     }
-    pub fn annotate(&self,key:&str,body:&Value,author:&str,pending:bool)->Result<Value> {
+    fn annotate_inner(&self,key:&str,body:&Value,author:&str,pending:bool)->Result<Value> {
         let a=self.prepare_annotation(key,body,author,pending)?;
         self.conn.lock().unwrap().execute("INSERT INTO annotations(id,paper,data) VALUES(?1,?2,?3)",params![text(&a,"id"),key,a.to_string()])?;Ok(a)
     }
@@ -289,6 +289,7 @@ impl Library {
         Ok(a)
     }
     pub fn recolor_ai_highlights(&self,colors:&std::collections::BTreeMap<String,String>)->Result<usize> {
+        let _gate=self.edit_gate.lock().unwrap();
         let mut connection=self.conn.lock().unwrap();let tx=connection.transaction()?;let mut count=0;
         for (category,color) in colors {
             if category_color(category).is_none()||!valid_color(color){return Err(bad("Invalid AI highlight color"));}
@@ -296,7 +297,7 @@ impl Library {
         }
         tx.commit()?;Ok(count)
     }
-    pub fn update_annotation(&self,key:&str,aid:&str,body:&Value)->Result<Value> {
+    fn update_annotation_inner(&self,key:&str,aid:&str,body:&Value)->Result<Value> {
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
         let (s,rev):(String,i64)=tx.query_row("SELECT data,revision FROM annotations WHERE id=?1 AND paper=?2",params![aid,key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(missing)?;
         if body["revision"].as_i64()!=Some(rev){return Err(conflict("This annotation changed in another tab. Reload it before saving."));}
@@ -306,7 +307,7 @@ impl Library {
         if let Some(v)=body.get("status"){if v!="accepted"{return Err(bad("Only pending suggestions can be accepted"));}a["status"]=v.clone();}
         a["revision"]=json!(rev+1);tx.execute("UPDATE annotations SET data=?1,revision=revision+1 WHERE id=?2",params![a.to_string(),aid])?;tx.commit()?;Ok(a)
     }
-    pub fn reply(&self,key:&str,aid:&str,comment:&str,author:&str,pending:bool)->Result<Value> {
+    fn reply_inner(&self,key:&str,aid:&str,comment:&str,author:&str,pending:bool)->Result<Value> {
         if comment.trim().is_empty()||comment.len()>100000{return Err(bad("Write a comment (up to 100000 characters)"));}
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
         let (s,rev):(String,i64)=tx.query_row("SELECT data,revision FROM annotations WHERE id=?1 AND paper=?2",params![aid,key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(missing)?;
@@ -314,7 +315,7 @@ impl Library {
         a["replies"].as_array_mut().context("Invalid comment thread")?.push(json!({"id":id("r"),"comment":comment,"author":author,"created":now(),"status":if pending{"pending"}else{"accepted"}}));
         a["revision"]=json!(rev+1);tx.execute("UPDATE annotations SET data=?1,revision=revision+1 WHERE id=?2",params![a.to_string(),aid])?;tx.commit()?;Ok(a)
     }
-    pub fn resolve_reply(&self,key:&str,aid:&str,rid:&str,accept:bool)->Result<Value> {
+    fn resolve_reply_inner(&self,key:&str,aid:&str,rid:&str,accept:bool)->Result<Value> {
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
         let (s,rev):(String,i64)=tx.query_row("SELECT data,revision FROM annotations WHERE id=?1 AND paper=?2",params![aid,key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(missing)?;
         let mut a:Value=serde_json::from_str(&s)?;let replies=a["replies"].as_array_mut().context("Invalid thread")?;
@@ -322,9 +323,78 @@ impl Library {
         if accept{replies[i]["status"]=json!("accepted");}else{replies.remove(i);}
         a["revision"]=json!(rev+1);tx.execute("UPDATE annotations SET data=?1,revision=revision+1 WHERE id=?2",params![a.to_string(),aid])?;tx.commit()?;Ok(a)
     }
-    pub fn delete_annotation(&self,key:&str,aid:&str,revision:i64)->Result<()> {
+    fn delete_annotation_inner(&self,key:&str,aid:&str,revision:i64)->Result<()> {
         let n=self.conn.lock().unwrap().execute("DELETE FROM annotations WHERE id=?1 AND paper=?2 AND revision=?3",params![aid,key,revision])?;
         if n==0{return Err(conflict("Annotation changed or was already removed. Refresh before trying again."));}Ok(())
+    }
+    pub fn annotate(&self,key:&str,body:&Value,author:&str,pending:bool)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.annotate_inner(key,body,author,pending)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Add annotation");
+        Ok(result)
+    }
+    pub fn update_annotation(&self,key:&str,aid:&str,body:&Value)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.update_annotation_inner(key,aid,body)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Edit annotation");
+        Ok(result)
+    }
+    pub fn reply(&self,key:&str,aid:&str,comment:&str,author:&str,pending:bool)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.reply_inner(key,aid,comment,author,pending)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Reply to annotation");
+        Ok(result)
+    }
+    pub fn resolve_reply(&self,key:&str,aid:&str,rid:&str,accept:bool)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.resolve_reply_inner(key,aid,rid,accept)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Resolve reply");
+        Ok(result)
+    }
+    pub fn delete_annotation(&self,key:&str,aid:&str,revision:i64)->Result<()>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.delete_annotation_inner(key,aid,revision)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Delete annotation");
+        Ok(result)
+    }
+    pub fn save_auto_highlights(&self,key:&str,analysis:&Value,colors:&crate::settings::HighlightColors)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let before=self.annotation_content(key)?;
+        let result=self.save_auto_highlights_inner(key,analysis,colors)?;
+        let after=self.annotation_content(key)?;
+        crate::editing::journals().lock().unwrap().entry(self.annotation_history_key(key)).or_default().record(before,after,"Auto-highlight paper");
+        Ok(result)
+    }
+    fn annotation_history_key(&self,key:&str)->String{format!("{}:paper:{key}",self.root.display())}
+    fn annotation_content(&self,key:&str)->Result<Value>{let mut list=self.annotations(key)?;list.sort_by_key(|a|a["id"].as_str().unwrap_or("").to_owned());Ok(json!(list.into_iter().map(crate::editing::content).collect::<Vec<_>>()))}
+    pub fn annotation_history(&self,key:&str,request:Option<&Value>)->Result<Value>{
+        let _gate=self.edit_gate.lock().unwrap();
+        let current=self.annotation_content(key)?;
+        let mut hs=crate::editing::journals().lock().unwrap();let h=hs.entry(self.annotation_history_key(key)).or_default();
+        if let Some(b)=request {
+            if b["expected"]!=json!(self.annotations(key)?){return Err(conflict("Annotations changed in another window. Refresh before undoing."));}
+            let redo=b["redo"]==true;let desired=h.pending(redo,&current)?;let minimum=(now() as i64).max(self.annotations(key)?.iter().filter_map(|a|a["revision"].as_i64()).max().unwrap_or(0)+1);
+            static RESTORED_REVISION:std::sync::atomic::AtomicI64=std::sync::atomic::AtomicI64::new(0);
+            RESTORED_REVISION.fetch_max(minimum,std::sync::atomic::Ordering::SeqCst);
+            let next_revision=RESTORED_REVISION.fetch_add(1,std::sync::atomic::Ordering::SeqCst);
+            let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
+            let latest={let mut query=tx.prepare("SELECT data,revision FROM annotations WHERE paper=?1 ORDER BY json_extract(data,'$.created'),id")?;let rows=query.query_map([key],|row|Ok((row.get::<_,String>(0)?,row.get::<_,i64>(1)?)))?;let mut out=Vec::new();for row in rows{let (data,rev)=row?;let mut a:Value=serde_json::from_str(&data)?;a["revision"]=json!(rev);out.push(a);}out};
+            if json!(latest)!=b["expected"]{return Err(conflict("Annotations changed during undo. Refresh and try again."));}
+            tx.execute("DELETE FROM annotations WHERE paper=?1",[key])?;
+            for item in desired.as_array().context("Invalid annotation history")? {let mut a=item.clone();let revision=next_revision;a["revision"]=json!(revision);tx.execute("INSERT INTO annotations(id,paper,data,revision) VALUES(?1,?2,?3,?4)",params![text(&a,"id"),key,a.to_string(),revision])?;}
+            tx.commit()?;h.finish(redo);
+        }
+        Ok(h.status())
     }
     pub fn import_zotero(&self,zotero:&crate::zotero::Zotero,copy_pdfs:bool)->Result<Value> {
         let targets=zotero.import_collections()?;let mut stack:Vec<String>=Vec::new();let mut roots=Vec::new();

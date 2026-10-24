@@ -2,7 +2,7 @@
 //! the chat assistant use Noctua: search Semantic Scholar, drive the graph UI
 //! and save papers to Noctua.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 use crate::App;
@@ -38,7 +38,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-const WRITE_TOOLS: [&str; 6] = ["download_pdf", "add_to_zotero", "save_to_library", "edit_note", "annotate_pdf", "comment_on_pdf_annotation"];
+const WRITE_TOOLS: [&str; 8] = ["download_pdf", "add_to_zotero", "save_to_library", "edit_note", "annotate_pdf", "comment_on_pdf_annotation", "edit_project_file", "request_skill_run"];
 
 fn tools(mode: &str) -> Value {
     let paper_id = json!({ "type": "string", "description": "Semantic Scholar paperId, or DOI:<doi> / ARXIV:<id>" });
@@ -65,7 +65,7 @@ fn tools(mode: &str) -> Value {
         tool("read_note", "Read one of the user's notes: its LaTeX text, with handwritten drawings shown as [drawing].",
              json!({ "folder_id": folder_id, "note_id": { "type": "string" } }), &["folder_id", "note_id"]),
         tool("view_note_image", "Look at an image in one of the user's notes: a path from \\includegraphics{images/…} in the note's text. Returns the image itself, so you can read, transcribe or interpret it (e.g. into LaTeX for edit_note).",
-             json!({ "folder_id": folder_id, "path": { "type": "string", "description": "The image path as written in the note, e.g. images/plot-1a2b3c4d.png" } }), &["folder_id", "path"]),
+             json!({ "folder_id": folder_id, "path": { "type": "string", "description": "The image path as written in the note, e.g. images/plot-1a2b3c4d.png, media/<hash>.png, or files/<file_id>" } }), &["folder_id", "path"]),
         tool("save_to_library", "Save a paper into a Noctua collection and try downloading its open-access PDF. Existing papers are added to the collection without duplication.",
              json!({ "paper_id": paper_id, "folder_id": folder_id }), &["paper_id", "folder_id"]),
         tool("edit_note",
@@ -99,6 +99,14 @@ fn tools(mode: &str) -> Value {
         tool("annotate_pdf","Add a highlight anchored to an exact quote from read_pdf, or a page comment. In suggest mode it is pending user acceptance. Comments support LaTeX $math$ and $$math$$. Optional category labels the highlight as novelty, method, results, or limitations and uses its default color from Settings when color is omitted.",json!({"paper_key":key,"page":page,"category":{"type":"string","enum":crate::library::HIGHLIGHT_CATEGORIES},"kind":{"type":"string","enum":["highlight","comment"]},"quote":{"type":"string"},"occurrence":{"type":"integer","minimum":0},"color":{"type":"string","pattern":"^#[0-9a-fA-F]{6}$","description":"Optional six-digit hex color; categorized highlights default to the user palette in Settings"},"comment":{"type":"string"}}), &["paper_key","page","comment"]),
         tool("comment_on_pdf_annotation","Reply to a PDF annotation with a comment, including LaTeX math. Suggest mode creates a pending reply.",json!({"paper_key":key,"annotation_id":{"type":"string"},"comment":{"type":"string"}}), &["paper_key","annotation_id","comment"]),
     ];
+    list.as_array_mut().unwrap().extend(vec![
+        tool("list_project_files","List a collection workspace, stable file IDs, enabled bibliographies and skills. Unorganized images and videos are grouped in a Media folder; file IDs and media references remain stable. Existing notes still use read_note/edit_note.",json!({"folder_id":folder_id}),&["folder_id"]),
+        tool("read_project_file","Read a UTF-8 project file such as .bib or Markdown. Returns source and workspace revision for safe edits.",json!({"folder_id":folder_id,"file_id":{"type":"string"}}),&["folder_id","file_id"]),
+        tool("edit_project_file","Create/edit/rename/move a project text file or create a folder. In Suggest mode the user reviews the proposal; Direct applies revision-checked edits. Use op=create with name/text/parent, edit with id/text, rename with id/name, move with id/parent, or folder with name/parent. Does not delete files or enable skills.",json!({"folder_id":folder_id,"revision":{"type":"integer"},"op":{"type":"string","enum":["create","edit","rename","move","folder"]},"id":{"type":"string"},"name":{"type":"string"},"parent":{"type":"string"},"text":{"type":"string"}}),&["folder_id","revision","op"]),
+        tool("read_skill","Read SKILL.md or a supporting text resource of an enabled imported skill. Returns the package file list. Does not execute anything.",json!({"skill_id":{"type":"string"},"path":{"type":"string"}}),&["skill_id","path"]),
+        tool("request_skill_run","Request user approval to run one bundled script. Returns a pending run ID, not execution success. User reviews script/arguments and selected project input files; output changes require separate acceptance. Use get_skill_run later to inspect status. Inputs are copied using their project paths into a temporary working directory. Supports Python, Node, and shell scripts; dependencies are not installed automatically.",json!({"folder_id":folder_id,"skill_id":{"type":"string"},"script":{"type":"string"},"args":{"type":"array","items":{"type":"string"}},"files":{"type":"array","items":{"type":"string"},"description":"Explicit input project file IDs"}}),&["folder_id","skill_id","script","args","files"]),
+        tool("get_skill_run","Inspect a requested script's approval, execution logs, proposed file changes, and application status.",json!({"run_id":{"type":"string"}}),&["run_id"]),
+    ]);
     list.as_array_mut().unwrap().extend(extra);
     if mode == "plan" {
         if let Some(a) = list.as_array_mut() {
@@ -139,6 +147,12 @@ const MAX_IMAGE_BYTES: usize = 5 << 20;
 fn view_image(app: &App, args: &Value) -> Result<Value> {
     let folder = args["folder_id"].as_str().ok_or_else(|| anyhow!("missing argument `folder_id`"))?;
     let path = args["path"].as_str().map(str::trim).ok_or_else(|| anyhow!("missing argument `path`"))?;
+    if let Some(id)=path.strip_prefix("files/") {
+        let m=crate::workspace::list(app,folder)?;let e=m["entries"].as_array().unwrap().iter().find(|e|e["id"]==id&&e["deleted"]!=true).context("Image file not found")?;
+        let mime=crate::workspace::mime(e["source_name"].as_str().or(e["name"].as_str()).unwrap_or(""));if !mime.starts_with("image/"){bail!("Only supported images can be viewed");}
+        let bytes=crate::workspace::bytes(app,folder,e)?;if bytes.len()>MAX_IMAGE_BYTES{bail!("Image exceeds 5 MB");}
+        return Ok(json!([{"type":"image","data":base64(&bytes),"mimeType":mime},{"type":"text","text":format!("Image {path}")} ]));
+    }
     let file = path.strip_prefix("images/").unwrap_or(path);
     let folder = app.library.folder_id(folder)?;
     let (full, mime) = if let Some(file) = path.strip_prefix("media/") {
@@ -174,7 +188,7 @@ fn image_paths(src: &str) -> Vec<&str> {
             let rest = &src[i..];
             let open = rest.find('{')?;
             let close = open + rest[open..].find('}')?;
-            Some(rest[open + 1..close].trim()).filter(|p| p.starts_with("images/") || p.starts_with("media/"))
+            Some(rest[open + 1..close].trim()).filter(|p| p.starts_with("images/") || p.starts_with("media/") || p.starts_with("files/"))
         })
         .collect()
 }
@@ -192,6 +206,16 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str, chat_id: Option<&s
     };
     let ui = |mut action: Value| { action["chat_id"] = json!(chat_id); app.ui(action); };
     match name {
+        "list_project_files"=>crate::workspace::list(app,arg("folder_id")?),
+        "read_project_file"=>crate::workspace::read(app,arg("folder_id")?,arg("file_id")?),
+        "edit_project_file"=>{
+            if !["create","edit","rename","move","folder"].contains(&arg("op")?){bail!("Unsupported file operation");}
+            if mode!="direct"{ui(json!({"action":"workspace_proposal","target":arg("folder_id")?,"change":args}));Ok(json!({"status":"proposed"}))}
+            else {let result=crate::workspace::change(app,arg("folder_id")?,args,None)?;ui(json!({"action":"workspace_changed","target":arg("folder_id")?}));Ok(result)}
+        },
+        "read_skill"=>{crate::skills::enabled(app,chat_id,arg("skill_id")?)?;crate::skills::read(app,arg("skill_id")?,arg("path")?)},
+        "request_skill_run"=>crate::skills::request(app,chat_id,args),
+        "get_skill_run"=>{let r=crate::skills::status(app,arg("run_id")?)?;if r["chat_id"]!=json!(chat_id){bail!("Run belongs to another chat");}Ok(r)},
         "search_papers" => {
             let r = app.s2.search(arg("query")?, 0).await?;
             let papers: Vec<Value> = r["data"].as_array().into_iter().flatten().take(10).map(brief).collect();

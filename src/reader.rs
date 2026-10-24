@@ -23,6 +23,7 @@ pub fn routes()->Router<Arc<App>> {
         .route("/api/library/papers/{key}/outline",get(outline).post(generate_outline).delete(delete_outline))
         .route("/api/library/papers/{key}/auto-highlight",post(auto_highlight))
         .route("/api/library/papers/{key}/page-image/{page}",post(page_image).layer(DefaultBodyLimit::max(5<<20)))
+        .route("/api/library/papers/{key}/annotation-history",get(annotation_history).post(annotation_undo))
         .route("/api/library/papers/{key}/annotations",get(annotations).post(annotate))
         .route("/api/library/papers/{key}/annotations/{id}",axum::routing::put(update_annotation).delete(delete_annotation))
         .route("/api/library/papers/{key}/annotations/{id}/reply",post(reply))
@@ -103,3 +104,6 @@ pub async fn page_for_agent(app:&App,key:&str,page:u32,chat_id:Option<&str>)->Re
     }
     bail!("Could not render the PDF page. Open it in the reader and try again.")
 }
+
+async fn annotation_history(State(app):Shared,Path(key):Path<String>)->ApiResult{Ok(Json(app.library.annotation_history(&key,None)?))}
+async fn annotation_undo(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(app.library.annotation_history(&key,Some(&b))?))}

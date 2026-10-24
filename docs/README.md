@@ -9,8 +9,8 @@
 | [Getting started](getting-started.md) | Install, read a first paper, write a note, and add optional connections. |
 | [Research](research.md) | Search, citation graphs, Lineage, and collections. |
 | [PDF reader](reader.md) | Navigation, previews, annotations, and AI analysis. |
-| [Notes](notes.md) | LaTeX, citations, handwriting, media, and assistant edits. |
-| [Research assistant](assistant.md) | Chat, attachments, edit modes, and capabilities. |
+| [Notes](notes.md) | Project files, bibliographies, LaTeX, media, and undo/redo. |
+| [Research assistant](assistant.md) | Chat, attachments, imported skills, edit modes, and capabilities. |
 | [Settings and data](settings-and-data.md) | Appearance, connections, storage, backups, and updates. |
 
 ## AI prompts

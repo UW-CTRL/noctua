@@ -424,7 +424,7 @@ async function renderPDF(anchor=null){
   const token=++PDF.token,key=PDF.key;PDF.selection=null;closePDFLinkPreview();
   if(pdfScrollFrame!==null)cancelAnimationFrame(pdfScrollFrame);pdfScrollFrame=null;
   for(const entry of pdfPageEntries)disposePDFPage(entry);pdfPageEntries=[];
-  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar">
+  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar">${historyButtons('reader')}
     <div class="pdf-document-heading">
       <span class="pdf-title" title="${esc(PDF.paper.title)}">${esc(PDF.paper.title)}</span>
       <label class="pdf-page-position">Page <input data-page type="number" min="1" max="${PDF.doc.numPages}" value="${PDF.page}" aria-label="Page"> of ${PDF.doc.numPages}</label>
@@ -1104,7 +1104,7 @@ async function changePDFAnnotation(edit,method,body){
   return result;
 }
 window.addEventListener('pagehide',()=>{for(const edit of pdfCommentEdits.values())savePDFComment(edit).catch(()=>{});});
-async function refreshPDFAnnotations(){ensurePDFSidebar();const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;
+async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar();const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;
   for(const a of list)showPDFCommentState(pdfCommentEdit(key,a));
   PDF.annotations=list;paintPDFAnnotations();syncPDFAnnotationSelection();updatePDFAutoHighlightUI();applyPDFAnnotationFilter();if($('#pdf-sidebar').contains(document.activeElement)&&document.activeElement.matches('textarea'))return;
   const side=$('#pdf-annotation-list');side.innerHTML=list.map(a=>{const edit=pdfCommentEdit(key,a);return `<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><div class="pdf-annotation-header"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><button data-delete data-icon="trash-2" data-icon-only aria-label="${a.status==='pending'?'Reject suggestion':'Delete annotation'}" title="${a.status==='pending'?'Reject suggestion':'Delete annotation'}"></button></div>${pdfCategoryBadge(a)}<blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><textarea rows="1" aria-label="Comment with LaTeX" placeholder="Comment…">${esc(edit.value)}</textarea><div class="pdf-preview tex-view">${edit.value.includes('$')?pdfMath(edit.value):''}</div><small data-comment-status role="status"></small><div data-comment-conflict hidden><button data-use-saved>Use saved comment</button><button data-keep-draft>Keep my draft</button></div>${a.status==='pending'?'<button data-accept data-icon="check">Accept</button>':''}${(a.replies || []).map(r=>`<div class="pdf-comment-history"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true" data-icon="check">Accept</button><button data-reply-id="${r.id}" data-resolve="false" data-icon="x">Reject</button>`:''}</div>`).join('')}</article>`;}).join('');

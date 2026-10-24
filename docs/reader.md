@@ -44,3 +44,11 @@ detected figure, table, or algorithm to attach its source region. See
 
 See [AI prompts](assistant.md#dedicated-ai-features) for how the outline and
 auto-highlight tasks are instructed, with links to their source prompts.
+
+## Undo and redo
+
+Use the Reader Undo/Redo buttons or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for
+highlights, drawings, comments, replies, deletion, and accepted suggestions.
+Automatic highlights form a grouped edit. History is separate for each paper
+and lasts for the backend session. Revision checks prevent overwriting changes
+from another window; resolve save conflicts before undoing.

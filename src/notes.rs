@@ -30,7 +30,7 @@ pub(crate) fn check_id(id: &str) -> Result<()> {
 }
 
 /// Writes via a temporary file so a crash never leaves half a note.
-fn write_atomic(path: &Path, body: &str) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, body: &str) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, body)?;
     std::fs::rename(&tmp, path)?;
@@ -55,7 +55,7 @@ impl Notes {
         let Ok(dir) = std::fs::read_dir(self.root.join(folder)) else { return Ok(json!([])) };
         for entry in dir.flatten() {
             let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            if p.file_stem().and_then(|s|s.to_str()).is_none_or(|s|check_id(s).is_err()) || p.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
             let Ok(doc) = std::fs::read_to_string(&p).map_err(anyhow::Error::from).and_then(|s| Ok(serde_json::from_str::<Value>(&s)?)) else {
@@ -90,7 +90,7 @@ impl Notes {
 
     pub fn create(&self, folder: &str, title: &str) -> Result<Value> {
         let t = now_ms();
-        let id = format!("n{t:x}");
+        let id = crate::library::id("n");
         let title = match title.trim() {
             "" => "Untitled note",
             t => t,
@@ -109,6 +109,8 @@ impl Notes {
     /// doc carries the `updated` time it was based on and the file has been
     /// saved since (another tab or window), nothing is written: 409.
     pub fn save(&self, folder: &str, id: &str, mut doc: Value) -> Result<u64> {
+        let mut journals=crate::editing::journals().lock().unwrap();
+        let journal=journals.entry(format!("{}:note:{folder}:{id}",self.root.display())).or_default();
         let path = self.path(folder, id)?;
         let Ok(current) = std::fs::read_to_string(&path) else {
             bail!("note not found (was it deleted?)");
@@ -126,12 +128,40 @@ impl Notes {
         if !doc["blocks"].is_array() {
             bail!("a note needs a blocks list");
         }
-        let t = now_ms();
+        let previous:Value=serde_json::from_str(&current)?;
+        let frames=doc.as_object_mut().unwrap().remove("_history");
+        let t = now_ms().max(previous["updated"].as_u64().unwrap_or(0)+1);
         doc["id"] = json!(id);
         doc["version"] = json!(1);
         doc["updated"] = json!(t);
         write_atomic(&path, &doc.to_string())?;
+        let mut before=crate::editing::content(previous);
+        if let Some(frames)=frames.and_then(|v|v.as_array().cloned()) {
+            if frames.len()<=200 {
+                for frame in frames { let after=crate::editing::content(frame["doc"].clone());
+                    if after.is_object() && after["id"]==doc["id"] && after["blocks"].is_array() {
+                        journal.record(before.clone(),after.clone(),frame["label"].as_str().unwrap_or("Edit note"));before=after;
+                    }
+                }
+            }
+        }
+        journal.record(before,crate::editing::content(doc),"Edit note");
         Ok(t)
+    }
+
+    pub fn history(&self,folder:&str,id:&str,redo:Option<bool>,expected:Option<u64>)->Result<Value>{
+        let mut journals=crate::editing::journals().lock().unwrap();
+        let journal=journals.entry(format!("{}:note:{folder}:{id}",self.root.display())).or_default();
+        if let Some(redo)=redo {
+            let path=self.path(folder,id)?;
+            let current:Value=serde_json::from_str(&std::fs::read_to_string(&path)?)?;
+            if expected!=current["updated"].as_u64(){return Err(crate::Status(axum::http::StatusCode::CONFLICT,"Note changed in another window".into()).into());}
+            let mut doc=journal.pending(redo,&crate::editing::content(current.clone()))?;
+            doc["updated"]=json!(now_ms().max(current["updated"].as_u64().unwrap_or(0)+1));
+            write_atomic(&path,&doc.to_string())?;journal.finish(redo);
+            return Ok(json!({"doc":doc,"history":journal.status()}));
+        }
+        Ok(journal.status())
     }
 
 /// Stores an image in `<folder>/images/` and returns its note-relative path
