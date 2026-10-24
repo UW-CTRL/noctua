@@ -181,6 +181,11 @@ impl Library {
         let body:Option<String>=self.conn.lock().unwrap().query_row("SELECT data FROM pdf_outlines WHERE hash=?1",[hash],|r|r.get(0)).optional()?;
         body.map(|s|serde_json::from_str(&s).map_err(Into::into)).transpose()
     }
+    pub fn delete_outline(&self,key:&str)->Result<()> {
+        let hash=self.hash(key)?;
+        self.conn.lock().unwrap().execute("DELETE FROM pdf_outlines WHERE hash=?1",[hash])?;
+        Ok(())
+    }
     pub fn save_outline(&self,key:&str,outline:&Value)->Result<()> {
         let hash=self.hash(key)?;
         if outline["hash"]!=hash {return Err(conflict("PDF changed while generating its outline"));}

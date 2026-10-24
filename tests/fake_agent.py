@@ -48,6 +48,9 @@ if args == ['login'] or args == ['auth','login']:
     print('Sign in at https://example.com/login?test=true&provider='+provider, flush=True)
     (home / (provider+'-signed-in')).touch()
     sys.exit(0)
+if (home / 'analysis-start-failure').exists():
+    print('The selected model is unavailable for this account.', file=sys.stderr)
+    sys.exit(1)
 prompt = sys.stdin.read()
 if 'verify-selected-passages' in prompt:
     assert '<selected_passages>' in prompt and 'A grounded passage.' in prompt and 'note-1' in prompt

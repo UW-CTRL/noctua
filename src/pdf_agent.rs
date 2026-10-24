@@ -35,7 +35,7 @@ pub async fn complete(app:&App,provider:Provider,prompt:&str,input:&str)->Result
     };
     let mut child=cmd.current_dir(&app.chat_dir).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .kill_on_drop(true).spawn().with_context(||provider.missing())?;
-    let stderr=agent::drain_stderr(child.stderr.take().unwrap());
+    let mut stderr=agent::drain_stderr(child.stderr.take().unwrap());
     let run=async {
         let mut stdin=child.stdin.take().unwrap();stdin.write_all(input.as_bytes()).await?;drop(stdin);
         let mut lines=BufReader::new(child.stdout.take().unwrap()).lines();
@@ -63,6 +63,12 @@ pub async fn complete(app:&App,provider:Provider,prompt:&str,input:&str)->Result
     let result=tokio::time::timeout(Duration::from_secs(300),run).await.context("Paper analysis timed out. Try again.");
     // kill_on_drop also terminates the CLI when the HTTP request is cancelled.
     drop(child);
-    stderr.abort();
-    result?
+    let diagnostics=match tokio::time::timeout(Duration::from_secs(1),&mut stderr).await {
+        Ok(Ok(text))=>text,
+        _=>{stderr.abort();String::new()}
+    };
+    result?.map_err(|error|{
+        let detail=diagnostics.trim().chars().take(2000).collect::<String>();
+        if detail.is_empty(){error}else{error.context(format!("{} paper analysis failed: {}",provider.label(),detail))}
+    })
 }

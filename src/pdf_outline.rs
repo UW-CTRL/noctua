@@ -21,6 +21,12 @@ pub async fn generate(app:&App,key:&str,regenerate:bool)->Result<Value> {
     Ok(outline)
 }
 
+pub async fn delete(app:&App,key:&str)->Result<()> {
+    // Serialize with generation so a job already in progress cannot restore a deleted outline.
+    let _guard=GENERATION.lock().await;
+    app.library.delete_outline(key)
+}
+
 pub(crate) fn normalized(text:&str)->(String,Vec<usize>) {
     let (mut out,mut offsets)=(String::new(),Vec::new());
     for (offset,c) in text.char_indices() {
@@ -36,7 +42,8 @@ fn validate(text:&str,index:&Value)->Result<Vec<Value>> {
     let entries=data["entries"].as_array().context("The outline is missing its section list")?;
     if entries.is_empty()||entries.len()>80 {bail!("The outline must contain 1–80 sections");}
     let pages=index["pages"].as_array().context("PDF text is not ready")?;
-    let (mut result,mut previous_page,mut previous_level,mut previous_offset)=(Vec::new(),1,0,0_u64);
+    let (mut result,mut previous_level)=(Vec::new(),0);
+    let (mut locations,mut children,mut roots,mut ancestors)=(Vec::new(),Vec::<Vec<usize>>::new(),Vec::<usize>::new(),Vec::<usize>::new());
     for entry in entries {
         let title=entry["title"].as_str().unwrap_or("").trim();
         let page=entry["page"].as_u64().filter(|p|*p>0&&*p<=pages.len() as u64).context("An outline section points outside the PDF")?;
@@ -50,17 +57,44 @@ fn validate(text:&str,index:&Value)->Result<Vec<Value>> {
         let utf16_offset=source["text"].as_str().unwrap_or("")[..offset as usize].encode_utf16().count() as u64;
         let y=source["words"].as_array().into_iter().flatten().find(|w|w["start"].as_u64().unwrap_or(u64::MAX)<=utf16_offset&&w["end"].as_u64().unwrap_or(0)>utf16_offset)
             .and_then(|w|w["rect"][1].as_f64()).filter(|y|y.is_finite()&&(0.0..=1.0).contains(y)).unwrap_or(0.0);
-        if page<previous_page||(page==previous_page&&offset<previous_offset) {bail!("The outline sections are not in reading order. Try again.");}
+        let node=result.len();
+        while ancestors.len()>=level as usize {ancestors.pop();}
+        if let Some(&parent)=ancestors.last(){children[parent].push(node);}else{roots.push(node);}
+        ancestors.push(node);children.push(Vec::new());locations.push((page,offset));
         result.push(json!({"title":title,"page":page,"level":level,"y":y}));
-        previous_page=page;previous_level=level;previous_offset=offset;
+        previous_level=level;
     }
-    Ok(result)
+    // Model ordering must not invalidate sections already grounded in the source.
+    // Sort sibling sections by source location while keeping their subtrees together.
+    fn visit(nodes:&[usize],children:&[Vec<usize>],locations:&[(u64,u64)],entries:&[Value],ordered:&mut Vec<Value>){
+        let mut nodes=nodes.to_vec();nodes.sort_by_key(|&node|locations[node]);
+        for node in nodes {ordered.push(entries[node].clone());visit(&children[node],children,locations,entries,ordered);}
+    }
+    let mut ordered=Vec::with_capacity(result.len());visit(&roots,&children,&locations,&result,&mut ordered);
+    Ok(ordered)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     fn index()->Value {json!({"pages":[{"text":"1  Introduction\nA grounded paper.","words":[{"start":3,"end":15,"rect":[0.1,0.2,0.4,0.03]}]},{"text":"2 Methods","words":[]}]})}
+    #[test]
+    fn orders_grounded_siblings_without_detaching_their_subsections() {
+        let source=json!({"pages":[{"text":"Introduction\nBackground\nMethod\nArchitecture","words":[]},{"text":"Results\nAblations","words":[]}]});
+        let response=json!({"entries":[
+            {"title":"Results","page":2,"level":1,"quote":"Results"},
+            {"title":"Ablations","page":2,"level":2,"quote":"Ablations"},
+            {"title":"Method","page":1,"level":1,"quote":"Method"},
+            {"title":"Architecture","page":1,"level":2,"quote":"Architecture"},
+            {"title":"Introduction","page":1,"level":1,"quote":"Introduction"},
+            {"title":"Background","page":1,"level":2,"quote":"Background"}
+        ]});
+        let entries=validate(&response.to_string(),&source).unwrap();
+        let titles:Vec<_>=entries.iter().map(|entry|entry["title"].as_str().unwrap()).collect();
+        assert_eq!(titles,["Introduction","Background","Method","Architecture","Results","Ablations"]);
+        assert_eq!(entries.iter().map(|entry|entry["level"].as_u64().unwrap()).collect::<Vec<_>>(),[1,2,1,2,1,2]);
+    }
+
     #[test]
     fn validates_grounding_hierarchy_and_page_numbers() {
         let valid=json!({"entries":[{"title":"Introduction","page":1,"level":1,"quote":"Introduction"},{"title":"Methods","page":2,"level":2,"quote":"2 Methods"}]});

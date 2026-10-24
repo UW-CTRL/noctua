@@ -1422,13 +1422,13 @@ for (const side of ['left', 'right']) {
 // ---------------------------------------------------------------- toast / tabs
 
 let toastTimer = null;
-function toast(msg, { error = false } = {}) {
+function toast(msg, { error = false, duration } = {}) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.toggle('error', error);
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, error ? 8000 : 15000);
+  toastTimer = setTimeout(hideToast, Number.isFinite(duration) ? Math.max(0,duration) : error ? 8000 : 15000);
 }
 function hideToast() { $('#toast').classList.add('hidden'); }
 

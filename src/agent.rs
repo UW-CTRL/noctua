@@ -255,7 +255,7 @@ mod tests {
     impl Fixture {
         fn new() -> Result<Self> {
             use std::os::unix::fs::PermissionsExt;
-            let root = std::env::temp_dir().join(format!("noctua-cli-test-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()));
+            let root = std::env::temp_dir().join(format!("noctua-cli-test-{}-{}",std::process::id(),uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root)?;
             for name in ["claude", "codex"] {
                 let file = root.join(name);
@@ -389,6 +389,50 @@ mod tests {
         f.app.library.save_index(&other,&json!({"version":2,"hash":other_hash,"pages":[{"page":1,"text":"","words":[]}]}))?;
         assert!(!f.request(&format!("/api/library/papers/{other}/outline"),Some(json!({})),None).await.status().is_success());
         assert!(f.app.library.outline(&other)?.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deletes_only_the_saved_ai_outline_and_allows_regeneration()->Result<()> {
+        let f=Fixture::new()?;
+        let key=f.app.library.upload("L1","outline.pdf",b"%PDF-1.7\noutline delete fixture")?;
+        let hash=f.app.library.paper(&key)?["pdf_hash"].clone();
+        f.app.library.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"Introduction to grounded outlines","words":[]}]}))?;
+        let annotation=f.app.library.annotate(&key,&json!({"kind":"comment","page":1,"comment":"Keep this annotation."}),"user",false)?;
+        let path=format!("/api/library/papers/{key}/outline");
+        f.json(&path,Some(json!({}))).await;
+        let other=f.app.library.upload("L1","other.pdf",b"%PDF-1.7\nunrelated outline fixture")?;
+        let saved=json!({"hash":f.app.library.paper(&other)?["pdf_hash"],"source":"ai","entries":[{"title":"Other section","page":1,"level":1,"y":0.1}]});
+        f.app.library.save_outline(&other,&saved)?;
+        assert_eq!(f.request(&path,None,Some("DELETE")).await.status(),StatusCode::OK);
+        assert!(f.json(&path,None).await.is_null());
+        assert_eq!(f.app.library.outline(&other)?,Some(saved));
+        assert_eq!(f.app.library.annotations(&key)?[0]["id"],annotation["id"]);
+        let reopened=crate::library::Library::open(f.root.join("library"))?;
+        assert!(reopened.outline(&key)?.is_none());
+        assert_eq!(f.request(&path,None,Some("DELETE")).await.status(),StatusCode::OK);
+        assert_eq!(f.json(&path,Some(json!({}))).await["entries"][0]["title"],"Introduction");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn outline_startup_failures_report_cli_diagnostics_and_preserve_the_cache()->Result<()> {
+        let f=Fixture::new()?;
+        let key=f.app.library.upload("L1","outline.pdf",b"%PDF-1.7\noutline diagnostic fixture")?;
+        let hash=f.app.library.paper(&key)?["pdf_hash"].clone();
+        f.app.library.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"Introduction to grounded outlines","words":[]}]}))?;
+        for provider in ["claude","codex"] {
+            f.app.settings.lock().unwrap().agent=if provider=="claude"{Provider::Claude}else{Provider::Codex};
+            let path=format!("/api/library/papers/{key}/outline");
+            let cached=f.json(&path,Some(json!({"regenerate":true}))).await;
+            std::fs::write(f.root.join("analysis-start-failure"),"")?;
+            let response=f.request(&path,Some(json!({"regenerate":true})),None).await;
+            assert_eq!(response.status(),StatusCode::BAD_GATEWAY);
+            let failed:Value=serde_json::from_slice(&to_bytes(response.into_body(),1<<20).await?)?;
+            assert!(failed["error"].as_str().unwrap_or("").contains("The selected model is unavailable for this account."),"{failed}");
+            assert_eq!(f.app.library.outline(&key)?,Some(cached));
+            std::fs::remove_file(f.root.join("analysis-start-failure"))?;
+        }
         Ok(())
     }
 

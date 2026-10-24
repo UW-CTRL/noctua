@@ -74,7 +74,7 @@ async function pdfPageImage(key,n){const doc=await pdfDocument(key),page=await d
 async function openPDF(key,{page=1,annotation=null,push=true}={}){
   const token=++PDF.token;const paper=await api(paperURL(key));if(!paper.has_pdf)throw new Error('Attach a PDF to this paper in Library first.');const doc=await pdfDocument(key);if(token!==PDF.token)return;
   Object.assign(PDF,{annotationFilter:key===PDF.key?PDF.annotationFilter:null,annotations:key===PDF.key?PDF.annotations:[],key,paper,doc,page:Math.max(1,Math.min(doc.numPages,Number(page)||1)),selection:null,selected:annotation});$('#reader-mode').disabled=false;setMode('pdf');document.title=paper.title+' · Noctua';
-  ensurePDFSidebar();renderPDFOutline();loadPDFOutline(key,doc);
+  PDF.outlineSource='document';ensurePDFSidebar();renderPDFOutline();loadPDFOutline(key,doc);
   if(push)history.pushState({},'', '/#pdf='+enc(key)+'&page='+PDF.page);await renderPDF();await refreshPDFAnnotations();if(annotation)setPDFSidebarTab('annotations');if(annotation)$('#pdf-sidebar [data-id="'+annotation+'"]')?.scrollIntoView({block:'nearest'});indexPDF(key).then(()=>{if(PDF.key===key)return refreshPDFAnnotations();}).catch(e=>toast('PDF text: '+e.message));
 }
 const pdfOutlines=new Map();
@@ -112,43 +112,88 @@ async function nativePDFOutline(doc){
   await visit(await doc.getOutline(),1);
   return entries.some(e=>e.page)?{source:'document',entries}:null;
 }
+function pdfOutlineState(key){
+  if(!pdfOutlines.has(key))pdfOutlines.set(key,{status:'idle',outline:null,error:null,documentStatus:'idle',documentOutline:null});
+  return pdfOutlines.get(key);
+}
+function setPDFOutlineSource(source){
+  PDF.outlineSource=source==='ai'?'ai':'document';renderPDFOutline();
+  return loadPDFOutline(PDF.key,PDF.doc,{forceAI:PDF.outlineSource==='ai'});
+}
 function loadPDFOutline(key,doc,{forceAI=false,regenerate=false}={}){
-  const previous=pdfOutlines.get(key);if(previous&&!forceAI&&!regenerate)return previous.promise;
-  const state={status:'loading',outline:previous?.outline||null,error:null};pdfOutlines.set(key,state);
-  const update=()=>{if(PDF.key===key)renderPDFOutline();};update();
+  const state=pdfOutlineState(key),update=()=>{if(PDF.key===key)renderPDFOutline();};
+  if(!forceAI&&!regenerate){
+    if(state.documentPromise)return state.documentPromise;
+    state.documentStatus='loading';update();
+    state.documentPromise=nativePDFOutline(doc).then(outline=>{state.documentOutline=outline;state.documentStatus='ready';}).catch(error=>{
+      state.documentStatus='error';if(PDF.key===key&&PDF.outlineSource!=='ai')toast(error.message,{error:true,duration:5000});
+    }).finally(update);
+    return state.documentPromise;
+  }
+  if(PDF.key===key)PDF.outlineSource='ai';
+  if(['loading','indexing','generating','deleting'].includes(state.status))return state.deletePromise||state.promise;
+  if(!regenerate&&state.status==='ready'&&state.outline?.entries?.length){update();return state.promise||Promise.resolve();}
+  state.status='loading';state.error=null;update();
   state.promise=(async()=>{
-    if(!forceAI&&!regenerate){const native=await nativePDFOutline(doc).catch(()=>null);if(native){state.outline=native;state.status='ready';return;}}
     if(!regenerate){const saved=await api(paperURL(key)+'/outline');if(saved?.entries?.length){state.outline=saved;state.status='ready';return;}}
     state.status='indexing';update();await indexPDF(key);
     state.status='generating';update();
     state.outline=await api(paperURL(key)+'/outline',{regenerate});state.status='ready';
-  })().catch(error=>{state.status='error';state.error=error.message;}).finally(update);
+  })().catch(error=>{state.status='error';state.error=error.message;if(PDF.key===key&&PDF.outlineSource==='ai')toast(error.message,{error:true,duration:5000});}).finally(update);
   return state.promise;
+}
+async function deletePDFOutline(){
+  const key=PDF.key,state=pdfOutlineState(key);
+  if(!state.outline?.entries?.length||['loading','indexing','generating','deleting'].includes(state.status))return;
+  const previousStatus=state.status;state.status='deleting';renderPDFOutline();
+  state.deletePromise=(async()=>{
+    await libraryRequest(paperURL(key)+'/outline','DELETE');
+    state.outline=null;state.status='deleted';state.error=null;state.promise=null;
+  })().catch(error=>{
+    state.status=previousStatus;state.error=error.message;
+    if(PDF.key===key&&PDF.outlineSource==='ai')toast(error.message,{error:true,duration:5000});
+  }).finally(()=>{state.deletePromise=null;if(PDF.key===key)renderPDFOutline();});
+  return state.deletePromise;
 }
 function renderPDFOutline(){
   const panel=$('#pdf-outline-panel');if(!panel)return;
-  const state=pdfOutlines.get(PDF.key),busy=state&&['loading','indexing','generating'].includes(state.status);
-  panel.setAttribute('aria-busy',String(!!busy));
-  const status=state?.status==='generating'?'Generating outline…':state?.status==='indexing'?'Preparing paper text…':'Loading outline…';
-  if(!state?.outline?.entries?.length){
-    panel.innerHTML=state?.status==='error'?`<div class="pdf-outline-empty"><p role="alert">${esc(state.error)}</p><button data-outline-retry>Try again</button></div>`:`<p class="pdf-outline-status" role="status">${status}</p>`;
-  }else{
+  const state=pdfOutlines.get(PDF.key),ai=PDF.outlineSource==='ai',outline=ai?state?.outline:state?.documentOutline;
+  const status=ai?state?.status:state?.documentStatus,busy=['loading','indexing','generating','deleting'].includes(status);
+  const progress=ai?(status==='deleting'?'Deleting AI outline…':status==='indexing'?'Preparing paper text…':'Generating outline…'):'Loading document outline…';
+  const sourceId=ai?'ai':'document';
+  let content=ai?`<div class="pdf-outline-head pdf-outline-actions"><button data-outline-retry ${busy?'disabled':''}>Regenerate</button><button data-outline-delete data-icon="trash-2" data-icon-only aria-label="Delete AI-generated outline" title="Delete AI-generated outline" ${busy||!outline?.entries?.length?'disabled':''}></button></div>`:'';
+  if(outline?.entries?.length){
     const roots=[],stack=[];
-    state.outline.entries.forEach((entry,index)=>{
+    outline.entries.forEach((entry,index)=>{
       const node={...entry,index,children:[]};while(stack.length&&stack.at(-1).level>=node.level)stack.pop();
       (stack.length?stack.at(-1).children:roots).push(node);stack.push(node);
     });
     const list=nodes=>'<ol>'+nodes.map(node=>`<li>${node.page?`<button data-outline-entry="${node.index}" title="Page ${node.page}"><span>${esc(node.title)}</span><small>${node.page}</small></button>`:`<span class="pdf-outline-group">${esc(node.title)}</span>`}${node.children.length?list(node.children):''}</li>`).join('')+'</ol>';
-    panel.innerHTML=`<div class="pdf-outline-head"><span>${state.outline.source==='ai'?'AI-generated outline':'Document outline'}</span><button data-outline-retry ${busy?'disabled':''}>${state.outline.source==='ai'?'Regenerate':'Generate with AI'}</button></div><nav class="pdf-outline-list" aria-label="Paper outline">${list(roots)}</nav>${busy?`<p role="status">${status}</p>`:state.status==='error'?`<p role="alert">${esc(state.error)}</p>`:''}`;
+    content+=`<nav class="pdf-outline-list" aria-label="Paper outline">${list(roots)}</nav>`;
+  }else if(status==='error'&&!ai)content+='<div class="pdf-outline-empty"><button data-outline-retry>Try again</button></div>';
+  else if(!busy)content+=`<p class="pdf-outline-empty">${ai?'No AI-generated outline.':'This PDF has no document outline.'}</p>`;
+  if(busy)content=`<p class="pdf-outline-status" role="status">${progress}</p>`+content;
+  panel.innerHTML=`<div class="pdf-outline-source-tabs" role="tablist" aria-label="Outline source"><button id="pdf-outline-source-document" role="tab" aria-controls="pdf-outline-content" data-outline-source="document" aria-selected="${!ai}" tabindex="${ai?-1:0}" class="${ai?'':'active'}" aria-label="Document outline" title="Document outline">Document</button><span class="pdf-outline-source-divider" aria-hidden="true">/</span><button id="pdf-outline-source-ai" role="tab" aria-controls="pdf-outline-content" data-outline-source="ai" aria-selected="${ai}" tabindex="${ai?0:-1}" class="${ai?'active':''}" aria-label="AI-generated outline" title="AI-generated outline">AI-generated</button></div><div id="pdf-outline-content" role="tabpanel" aria-labelledby="pdf-outline-source-${sourceId}" aria-busy="${busy}">${content}</div>`;
+  for(const button of panel.querySelectorAll('[data-outline-source]')){
+    button.onclick=()=>setPDFOutlineSource(button.dataset.outlineSource);
+    button.onkeydown=event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const source=event.key==='Home'?'document':event.key==='End'?'ai':button.dataset.outlineSource==='document'?'ai':'document';
+      setPDFOutlineSource(source);panel.querySelector(`[data-outline-source="${source}"]`)?.focus();
+    };
   }
-  panel.querySelector('[data-outline-retry]')?.addEventListener('click',()=>{loadPDFOutline(PDF.key,PDF.doc,{forceAI:true,regenerate:state?.outline?.source==='ai'});});
+  panel.querySelector('[data-outline-retry]')?.addEventListener('click',()=>{
+    if(ai)return loadPDFOutline(PDF.key,PDF.doc,{forceAI:true,regenerate:!!state?.outline?.entries?.length});
+    state.documentPromise=null;return loadPDFOutline(PDF.key,PDF.doc);
+  });
+  panel.querySelector('[data-outline-delete]')?.addEventListener('click',deletePDFOutline);
   panel.querySelectorAll('[data-outline-entry]').forEach(button=>button.onclick=()=>{
-    const entry=state.outline.entries[Number(button.dataset.outlineEntry)];return pdfNavigate(entry.page,entry.y||0).catch(e=>toast(e.message));
+    const entry=outline.entries[Number(button.dataset.outlineEntry)];return pdfNavigate(entry.page,entry.y||0).catch(e=>toast(e.message));
   });
   updatePDFOutlineSelection();
 }
 function updatePDFOutlineSelection(){
-  const entries=pdfOutlines.get(PDF.key)?.outline?.entries;if(!entries)return;
+  const state=pdfOutlines.get(PDF.key),entries=(PDF.outlineSource==='ai'?state?.outline:state?.documentOutline)?.entries;if(!entries)return;
   const box=pdfPageBox(PDF.page),scroll=$('#pdf-stage .pdf-scroll');
   const y=box&&scroll?Math.max(0,(scroll.getBoundingClientRect().top-box.getBoundingClientRect().top+24)/box.getBoundingClientRect().height):0;
   let active=-1;entries.forEach((entry,i)=>{if(entry.page&&(entry.page<PDF.page||(entry.page===PDF.page&&(entry.y||0)<=y)))active=i;});
@@ -898,7 +943,7 @@ async function refreshPDFAnnotations(){ensurePDFSidebar();const key=PDF.key;if(!
   }
   applyPDFAnnotationFilter();
 }
-function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab provides document or AI-generated navigation; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating or regenerating that outline is a UI-only control, with no MCP outline-editing tool.'};}
+function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab defaults to Document outline; choosing its AI-generated outline tab starts or loads a separate AI outline; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating, regenerating, or deleting the AI outline are UI-only controls, with no MCP outline-editing tool.'};}
 async function pdfAction(a){if(a.action==='pdf_index')return indexPDF(a.key);if(a.action==='pdf_page')return pdfPageImage(a.key,a.page);if(a.action==='pdf_show')return openPDF(a.key,{page:a.page});if(a.action==='pdf_annotations'){if(PDF.key!==a.key)await openPDF(a.key,{page:a.page,annotation:a.id});else {setMode('pdf');await refreshPDFAnnotations();await selectPDFAnnotation(a.id,{scrollComment:true});}}}
 function pdfRoute(){if(!location.hash.startsWith('#pdf='))return;const q=new URLSearchParams(location.hash.slice(1));openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>toast(e.message));}
 setReaderTheme(store.get('noctua.readerTheme')||store.get('noctua.pdfPageTheme'));

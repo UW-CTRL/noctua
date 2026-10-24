@@ -20,7 +20,7 @@ pub fn routes()->Router<Arc<App>> {
         .route("/api/library/papers/{key}/download",post(download))
         .route("/api/library/papers/{key}/pdf",get(pdf).put(attach_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
         .route("/api/library/papers/{key}/index",get(index).put(save_index).layer(DefaultBodyLimit::max(64<<20)))
-        .route("/api/library/papers/{key}/outline",get(outline).post(generate_outline))
+        .route("/api/library/papers/{key}/outline",get(outline).post(generate_outline).delete(delete_outline))
         .route("/api/library/papers/{key}/auto-highlight",post(auto_highlight))
         .route("/api/library/papers/{key}/page-image/{page}",post(page_image).layer(DefaultBodyLimit::max(5<<20)))
         .route("/api/library/papers/{key}/annotations",get(annotations).post(annotate))
@@ -56,6 +56,9 @@ async fn attach_pdf(State(app):Shared,Path(key):Path<String>,body:Bytes)->ApiRes
 async fn index(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(app.library.index(&key)?.unwrap_or(Value::Null)))}
 async fn save_index(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult {app.library.save_index(&key,&b)?;Ok(Json(json!({"ok":true})))}
 async fn outline(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(json!(app.library.outline(&key)?)))}
+async fn delete_outline(State(app):Shared,Path(key):Path<String>)->ApiResult {
+    crate::pdf_outline::delete(&app,&key).await?;Ok(Json(json!({"ok":true})))
+}
 #[derive(Deserialize)]struct OutlineRequest {#[serde(default)] regenerate:bool}
 async fn generate_outline(State(app):Shared,Path(key):Path<String>,Json(body):Json<OutlineRequest>)->ApiResult {
     Ok(Json(crate::pdf_outline::generate(&app,&key,body.regenerate).await?))

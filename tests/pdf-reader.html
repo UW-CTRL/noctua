@@ -17,7 +17,7 @@ window.fetch=async(url,options)=>{
  }
  return nativeFetch(url,options);
 };
-const chat={provider:'claude',id:null};function showRightTab(){}function updateChatContext(){}function setMode(){}function toast(e){console.error(e);}function openPaperView(){}
+const chat={provider:'claude',id:null};function showRightTab(){}function updateChatContext(){}function setMode(){}function toast(e,options){window.lastOutlineToast={message:e,options};console.error(e);}function openPaperView(){}
 </script>
 <script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
 <script type="module">
@@ -238,7 +238,7 @@ async function checkPDFAutoHighlight(){
  }finally{api=originalAPI;indexPDF=originalIndex;pdfAutoHighlights.delete(original.key);Object.assign(PDF,original);await refreshPDFAnnotations();}
 }
 async function checkPDFOutline(){
- const original={key:PDF.key,sidebar:PDF.sidebar},originalAPI=api,originalIndex=indexPDF;
+ const original={key:PDF.key,sidebar:PDF.sidebar,outlineSource:PDF.outlineSource},originalAPI=api,originalIndex=indexPDF;
  try{
   ensurePDFSidebar();setPDFSidebarTab('annotations');
   const draft=$('#pdf-annotations-panel textarea');draft.value='Unsaved outline-switch draft';draft.oninput();
@@ -248,7 +248,7 @@ async function checkPDFOutline(){
   assert(PDF.sidebar==='annotations'&&$('#pdf-annotations-tab').classList.contains('active')&&$('#pdf-annotations-panel textarea')===draft&&draft.value==='Unsaved outline-switch draft','tab switching lost an unsaved comment draft');
   const nativeDoc={getOutline:async()=>[{title:'Overview',dest:[0,{name:'Fit'}],items:[{title:'Methods',dest:[1,{name:'Fit'}],items:[]}]}],getPage:n=>PDF.doc.getPage(n)};
   await loadPDFOutline(PDF.key,nativeDoc);setPDFSidebarTab('outline');
-  assert($('#pdf-outline-panel').textContent.includes('Document outline')&&$('#pdf-outline-panel ol ol'),'native outline hierarchy missing');
+  assert($('#pdf-outline-panel [data-outline-source="document"]').getAttribute('aria-selected')==='true'&&$('#pdf-outline-panel ol ol'),'document outline must be the default source with its embedded hierarchy');
   await $('#pdf-outline-panel [data-outline-entry="1"]').onclick();
   assert(PDF.page===2,'outline click did not navigate to its page');
   await selectPDFAnnotation('a');assert(PDF.sidebar==='annotations','annotation selection did not reveal its panel');
@@ -262,15 +262,15 @@ async function checkPDFOutline(){
    return originalAPI(path,body);
   };
   indexPDF=async()=>({version:2,pages:[]});
-  await loadPDFOutline(PDF.key,PDF.doc,{forceAI:true});setPDFSidebarTab('outline');
-  assert($('#pdf-outline-panel').textContent.includes('AI-generated outline')&&$('#pdf-outline-panel').textContent.includes('Introduction <safe>')&&!$('#pdf-outline-panel safe'),'generated outline missing or unescaped');
+  await $('#pdf-outline-panel [data-outline-source="ai"]').onclick();setPDFSidebarTab('outline');
+  assert($('#pdf-outline-panel [data-outline-source="ai"]').getAttribute('aria-selected')==='true'&&$('#pdf-outline-panel').textContent.includes('Introduction <safe>')&&!$('#pdf-outline-panel safe'),'generated outline missing or unescaped');
   await $('#pdf-outline-panel [data-outline-entry="1"]').onclick();assert(PDF.page===3,'AI outline destination ignored');
   await loadPDFOutline(PDF.key,PDF.doc);assert(generationCalls===1,'reopening an outline triggered duplicate generation');
   pdfOutlines.delete(PDF.key);rejectGeneration=true;
   await loadPDFOutline(PDF.key,PDF.doc,{forceAI:true});
-  assert($('#pdf-outline-panel [role="alert"]').textContent==='No selectable text','outline errors must remain visible and retryable');
+  assert(window.lastOutlineToast?.message==='No selectable text'&&window.lastOutlineToast.options.duration===5000&&!$('#pdf-outline-panel [role="alert"]')&&$('#pdf-outline-panel [data-outline-retry]'),'outline errors need a brief toast and a retry button without a persistent sidebar alert');
   rejectGeneration=false;$('#pdf-outline-panel [data-outline-retry]').click();await pdfOutlines.get(PDF.key).promise;
-  assert($('#pdf-outline-panel').textContent.includes('AI-generated outline'),'outline retry did not recover');
+  assert($('#pdf-outline-panel [data-outline-source="ai"]').getAttribute('aria-selected')==='true','outline retry did not recover');
   let release;
   api=async(path,body)=>path.endsWith('/outline')&&body?await new Promise(r=>release=r):originalAPI(path,body);
   const pending=loadPDFOutline(PDF.key,PDF.doc,{forceAI:true,regenerate:true});
