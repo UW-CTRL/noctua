@@ -10,6 +10,7 @@ class Handler: NSObject, WKScriptMessageHandler {
     }
 }
 let handler = Handler(), config = WKWebViewConfiguration()
+config.websiteDataStore = .nonPersistent()
 config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 config.userContentController.add(handler, name: "result")
 let source = try String(contentsOf: root.appendingPathComponent("web/app.js"), encoding: .utf8)

@@ -9,6 +9,7 @@ class Handler:NSObject,WKScriptMessageHandler,WKNavigationDelegate {
  func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error){print(error);exit(1)}
 }
 let handler=Handler(),config=WKWebViewConfiguration()
+config.websiteDataStore = .nonPersistent()
 config.preferences.setValue(true,forKey:"allowFileAccessFromFileURLs")
 config.userContentController.add(handler,name:"result")
 let web=WKWebView(frame:NSRect(x:0,y:0,width:1100,height:800),configuration:config)

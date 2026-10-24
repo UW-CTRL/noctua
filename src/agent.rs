@@ -255,8 +255,8 @@ mod tests {
     impl Fixture {
         fn new() -> Result<Self> {
             use std::os::unix::fs::PermissionsExt;
-            let root = std::env::temp_dir().join(format!("noctua-cli-test-{}-{}",std::process::id(),uuid::Uuid::new_v4()));
-            std::fs::create_dir_all(&root)?;
+            let root = std::env::temp_dir().join(format!("noctua-cli-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&root)?;
             for name in ["claude", "codex"] {
                 let file = root.join(name);
                 std::fs::write(&file, include_str!("../tests/fake_agent.py"))?;

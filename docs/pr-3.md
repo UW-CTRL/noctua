@@ -2,7 +2,7 @@
 
 Add AI-assisted PDF navigation and highlighting, clearer annotations, and source-aware chat attachments. Readers can navigate an inferred outline, identify the paper's key contributions, and bring selected passages or figures into the existing chat without losing their source locations.
 
-This PR was stacked on #1 (`codex/settings-assistant-storage`), which is now merged. The Reader and attachment work remains on the existing PR branch.
+This PR targets `main`.
 
 ## Main Features
 
