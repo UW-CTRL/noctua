@@ -12,7 +12,27 @@ for version tags or an explicit manual release run.
 | --- | --- | --- |
 | Backend tests | Ubuntu | `cargo test --locked -p noctua` compiles and tests the backend, including chats, tool isolation, library/PDF/media handling, model discovery, and storage relocation/failure recovery. |
 | Frontend tests | macOS | `bash tests/run-frontend.sh` runs the JavaScriptCore checks for syntax, settings, models, typography, chat Markdown, notes/media, and targeted PDF behavior, plus WebKit checks for chat rendering, fonts, and dropdowns. |
+| Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for both Apple Silicon and Intel targets. |
+| Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
+| Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
 | Release and workflow checks | Ubuntu | Python and Node release-script tests, workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
+| Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, manual runs, and weekly on Mondays at 09:17 UTC. |
+
+Desktop checks type-check the desktop package and compile its build scripts and
+required dependencies. They do not link the final application, package installers,
+launch the app, or test installation. The macOS check covers both architectures
+used in the Universal release; the release workflow still performs the final
+linking and packaging.
+
+The audit uses cargo-audit 0.22.2 and fetches current advisories on each run.
+Vulnerabilities fail the check; informational/unmaintained-crate warnings remain
+visible in its log. No advisories are ignored by this workflow. Review findings
+and prefer compatible patched dependency updates; do not hide failures with
+blanket ignores. Database/network failures also fail the check and should be
+distinguished from dependency findings in the job log. The audit only covers
+Rust dependencies, not bundled JavaScript or OS libraries. It does not update
+dependencies, create issues, or require write permissions. Weekly runs become
+active after the workflow is merged into the default branch.
 
 Backend assistant tests use the fake CLI fixture; CI does not log into assistant
 accounts or make real model inference requests. Frontend tests use mocks or
@@ -35,9 +55,18 @@ From the repository root:
 
 ```sh
 cargo test --locked -p noctua
+cargo check --locked -p noctua-app
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 node --test .github/scripts/prepare-release.test.cjs
 actionlint .github/workflows/*.yml
+```
+
+The desktop check needs Tauri's platform prerequisites, as with desktop builds.
+For the security audit, install the pinned tool and scan the existing lockfile:
+
+```sh
+cargo install cargo-audit --version 0.22.2 --locked --no-default-features
+cargo audit --file Cargo.lock
 ```
 
 Python 3.11+ and Node.js 22 are used for release-script checks. On macOS, also run:
@@ -58,7 +87,7 @@ Those manual checks are not counted as passing CI checks.
 
 ## PRs and main
 
-Push a working branch and open a PR into `main`. Review all three checks before
+Push a working branch and open a PR into `main`. Review all seven checks before
 merging. Fix failures in the same branch; pushing another commit runs CI again.
 For an infrastructure-only change such as CI, a PR verifies the workflow itself
 before it reaches `main`.
@@ -67,7 +96,8 @@ A direct push to `main` also starts CI, but failures are discovered after the
 change has already landed. Prefer PRs for normal changes. Running CI does not
 itself block merges or direct pushes: an administrator must configure a main
 branch ruleset or branch protection separately and require **Backend tests**,
-**Frontend tests**, and **Release and workflow checks**. This change does not
+**Frontend tests**, **Release and workflow checks**, the three **Desktop check**
+jobs, and **Dependency security audit**. This change does not
 modify repository protection settings.
 
 If a runner or download fails transiently, use **Re-run failed jobs** in Actions.

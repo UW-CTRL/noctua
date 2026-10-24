@@ -41,6 +41,39 @@ jobs:
           SWIFT_MODULECACHE_PATH: ${{ runner.temp }}/noctua-swift-module-cache
         run: bash tests/run-frontend.sh
 
+  desktop:
+    name: Desktop check (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target aarch64-apple-darwin --target x86_64-apple-darwin
+          - platform: windows-latest
+            targets: ""
+            args: ""
+          - platform: ubuntu-22.04
+            targets: ""
+            args: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Linux desktop dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Check the desktop app
+        run: cargo check --locked -p noctua-app ${{ matrix.args }}
+
   release-checks:
     name: Release and workflow checks
     runs-on: ubuntu-latest
