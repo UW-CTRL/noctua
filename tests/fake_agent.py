@@ -71,7 +71,7 @@ if any("You are Noctua's Auto-highlight agent" in arg for arg in args):
     if (home / 'auto-highlight-invalid').exists():
         text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':'An invented source passage.'}]})
 if 'Name each research thread' in prompt:
-    text = 'Here are the threads:\n```json\n' + json.dumps({'common':'Both use attention.','threads':[{'id':'t1','name':provider+' thread','problem':'Long-range dependencies.','summary':'Recurrence gave way to attention.','steps':[{'from':'a','to':'b','relation':'extends','note':'adds attention'}]}]}) + '\n```'
+    text = 'Here are the threads:\n```json\n' + json.dumps({'common':'Both use attention.','threads':[{'id':'t1','name':provider+' thread','problem':'Long-range dependencies.','summary':'Recurrence gave way to attention.','key':['a','b'],'steps':[{'from':'a','to':'b','relation':'extends','note':'adds attention'}]}]}) + '\n```'
 session = provider+'-session'
 if provider == 'codex':
     print(json.dumps({'type':'thread.started','thread_id':session}), flush=True)

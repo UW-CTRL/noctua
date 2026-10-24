@@ -2,6 +2,7 @@
 
 A small, fast research-paper explorer. Search Semantic Scholar, see a
 Connected-Papers-style graph of what a paper builds on and what builds on it,
+trace how a line of research developed over time in the Lineage view,
 save papers into your Noctua library, and keep LaTeX + handwritten notes per
 folder with your choice of Codex or Claude Code as the research assistant.
 
@@ -152,7 +153,24 @@ on its own port, and refuses writes from other websites' pages.
 - Hover to highlight a paper's links (blue = it cites, orange = cites it).
   Click to open details, **double-click** to rebuild the graph around it, drag
   to move, scroll to zoom. **Expand here** adds a paper's own neighbours to the
-  current graph. **Timeline** lays papers out left→right by year.
+  current graph.
+- **Network | Lineage** switches the layout. **Lineage** places papers
+  left→right by publication date and groups them into *threads*: the citation
+  chains most paths through the graph follow (main-path analysis). Each thread
+  gets a coloured lane; hover a paper to see everything it builds on and
+  everything that builds on it, shift-click a second paper to trace the main
+  chain between them, and click a lane label to focus a thread. The
+  **Threads** tab shows each thread as a card: a title naming its theme, the
+  problem it targets, a short summary, and the chain of key papers (e.g.
+  A → C → D) with a line on how each builds on the one before. "1 paper in
+  between" expands to show the papers skipped between two key papers; the
+  title collapses a card to just its title and subtitle (**Collapse all** for every
+  card). Titles, key papers and step notes come from the selected assistant
+  backend: they are generated automatically once the graph has loaded (turn
+  off **Summarize automatically** to save quota and use **Summarize threads**
+  instead) and cached, so reopening a graph is instant. Without a summary, a
+  thread is titled with keywords from its papers' titles and its key papers
+  are its endpoints, junctions and most-cited papers.
 - **✕ Close graph** (next to the search bar) closes the current graph.
 - **Library**: nested collections, local PDFs, filter/sort, metadata editing, and citation graphs. Use **Import PDF** for files, **Add to Noctua** for discovered papers, or the optional Zotero importer. A paper can belong to several collections without duplicating its PDF.
 - **Projects** tab: pick a Noctua collection and **Open graph** to see how its own
@@ -374,6 +392,12 @@ to real accounts or make Semantic Scholar or model requests.
 - `src/project.rs`: project graphs. Builds clusters (connected components of
   the citation graph) and shared references from each item's saved Semantic
   Scholar record and reference list.
+- `web/lineage.js`: the Lineage layout. Finds research threads with
+  main-path analysis over the loaded citation graph, lays them out on a time
+  axis, and renders the Threads cards.
+- `src/threads.rs`: asks the selected backend to title and summarize threads
+  and pick their key papers, validates the reply against the papers sent, and
+  caches it.
 - `src/agent.rs`: CLI discovery, account status, browser sign-in, and Codex configuration.
 - `src/chat.rs` / `src/history.rs`: provider-specific chat execution, session resumption, and saved history.
 - `src/notes.rs`: note files and handwriting-to-LaTeX through the selected backend,

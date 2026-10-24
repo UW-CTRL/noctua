@@ -2,7 +2,7 @@
 //! the selected CLI backend. Threads themselves are computed in the browser
 //! (main-path analysis over the citation graph); this only labels them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -43,15 +43,22 @@ pub struct Request {
 
 const PROMPT: &str = "Below are research threads found in a citation graph. Each thread is a chain of \
 papers in time order, where each step means the later paper cites and builds on the earlier one. \
-Name each research thread and explain how its ideas evolved. Reply with JSON only, no prose, in exactly this shape:\n\
+Name each research thread, pick the papers that carried it forward, and explain how its ideas evolved. \
+Reply with JSON only, no prose, in exactly this shape:\n\
 {\"common\": \"1-2 sentences on what links the threads, or how they differ\",\n \
-\"threads\": [{\"id\": \"<thread id>\", \"name\": \"at most 6 words\", \
+\"threads\": [{\"id\": \"<thread id>\", \
+\"name\": \"a concise phrase naming the thread's high-level theme and how its papers build on each other; \
+use as many words as needed (usually 6-14), e.g. From conditional generative models to language-guided dexterous grasping\", \
 \"problem\": \"one sentence: the research problem or gap this line of work targets\", \
 \"summary\": \"2-3 sentences on how the ideas changed along the thread\", \
+\"key\": [\"<paper id>\", ...], \
 \"steps\": [{\"from\": \"<paper id>\", \"to\": \"<paper id>\", \
 \"relation\": \"extends|refines|challenges|applies|combines|surveys\", \
-\"note\": \"at most 15 words: what the later paper adds to or changes about the earlier one\"}]}]}\n\
-Give one entry in \"steps\" for every listed step. Use the ids exactly as given. Base the answer on the \
+\"note\": \"at most 20 words: how the later paper builds on the earlier one, i.e. what it adds or changes, \
+counting any papers in between\"}]}]}\n\
+\"key\" lists, in time order, the papers that made the major contributions along the thread; always include \
+the first and last paper, and leave out incremental, survey or application papers. Give one entry in \
+\"steps\" for every consecutive pair in \"key\". Use the ids exactly as given. Base the answer on the \
 titles and abstracts; if an abstract is missing, rely on the title and keep the note cautious.\n\n";
 
 fn clip(s: &str, max: usize) -> String {
@@ -86,6 +93,7 @@ fn prompt(req: &Request) -> String {
 
 fn cache_key(req: &Request, provider: Provider) -> String {
     let mut h = Sha256::new();
+    h.update("v3"); // bump when the prompt changes, so older answers are not reused
     h.update(provider.key());
     for t in &req.threads {
         h.update(format!("|{}:", t.id));
@@ -111,28 +119,38 @@ fn text(v: &Value, max: usize) -> String {
     clip(v.as_str().unwrap_or(""), max)
 }
 
-/// Keeps only threads and steps that were asked about, with bounded text.
+/// Keeps only threads, key papers and steps that were asked about, with
+/// bounded text. Key papers follow the thread's order and always include its
+/// first and last paper; a step must go forward along the thread.
 fn sanitize(req: &Request, raw: &Value) -> Value {
     let asked: HashMap<&str, &Thread> = req.threads.iter().map(|t| (t.id.as_str(), t)).collect();
     let mut threads = Vec::new();
     for t in raw["threads"].as_array().into_iter().flatten() {
         let Some(id) = t["id"].as_str() else { continue };
         let Some(&want) = asked.get(id) else { continue };
-        let ids: HashSet<&str> = want.papers.iter().map(|p| p.id.as_str()).collect();
+        let pos: HashMap<&str, usize> = want.papers.iter().enumerate().map(|(i, p)| (p.id.as_str(), i)).collect();
+        let mut key: Vec<usize> = t["key"].as_array().into_iter().flatten()
+            .filter_map(|k| pos.get(k.as_str()?).copied())
+            .chain([0, want.papers.len().saturating_sub(1)])
+            .collect();
+        key.sort_unstable();
+        key.dedup();
+        let key: Vec<&str> = key.into_iter().filter_map(|i| want.papers.get(i).map(|p| p.id.as_str())).collect();
         let steps: Vec<Value> = t["steps"].as_array().into_iter().flatten()
             .filter_map(|s| {
                 let (from, to) = (s["from"].as_str()?, s["to"].as_str()?);
-                if !ids.contains(from) || !ids.contains(to) { return None; }
+                if pos.get(from)? >= pos.get(to)? { return None; }
                 let rel = s["relation"].as_str().unwrap_or("").to_lowercase();
                 let relation = if RELATIONS.contains(&rel.as_str()) { rel } else { "builds on".into() };
-                Some(json!({ "from": from, "to": to, "relation": relation, "note": text(&s["note"], 140) }))
+                Some(json!({ "from": from, "to": to, "relation": relation, "note": text(&s["note"], 180) }))
             })
             .collect();
         threads.push(json!({
             "id": id,
-            "name": text(&t["name"], 60),
+            "name": text(&t["name"], 140),
             "problem": text(&t["problem"], 300),
             "summary": text(&t["summary"], 600),
+            "key": key,
             "steps": steps,
         }));
     }
@@ -174,20 +192,23 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_drops_unknown_threads_and_steps() {
+    fn sanitize_orders_key_papers_and_drops_unknown_threads_and_steps() {
         let req: Request = serde_json::from_value(json!({ "threads": [{ "id": "t1",
-            "papers": [{ "id": "a", "title": "A" }, { "id": "b", "title": "B" }], "steps": [["a", "b"]] }] })).unwrap();
+            "papers": [{ "id": "a" }, { "id": "b" }, { "id": "c" }, { "id": "d" }],
+            "steps": [["a", "b"], ["b", "c"], ["c", "d"]] }] })).unwrap();
         let raw = json!({ "common": "c", "threads": [
-            { "id": "t1", "name": "N", "steps": [
-                { "from": "a", "to": "b", "relation": "Extends", "note": "adds" },
+            { "id": "t1", "name": "N", "key": ["c", "zzz", "c", "a"], "steps": [
+                { "from": "a", "to": "c", "relation": "Extends", "note": "adds" },
+                { "from": "c", "to": "d", "relation": "invented" },
                 { "from": "a", "to": "zzz", "relation": "extends" },
-                { "from": "b", "to": "a", "relation": "invented" } ] },
+                { "from": "d", "to": "a", "relation": "extends" } ] },
             { "id": "t9", "name": "unasked" } ] });
         let out = sanitize(&req, &raw);
         let threads = out["threads"].as_array().unwrap();
         assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0]["key"], json!(["a", "c", "d"]), "thread order, endpoints forced, no duplicates or unknown ids");
         let steps = threads[0]["steps"].as_array().unwrap();
-        assert_eq!(steps.len(), 2);
+        assert_eq!(steps.len(), 2, "unknown and backward steps are dropped");
         assert_eq!(steps[0]["relation"], "extends");
         assert_eq!(steps[1]["relation"], "builds on");
     }

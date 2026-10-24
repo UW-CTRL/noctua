@@ -47,7 +47,7 @@
         <button data-tab="library" data-icon="library" aria-label="Library"><span class="nav-tab-label" aria-hidden="true">Library</span></button>
         <button data-tab="projects" data-icon="folder" aria-label="Projects"><span class="nav-tab-label" aria-hidden="true">Projects</span></button>
         <button data-tab="nodes" data-icon="network" aria-label="In graph"><span class="nav-tab-label" aria-hidden="true">In graph <span id="node-count"></span></span></button>
-        <button data-tab="threads" class="lineage-only" data-icon="history" aria-label="Threads"><span class="nav-tab-label" aria-hidden="true">Threads</span></button>
+        <button data-tab="threads" class="lineage-only" data-icon="threads" aria-label="Threads"><span class="nav-tab-label" aria-hidden="true">Threads</span></button>
       </nav>
       <div id="tab-results" class="tab-body">
         <p class="hint">Search for a paper, then pick one to build its citation graph.</p>
@@ -113,7 +113,7 @@
         <label class="chip plain lineage-only" title="Most threads to draw">Threads
           <select id="thread-count"><option>3</option><option selected>5</option><option>8</option></select>
         </label>
-        <button id="explain-threads" class="chip plain lineage-only" title="Ask the research assistant to name each thread and explain how its papers build on each other">Explain threads</button>
+        <button id="explain-threads" class="chip plain lineage-only" title="Ask the research assistant to name each thread and summarize how its papers build on each other">Summarize threads</button>
         <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
           <select id="limit" data-open-on-hover aria-label="Papers to load"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
         </label>
@@ -123,7 +123,7 @@
         <span class="graph-only network-only"><i class="dot old"></i>older</span><span class="graph-only network-only"><i class="dot new"></i>newer</span>
         <span class="proj-only network-only">colour = cluster</span><span class="proj-only network-only"><i class="dot single"></i>unconnected</span>
         <span class="lineage-only">older → newer · colour = thread</span>
-        <span class="lineage-only"><i class="dot thread"></i>on thread</span><span class="lineage-only"><i class="dot related"></i>related</span>
+        <span class="lineage-only"><i class="dot key"></i>key paper</span><span class="lineage-only"><i class="dot between"></i>in between</span><span class="lineage-only"><i class="dot related"></i>related</span>
         <span class="lineage-only"><i class="dash"></i>cites a newer paper</span>
         <span>size = citations</span><span><i class="ring"></i>in Noctua</span>
       </div>

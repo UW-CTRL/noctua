@@ -34,8 +34,12 @@ function computeThreads(ids, timeOf, cites, maxThreads = 5) {
     inc.get(s).push(t);
   }
 
-  // Topological order (Kahn); a leftover cycle is broken at its earliest paper.
+  // Sorted adjacency makes ties break the same way whatever order the links
+  // arrived in, so the same graph always yields the same (cached) threads.
   const byTime = (a, b) => (timeOf.get(a) ?? -Infinity) - (timeOf.get(b) ?? -Infinity) || (a < b ? -1 : a > b ? 1 : 0);
+  for (const list of [...out.values(), ...inc.values()]) list.sort(byTime);
+
+  // Topological order (Kahn); a leftover cycle is broken at its earliest paper.
   const indeg = new Map(ids.map((id) => [id, inc.get(id).length]));
   const done = new Set();
   const order = [];
@@ -173,14 +177,14 @@ function layoutLineage(ids, res, radiusOf) {
   const years = [...count.keys()].sort((a, b) => a - b);
   // Busy years get wider columns (by the square root of their paper count).
   const mean = ids.length / Math.max(1, years.length);
-  const share = (y) => Math.max(0.7, Math.min(3, Math.sqrt(count.get(y) / mean)));
+  const share = (y) => Math.max(0.4, Math.min(4, Math.sqrt(count.get(y) / mean)));
   const px = Math.max(40, Math.min(170, 1600 / Math.max(1, years.reduce((a, y) => a + share(y), 0))));
   const cols = [];
   let x = 0, gap = 0;
   for (let y = years[0]; years.length && y <= years[years.length - 1]; y++) {
     const full = count.has(y);
     gap = full ? 0 : gap + 1;
-    const w = full ? px * share(y) : gap <= 6 ? px * 0.25 : 0;
+    const w = full ? px * share(y) : gap <= 6 ? px * 0.15 : 0;
     cols.push({ year: y, x, w, empty: !full });
     x += w;
   }
@@ -283,6 +287,21 @@ function closure(start, adj) {
   return seen;
 }
 
+// The papers that carried a thread forward, in thread order: the assistant's
+// pick when it has one, else the endpoints, junctions and most-cited papers
+// (at most five).
+function keyPapers(core, picked, isJunction, citations) {
+  const valid = new Set((picked || []).filter((id) => core.includes(id)));
+  if (valid.size >= 2) return core.filter((id) => valid.has(id) || id === core[0] || id === core[core.length - 1]);
+  const pick = new Set([core[0], core[core.length - 1]]);
+  for (const id of core) if (pick.size < 5 && isJunction(id)) pick.add(id);
+  for (const id of core.slice().sort((a, b) => citations(b) - citations(a))) {
+    if (pick.size >= 5) break;
+    pick.add(id);
+  }
+  return core.filter((id) => pick.has(id));
+}
+
 // ---------------------------------------------------------------- state
 
 const LIN = {
@@ -302,6 +321,11 @@ const LIN = {
   reqKey: '',          // identifies the threads that LIN.ai describes
   ai: null,            // { common, threads: Map, steps: Map }
   explaining: false,
+  auto: store.get('noctua.threadsAuto') !== '0',  // summarize threads without a click
+  autoTimer: null,
+  error: null,         // { key, message } of the last failed summary
+  collapsed: new Set(), // threads showing only their theme, by first>last paper
+  openGaps: new Set(),  // expanded "papers in between", by thread and paper
 };
 
 const lineageOn = () => G.layout === 'lineage';
@@ -318,7 +342,8 @@ function threadName(t) {
 
 // Recomputes threads and targets when the papers, links or settings change.
 function ensureLineage(ns) {
-  const sig = [ns.length, G.nodes.size, G.edges.length, G.centerId, G.project?.target, LIN.max, Object.values(G.show).join('')].join(':');
+  const shape = Math.round((canvas.clientHeight / Math.max(1, canvas.clientWidth)) * 20);
+  const sig = [ns.length, G.nodes.size, G.edges.length, G.centerId, G.project?.target, LIN.max, Object.values(G.show).join(''), shape].join(':');
   if (sig === LIN.sig && LIN.res) return;
   LIN.sig = sig;
   const ids = ns.map((n) => n.id);
@@ -333,6 +358,7 @@ function ensureLineage(ns) {
   }
   LIN.res = computeThreads(ids, LIN.timeOf, G.edges.map((e) => [e.s, e.t]), LIN.max);
   LIN.lay = layoutLineage(ids, LIN.res, (id) => radius(G.nodes.get(id)));
+  stretchToCanvas(LIN.lay);
   for (const n of ns) {
     const p = LIN.lay.pos.get(n.id);
     n.tx = p.x; n.ty = p.y;
@@ -347,10 +373,46 @@ function ensureLineage(ns) {
   if (key !== LIN.reqKey) {
     LIN.reqKey = key;
     LIN.ai = null;
+    clearTimeout(LIN.autoTimer);
     if (LIN.res.threads.length) requestThreads({ cacheOnly: true });
   }
   renderThreads();
   kick(0.8);
+}
+
+// A timeline is much wider than tall, so fitting it leaves the canvas mostly
+// empty above and below. Spread the lanes (up to 3x) to match the canvas shape.
+function stretchToCanvas(lay) {
+  const ps = [...lay.pos.values()];
+  if (!ps.length || !lay.bands.length) return;
+  const xs = ps.map((p) => p.x);
+  const width = Math.max(...xs) - Math.min(...xs) + 160;
+  const height = lay.bands[lay.bands.length - 1].y1 - lay.bands[0].y0;
+  const room = (canvas.clientHeight - 110) / Math.max(1, canvas.clientWidth);
+  const k = Math.max(1, Math.min(3, (width * room) / Math.max(1, height)));
+  if (k === 1) return;
+  for (const p of ps) p.y *= k;
+  for (const b of lay.bands) { b.y0 *= k; b.y1 *= k; }
+}
+
+function threadKeyPapers(t, i) {
+  const picked = LIN.ai?.threads.get('t' + (i + 1))?.key;
+  return keyPapers(t.core, picked, (id) => LIN.res.junctions.has(id), (id) => G.nodes.get(id)?.p.citationCount || 0);
+}
+
+// Thread papers split as in the Threads panel: key papers, and the papers
+// folded into "N papers in between". Recomputed when threads or labels change.
+function keySets() {
+  const tag = LIN.reqKey + (LIN.ai ? ':ai' : '');
+  if (LIN.keys?.tag === tag) return LIN.keys;
+  const key = new Set(), between = new Set();
+  LIN.res.threads.forEach((t, i) => {
+    const k = threadKeyPapers(t, i);
+    for (const id of k) key.add(id);
+    for (const id of t.core) if (LIN.res.threadOf.get(id) === i && !k.includes(id)) between.add(id);
+  });
+  for (const id of key) between.delete(id);  // a junction that is key on any thread stays key
+  return (LIN.keys = { tag, key, between });
 }
 
 function stepLineage(ns) {
@@ -500,22 +562,47 @@ function drawLineage(w, h, ns, vis) {
 
   // Papers: filled = on a thread, ring = related to it.
   const order = hl ? ns.slice().sort((a, b) => hl.nodes.has(a.id) - hl.nodes.has(b.id)) : ns;
+  // Key papers get a bold ring; papers between them are smaller and fainter.
+  const { key, between } = keySets();
   for (const n of order) {
     const t = res.memberOf.get(n.id);
-    ctx.globalAlpha = fade(hl?.nodes.has(n.id));
-    drawNode(n, res.threadOf.get(n.id) === t || res.junctions.has(n.id) ? threadColor(t) : null, threadColor(t));
+    const minor = between.has(n.id);
+    ctx.globalAlpha = fade(hl?.nodes.has(n.id)) * (minor ? 0.5 : 1);
+    drawNode(n, res.threadOf.get(n.id) === t || res.junctions.has(n.id) ? threadColor(t) : null, threadColor(t), minor ? 0.65 : 1);
+    if (key.has(n.id)) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius(n) + 3.5 / view.k, 0, Math.PI * 2);
+      ctx.lineWidth = 2.5 / view.k;
+      ctx.strokeStyle = threadColor(t);
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
 
   ctx.font = `${11 * colors.fontScale / view.k}px ${colors.font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (const n of order) {
+  // Labels in priority order (focus, center, highlighted, thread papers, then
+  // by size), skipping any that would overlap one already drawn.
+  // Key papers always keep their label; in-between ones only when highlighted.
+  const rank = (n) => n.id === focus ? 5 : n.id === G.centerId ? 4 : key.has(n.id) ? 3 : hl?.nodes.has(n.id) ? 2 : res.threadOf.has(n.id) ? 1 : 0;
+  const placed = [];
+  const lh = (13 * colors.fontScale) / view.k;
+  for (const n of ns.slice().sort((a, b) => rank(b) - rank(a) || radius(b) - radius(a))) {
     const r = radius(n);
     const core = res.threadOf.has(n.id);
-    const show = n.id === focus || n.id === G.centerId
-      || (hl ? hl.nodes.has(n.id) && (view.k > 0.45 || r * view.k > 6) : core ? view.k > 0.55 || r * view.k > 9 : r * view.k > 11);
-    if (show) drawLabel(n);
+    // Overlaps are skipped below, so thread papers can be labelled at any zoom.
+    const show = n.id === focus || n.id === G.centerId || key.has(n.id) || (hl ? hl.nodes.has(n.id) : core ? !between.has(n.id) : r * view.k > 6);
+    if (!show) continue;
+    const w = ctx.measureText(`${lastName(n.p)} ${n.p.year ?? ''}`).width + 4 / view.k;
+    // Below the paper, else (for key papers) above it; the focus and center always show.
+    const below = { x0: n.x - w / 2, x1: n.x + w / 2, y0: n.y + r + 2 / view.k, y1: n.y + r + 2 / view.k + lh };
+    const above = { ...below, y0: n.y - r - 2 / view.k - lh, y1: n.y - r - 2 / view.k };
+    const free = (box) => !placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0);
+    const up = rank(n) < 4 && !free(below);
+    if (up && (rank(n) < 3 || !free(above))) continue;
+    placed.push(up ? above : below);
+    drawLabel(n, up);
   }
   ctx.restore();
 
@@ -527,7 +614,14 @@ function drawLineage(w, h, ns, vis) {
   ctx.strokeStyle = colors.bg;
   ctx.fillStyle = colors.muted;
   const every = [1, 2, 5, 10, 20, 50].find((s) => s * axis.px * view.k >= 42) || 100;
-  const label = (text, x) => { if (x > -20 && x < w + 20) { ctx.strokeText(text, x, axisY); ctx.fillText(text, x, axisY); } };
+  let lastRight = -Infinity;  // skip a year label that would run into the previous one
+  const label = (text, x) => {
+    const half = ctx.measureText(text).width / 2;
+    if (x < -20 || x > w + 20 || x - half < lastRight + 6) return;
+    lastRight = x + half;
+    ctx.strokeText(text, x, axisY);
+    ctx.fillText(text, x, axisY);
+  };
   for (let i = 0; i < axis.cols.length; i++) {
     const c = axis.cols[i];
     if (!c.empty) { if (c.year % every === 0 || every === 1) label(String(c.year), sx(c.x + c.w / 2)); continue; }
@@ -548,9 +642,9 @@ function drawLineage(w, h, ns, vis) {
     const y0 = sy(b.y0), y1 = sy(b.y1);
     if (y1 < axisY + 16 || y0 > h - 40) continue;
     const y = Math.min(Math.max(y0 + 14, axisY + 24), y1 - 12);
-    const text = threadName(b.thread);
-    const tw = Math.min(ctx.measureText(text).width, 260);
-    const rect = { x: 10, y: y - 10, w: tw + 28, h: 20, thread: b.thread };
+    const full = threadName(b.thread);
+    const text = fitText(full, Math.max(160, Math.min(w - 60, 560)));
+    const rect = { x: 10, y: y - 11, w: ctx.measureText(text).width + 30, h: 22, thread: b.thread, full, cut: text !== full };
     ctx.globalAlpha = LIN.focusThread != null && LIN.focusThread !== b.thread ? 0.5 : 0.92;
     ctx.fillStyle = colors.panel;
     ctx.strokeStyle = threadColor(b.thread);
@@ -563,10 +657,21 @@ function drawLineage(w, h, ns, vis) {
     ctx.arc(rect.x + 11, y, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = colors.ink;
-    ctx.fillText(text, rect.x + 20, y, 260);
+    ctx.fillText(text, rect.x + 20, y);
     ctx.globalAlpha = 1;
     if (b.thread >= 0) LIN.labels.push(rect);
   }
+}
+
+// `text` shortened with an ellipsis to fit `max` pixels in the current font.
+function fitText(text, max) {
+  if (ctx.measureText(text).width <= max) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(text.slice(0, mid).trimEnd() + '…').width <= max) lo = mid; else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + '…';
 }
 
 function pill({ x, y, w, h }) {
@@ -676,6 +781,26 @@ function stepRow(id, cls = '', after = '') {
   return `<li data-lin-id="${esc(id)}" class="${cls}"><span class="t">${esc(p.title)}</span><span class="p-year">${esc(paperShort(id))}</span>${after}</li>`;
 }
 
+const TITLE_STOP = new Set(('a an and are as at by for from in into is it its of on or the to via with without using use toward towards '
+  + 'through over under our we new based learning learned model models approach method methods network networks deep neural study '
+  + 'analysis framework multi large scale improved improving efficient generalizable open set').split(' '));
+
+// Stand-in title until the assistant names a thread: the words its papers'
+// titles share most.
+function keywordTitle(core) {
+  const count = new Map();
+  for (const id of core) {
+    const words = new Set((G.nodes.get(id)?.p.title || '').toLowerCase().match(/[a-z][a-z0-9]{2,}/g) || []);
+    for (const w of words) if (!TITLE_STOP.has(w)) count.set(w, (count.get(w) || 0) + 1);
+  }
+  const top = [...count].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length).slice(0, 3).map(([w]) => w);
+  return top.length ? top.join(' · ').replace(/^./, (c) => c.toUpperCase()) : null;
+}
+
+const endpoints = (core) => `${paperShort(core[0])} → ${paperShort(core[core.length - 1])}`;
+// Identifies a thread across re-renders and recomputes.
+const threadKey = (t) => t.core[0] + '>' + t.core[t.core.length - 1];
+
 function renderThreads() {
   const el = $('#thread-list');
   if (!el) return;
@@ -686,20 +811,28 @@ function renderThreads() {
   }
   const links = res.flow.length;
   const year = (id) => G.nodes.get(id)?.p.year;
+  const ids = res.threads.map((t) => threadKey(t));
+  const allCollapsed = ids.length && ids.every((k) => LIN.collapsed.has(k));
   let html = `<div class="threads-head">
-      <button id="threads-explain" class="primary"${LIN.explaining || !res.threads.length ? ' disabled' : ''}>${LIN.explaining ? 'Explaining…' : LIN.ai ? 'Explain again' : 'Explain threads'}</button>
-      <span class="hint">${res.threads.length} thread${res.threads.length === 1 ? '' : 's'} · ${links} citation link${links === 1 ? '' : 's'} in time order</span>
+      <button id="threads-explain" class="primary"${LIN.explaining || !res.threads.length ? ' disabled' : ''}>${LIN.explaining ? 'Summarizing…' : LIN.ai ? 'Summarize again' : 'Summarize threads'}</button>
+      <label class="auto-toggle" title="Uses your research assistant's quota once per new set of threads; answers are saved">
+        <input type="checkbox" id="threads-auto"${LIN.auto ? ' checked' : ''}> Summarize automatically</label>
+      ${ids.length ? `<button id="threads-collapse" class="link-btn">${allCollapsed ? 'Expand all' : 'Collapse all'}</button>` : ''}
     </div>
+    <p class="hint">${res.threads.length} thread${res.threads.length === 1 ? '' : 's'} · ${links} citation link${links === 1 ? '' : 's'} in time order</p>
     <p class="hint">A thread is the citation chain that most paths through these papers follow. Hover a paper to see what it builds on (blue)
       and what builds on it (orange); shift-click a second paper to trace the chains between them.</p>`;
   if (LIN.ai?.common) html += `<p class="threads-common">${esc(LIN.ai.common)}</p>`;
+  if (!LIN.ai && LIN.error?.key === LIN.reqKey) {
+    html += `<p class="warn">Couldn’t summarize the threads: ${esc(LIN.error.message)} <button class="link-btn" data-explain>Retry</button></p>`;
+  }
 
   if (LIN.trace) {
     const { chain, set } = LIN.trace;
     const rest = [...set].filter((id) => !chain.includes(id)).sort((a, b) => (LIN.timeOf.get(a) ?? 0) - (LIN.timeOf.get(b) ?? 0));
     const steps = chain.map((id, j) => {
       const s = j && LIN.ai?.steps.get(chain[j - 1] + '>' + id);
-      return (s ? `<li class="step-link">${relChip(s)}${esc(s.note)}</li>` : '') + stepRow(id);
+      return (s ? `<li class="step-link"><div class="step-note">${relChip(s)}${esc(s.note)}</div></li>` : '') + stepRow(id);
     });
     html += `<div class="thread-card trace" style="--c:${colors.accent}">
       <div class="thread-head"><b>Path ${esc(paperShort(LIN.trace.a))} → ${esc(paperShort(LIN.trace.b))}</b>
@@ -715,25 +848,44 @@ function renderThreads() {
   }
   res.threads.forEach((t, i) => {
     const ai = LIN.ai?.threads.get('t' + (i + 1));
+    const tk = threadKey(t);
+    const pending = LIN.explaining && !ai;
     const members = [...res.memberOf.values()].filter((x) => x === i).length - t.core.filter((id) => res.threadOf.get(id) === i).length;
     const span = [year(t.core[0]), year(t.core[t.core.length - 1])].filter(Boolean);
-    const steps = [];
-    t.core.forEach((id, j) => {
+    const key = threadKeyPapers(t, i);
+    const rows = [];
+    key.forEach((id, j) => {
       if (j) {
-        const s = LIN.ai?.steps.get(t.core[j - 1] + '>' + id);
-        steps.push(s ? `<li class="step-link">${relChip(s)}${esc(s.note)}</li>` : '<li class="step-link">cites and builds on ↑</li>');
+        // How this key paper builds on the previous one, and what lies between.
+        const prev = key[j - 1];
+        const between = t.core.slice(t.core.indexOf(prev) + 1, t.core.indexOf(id));
+        const s = LIN.ai?.steps.get(prev + '>' + id);
+        const gap = tk + ':' + prev;
+        const open = LIN.openGaps.has(gap);
+        rows.push(`<li class="step-link"><div class="step-note"><span class="up">↑</span>${s ? relChip(s) + esc(s.note)
+          : `<span class="muted">${pending ? 'summarizing…' : 'cites and builds on'}</span>`}</div>
+          ${between.length ? `<button class="gap-btn" data-gap="${esc(gap)}" aria-expanded="${open}">${between.length} paper${between.length === 1 ? '' : 's'} in between ${open ? '▾' : '▸'}</button>
+            ${open ? `<ol class="gap-list">${between.map((b) => stepRow(b)).join('')}</ol>` : ''}` : ''}</li>`);
       }
       const other = res.threadOf.get(id);
-      steps.push(other === i ? stepRow(id)
+      rows.push(other === i ? stepRow(id)
         : stepRow(id, 'junction', `<span class="from" style="--c:${threadColor(other)}" title="Also on this thread">${esc(threadName(other))}</span>`));
     });
-    html += `<div class="thread-card${LIN.focusThread === i ? ' focused' : ''}${LIN.focusThread != null && LIN.focusThread !== i ? ' dim' : ''}" data-thread="${i}" style="--c:${threadColor(i)}">
-      <div class="thread-head" title="Focus this thread"><i class="swatch" style="background:${threadColor(i)}"></i>
-        <b>${esc(threadName(i))}</b><span class="p-year">${span.length ? [...new Set(span)].join('–') + ' · ' : ''}${t.core.length} papers</span></div>
+    const title = ai?.name ? `<b>${esc(ai.name)}</b>`
+      : `<b class="guess" title="Keywords from the paper titles, until the thread is summarized">${esc(keywordTitle(t.core) || endpoints(t.core))}</b>`;
+    html += `<div class="thread-card${LIN.collapsed.has(tk) ? ' collapsed' : ''}${LIN.focusThread === i ? ' focused' : ''}${LIN.focusThread != null && LIN.focusThread !== i ? ' dim' : ''}" data-thread="${i}" style="--c:${threadColor(i)}">
+      <div class="thread-head" data-toggle="${esc(tk)}" title="Show or hide the papers" role="button" aria-expanded="${!LIN.collapsed.has(tk)}">
+        <span class="chev" aria-hidden="true">▾</span>
+        <div class="thread-title">${title}${pending ? '<span class="summarizing">Summarizing…</span>' : ''}
+          <span class="thread-sub">${esc(endpoints(t.core))} · ${span.length ? [...new Set(span)].join('–') + ' · ' : ''}${t.core.length} papers${key.length < t.core.length ? `, ${key.length} key` : ''}</span></div>
+        <button class="focus-btn" data-focus title="Focus this thread in the graph">◎</button></div>
       ${ai?.problem ? `<div class="thread-problem"><span>Problem</span>${esc(ai.problem)}</div>` : ''}
       ${ai?.summary ? `<div class="thread-summary">${esc(ai.summary)}</div>` : ''}
-      <ol class="thread-steps">${steps.join('')}</ol>
-      ${members > 0 ? `<div class="hint">+ ${members} related paper${members === 1 ? '' : 's'} in this lane</div>` : ''}
+      <div class="thread-body">
+        <ol class="thread-steps">${rows.join('')}</ol>
+        ${!LIN.ai && !pending && !LIN.auto ? '<button class="link-btn" data-explain>Summarize what each paper contributes</button>' : ''}
+        ${members > 0 ? `<div class="hint">+ ${members} related paper${members === 1 ? '' : 's'} in this lane</div>` : ''}
+      </div>
     </div>`;
   });
   el.innerHTML = html;
@@ -784,28 +936,49 @@ function threadsRequest() {
   return { threads, others };
 }
 
-async function requestThreads({ force = false, cacheOnly = false } = {}) {
+// Summarizes the threads once the graph settles: after the cache lookup
+// misses and no other requests (links, similar papers) are still loading.
+function scheduleSummary() {
+  clearTimeout(LIN.autoTimer);
+  if (!LIN.auto || LIN.ai || !LIN.res?.threads.length || !lineageOn() || LIN.error?.key === LIN.reqKey) return;
+  const key = LIN.reqKey;
+  LIN.autoTimer = setTimeout(() => {
+    if (key !== LIN.reqKey || LIN.ai) return;
+    if (inflight > 0 || LIN.explaining) return scheduleSummary();
+    requestThreads({ auto: true });
+  }, 2500);
+}
+
+async function requestThreads({ force = false, cacheOnly = false, auto = false } = {}) {
   if (!LIN.res?.threads.length) return;
   const key = LIN.reqKey;
   if (!cacheOnly) {
     LIN.explaining = true;
+    LIN.error = null;
     renderThreads();
-    toast(`Asking the research assistant to explain ${LIN.res.threads.length} thread${LIN.res.threads.length === 1 ? '' : 's'}…`);
+    if (!auto) toast(`Asking the research assistant to summarize ${LIN.res.threads.length} thread${LIN.res.threads.length === 1 ? '' : 's'}…`);
   }
+  let found = false;
   try {
     const r = await api('/api/threads', { ...threadsRequest(), force, cache_only: cacheOnly });
     if (key !== LIN.reqKey || !r.threads?.length) return;
+    found = true;
     LIN.ai = {
       common: r.common,
       threads: new Map(r.threads.map((t) => [t.id, t])),
       steps: new Map(r.threads.flatMap((t) => t.steps.map((s) => [s.from + '>' + s.to, s]))),
     };
-    if (!cacheOnly) hideToast();
+    if (!cacheOnly && !auto) hideToast();
   } catch (e) {
-    if (!cacheOnly) toast('Could not explain the threads: ' + e.message, { error: true });
+    if (cacheOnly) return;
+    LIN.error = { key, message: e.message };
+    if (!auto) toast('Could not summarize the threads: ' + e.message, { error: true });
   } finally {
     if (!cacheOnly) LIN.explaining = false;
-    if (key === LIN.reqKey) { renderThreads(); renderDetails(); draw(); }
+    if (key === LIN.reqKey) {
+      if (cacheOnly && !found) scheduleSummary();
+      renderThreads(); renderDetails(); draw();
+    }
   }
 }
 
@@ -819,6 +992,7 @@ function setLayout(mode, { user = false } = {}) {
   if (lineageOn()) {
     LIN.sig = '';
     if (user && G.nodes.size) showTab('threads');
+    scheduleSummary();
   } else {
     LIN.trace = null;
     LIN.focusThread = null;
@@ -840,14 +1014,33 @@ $('#thread-count').addEventListener('change', (e) => {
 });
 $('#explain-threads').addEventListener('click', () => requestThreads({ force: !!LIN.ai }));
 
+const toggle = (set, k) => { if (!set.delete(k)) set.add(k); };
+
 $('#tab-threads').addEventListener('click', (e) => {
   if (e.target.closest('#threads-explain')) return requestThreads({ force: !!LIN.ai });
+  if (e.target.closest('[data-explain]')) return requestThreads();
   if (e.target.closest('#trace-clear')) return clearLineageFocus();
+  const gap = e.target.closest('[data-gap]');
+  if (gap) { toggle(LIN.openGaps, gap.dataset.gap); return renderThreads(); }
+  if (e.target.closest('#threads-collapse')) {
+    const keys = LIN.res.threads.map(threadKey);
+    const all = keys.every((k) => LIN.collapsed.has(k));
+    for (const k of keys) all ? LIN.collapsed.delete(k) : LIN.collapsed.add(k);
+    return renderThreads();
+  }
   const li = e.target.closest('[data-lin-id]');
   if (li) { select(li.dataset.linId); focusNode(li.dataset.linId); return; }
-  const head = e.target.closest('.thread-head');
-  const card = head?.closest('.thread-card[data-thread]');
-  if (card) focusThread(Number(card.dataset.thread) === LIN.focusThread ? null : Number(card.dataset.thread));
+  const focus = e.target.closest('[data-focus]')?.closest('.thread-card[data-thread]');
+  if (focus) return focusThread(Number(focus.dataset.thread) === LIN.focusThread ? null : Number(focus.dataset.thread));
+  const head = e.target.closest('[data-toggle]');
+  if (head) { toggle(LIN.collapsed, head.dataset.toggle); return renderThreads(); }
+});
+$('#tab-threads').addEventListener('change', (e) => {
+  if (e.target.id !== 'threads-auto') return;
+  LIN.auto = e.target.checked;
+  store.set('noctua.threadsAuto', LIN.auto ? '1' : '0');
+  if (LIN.auto) scheduleSummary(); else clearTimeout(LIN.autoTimer);
+  renderThreads();
 });
 $('#details').addEventListener('click', (e) => {
   const li = e.target.closest('[data-lin-id]');

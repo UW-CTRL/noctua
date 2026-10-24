@@ -1653,8 +1653,8 @@ function draw() {
 
 // A paper's circle with its library, center and selection rings. With no
 // fill, it is drawn hollow with a `ring`-coloured outline.
-function drawNode(n, fill, ring) {
-  const r = radius(n);
+function drawNode(n, fill, ring, scale = 1) {
+  const r = radius(n) * scale;
   ctx.beginPath();
   ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
   ctx.fillStyle = fill || colors.panel;
@@ -1679,9 +1679,10 @@ function drawNode(n, fill, ring) {
 }
 
 // "LastName Year" under a paper; expects font and alignment already set.
-function drawLabel(n) {
+function drawLabel(n, above = false) {
   const label = `${lastName(n.p)} ${n.p.year ?? ''}`.trim();
-  const y = n.y + radius(n) + 3 / view.k;
+  // With textBaseline 'top', a label above starts one line height higher.
+  const y = above ? n.y - radius(n) - 3 / view.k - 13 * (colors.fontScale || 1) / view.k : n.y + radius(n) + 3 / view.k;
   ctx.lineWidth = 3 / view.k;
   ctx.strokeStyle = colors.bg;
   ctx.strokeText(label, n.x, y);
@@ -1785,9 +1786,11 @@ canvas.addEventListener('pointermove', (e) => {
   const n = hit(e.offsetX, e.offsetY);
   const id = n?.id || null;
   if (id !== G.hover) { G.hover = id; draw(); }
-  canvas.style.cursor = n || (G.layout === 'lineage' && lineageLabelAt(e.offsetX, e.offsetY)) ? 'pointer' : '';
-  if (n) {
-    tip.innerHTML = `<b>${esc(n.p.title)}</b><br>${esc(authorsShort(n.p))} · ${n.p.year ?? '—'} · ${fmt(n.p.citationCount)} cites` + (typeof lineageTip === 'function' ? lineageTip(n) : '');
+  const label = !n && G.layout === 'lineage' ? lineageLabelAt(e.offsetX, e.offsetY) : null;
+  canvas.style.cursor = n || label ? 'pointer' : '';
+  if (n || label?.cut) {
+    tip.innerHTML = label ? `<b>${esc(label.full)}</b>`  // a lane label shortened to fit
+      : `<b>${esc(n.p.title)}</b><br>${esc(authorsShort(n.p))} · ${n.p.year ?? '—'} · ${fmt(n.p.citationCount)} cites` + (typeof lineageTip === 'function' ? lineageTip(n) : '');
     tip.style.left = Math.min(e.offsetX + 14, canvas.clientWidth - 330) + 'px';
     tip.style.top = (e.offsetY + 14) + 'px';
     tip.classList.remove('hidden');

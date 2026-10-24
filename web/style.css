@@ -373,7 +373,9 @@ body.lineage #left > .tabs button { padding: 10px 4px; }
 .seg { pointer-events: auto; display: inline-flex; padding: 2px; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; font-size: 12px; }
 .seg button { border: 0; border-radius: 99px; padding: 3px 11px; background: none; color: var(--muted); }
 .seg button.active { background: var(--accent); color: var(--accent-ink); }
-.legend .dot.thread { background: var(--accent); }
+.legend .dot.thread, .legend .dot.key, .legend .dot.between { background: var(--accent); }
+.legend .dot.key { box-shadow: 0 0 0 1.5px var(--panel), 0 0 0 3px var(--accent); margin: 0 3px; }
+.legend .dot.between { width: 7px; height: 7px; opacity: 0.5; }
 .legend .dot.related { border: 2px solid var(--accent); box-sizing: border-box; }
 .legend .dash { width: 16px; border-top: 1.5px dashed var(--muted); display: inline-block; }
 .tip-lineage { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--line); line-height: 1.6; }
@@ -390,9 +392,17 @@ body.lineage #left > .tabs button { padding: 10px 4px; }
 .thread-card { --c: var(--accent); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 10px; margin: 10px 0; }
 .thread-card.focused { box-shadow: 0 0 0 1.5px var(--c); }
 .thread-card.dim { opacity: 0.55; }
-.thread-head { display: flex; align-items: baseline; gap: 6px; cursor: pointer; }
-.thread-head b { flex: 1; min-width: 0; }
+.thread-head { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin: -4px -4px 0; padding: 4px; border-radius: 6px; }
+.thread-head:hover { background: var(--bg); }
+.focus-btn { flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font-size: 15px; line-height: 1; }
+.focus-btn:hover { border-color: var(--line); color: var(--ink); }
+.thread-card.focused .focus-btn { color: var(--c); border-color: var(--c); }
+.thread-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.thread-title b.guess { font-style: italic; }
+.thread-sub { font-size: 11px; color: var(--muted); }
+.thread-card.trace .thread-head b { flex: 1; min-width: 0; }
 .thread-card.trace .thread-head { cursor: default; }
+.thread-card.trace .thread-head:hover { background: none; }
 .thread-problem, .thread-summary { margin: 6px 0; }
 .thread-problem > span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 6px; }
 .thread-summary { color: var(--muted); }
@@ -404,7 +414,23 @@ body.lineage #left > .tabs button { padding: 10px 4px; }
 .thread-steps .t { flex: 1; min-width: 0; }
 .thread-steps .from { --c: var(--muted); flex-basis: 100%; font-size: 11px; color: var(--c); }
 .thread-steps .from::before { content: 'joins from '; color: var(--muted); }
-.thread-steps .step-link { font-size: 12px; color: var(--muted); padding: 1px 4px 3px; }
+.thread-steps .step-link { font-size: 12px; color: var(--muted); padding: 1px 4px 4px; }
+.thread-steps .step-link .cites { font-size: 11px; }
+.thread-steps .step-note { margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: var(--ink); }
+.thread-steps .step-note .up { color: var(--muted); margin-right: 5px; }
+.thread-card.collapsed .thread-body, .thread-card.collapsed .thread-problem, .thread-card.collapsed .thread-summary { display: none; }
+.chev { flex: none; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 16px; transition: transform 0.15s; }
+.thread-card.collapsed .chev { transform: rotate(-90deg); }
+.summarizing { font-size: 11px; color: var(--accent); }
+.auto-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.threads-head .link-btn { margin-left: auto; }
+.gap-btn { border: 0; background: none; padding: 2px 0 0 18px; font-size: 11.5px; color: var(--accent); cursor: pointer; }
+.gap-btn:hover { text-decoration: underline; }
+.gap-list { list-style: none; margin: 4px 0 2px 14px; padding: 0 0 0 8px; border-left: 1px dashed var(--line); }
+.thread-steps .gap-list li[data-lin-id] { font-size: 12px; color: var(--muted); padding: 2px 4px; }
+.thread-steps .gap-list li[data-lin-id]::before { display: none; }
+.link-btn { border: 0; background: none; padding: 4px 0; color: var(--accent); font-size: 12px; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
 .threads .p-year, .lineage-info .p-year { color: var(--muted); font-size: 11px; margin-left: auto; padding-left: 6px; white-space: nowrap; }
 .lineage-info { font-size: 13px; }
 .lineage-info .lin-thread { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }

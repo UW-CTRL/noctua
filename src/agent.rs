@@ -760,6 +760,7 @@ mod tests {
             assert_eq!(first["cached"], false);
             assert_eq!(first["threads"][0]["name"], format!("{provider} thread"));
             assert_eq!(first["threads"][0]["steps"][0]["relation"], "extends");
+            assert_eq!(first["threads"][0]["key"], json!(["a", "b"]));
             assert_eq!(calls(), before + 1);
             let again = f.json("/api/threads", Some(body.clone())).await;
             assert_eq!(again["cached"], true);
