@@ -223,7 +223,7 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 .toast {
-  position: absolute; right: 14px; bottom: 14px;
+  position: fixed; z-index: 1000; right: 14px; bottom: 14px;
   max-width: 420px;
   background: var(--ink); color: var(--bg);
   padding: 9px 14px; border-radius: 8px; font-size: 13px;
@@ -436,8 +436,8 @@ dl.tex-list dd { margin-left: 1.5em; }
 .tex-figure figcaption { text-align: center; font-size: .95em; margin-top: .6em; }
 .tex-fig-num { font-weight: 600; }
 .tex-img { display: inline-block; position: relative; max-width: 100%; vertical-align: bottom; line-height: 0; }
-.tex-img img { display: block; max-width: 100%; border-radius: 2px; }
-.tex-img[style] img, .tex-subfig .tex-img img { width: 100%; }
+.tex-img img, .tex-img video { display: block; max-width: 100%; border-radius: 2px; }
+.tex-img[style] img, .tex-subfig .tex-img img, .tex-img video { width: 100%; }
 .nb-view .tex-img { cursor: pointer; }
 .tex-img.missing { line-height: 1.4; padding: 10px 12px; border: 1px dashed var(--np-warn); color: var(--np-warn); font-size: 13px; }
 .tex-img.selected { outline: 2px solid var(--np-link); outline-offset: 2px; }
@@ -579,3 +579,7 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 #setup-agent { min-width: 140px; }
 .agent-login-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 12px; }
 .setup-card { max-height: 90vh; overflow-y: auto; }
+
+.tex-img video { height: auto; background: #111; }
+.video-error { display: block; line-height: 1.4; padding: 8px; color: var(--np-warn); font-size: 12px; }
+.video-error[hidden] { display: none; }

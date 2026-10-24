@@ -166,17 +166,23 @@ to add a drawing pad after the current block.
   `\newcommand`, `\section`/`\subsection`, `itemize`/`enumerate`, theorem,
   lemma, definition, problem, … with optional titles, `proof`, `\emph`,
   `\textbf`, `\href` and more. Unknown commands are shown in orange.
-- **Images**: paste a screenshot or copied file (⌘V; it goes into a new image
-  cell unless an image, or an image cell's open source, is selected), drag
-  files onto the note, or click **+ Image** between cells (🖼 on a text cell). Files are saved
-  in the folder's notes directory under `images/`, and the cell gets a
-  `figure` with `\includegraphics`, a caption and a `\label` (Figure n, with
-  `\ref` working). Adding more images to an image cell turns it into
-  `subfigure`s in a row (hold ⇧ while dropping to start a new figure instead).
-  Click an image to select it, drag its left or right edge to resize (the
-  width is written into the LaTeX), and press ✕ or Delete to remove it; the
-  subfigures shrink back to a plain figure when one image is left. The image
-  files themselves are never deleted. PNG, JPEG, GIF and WebP.
+- **Images and videos**: paste a screenshot or media file (⌘V, when the clipboard
+  provides the file), drag files onto the note, or click **+ Image / Video**
+  between cells (🖼 on a text cell). New files share the collection's note
+  `media/` directory; existing `images/` references continue to work.
+  Noctua inserts `\includegraphics` for images and its own `\includevideo`
+  command for videos, inside a figure with a caption and label. For example:
+  `\includevideo[width=0.6\textwidth]{media/<file>.mp4}`.
+  Select an existing figure before pasting to add to it. Adding images or
+  videos to that figure creates side-by-side subfigures; hold ⇧ while dropping
+  to start a separate figure instead. Drag either edge of an image or video
+  to resize it; the width is saved in the LaTeX. ✕ or Delete removes the
+  selected item from the note, retaining the attachment file.
+  Images: PNG, JPEG, GIF and WebP, up to 32 MB. Videos: MP4 (including M4V),
+  MOV and WebM, up to 512 MB, with native playback controls and seeking.
+  Codec support depends on the system's webview; MP4 with H.264/AAC is a
+  practical choice. Videos play inside Noctua; `\includevideo` is not a
+  standard LaTeX command and does not produce a playable PDF on export.
 - **Typing shortcuts** (Overleaf-style, in note source and the preamble):
   select text and type `$`, `(`, `[`, `{`, `"` or `'` to wrap it (`"` gives
   ``` ``…'' ```); ⌘B / ⌘I (or Ctrl) wrap in `\textbf{…}` / `\textit{…}`, and

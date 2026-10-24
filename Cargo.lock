@@ -2304,7 +2304,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "noctua"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2323,7 +2323,7 @@ dependencies = [
 
 [[package]]
 name = "noctua-app"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "noctua",

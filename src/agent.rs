@@ -167,6 +167,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn note_media_upload_seek_and_legacy_images() -> Result<()> {
+        let f = Fixture::new()?;
+        let bytes = b"\0\0\0\x18ftypmp42synthetic video fixture";
+        let req = |method: &str, path: &str, body: Vec<u8>, range: Option<&str>| {
+            let mut b = Request::builder().method(method).uri(path).header("host", "127.0.0.1:7878");
+            if let Some(range) = range { b = b.header("range", range); }
+            b.body(Body::from(body)).unwrap()
+        };
+        let r = f.router.clone().oneshot(req("POST", "/api/note-media/L1", bytes.to_vec(), None)).await?;
+        assert_eq!(r.status(), StatusCode::OK);
+        let result: Value = serde_json::from_slice(&to_bytes(r.into_body(), 4096).await?)?;
+        assert_eq!(result["kind"], "video");
+        let file = result["path"].as_str().unwrap().strip_prefix("media/").unwrap();
+        let url = format!("/api/note-media/L1/{file}");
+        let r = f.router.clone().oneshot(req("GET", &url, vec![], Some("bytes=8-11"))).await?;
+        assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(r.headers()["content-type"], "video/mp4");
+        assert_eq!(r.headers()["content-range"], format!("bytes 8-11/{}", bytes.len()));
+        assert_eq!(&to_bytes(r.into_body(), 4096).await?[..], b"mp42");
+        let r = f.router.clone().oneshot(req("HEAD", &url, vec![], None)).await?;
+        assert_eq!(r.headers()["content-length"], bytes.len().to_string());
+        assert!(to_bytes(r.into_body(), 4096).await?.is_empty());
+        let r = f.router.clone().oneshot(req("GET", &url, vec![], Some("bytes=900-"))).await?;
+        assert_eq!(r.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        let r = f.router.clone().oneshot(req("POST", "/api/note-media/L1", b"not a video".to_vec(), None)).await?;
+        assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+        let png = b"\x89PNG\r\n\x1a\nsynthetic image fixture";
+        let r = f.router.clone().oneshot(req("POST", "/api/note-media/L1", png.to_vec(), None)).await?;
+        let image: Value = serde_json::from_slice(&to_bytes(r.into_body(), 4096).await?)?;
+        assert_eq!(image["kind"], "image");
+        let args = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"view_note_image","arguments":{"folder_id":"L1","path":image["path"]}}});
+        let viewed = crate::mcp::handle(&f.app, &args, "direct", None).await.unwrap();
+        assert_ne!(viewed["result"]["isError"], true);
+        let folder = f.app.library.folder_id("L1")?;
+        let old = f.app.notes.save_image(&folder, "legacy.png", png)?;
+        let r = f.request(&format!("/api/note-images/L1/{}", old.strip_prefix("images/").unwrap()), None, None).await;
+        assert_eq!(r.status(), StatusCode::OK);
+        let dir = f.app.notes.root.join(folder).join("media");
+        assert_eq!(std::fs::read_dir(dir)?.count(), 2, "failed upload must leave no temporary file");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn agent_pdf_download_reuses_files_and_obeys_plan_mode()->Result<()> {
         let f=Fixture::new()?;
         let key=f.app.library.upload("L1","downloaded.pdf",b"%PDF-1.7\nalready downloaded")?;

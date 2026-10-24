@@ -237,6 +237,8 @@ function renderEditor() {
   for (const p of N.pads.values()) p.destroy();
   N.pads.clear();
   const stage = $('#notes-stage');
+  const media = stage.dataset.mediaNote === N.doc?.id ? captureVideos(stage) : [];
+  stage.dataset.mediaNote = N.doc?.id || '';
   if (!N.doc) {
     stage.innerHTML = `<div class="note-page note-empty">
       <p>${N.target ? 'No note open.' : 'Pick a Noctua folder.'}</p>
@@ -276,6 +278,7 @@ function renderEditor() {
   // Drop suggestions whose block no longer exists.
   N.suggestions = N.suggestions.filter((x) => !x.block_id || blockIndex(x.block_id) >= 0);
   typeset();
+  restoreVideos(stage, media);
 }
 
 // ---------------------------------------------------------------- preamble (the header cell)
@@ -478,7 +481,7 @@ async function noteEditFromChat(a) {
 function inserter(index) {
   const d = document.createElement('div');
   d.className = 'nb-insert';
-  d.innerHTML = '<button data-type="text">+ Text</button><button data-type="ink">+ Drawing</button><button data-type="image">+ Image</button>';
+  d.innerHTML = '<button data-type="text">+ Text</button><button data-type="ink">+ Drawing</button><button data-type="image">+ Image / Video</button>';
   d.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b?.dataset.type === 'image') pickImages({ index });
@@ -495,7 +498,7 @@ function blockEl(b) {
       <button data-act="up" title="Move up">↑</button>
       <button data-act="down" title="Move down">↓</button>
       ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (inserted below)">TeX</button>'
-        : '<button data-act="image" title="Add images (to this figure, or as a new image cell below)">🖼</button>'}
+        : '<button data-act="image" title="Add images or videos (to this figure, or as a new cell below)">🖼</button>'}
       <button data-act="delete" title="Delete block">✕</button>
     </div><div class="nb-body"></div>`;
   const body = el.querySelector('.nb-body');
@@ -592,7 +595,12 @@ function typeset() {
     if (!el) return;
     const target = el.querySelector(N.editing === b.id ? '.nb-preview' : '.nb-view');
     if (!target) return;
-    target.innerHTML = htmls[i];
+    if (target._rendered !== htmls[i]) {
+      const media = captureVideos(target);
+      target.innerHTML = htmls[i];
+      target._rendered = htmls[i];
+      restoreVideos(target, media);
+    }
     target.classList.toggle('is-empty', !b.src.trim());
   });
   applyImgSel();
@@ -603,6 +611,7 @@ function startEdit(id) {
   const b = N.doc.blocks.find((x) => x.id === id);
   const el = document.querySelector(`.nb[data-id="${id}"] .nb-body`);
   if (!b || !el) return;
+  const media = captureVideos(el);
   N.editing = id;
   N.focusBlock = id;
   if (N.imgSel?.block === id) N.imgSel = null;
@@ -633,6 +642,7 @@ function startEdit(id) {
     if (N.editing === id && document.activeElement !== ta && !picker.hovering) stopEdit();
   }, 120));
   typeset();
+  restoreVideos(el, media);
 }
 
 function stopEdit() {
@@ -642,8 +652,10 @@ function stopEdit() {
   closePicker();
   closeMentions();
   const el = document.querySelector(`.nb[data-id="${id}"] .nb-body`);
+  const media = el ? captureVideos(el) : [];
   if (el) el.innerHTML = '<div class="nb-view tex-view" data-placeholder="Click to write (LaTeX: $x^2$, \\section{…}, \\cite{…})"></div>';
   typeset();
+  if (el) restoreVideos(el, media);
 }
 
 // ---------------------------------------------------------------- editing keys
@@ -817,7 +829,7 @@ function notesContext(sentKey) {
   lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys are Noctua item keys of the folder's papers.`);
   const sel = N.imgSel && N.doc.blocks.find((b) => b.id === N.imgSel.block);
   const at = sel && imageOffsets(sel.src)[N.imgSel.k];
-  if (at != null) lines.push(`Selected image (the user clicked it): ${texArgs(sel.src, at + '\\includegraphics'.length).arg} in block ${sel.id}.`);
+  if (at != null) lines.push(`Selected media (the user clicked it): ${texArgs(sel.src, at + mediaCommandLength(sel.src, at)).arg} in block ${sel.id}.`);
   if (key === sentKey) lines.push('Note text: unchanged since the previous message.');
   else lines.push('Note text (LaTeX):', text.length > 6000 ? text.slice(0, 6000) + '\n[… truncated; use read_note for the rest]' : text);
   return { lines, key };

@@ -3,7 +3,7 @@
 // whose LaTeX is a figure environment: paste, drop or pick images to add them
 // (more images turn it into subfigures), click an image to select it, drag its
 // edge to resize (the width is written back into the LaTeX), ✕ or Delete to
-// remove it. Files are stored in the note folder's images/ directory.
+// remove it. New files share the note folder's media/ directory.
 // Uses notes.js / app.js globals (N, $, enc, toast, markDirty, …).
 
 // ---------------------------------------------------------------- figure LaTeX (pure)
@@ -34,9 +34,11 @@ function texArgs(s, i) {
 }
 
 // Offsets of each \includegraphics, in the order the renderer numbers them.
+function mediaCommandLength(src, at) { return /^\\(?:includegraphics|includevideo)/.exec(src.slice(at))?.[0].length || 0; }
+
 function imageOffsets(src) {
   const out = [];
-  const re = /\\includegraphics(?![A-Za-z])/g;
+  const re = /\\(?:includegraphics|includevideo)(?![A-Za-z])/g;
   for (let m; (m = re.exec(maskComments(src)));) out.push(m.index);
   return out;
 }
@@ -84,17 +86,17 @@ function parseFigure(src, span) {
     const e = masked.indexOf('\\end{subfigure}', a.end);
     const end = e < 0 ? text.length : e + '\\end{subfigure}'.length;
     const body = text.slice(a.end, e < 0 ? text.length : e);
-    const g = /\\includegraphics(?![A-Za-z])/.exec(maskComments(body));
-    if (g) fig.items.push({ path: texArgs(body, g.index + g[0].length).arg || '', width: texWidth(a.arg) ?? 0.48, caption: cmdArg(body, 'caption'), label: cmdArg(body, 'label') });
+    const g = /\\(?:includegraphics|includevideo)(?![A-Za-z])/.exec(maskComments(body));
+    if (g) fig.items.push({ command: g[0].slice(1), path: texArgs(body, g.index + g[0].length).arg || '', width: texWidth(a.arg) ?? 0.48, caption: cmdArg(body, 'caption'), label: cmdArg(body, 'label') });
     outer += text.slice(last, m.index);
     last = re.lastIndex = end;
   }
   outer += text.slice(last);
   if (!fig.items.length) {
-    const re2 = /\\includegraphics(?![A-Za-z])/g;
+    const re2 = /\\(?:includegraphics|includevideo)(?![A-Za-z])/g;
     for (let m; (m = re2.exec(maskComments(outer)));) {
       const a = texArgs(outer, m.index + m[0].length);
-      fig.items.push({ path: a.arg || '', width: optWidth(a.opt) ?? 0.6, caption: null, label: null });
+      fig.items.push({ command: m[0].slice(1), path: a.arg || '', width: optWidth(a.opt) ?? 0.6, caption: null, label: null });
     }
   }
   fig.caption = cmdArg(outer, 'caption');
@@ -107,11 +109,11 @@ function figureSrc(fig) {
   const lines = [`\\begin{${fig.env}}${place}`, '  \\centering'];
   if (fig.items.length === 1) {
     const it = fig.items[0];
-    lines.push(`  \\includegraphics[width=${fmtWidth(it.width)}]{${it.path}}`);
+    lines.push(`  \\${it.command || 'includegraphics'}[width=${fmtWidth(it.width)}]{${it.path}}`);
   } else {
     fig.items.forEach((it, i) => {
       if (i) lines.push('  \\hfill');
-      lines.push(`  \\begin{subfigure}[b]{${fmtWidth(it.width)}}`, '    \\centering', `    \\includegraphics[width=\\textwidth]{${it.path}}`);
+      lines.push(`  \\begin{subfigure}[b]{${fmtWidth(it.width)}}`, '    \\centering', `    \\${it.command || 'includegraphics'}[width=\\textwidth]{${it.path}}`);
       if (it.caption != null) lines.push(`    \\caption{${it.caption}}`);
       if (it.label) lines.push(`    \\label{${it.label}}`);
       lines.push('  \\end{subfigure}');
@@ -144,7 +146,7 @@ function addFigureItems(fig, items) {
     const first = fig.items[0];
     first.caption = first.newCaption ?? 'Caption.';
   }
-  for (const it of items) fig.items.push({ path: it.path, width: ROW / (fig.items.length + 1), caption: it.caption, label: it.label });
+  for (const it of items) fig.items.push({ command: it.command, path: it.path, width: ROW / (fig.items.length + 1), caption: it.caption, label: it.label });
   refit(fig, wasEven);
   return fig;
 }
@@ -164,9 +166,9 @@ function removeFigureItem(fig, i) {
 }
 
 function newFigure(items) {
-  if (items.length === 1) return { env: 'figure', place: 'h', caption: items[0].caption, label: items[0].label, items: [{ path: items[0].path, width: SINGLE_WIDTH }] };
+  if (items.length === 1) return { env: 'figure', place: 'h', caption: items[0].caption, label: items[0].label, items: [{ command: items[0].command, path: items[0].path, width: SINGLE_WIDTH }] };
   const fig = { env: 'figure', place: 'h', caption: 'Caption.', label: null, items: [] };
-  for (const it of items) fig.items.push({ path: it.path, width: round2(ROW / items.length), caption: it.caption, label: it.label });
+  for (const it of items) fig.items.push({ command: it.command, path: it.path, width: round2(ROW / items.length), caption: it.caption, label: it.label });
   return fig;
 }
 
@@ -181,7 +183,7 @@ function setImageWidth(src, k, w) {
     const a = texArgs(src, sub + '\\begin{subfigure}'.length);
     if (a.arg !== null) return src.slice(0, a.end - a.arg.length - 1) + fmtWidth(w) + src.slice(a.end - 1);
   }
-  const start = at + '\\includegraphics'.length;
+  const start = at + mediaCommandLength(src, at);
   const a = texArgs(src, start);
   const width = `width=${fmtWidth(w)}`;
   if (a.opt === null) return src.slice(0, start) + `[${width}]` + src.slice(start);
@@ -197,7 +199,7 @@ function removeImage(src, k) {
   if (at == null) return src;
   const span = figureAt(src, at);
   if (!span) {
-    const a = texArgs(src, at + '\\includegraphics'.length);
+    const a = texArgs(src, at + mediaCommandLength(src, at));
     return src.slice(0, at) + src.slice(a.end);
   }
   const fig = parseFigure(src, span);
@@ -225,15 +227,16 @@ function imageNames(fileName, usedLabels) {
 
 // URL of an images/… path of the open note's folder, for the renderer.
 function noteImageUrl(path) {
-  const m = /^images\/([A-Za-z0-9_-]+\.(?:png|jpe?g|gif|webp))$/i.exec(path.trim());
-  return m && N.target ? `/api/note-images/${enc(N.target)}/${m[1]}` : null;
+  const m = /^(images|media)\/([A-Za-z0-9_-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm))$/i.exec(path.trim());
+  return m && N.target ? `/api/note-${m[1] === 'images' ? 'images' : 'media'}/${enc(N.target)}/${m[2]}` : null;
 }
 
-async function uploadImage(file) {
-  const r = await fetch(`/api/note-images/${enc(N.target)}?name=${enc(file.name || 'image.png')}`, { method: 'POST', body: file });
+const isMediaFile = (f) => /^(image|video)\//.test(f.type) || /\.(png|jpe?g|gif|webp|mp4|m4v|mov|webm)$/i.test(f.name || '');
+async function uploadImage(file, target) {
+  const r = await fetch(`/api/note-media/${enc(target)}`, { method: 'POST', body: file });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-  return j.path;
+  return j;
 }
 
 function usedLabels() {
@@ -256,19 +259,30 @@ function setBlockSrc(b, src) {
 // Adds image files to cell `blockId`: into its figure if it has one (unless
 // forceNew), into it if it's empty, else as a new image cell after it (or at
 // `index`).
-async function addImages(files, { blockId = null, index = null, forceNew = false } = {}) {
-  files = [...files].filter((f) => /^image\//.test(f.type));
-  if (!N.doc) return;
-  if (!files.length) return toast('Only image files (PNG, JPEG, GIF or WebP) can be added.', { error: true });
-  toast(files.length > 1 ? `Adding ${files.length} images…` : 'Adding image…');
+async function addImages(files, opts = {}) {
+  try {
+    await importMediaFiles(files, opts);
+  } catch (e) {
+    console.error('Media import failed', e);
+    toast(`Could not add media: ${e.message || e}`, { error: true });
+  }
+}
+
+async function importMediaFiles(files, { blockId = null, index = null, forceNew = false } = {}) {
+  files = [...files].filter(isMediaFile);
+  if (!N.doc) return toast('Open a note before adding images or videos.', { error: true });
+  if (!files.length) return toast('Choose an image (PNG, JPEG, GIF, WebP) or video (MP4, MOV, WebM).', { error: true });
+  toast(files.length > 1 ? `Adding ${files.length} media files…` : 'Adding media…');
+  const doc = N.doc, targetFolder = N.target;
   let paths;
   try {
-    paths = await Promise.all(files.map(uploadImage));
+    paths = await Promise.all(files.map((f) => uploadImage(f, targetFolder)));
   } catch (e) {
     return toast(e.message, { error: true });
   }
+  if (N.doc !== doc || N.target !== targetFolder) return toast('The note changed during upload. Return to the intended note and add the files again.', { error: true });
   const labels = usedLabels();
-  const items = paths.map((path, i) => ({ path, ...imageNames(files[i].name || '', labels) }));
+  const items = paths.map(({ path, kind }, i) => ({ path, command: kind === 'video' ? 'includevideo' : 'includegraphics', ...imageNames(files[i].name || '', labels) }));
   const b = index == null && blockId ? N.doc.blocks.find((x) => x.id === blockId) : null;
   const spans = b?.type === 'text' && !forceNew ? figureSpans(b.src) : [];
   if (spans.length) {
@@ -299,7 +313,7 @@ async function addImages(files, { blockId = null, index = null, forceNew = false
   document.querySelector(`.nb[data-id="${target.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-const imgInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true });
+const imgInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm,.mp4,.m4v,.mov,.webm', multiple: true, hidden: true });
 document.body.appendChild(imgInput);
 // Opens the system file dialog; the chosen images go to addImages(…, opts).
 function pickImages(opts) {
@@ -324,7 +338,7 @@ function applyImgSel() {
   const el = document.querySelector(`.nb[data-id="${N.imgSel.block}"] .nb-view .tex-img[data-img="${N.imgSel.k}"]`);
   if (!el) return;
   el.classList.add('selected');
-  el.insertAdjacentHTML('beforeend', '<button class="img-del" title="Remove image (Delete)">✕</button>');
+  el.insertAdjacentHTML('beforeend', '<button class="img-del" title="Remove media (Delete)">✕</button>');
 }
 
 function deleteSelectedImage() {
@@ -388,10 +402,11 @@ stageEl.addEventListener('pointerdown', (e) => {
     if (N.imgSel && !e.target.closest('.nb-tools')) selectImage(null);
     return;
   }
-  e.preventDefault();  // no text selection / drag ghost
+  const playerClick = e.target.closest('video') && !nearEdge(e, img);
+  if (!playerClick) e.preventDefault();  // preserve native playback controls
   const sel = { block: img.closest('.nb').dataset.id, k: Number(img.dataset.img) };
   const inView = !!img.closest('.nb-view');
-  if (N.editing) stopEdit();  // clicking an image in the preview finishes the edit
+  if (N.editing && !playerClick) stopEdit();  // clicking an image in the preview finishes the edit
   selectImage(sel.block, sel.k);
   if (inView && nearEdge(e, img)) startResize(e, img, sel);
 });
@@ -414,7 +429,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('paste', (e) => {
   if (!isNotesMode() || !N.doc) return;
   if (!(e.target === document.body || stageEl.contains(e.target)) || e.target.closest?.('.note-preamble, .note-title')) return;
-  const files = [...(e.clipboardData?.files || [])].filter((f) => /^image\//.test(f.type));
+  const files = [...(e.clipboardData?.files || [])].filter(isMediaFile);
   if (!files.length) return;
   e.preventDefault();
   // Into a figure only when one is selected: a selected image, or an image
@@ -443,7 +458,7 @@ stageEl.addEventListener('dragover', (e) => {
   if (!t.el) return;
   const b = N.doc.blocks.find((x) => x.id === t.blockId);
   const label = b?.type === 'text' && !t.forceNew && figureSpans(b.src).length ? 'Add to this figure (⇧ for a new one)'
-    : b?.type === 'text' && !t.forceNew && !b.src.trim() ? 'Put image here' : 'New image cell below';
+    : b?.type === 'text' && !t.forceNew && !b.src.trim() ? 'Put media here' : 'New media cell below';
   if (!t.el.classList.contains('drop-target') || t.el.dataset.drop !== label) {
     clearDrop();
     t.el.classList.add('drop-target');
@@ -461,3 +476,21 @@ stageEl.addEventListener('drop', (e) => {
 // A file dropped anywhere else must not navigate away from Noctua.
 window.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files') && !stageEl.contains(e.target)) e.preventDefault(); });
 window.addEventListener('drop', (e) => { if (e.dataTransfer.types.includes('Files') && !stageEl.contains(e.target)) e.preventDefault(); });
+
+// Keep player elements (and their playback position) when the note is typeset.
+function captureVideos(root) {
+  return [...root.querySelectorAll('video')].map((video) => ({ video, block: video.closest('.nb')?.dataset.id, src: video.getAttribute('src'), playing: !video.paused }));
+}
+function restoreVideos(root, saved) {
+  for (const fresh of root.querySelectorAll('video')) {
+    const i = saved.findIndex((s) => s.block === fresh.closest('.nb')?.dataset.id && s.src === fresh.getAttribute('src'));
+    if (i < 0) continue;
+    const { video, playing } = saved.splice(i, 1)[0];
+    fresh.replaceWith(video);
+    if (video.error) video.parentElement.querySelector('.video-error').hidden = false;
+    if (playing) video.play().catch(() => {});
+  }
+}
+stageEl.addEventListener('error', (e) => {
+  if (e.target.matches?.('.tex-video video')) e.target.parentElement.querySelector('.video-error').hidden = false;
+}, true);

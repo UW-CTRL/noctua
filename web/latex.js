@@ -231,10 +231,10 @@ const NoctuaLatex = (() => {
           i = a.end;
           continue;
         }
-        if (cmd === 'includegraphics') {
+        if (cmd === 'includegraphics' || cmd === 'includevideo') {
           const o = optArg(s, j);
           const a = reqArg(s, o.end);
-          out += graphic(o.text, a.text, st);
+          out += graphic(o.text, a.text, st, cmd === 'includevideo');
           i = a.end;
           continue;
         }
@@ -321,12 +321,13 @@ const NoctuaLatex = (() => {
 
   // \includegraphics -> an image. data-img numbers the images of a block in
   // source order, so the editor can map a clicked image back to its source.
-  function graphic(opts, path, st) {
+  function graphic(opts, path, st, video = false) {
     const k = st.img++;
     const w = widthFrac(opts);
     const style = w != null ? ` style="width:${pct(w)}%"` : '';
     const src = st.opts.image ? st.opts.image(path.trim()) : null;
-    if (!src) return `<span class="tex-img missing" data-img="${k}"${style}>missing image: ${esc(path)}</span>`;
+    if (!src) return `<span class="tex-img missing" data-img="${k}"${style}>missing media: ${esc(path)}</span>`;
+    if (video) return `<span class="tex-img tex-video" data-img="${k}"${style}><video src="${esc(src)}" controls playsinline preload="metadata" aria-label="${esc(path)}"></video><span class="video-error" hidden>Cannot play this video. Try MP4 with H.264 video and AAC audio.</span></span>`;
     return `<span class="tex-img" data-img="${k}"${style}><img src="${esc(src)}" alt="${esc(path)}" draggable="false"></span>`;
   }
 

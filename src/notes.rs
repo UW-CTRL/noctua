@@ -18,7 +18,7 @@ use tokio::{
 use crate::{agent::{self, Provider}, App};
 
 pub struct Notes {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
 }
 
 fn now_ms() -> u64 {
@@ -26,7 +26,7 @@ fn now_ms() -> u64 {
 }
 
 /// Ids become file and directory names, so only allow a safe alphabet.
-fn check_id(id: &str) -> Result<()> {
+pub(crate) fn check_id(id: &str) -> Result<()> {
     if id.is_empty() || id.len() > 40 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
         bail!("invalid id");
     }

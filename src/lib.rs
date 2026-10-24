@@ -8,6 +8,7 @@ mod chat;
 mod history;
 mod library;
 mod reader;
+mod media;
 mod mcp;
 mod notes;
 pub mod paths;
@@ -559,6 +560,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
             "/api/notes/{target}/{id}",
             get(notes_get).put(notes_save).delete(notes_delete).layer(DefaultBodyLimit::max(32 << 20)),
         )
+        .route("/api/note-media/{target}", post(media::upload).layer(DefaultBodyLimit::disable()))
+        .route("/api/note-media/{target}/{file}", get(media::get))
         .route("/api/note-images/{target}", post(note_image_upload).layer(DefaultBodyLimit::max(32 << 20)))
         .route("/api/note-images/{target}/{file}", get(note_image_get))
         .route("/api/ink-latex", post(ink_latex).layer(DefaultBodyLimit::max(16 << 20)))

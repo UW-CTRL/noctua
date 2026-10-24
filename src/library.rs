@@ -158,7 +158,7 @@ impl Library {
         let p=self.paper(key)?;if p["has_pdf"]==true {return Ok(());}
         let url=source.unwrap_or_else(||text(&p,"pdf_url"));if url.is_empty(){bail!("No open-access PDF URL is available. Attach a PDF from your computer.");}
         let parsed=reqwest::Url::parse(url)?;if !["http","https"].contains(&parsed.scheme()){return Err(bad("PDF URL must use HTTP or HTTPS"));}
-        let mut response=reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)).user_agent("Noctua/0.0.1").build()?.get(parsed).send().await?.error_for_status()?;
+        let mut response=reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)).user_agent(concat!("Noctua/", env!("CARGO_PKG_VERSION"))).build()?.get(parsed).send().await?.error_for_status()?;
         if response.content_length().is_some_and(|s|s>PDF_LIMIT as u64){return Err(bad("PDF exceeds 128 MB"));}
         let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await?{if bytes.len()+chunk.len()>PDF_LIMIT{return Err(bad("PDF exceeds 128 MB"));}bytes.extend_from_slice(&chunk);}
         self.attach_pdf(key,&bytes)

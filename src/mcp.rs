@@ -140,7 +140,11 @@ fn view_image(app: &App, args: &Value) -> Result<Value> {
     let folder = args["folder_id"].as_str().ok_or_else(|| anyhow!("missing argument `folder_id`"))?;
     let path = args["path"].as_str().map(str::trim).ok_or_else(|| anyhow!("missing argument `path`"))?;
     let file = path.strip_prefix("images/").unwrap_or(path);
-    let (full, mime) = app.notes.image_path(&app.library.folder_id(folder)?, file)?;
+    let folder = app.library.folder_id(folder)?;
+    let (full, mime) = if let Some(file) = path.strip_prefix("media/") {
+        crate::media::path(&app.notes.root, &folder, file)?
+    } else { app.notes.image_path(&folder, file)? };
+    if !mime.starts_with("image/") { bail!("view_note_image accepts images, not videos"); }
     let bytes = std::fs::read(&full).map_err(|_| anyhow!("no image {path} in this folder"))?;
     if bytes.len() > MAX_IMAGE_BYTES {
         bail!("{path} is {:.1} MB; images over 5 MB can't be viewed", bytes.len() as f64 / 1048576.0);
@@ -163,14 +167,14 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// The `images/…` paths a block's LaTeX includes with \includegraphics.
+/// The `images/…` or `media/…` paths a block's LaTeX includes with \includegraphics.
 fn image_paths(src: &str) -> Vec<&str> {
     src.match_indices("\\includegraphics")
         .filter_map(|(i, _)| {
             let rest = &src[i..];
             let open = rest.find('{')?;
             let close = open + rest[open..].find('}')?;
-            Some(rest[open + 1..close].trim()).filter(|p| p.starts_with("images/"))
+            Some(rest[open + 1..close].trim()).filter(|p| p.starts_with("images/") || p.starts_with("media/"))
         })
         .collect()
 }
