@@ -16,6 +16,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod updater;
+mod icons;
 
 /// A fixed port keeps the pages' origin (and so their saved tabs and layout)
 /// the same between launches; another free port is used if it's taken.
@@ -37,6 +38,7 @@ fn main() {
             .pubkey(option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim())
             .build())
         .manage(updater::Updates::default())
+        .manage(icons::Icons::default())
         .setup(|app| {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let (url, server) = tauri::async_runtime::block_on(async {
@@ -93,6 +95,16 @@ fn main() {
 
 fn run(app: &AppHandle, cmd: DesktopCmd) {
     match cmd {
+        DesktopCmd::SetAppIcon(icon, reply) => {
+            let handle = app.clone();
+            if let Err(error) = app.run_on_main_thread(move || {
+                let result = icons::apply(&handle, icon).map_err(|e| e.to_string());
+                if let Some(reply) = reply { let _ = reply.send(result); }
+                else if let Err(error) = result { eprintln!("Could not restore app icon: {error}"); }
+            }) {
+                eprintln!("Could not schedule app icon update: {error}");
+            }
+        }
         DesktopCmd::NewWindow(url) => open_window(app, Some(&url)),
         DesktopCmd::OpenExternal(url) => {
             let _ = app.opener().open_url(url, None::<&str>);
@@ -131,8 +143,12 @@ fn open_window(app: &AppHandle, open: Option<&str>) {
         .min_inner_size(820.0, 520.0)
         .disable_drag_drop_handler() // let the page receive dropped images
         .build();
-    if let Err(e) = built {
-        eprintln!("couldn't open a window: {e}");
+    match built {
+        Ok(_) => {
+            let icon = *app.state::<icons::Icons>().0.lock().unwrap();
+            if let Err(error) = icons::apply(app, icon) { eprintln!("Could not apply app icon: {error}"); }
+        }
+        Err(e) => eprintln!("couldn't open a window: {e}"),
     }
 }
 

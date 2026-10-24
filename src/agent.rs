@@ -362,6 +362,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn app_icon_preferences_persist_and_reject_unknown_choices() -> Result<()> {
+        let f = Fixture::new()?;
+        assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");
+        assert_eq!(f.json("/api/settings/app-icon", Some(json!({"app_icon":"dark"}))).await["app_icon"], "dark");
+        let saved = Settings::load(&f.root);
+        assert_eq!(saved.app_icon, crate::AppIcon::Dark);
+        assert!(saved.s2_key_skipped && saved.zotero_disabled && saved.claude_path.is_some());
+        assert_eq!(f.request("/api/settings/app-icon", Some(json!({"app_icon":"arbitrary"})), None).await.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(f.json("/api/settings", None).await["app_icon"], "dark");
+        for variant in ["dark", "light"] {
+            let icon = f.request(&format!("/app-icons/{variant}.svg"), None, None).await;
+            assert_eq!(icon.status(), StatusCode::OK);
+            assert_eq!(icon.headers()["content-type"], "image/svg+xml");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn app_icon_native_failure_keeps_the_previous_saved_preference() -> Result<()> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let f = Fixture::with_desktop(Some(tx))?;
+        let native = tokio::spawn(async move {
+            for (expected, result) in [(crate::AppIcon::Light, Ok(())), (crate::AppIcon::Dark, Err("Native icon unavailable".to_string()))] {
+                let Some(crate::DesktopCmd::SetAppIcon(icon, Some(reply))) = rx.recv().await else { panic!("Expected app icon request") };
+                assert_eq!(icon, expected);
+                let _ = reply.send(result);
+            }
+        });
+        f.json("/api/settings/app-icon", Some(json!({"app_icon":"light"}))).await;
+        let response = f.request("/api/settings/app-icon", Some(json!({"app_icon":"dark"})), None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(Settings::load(&f.root).app_icon, crate::AppIcon::Light);
+        assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");
+        native.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn desktop_updates_validate_actions_and_relay_native_results() -> Result<()> {
         let browser = Fixture::new()?;
         assert_eq!(browser.request("/api/desktop/update", Some(json!({"action":"check"})), None).await.status(), StatusCode::NOT_FOUND);

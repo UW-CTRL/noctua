@@ -1192,3 +1192,11 @@ header .web-select-trigger { height: var(--header-control-height); }
 
 ::highlight(chat-attachments){background-color:color-mix(in srgb,var(--accent) 18%,transparent)}
 .chat-source-highlights{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+
+.settings-app-icons{display:flex;gap:12px;flex-wrap:wrap}
+.settings-app-icon{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:112px;padding:12px;border:2px solid var(--line);border-radius:12px;cursor:pointer}
+.settings-app-icon:has(input:checked){border-color:var(--accent);background:var(--raise)}
+.settings-app-icon:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:3px}
+.settings-app-icon:has(input:disabled){opacity:.65;cursor:wait}
+.settings-app-icon input{position:absolute;top:8px;right:8px;margin:0;accent-color:var(--accent)}
+.settings-app-icon img{display:block}

@@ -47,6 +47,11 @@ The header's **⚙ Settings** button opens a dialog with tabs on the left:
 
 - **Appearance**: Light, Dark, or System independently for App, Notes, and Reader.
   All three default to System on first launch; saved preferences are preserved.
+  **App icon** offers Light (the default) and Dark owl artwork, independent of theme. The choice is
+  saved in Noctua settings and restored at desktop launch. On macOS it changes the
+  running Dock icon; on Windows/Linux it changes window/taskbar icons. Finder,
+  installer, and shortcut icons retain the default artwork. Browser mode can save
+  the choice for the next desktop launch.
   Appearance saves automatically in this browser and updates other tabs at the same address.
 - **Research assistant**: choose Codex or Claude Code, a model (or custom model ID), reasoning
   effort, and fast mode. Choices save automatically per provider and apply to the next chat
