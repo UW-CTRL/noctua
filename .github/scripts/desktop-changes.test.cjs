@@ -6,14 +6,23 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const detect = require('./desktop-changes.cjs');
 
-test('documentation and media under the explicit allowlist skip desktop checks', () => {
-  assert.equal(detect.requiresDesktop(['README.md', 'docs/ci.md', 'docs/images/demo.gif']), false);
+test('web assets, documentation, and tests skip desktop checks', () => {
+  for (const files of [
+    ['README.md', 'docs/ci.md', 'docs/images/demo.gif'],
+    ['web/app.js', 'web/style.css', 'web/icons.svg', 'web/index.html'],
+    ['tests/pdf-navigation.swift', 'tests/pdf-reader.html', 'tests/pdf-comments.cjs'],
+    ['web/pdf.js', 'tests/pdf-reader.html', 'docs/reader.md'],
+  ]) {
+    assert.equal(detect.requiresDesktop(files), false, files.join(', '));
+  }
 });
 
 test('runtime Markdown, unknown files, and mixed PRs require desktop checks', () => {
-  for (const path of ['src/prompts/notes.md', 'src/prompts/chat-formatting.md', 'web/app.js',
-    'app/tauri.conf.json', 'Cargo.lock', '.github/workflows/ci.yml', 'other.md']) {
-    assert.equal(detect.requiresDesktop(['docs/ci.md', path]), true, path);
+  for (const path of ['src/prompts/notes.md', 'src/prompts/chat-formatting.md', 'src/main.rs',
+    'app/src/main.rs', 'app/tauri.conf.json', 'app/Cargo.toml', 'app/build.rs', 'app/icons/icon.png',
+    'Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'rust-toolchain.toml',
+    '.github/workflows/ci.yml', 'other.md', 'web-native/config.json', 'tests-native/build.rs']) {
+    assert.equal(detect.requiresDesktop(['web/app.js', 'tests/reader.html', 'docs/ci.md', path]), true, path);
   }
 });
 

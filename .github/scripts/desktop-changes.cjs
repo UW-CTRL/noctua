@@ -1,8 +1,11 @@
 const { execFileSync } = require('node:child_process');
 
 function requiresDesktop(files) {
-  // Unknown paths, including runtime Markdown in src/prompts/, require checks.
-  return files.length === 0 || files.some(path => path !== 'README.md' && !path.startsWith('docs/'));
+  // Web assets, documentation, and tests do not change native compilation.
+  // Unknown paths, including runtime Markdown in src/prompts/, still require checks.
+  const nonNative = path => path === 'README.md' ||
+    ['docs/', 'web/', 'tests/'].some(prefix => path.startsWith(prefix));
+  return files.length === 0 || files.some(path => !nonNative(path));
 }
 
 function changedFiles(base, head, cwd) {
@@ -26,7 +29,7 @@ module.exports = async function detect({ context, core }) {
     }
   }
   core.setOutput('run_desktop', String(run));
-  core.info(run ? 'Desktop checks required.' : 'Documentation-only PR: skipping desktop checks.');
+  core.info(run ? 'Desktop checks required.' : 'No native compilation changes: skipping desktop checks.');
   return run;
 };
 module.exports.requiresDesktop = requiresDesktop;
