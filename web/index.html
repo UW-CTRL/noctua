@@ -51,6 +51,7 @@
         <button data-tab="library">Library</button>
         <button data-tab="projects">Projects</button>
         <button data-tab="nodes">In graph <span id="node-count"></span></button>
+        <button data-tab="threads" class="lineage-only">Threads</button>
       </nav>
       <div id="tab-results" class="tab-body">
         <p class="hint">Search for a paper, then pick one to build its citation graph.</p>
@@ -92,6 +93,9 @@
         </div>
         <ul id="node-list" class="papers"></ul>
       </div>
+      <div id="tab-threads" class="tab-body hidden">
+        <div id="thread-list" class="threads"></div>
+      </div>
     </aside>
 
     <section id="stage">
@@ -105,15 +109,25 @@
         <label class="chip cite graph-only"><input type="checkbox" data-role="cite" checked> <i></i>Cited by <b id="n-cite">0</b></label>
         <label class="chip sim graph-only"><input type="checkbox" data-role="sim" checked> <i></i>Similar <b id="n-sim">0</b></label>
         <label class="chip shared proj-only" title="Outside papers cited from more than one cluster"><input type="checkbox" data-role="shared" checked> <i></i>Shared references <b id="n-shared">0</b></label>
-        <label class="chip plain"><input type="checkbox" id="timeline"> Timeline</label>
+        <div id="layout" class="seg" role="group" aria-label="Layout">
+          <button data-layout="network" class="active" title="Force-directed citation network">Network</button>
+          <button data-layout="lineage" title="Papers in time order, grouped into threads of work that build on each other">Lineage</button>
+        </div>
+        <label class="chip plain lineage-only" title="Most threads to draw">Threads
+          <select id="thread-count"><option>3</option><option selected>5</option><option>8</option></select>
+        </label>
+        <button id="explain-threads" class="chip plain lineage-only" title="Ask the research assistant to name each thread and explain how its papers build on each other">Explain threads</button>
         <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
           <select id="limit"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
         </label>
         <button id="fit" class="chip plain" title="Fit graph to view">Fit</button>
       </div>
       <div class="legend">
-        <span class="graph-only"><i class="dot old"></i>older</span><span class="graph-only"><i class="dot new"></i>newer</span>
-        <span class="proj-only">colour = cluster</span><span class="proj-only"><i class="dot single"></i>unconnected</span>
+        <span class="graph-only network-only"><i class="dot old"></i>older</span><span class="graph-only network-only"><i class="dot new"></i>newer</span>
+        <span class="proj-only network-only">colour = cluster</span><span class="proj-only network-only"><i class="dot single"></i>unconnected</span>
+        <span class="lineage-only">older → newer · colour = thread</span>
+        <span class="lineage-only"><i class="dot thread"></i>on thread</span><span class="lineage-only"><i class="dot related"></i>related</span>
+        <span class="lineage-only"><i class="dash"></i>cites a newer paper</span>
         <span>size = citations</span><span><i class="ring"></i>in Noctua</span>
       </div>
       <div id="tooltip" class="tooltip hidden"></div>
@@ -161,6 +175,7 @@
   <script src="/latex.js"></script>
   <script src="/ink.js"></script>
   <script src="/app.js"></script>
+  <script src="/lineage.js"></script>
   <script src="/notes.js"></script>
   <script src="/mentions.js"></script>
   <script src="/figures.js"></script>

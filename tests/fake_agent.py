@@ -19,6 +19,8 @@ if '--input-format' in args:
     assert msg['message']['content'][0]['type'] == 'image'
 transcribe = '--image' in args or '--input-format' in args
 text = r'\[x^2\]' if transcribe else ('Partial' if 'slow' in prompt else provider+' reply')
+if 'Name each research thread' in prompt:
+    text = 'Here are the threads:\n```json\n' + json.dumps({'common':'Both use attention.','threads':[{'id':'t1','name':provider+' thread','problem':'Long-range dependencies.','summary':'Recurrence gave way to attention.','steps':[{'from':'a','to':'b','relation':'extends','note':'adds attention'}]}]}) + '\n```'
 session = provider+'-session'
 if provider == 'codex':
     print(json.dumps({'type':'thread.started','thread_id':session}), flush=True)
