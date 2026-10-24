@@ -34,6 +34,7 @@ window.NoctuaPDFObjects=(()=>{
     for(const count of [1,2])if(line.parts.length>count){const match=line.parts.slice(0,count).map(part=>part.text).join(' ').trim().match(label);if(match)return match;}
     return null;
   }
+  const panelHeading=row=>row.parts.some(part=>/^(?:[a-z]\)|\([a-z]\))(?:\s|$)/i.test(part.text));
   function detect(texts,graphics){
     const gutter=columnGutter(texts),lines=linesOf(texts,gutter),clusters=[];
     // Running-header rules can touch a top figure but are not part of its content.
@@ -49,7 +50,10 @@ window.NoctuaPDFObjects=(()=>{
       if(captionRows.has(line))continue;
       const match=captionMatch(line);if(!match)continue;
       const kind=/^(?:fig)/i.test(match[1])?'figure':match[1].toLowerCase(),label=`${kind[0].toUpperCase()+kind.slice(1)} ${match[2]}`;
-      const c=line.rect,mid=gutter??.5,wideFigure=kind==='figure'&&clusters.some(r=>r[2]>.5&&overlap(r,c)>.01&&gap(r,c)<.13),centeredTable=kind==='table'&&graphics.some(r=>r[3]<.003&&r[0]<mid&&r[0]+r[2]>mid+.06&&overlap(r,c)>.01&&gap(r,c)<.13),full=gutter?c[0]<mid&&c[0]+c[2]>mid:wideFigure||centeredTable||c[0]<.45&&(c[0]+c[2]>.56||kind!=='figure'&&lines.some(row=>row.rect[1]>c[1]&&row.rect[1]<c[1]+.09&&Math.abs(row.rect[0]-c[0])<.03&&row.rect[0]+row.rect[2]>.56)),left=full?0:c[0]>=mid?mid:0,right=full?1:c[0]>=mid?1:mid;
+      const c=line.rect,mid=gutter??.5;
+      // A short caption can belong to a graphic spanning the page gutter.
+      const wideFigure=kind==='figure'&&clusters.some(r=>r[2]>.5&&r[0]<mid-.03&&r[0]+r[2]>mid+.03&&overlap(r,c)>Math.min(r[2],c[2])*.5&&gap(r,c)<.13&&r[1]+r[3]<=c[1]+c[3]);
+      const centeredTable=kind==='table'&&graphics.some(r=>r[3]<.003&&r[0]<mid&&r[0]+r[2]>mid+.06&&overlap(r,c)>.01&&gap(r,c)<.13),full=wideFigure||(gutter?c[0]<mid&&c[0]+c[2]>mid:centeredTable||c[0]<.45&&(c[0]+c[2]>.56||kind!=='figure'&&lines.some(row=>row.rect[1]>c[1]&&row.rect[1]<c[1]+.09&&Math.abs(row.rect[0]-c[0])<.03&&row.rect[0]+row.rect[2]>.56))),left=full?0:c[0]>=mid?mid:0,right=full?1:c[0]>=mid?1:mid;
       const inLane=r=>full||r[0]>=left-.005&&r[0]+r[2]<=right+.005;
 
       let ruledTable=null;
@@ -85,13 +89,16 @@ window.NoctuaPDFObjects=(()=>{
         for(const other of candidates.slice(1))if(other[0]>=left-.02&&other[0]+other[2]<=right+.02&&Math.min(object[1]+object[3],other[1]+other[3])-Math.max(object[1],other[1])>Math.min(object[3],other[3])*.4)object=union(object,other);
       }
       if(object&&kind==='figure'){
-        // A caption can describe vertically stacked panels separated by whitespace.
+        // A caption can describe vertically stacked panels separated by substantial whitespace.
         let changed=true;
         while(changed){changed=false;for(const other of clusters){
-          if(!inLane(other)||other===object||other[1]+other[3]>c[1]+.005||gap(other,object)>.055||overlap(other,object)<Math.min(other[2],object[2])*.35)continue;
+          if(!inLane(other)||other===object||other[1]+other[3]>c[1]+.005||overlap(other,object)<Math.min(other[2],object[2])*.35)continue;
           const betweenTop=Math.min(other[1]+other[3],object[1]+object[3]),betweenBottom=Math.max(other[1],object[1]);
-          if(lines.some(row=>row.guide.rect[1]>=betweenTop&&row.guide.rect[1]+row.fontHeight<=betweenBottom&&(captionMatch(row)||row.text.length>70)&&overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5))continue;
-          const joined=union(object,other);if(joined[3]>object[3]+.001){object=joined;changed=true;}
+          // A panel heading can bridge a larger gap between drawings in one figure.
+          const distance=gap(other,object),headingBridge=distance>.075&&distance<.13&&lines.some(row=>panelHeading(row)&&inLane(row.rect)&&row.rect[1]>=betweenTop&&row.rect[1]+row.rect[3]<=betweenBottom&&gap(row.rect,object)<.055&&gap(row.rect,other)<.055&&overlap(row.rect,object)>.01&&overlap(row.rect,other)>.01);
+          if(distance>.075&&!headingBridge)continue;
+          if(lines.some(row=>row.guide.rect[1]>=betweenTop&&row.guide.rect[1]+row.fontHeight<=betweenBottom&&(captionMatch(row)||row.text.length>70&&!panelHeading(row))&&overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5))continue;
+          const joined=union(object,other);if(joined[2]>object[2]+.001||joined[3]>object[3]+.001){object=joined;changed=true;}
         }}
       }
       if(kind!=='figure'&&!ruledTable){
@@ -109,11 +116,26 @@ window.NoctuaPDFObjects=(()=>{
         else if(!object||object[3]<.015)object=null;
       }
       if(!object||object[2]<.07||object[3]<.015)continue;
+      let figureTextFloor=0;
       if(kind==='figure'){
         const limit=object[1]+Math.min(.065,object[3]*.25);let top=object[1];
         // PDF form bounds can include whitespace overlapping the preceding paragraph.
-        for(const row of lines)if(overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5&&row.rect[1]>=object[1]&&row.rect[1]<limit&&row.text.length>35&&row.rect[2]>object[2]*.3&&row.fontHeight>=line.fontHeight*.95&&!captionMatch(row))top=Math.max(top,row.rect[1]+row.rect[3]+.008);
+        // Require a broad prose line: shorter panel titles can sit inside the drawing.
+        for(const row of lines)if(overlap(row.rect,object)>Math.min(row.rect[2],object[2])*.5&&row.rect[1]>=object[1]&&row.rect[1]<limit&&row.text.length>35&&row.rect[2]>object[2]*.65&&row.fontHeight>=line.fontHeight*.95&&!captionMatch(row)&&!panelHeading(row))top=Math.max(top,row.rect[1]+row.rect[3]+.008);
+        if(top>object[1])figureTextFloor=top;
         object=[object[0],top,object[2],object[1]+object[3]-top];
+      }
+      if(object&&kind==='figure'){
+        // Axis labels, headings and panel markers are PDF text, not painted paths.
+        // Keep the search anchored to the graphics so labels cannot chain into prose.
+        const graphic=[...object];
+        for(const row of lines){
+          const marker=panelHeading(row);
+          if(row.rect[1]<figureTextFloor||captionMatch(row)||!inLane(row.rect)||row.rect[1]+row.rect[3]>c[1]||gap(row.rect,graphic)>.055||overlap(row.rect,graphic)<=0)continue;
+          if(row.fontHeight>line.fontHeight*(marker?2.5:1.1)||!marker&&row.text.length>70)continue;
+          if(!marker&&row.fontHeight>=line.fontHeight*.95&&lines.some(other=>other!==row&&other.text.length>70&&other.fontHeight>=line.fontHeight*.95&&other.rect[1]+other.rect[3]<=graphic[1]&&gap(other.rect,row.rect)<line.fontHeight*.8&&overlap(other.rect,row.rect)>row.rect[2]*.5))continue;
+          object=union(object,row.rect);
+        }
       }
       let rect=union(object,captionRect);rect=[Math.max(0,rect[0]-.006),Math.max(0,rect[1]-.006),Math.min(1-rect[0],rect[2]+.012),Math.min(1-rect[1],rect[3]+.012)];
       if(rect[3]>(kind==='figure'?.9:.65)||regions.some(region=>region.label===label))continue;
@@ -171,7 +193,8 @@ window.NoctuaPDFObjects=(()=>{
     let left=x1,top=y1,right=x0,bottom=y0,count=0;
     for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
       const offset=(y*width+x)*4,r=data[offset],g=data[offset+1],b=data[offset+2];
-      if(data[offset+3]<32||r>248&&g>248&&b>248||Math.abs(r-background[0])+Math.abs(g-background[1])+Math.abs(b-background[2])<45)continue;
+      // Pale code-panel fills are visible content, even when close to the page color.
+      if(data[offset+3]<32||r>248&&g>248&&b>248||Math.abs(r-background[0])+Math.abs(g-background[1])+Math.abs(b-background[2])<12)continue;
       left=Math.min(left,x);right=Math.max(right,x+1);top=Math.min(top,y);bottom=Math.max(bottom,y+1);count++;
     }
     if(count<16)return rect;
