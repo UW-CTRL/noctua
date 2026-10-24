@@ -29,7 +29,8 @@ try{
  const input=new URL('../target/pr3-recording/',location.href),read=async name=>(await fetch(new URL(name,input))).json();
  const [paper,index]=await Promise.all([read('paper.json'),read('index.json')]);
  // Record saved AI results through the real UI lifecycle with the waiting period shortened.
- try{recordingOutline=await read('outline.json');recordingAnnotations=await read('annotations.json');}catch{}
+ try{recordingOutline=await read('outline.json');}catch{}
+ try{recordingAnnotations=await read('annotations.json');}catch{}
  const engine=await import('../web/vendor/pdfjs/build/pdf.mjs');engine.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(engine);
  const doc=await engine.getDocument({url:new URL('paper.pdf',input).href,standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;
  Object.assign(PDF,{key:'7WWP3NTJ',paper,doc,page:1,scale:1.15,dark:false,annotations:[]});pdfIndexes.set(PDF.key,Promise.resolve(index));
