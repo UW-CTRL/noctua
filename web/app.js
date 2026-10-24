@@ -1367,7 +1367,7 @@ async function sendChat(text) {
 }
 
 function showRightTab(name) {
-  document.querySelectorAll('#right .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.rtab === name));
+  document.querySelectorAll('#right > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.rtab === name));
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
   if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); $('#chat-input').focus(); }
@@ -1426,7 +1426,7 @@ function toast(msg, { error = false } = {}) {
 function hideToast() { $('#toast').classList.add('hidden'); }
 
 function showTab(name) {
-  document.querySelectorAll('#left .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('#left > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   for (const t of ['results', 'library', 'projects', 'nodes']) $('#tab-' + t).classList.toggle('hidden', name !== t);
 }
 
@@ -1841,7 +1841,7 @@ $('#search-form').addEventListener('submit', (e) => {
   if (q) search(q);
 });
 
-document.querySelectorAll('#left .tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+document.querySelectorAll('#left > .tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 document.querySelectorAll('.controls input[data-role]').forEach((cb) => cb.addEventListener('change', () => {
   G.show[cb.dataset.role] = cb.checked;
   refreshAll();
@@ -1870,7 +1870,7 @@ $('#proj-info').addEventListener('click', (e) => {
   select(id);
   focusNode(id);
 });
-document.querySelectorAll('#right .tabs button').forEach((b) => b.addEventListener('click', () => showRightTab(b.dataset.rtab)));
+document.querySelectorAll('#right > .tabs button').forEach((b) => b.addEventListener('click', () => showRightTab(b.dataset.rtab)));
 // Resize the composer from the divider above it, keeping room for the conversation.
 const chatResize = $('#chat-resize');
 let chatResizeDrag = null;
