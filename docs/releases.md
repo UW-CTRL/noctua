@@ -171,7 +171,9 @@ an already published release.
 
 Updater-enabled releases also require completed `.sig` files for the macOS
 archive, Windows NSIS installer, and Linux AppImage. The generated `latest.json`
-is uploaded before the draft is published. It uses the release's existing notes.
+is uploaded before the draft is published. Its download URLs use the final
+version tag, since GitHub's temporary draft asset URLs can expire on publication.
+It uses the release's existing notes.
 The app checks GitHub's latest published stable release once per launch and when
 the user requests a check in Settings;
 drafts and releases marked as prereleases are not offered. A release without a

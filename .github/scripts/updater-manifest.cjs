@@ -31,7 +31,9 @@ module.exports = async function uploadManifest({ github, context, release, asset
       }
       signatures.set(name, signature);
     }
-    platforms[target] = { signature: signatures.get(name), url: complete(name).browser_download_url };
+    // Draft browser URLs can contain an untagged-* slug that expires on publication.
+    const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${encodeURIComponent(release.tag_name)}/${encodeURIComponent(name)}`;
+    platforms[target] = { signature: signatures.get(name), url };
   }
   const history = await github.paginate(github.rest.repos.listReleases, { ...context.repo, per_page: 100 });
   const { releaseSummaries } = require('./release-summary.cjs');
