@@ -138,11 +138,18 @@ const NoctuaLatex = (() => {
   }
 
   // Records \label{..} found in `tex` against `value` and removes them.
-  function takeLabels(tex, value, st) {
-    return tex.replace(/\\label\s*\{([^}]*)\}/g, (_, k) => { if (value != null) st.labels[k.trim()] = String(value); return ''; });
+  const labelAnchor = key => `<span class="tex-anchor" data-tex-label="${esc(key)}"></span>`;
+  function takeLabels(tex, value, st, anchors) {
+    return tex.replace(/\\label\s*\{([^}]*)\}/g, (_, k) => {
+      const key = k.trim();
+      if (value != null) st.labels[key] = String(value);
+      anchors.push(labelAnchor(key));
+      return '';
+    });
   }
 
   function display(body, env, st) {
+    const anchors = [];
     const base = env ? env.replace('*', '') : null;
     const numbered = !!env && !env.endsWith('*') && base !== 'displaymath';
     const noNum = (t) => /\\(nonumber|notag)\b/.test(t);
@@ -151,7 +158,7 @@ const NoctuaLatex = (() => {
     if (!base || base === 'equation' || base === 'displaymath') {
       let n = null;
       if (numbered && !noNum(body) && !/\\tag\b/.test(body)) n = ++st.eq;
-      tex = clean(takeLabels(body, n, st)) + (n ? `\\tag{${n}}` : '');
+      tex = clean(takeLabels(body, n, st, anchors)) + (n ? `\\tag{${n}}` : '');
     } else {
       // align / gather / alignat / multline: one number per row (multline: last row only).
       const head = base === 'alignat' ? (/^\s*\{[^}]*\}/.exec(body)?.[0] || '{1}') : '';
@@ -160,12 +167,12 @@ const NoctuaLatex = (() => {
         const last = k === rows.length - 1;
         const wants = numbered && !noNum(row) && !/\\tag\b/.test(row) && row.trim() && (base !== 'multline' || last);
         const n = wants ? ++st.eq : null;
-        return clean(takeLabels(row, n, st)) + (n ? ` \\tag{${n}}` : '');
+        return clean(takeLabels(row, n, st, anchors)) + (n ? ` \\tag{${n}}` : '');
       });
       const kat = base === 'multline' ? 'gather' : base;  // KaTeX has no multline
       tex = `\\begin{${kat}*}${head}${out.join('\\\\')}\\end{${kat}*}`;
     }
-    return `<div class="tex-display">${katexHtml(tex, true, st)}</div>`;
+    return `<div class="tex-display">${anchors.join('')}${katexHtml(tex, true, st)}</div>`;
   }
 
   // ------------------------------------------------------------ inline text
@@ -248,13 +255,15 @@ const NoctuaLatex = (() => {
           const a = reqArg(s, j);
           const v = st.labels[a.text.trim()];
           const shown = v == null ? '<span class="tex-missing">??</span>' : esc(v);
-          out += cmd === 'eqref' ? `(${shown})` : shown;
+          const text = cmd === 'eqref' ? `(${shown})` : shown;
+          out += v == null ? text : `<a class="tex-ref" href="#note-label-${encodeURIComponent(a.text.trim())}" data-tex-ref="${esc(a.text.trim())}">${text}</a>`;
           i = a.end;
           continue;
         }
         if (cmd === 'label') {
           const a = reqArg(s, j);
           if (st.current) st.labels[a.text.trim()] = st.current;
+          out += labelAnchor(a.text.trim());
           i = a.end;
           continue;
         }
@@ -439,6 +448,23 @@ const NoctuaLatex = (() => {
   // Parses paragraphs and block constructs. `child` state shares counters and
   // labels with `root` (objects are shared by reference; numbers are copied
   // back after nested calls).
+  // Only standalone links on trusted YouTube hosts become players.
+  function youtubeEmbed(link) {
+    const url = /^https?:\/\/(?:www\.|m\.)?(youtube\.com|youtu\.be)\/([^\s<>"']*)$/i.exec(link);
+    if (!url) return '';
+    const path = url[2];
+    const id = url[1].toLowerCase() === 'youtu.be'
+      ? /^([\w-]{11})(?:[?#]|$)/.exec(path)?.[1]
+      : /^(?:shorts|live|embed)\/([\w-]{11})(?:[?#]|$)/.exec(path)?.[1]
+        || (/^watch\?/.test(path) ? /[?&]v=([\w-]{11})(?:[&#]|$)/.exec(path)?.[1] : null);
+    if (!id) return '';
+    const time = /[?&#](?:t|start)=([\dhms]+)(?:[&#]|$)/.exec(path)?.[1] || '';
+    const parts = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(time);
+    const seconds = /^\d+$/.test(time) ? Number(time) : parts ? Number(parts[1] || 0) * 3600 + Number(parts[2] || 0) * 60 + Number(parts[3] || 0) : 0;
+    const start = Number.isSafeInteger(seconds) && seconds > 0 ? `?start=${seconds}` : '';
+    return `<div class="tex-youtube"><iframe src="https://www.youtube-nocookie.com/embed/${id}${start}" title="YouTube video player" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe><a href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener noreferrer">Open on YouTube</a></div>`;
+  }
+
   function blocks(s, st, root = null) {
     let out = '', para = '', i = 0, noindent = false;
     const flush = () => {
@@ -452,6 +478,15 @@ const NoctuaLatex = (() => {
       noindent = false;
     };
     while (i < s.length) {
+      if (i === 0 || s[i - 1] === '\n') {
+        const end = s.indexOf('\n', i);
+        const lineEnd = end < 0 ? s.length : end;
+        const player = youtubeEmbed(s.slice(i, lineEnd).trim());
+        if (player) {
+          flush(); out += player; i = lineEnd; noindent = true; st.firstPara = false;
+          continue;
+        }
+      }
       const c = s[i];
       if (c === '\n') {
         let j = i + 1;
@@ -533,7 +568,7 @@ const NoctuaLatex = (() => {
         return blocks(s, st);
       });
     };
-    const labels = {};
+    const labels = Object.create(null);
     run(true, labels);           // pass 1: numbers and labels, no typesetting
     return run(false, labels);   // pass 2: typeset with every \ref resolvable
   }

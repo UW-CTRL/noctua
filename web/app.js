@@ -479,7 +479,7 @@ function renderResults() {
   }
   el.innerHTML = `<p class="hint">${fmt(searchState.total)} results — click one to build its graph.</p>
     <ul class="papers">${results.map((p) => paperLi(p)).join('')}</ul>
-    ${searchState.next ? '<button class="more" id="more">More results</button>' : ''}`;
+    ${searchState.next ? '<button class="more" id="more" data-icon="chevron-down">More results</button>' : ''}`;
   el.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => loadGraph(li.dataset.id)));
   el.querySelector('#more')?.addEventListener('click', () => search(searchState.q, searchState.next));
 }
@@ -555,20 +555,22 @@ function ensureAbstract(p,native=false){
   fetchAbstractDetails(p,native).then(data=>{state.status='loaded';state.data=data;if(data.abstract)p[field]=data.abstract;})
     .catch(e=>{state.status='error';state.error=e.message;})
     .finally(()=>{
-      const current=native?lib.detail:(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId===G.selected));
+      const readerPaper=typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')?PDF.paper:null;
+      const current=native?(readerPaper || lib.detail):(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId===G.selected));
       if(current&&abstractKey(current,native)===key){if(state.data?.abstract)current[field]=state.data.abstract;renderDetails();updateChatContext();}
     });
 }
 function abstractHTML(p,native=false){
   const text=native?p.abstractNote:p.abstract,state=abstractDetails.get(abstractKey(p,native));
   if(text?.trim())return `<div class="abstract">${esc(text)}</div>`;
-  if(state?.status==='error')return `<div class="abstract">Couldn’t load the abstract: ${esc(state.error)} <button data-retry-abstract>Retry</button></div>`;
+  if(state?.status==='error')return `<div class="abstract">Couldn’t load the abstract: ${esc(state.error)} <button data-retry-abstract data-icon="rotate-cw">Retry</button></div>`;
   return `<div class="abstract">${state?.status==='loading'?'Loading abstract…':'No abstract supplied by Semantic Scholar for this paper.'}</div>`;
 }
 function bindAbstractRetry(el,p,native=false){el.querySelector('[data-retry-abstract]')?.addEventListener('click',()=>{abstractDetails.delete(abstractKey(p,native));renderDetails();});}
 
 function renderDetails() {
   const el = $('#details');
+  if (typeof PDF !== 'undefined' && document.body.classList.contains('pdf-mode') && PDF.paper) return renderLibDetails(PDF.paper);
   const n = G.nodes.get(G.selected);
   const p = n?.p || results.find((r) => r.paperId === G.selected);
   if (!p) {
@@ -604,17 +606,17 @@ function renderDetails() {
       ${ext.ArXiv ? `<a href="https://arxiv.org/abs/${esc(ext.ArXiv)}" target="_blank" rel="noopener">arXiv ↗</a>` : ''}
       ${pdf ? `<a href="${esc(pdf)}" target="_blank" rel="noopener">PDF ↗</a>` : ''}
     </div>
-    <div class="actions">
-      <button id="act-read-pdf" class="primary">Read PDF</button>
-      <button id="act-pdf-tab">PDF in new tab</button>
-      ${p.paperId !== G.centerId ? '<button id="act-center" class="primary">Build graph from this paper</button>' : ''}
-      ${n && p.paperId !== G.centerId && !n.expanded ? '<button id="act-expand" title="Add this paper\'s top references and citations to the current graph">Expand here</button>' : ''}
+    <div class="paper-primary-actions" role="group" aria-label="Paper actions">
+      <button id="act-read-pdf" class="paper-read-button" data-icon="file-text">Read PDF</button>
+      <button id="act-pdf-tab" data-icon="external-link" data-icon-only title="PDF in new tab" aria-label="PDF in new tab"></button>
+      ${p.paperId !== G.centerId ? '<button id="act-center" data-icon="network" data-icon-only title="Build graph from this paper" aria-label="Build graph from this paper"></button>' : ''}
+      ${n && p.paperId !== G.centerId && !n.expanded ? '<button id="act-expand" title="Expand this paper in the current graph" aria-label="Expand this paper in the current graph" data-icon="expand" data-icon-only></button>' : ''}
     </div>
     <div class="library-add">
       ${inLib ? '<div class="in-lib">✓ Already in your Noctua library</div>' : ''}
       <div class="row">
         <select id="add-target">${collectionOptions(target)}</select>
-        <button id="act-add" class="${inLib ? '' : 'primary'}">${inLib ? 'Add to collection' : 'Add to Noctua'}</button>
+        <button id="act-add" class="${inLib ? '' : 'primary'}" data-icon="${inLib ? 'folder-plus' : 'plus'}">${inLib ? 'Add to collection' : 'Add to Noctua'}</button>
       </div>
       ${pdf ? '<label><input type="checkbox" id="add-pdf" checked> Attach open-access PDF</label>' : ''}
 
@@ -636,6 +638,7 @@ async function saveToLibrary(p, btn) {
   const attach = $('#add-pdf')?.checked ?? false;
   btn.disabled = true;
   btn.textContent = 'Adding…';
+  btn.dataset.icon = 'loader-circle';
   try {
     const saved = await api('/api/library/add', { paper: p, target, attach_pdf: attach });
     G.inLib.add(p.paperId);
@@ -649,6 +652,7 @@ async function saveToLibrary(p, btn) {
     toast(e.message, { error: true });
     btn.disabled = false;
     btn.textContent = 'Add to Noctua';
+    btn.dataset.icon = 'plus';
   }
 }
 
@@ -662,11 +666,12 @@ function renderLibTree() {
   }
   el.innerHTML = collections.targets.map((t) => `
     <li data-id="${esc(t.id)}" class="${t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 14}px">
-      <span>${t.id.startsWith('L') ? '📚' : '📁'}</span>
+      <span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.id.startsWith('L') ? '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>' : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'}</svg></span>
       <span class="t-name">${esc(t.name)}</span>
       <span class="t-count">${t.count ?? ''}</span>
-      ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder">✎</button>' : ''}
-      <button class="icon t-rename t-new" title="New folder inside">+</button>
+      ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder" data-icon="pencil" aria-label="Rename folder" data-icon-only>✎</button>' : ''}
+      <button class="icon t-rename t-new" title="New folder inside" data-icon="folder-plus" aria-label="New folder inside" data-icon-only>+</button>
+      ${t.id === lib.target ? '<button id="import-pdf" class="icon t-import" title="Import PDF into this folder" aria-label="Import PDF into this folder" data-icon="file-up" data-icon-only></button>' : ''}
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     li.addEventListener('click', () => {
@@ -683,6 +688,12 @@ function renderLibTree() {
     li.querySelector('.t-new').addEventListener('click', (e) => {
       e.stopPropagation();
       startNewFolder(li);
+    });
+    li.querySelector('.t-import')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const button = e.currentTarget; button.disabled = true;
+      try { await importLibraryPDF(li.dataset.id); }
+      finally { if (button.isConnected) button.disabled = false; }
     });
   });
 }
@@ -725,7 +736,7 @@ function startNewFolder(li) {
   const level = (collections.targets.find((t) => t.id === li.dataset.id)?.level || 0) + 1;
   const row = document.createElement('li');
   row.style.paddingLeft = `${8 + level * 14}px`;
-  row.innerHTML = '<span>📁</span><input class="t-input" placeholder="New folder name">';
+  row.innerHTML = '<span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><input class="t-input" placeholder="New folder name">';
   li.after(row);
   const input = row.querySelector('input');
   input.focus();
@@ -794,12 +805,14 @@ function renderLibItems() {
   el.innerHTML = items.map((it) => `
     <li class="lib${it.key === G.libKey ? ' graphed' : ''}${it.key === lib.detail?.key ? ' selected' : ''}" data-key="${esc(it.key)}">
       <div class="p-body">
-        <div class="p-title">${esc(it.title || '(untitled)')}</div>
-        <div class="p-meta">${esc(libAuthors(it))}</div>
+        <div class="p-title" title="${esc(it.title || '(untitled)')}">${esc(it.title || '(untitled)')}</div>
+        <div class="p-meta p-authors" title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</div>
         <div class="p-meta">${esc([it.venue, it.year].filter(Boolean).join(' · ') || it.itemType)}</div>
       </div>
-      ${it.has_pdf ? '<button class="read-btn" title="Read PDF (⌘/Ctrl-click opens a new tab)">PDF</button>' : ''}
-      <button class="graph-btn" title="Build this paper's citation graph">Graph</button>
+      <div class="paper-row-actions" role="group" aria-label="Paper actions">
+      ${it.has_pdf ? '<button class="read-btn" title="Read PDF (⌘/Ctrl-click opens a new tab)" data-icon="file-text" aria-label="Read PDF (⌘/Ctrl-click opens a new tab)" data-icon-only>PDF</button>' : ''}
+      <button class="graph-btn" title="Build this paper's citation graph" data-icon="network" aria-label="Build this paper's citation graph" data-icon-only>Graph</button>
+      </div>
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     const it = lib.items.find((x) => x.key === li.dataset.key);
@@ -827,7 +840,7 @@ function renderLibDetails(it) {
   const el = $('#details');
   const doi = it.DOI && !/^10\.48550\/arxiv\./i.test(it.DOI) ? it.DOI : null;
   el.innerHTML = `
-    <div class="roles"><span class="role exp">In your Noctua library</span></div>
+    <div class="roles"><span class="role exp">In library</span></div>
     <h2>${esc(it.title || '(untitled)')}</h2>
     <div class="authors">${esc((it.creators || []).join(', ') || 'Unknown authors')}</div>
     <div class="venue">${esc([it.venue, it.date || it.year].filter(Boolean).join(' · '))}</div>
@@ -837,12 +850,11 @@ function renderLibDetails(it) {
       ${it.arxiv ? `<a href="https://arxiv.org/abs/${esc(it.arxiv)}" target="_blank" rel="noopener">arXiv ↗</a>` : ''}
       ${it.url && !it.arxiv && !doi ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">Link ↗</a>` : ''}
     </div>
-    <div class="actions">
-      <button id="act-lib-graph" class="primary">${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}</button>
+    <div class="paper-primary-actions" role="group" aria-label="Paper actions">
+      <button id="act-lib-graph" data-icon="network" data-icon-only title="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}" aria-label="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}"></button>
     </div>
-    <p class="hint">${it.s2 || it.arxiv || doi
-      ? 'Found by its identifier on Semantic Scholar.'
-      : 'No DOI or arXiv id, so Noctua will look it up by title.'}</p><div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
+    <div class="paper-collection-tools"></div>
+    <div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
   bindAbstractRetry(el,it,true);
   el.querySelector('#act-lib-graph').addEventListener('click', () => graphFromLibrary(it));
   libraryPaperActions(el, it);
@@ -914,7 +926,7 @@ async function stopChat() {
 async function activateAgent(provider, { persist = true } = {}) {
   if (chat.switching) return;
   chat.switching = true;
-  $('#agent-provider').disabled = true;
+  if ($('#setup-agent')) $('#setup-agent').disabled = true;
   $('#chat-input').disabled = true;
   $('#chat-send').disabled = true;
   try {
@@ -925,7 +937,6 @@ async function activateAgent(provider, { persist = true } = {}) {
     chat.ready = true;
     chat.sentGraphKey = null; chat.sentNoteKey = null;
     $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
-    $('#agent-provider').value = provider;
     toggleChatHistory(false);
     const id = store.get('noctua.chat.' + provider) || (provider === 'claude' ? store.get('noctua.chat') : null);
     chat.id = null;
@@ -936,8 +947,10 @@ async function activateAgent(provider, { persist = true } = {}) {
     refreshAgentBadge();
   } finally {
     chat.switching = false;
-    $('#agent-provider').value = chat.provider;
-    $('#agent-provider').disabled = false;
+    if ($('#setup-agent')) {
+      $('#setup-agent').value = chat.provider;
+      $('#setup-agent').disabled = false;
+    }
     $('#chat-input').disabled = false;
     $('#chat-send').disabled = false;
   }
@@ -945,24 +958,18 @@ async function activateAgent(provider, { persist = true } = {}) {
 
 async function refreshAgentBadge() {
   const provider = chat.provider;
-  $('#agent-signin').textContent = 'Account';
   try {
     const s = await api('/api/agents/' + provider);
     if (provider !== chat.provider) return;
-    $('#agent-signin').textContent = s.signed_in ? 'Connected' : 'Sign in';
-    $('#agent-signin').title = s.signed_in ? `${agentLabel()} is signed in. Manage in Settings.` : `Sign in to ${agentLabel()}`;
+    if ($('#agent-status')) $('#agent-status').textContent = s.signed_in ? 'Signed in' : s.installed ? 'Not signed in' : 'CLI not found';
   } catch { /* account details remain available in Settings */ }
 }
 
-$('#agent-provider').addEventListener('change', (e) => {
-  activateAgent(e.target.value).catch((err) => toast(err.message, { error: true }));
-});
-
 // What the assistant may do to notes: suggest edits (accept/reject), plan (read-only), or edit directly.
 const CHAT_MODES = {
-  suggest: { label: '✎ Suggest edits', hint: 'The assistant proposes note edits; you accept or reject each.' },
-  plan: { label: '◇ Plan', hint: 'Read-only: the assistant investigates and proposes a plan, but changes nothing.' },
-  direct: { label: '⚡ Direct edits', hint: 'The assistant edits notes directly; you can undo.' },
+  suggest: { label: 'Suggest edits', hint: 'The assistant proposes note edits; you accept or reject each.' },
+  plan: { label: 'Plan', hint: 'Read-only: the assistant investigates and proposes a plan, but changes nothing.' },
+  direct: { label: 'Direct edits', hint: 'The assistant edits notes directly; you can undo.' },
 };
 
 function setChatMode(mode) {
@@ -971,6 +978,7 @@ function setChatMode(mode) {
   store.set('noctua.chatMode', mode);
   const b = $('#chat-mode');
   b.textContent = CHAT_MODES[mode].label;
+  b.dataset.icon = {suggest:'pencil', plan:'list-checks', direct:'zap'}[mode];
   b.title = `${CHAT_MODES[mode].hint} (Shift+Tab in the chat box to cycle)`;
   b.dataset.mode = mode;
 }
@@ -1049,19 +1057,18 @@ function chatContext() {
 }
 
 function updateChatContext() {
-  if (document.body.classList.contains('pdf-mode') && typeof PDF !== 'undefined' && PDF.paper) { $('#chat-context').textContent = `Sees PDF: ${PDF.paper.title} · page ${PDF.page}`; return; }
-  if (document.body.classList.contains('notes-mode')) {
-    $('#chat-context').textContent = N.doc ? `Sees note: ${N.doc.title || 'Untitled note'}` : 'Notes mode';
-    return;
+  const label = $('#chat-context');
+  let title;
+  if (document.body.classList.contains('pdf-mode') && typeof PDF !== 'undefined' && PDF.paper) {
+    title = PDF.paper.title || 'Untitled paper';
+  } else if (document.body.classList.contains('notes-mode')) {
+    title = N.doc ? (N.doc.title || 'Untitled note') : 'No note open';
+  } else {
+    const selected = G.nodes.get(G.selected), center = G.nodes.get(G.centerId);
+    title = selected?.p.title || lib.detail?.title || center?.p.title || G.project?.name || 'No graph open';
   }
-  const c = G.nodes.get(G.centerId);
-  const s = G.nodes.get(G.selected);
-  const parts = [];
-  if (c) parts.push(`graph: ${lastName(c.p)} ${c.p.year ?? ''}`.trim());
-  if (G.project) parts.push(`project: ${G.project.name}`);
-  if (s && s !== c) parts.push(`selected: ${lastName(s.p)} ${s.p.year ?? ''}`.trim());
-  else if (!s && lib.detail) parts.push(`selected: ${(lib.detail.title || '').slice(0, 40)}`);
-  $('#chat-context').textContent = parts.length ? `Sees ${parts.join(' · ')}` : 'No graph open';
+  label.textContent = title;
+  label.title = title;
 }
 
 // Typesets $…$, $$…$$, \(…\) and \[…\] with KaTeX, leaving code alone. Math is
@@ -1089,8 +1096,40 @@ function userMsgHtml(text) {
   return restore(mentionChips(esc(t)));
 }
 
-function renderMd(src) {
-  const { text: mdSrc, restore } = extractMath(src);
+// Split table rows without treating escaped pipes or inline code as cell boundaries.
+function markdownTableCells(line) {
+  const text = line.trim(), cells = [];
+  let cell = '', ticks = 0, hasPipe = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '\\' && text[i + 1] === '\\') { cell += '\\\\'; i++; }
+    else if (char === '\\' && text[i + 1] === '|') { cell += '|'; i++; }
+    else if (char === '`') {
+      let length = 1;
+      while (text[i + length] === '`') length++;
+      if (!ticks) ticks = length; else if (ticks === length) ticks = 0;
+      cell += '`'.repeat(length); i += length - 1;
+    } else if (char === '|' && !ticks) { cells.push(cell.trim()); cell = ''; hasPipe = true; }
+    else cell += char;
+  }
+  if (!hasPipe) return null;
+  cells.push(cell.trim());
+  if (text.startsWith('|') && cells[0] === '') cells.shift();
+  if (text.endsWith('|') && cells[cells.length - 1] === '') cells.pop();
+  return cells;
+}
+
+function renderChatCode(source, language, complete) {
+  let html = esc(source);
+  if (language !== 'mermaid' && source.length <= 30000 && typeof hljs !== 'undefined' && hljs.getLanguage(language)) {
+    try { html = hljs.highlight(source, {language, ignoreIllegals: true}).value; } catch (_) { /* Keep plain text on unsupported syntax. */ }
+  }
+  const diagram = language === 'mermaid' && complete;
+  return `<div class="chat-code${diagram ? ' chat-diagram' : ''}"${diagram ? ' data-diagram' : ''}><div class="chat-code-head"><span>${esc(language || 'Code')}</span>${diagram ? '<button type="button" class="chat-source-toggle" aria-expanded="false">Source</button>' : ''}<button type="button" class="chat-copy" aria-label="Copy code">Copy</button></div>${diagram ? '<div class="chat-diagram-view" aria-label="Diagram"></div>' : ''}<pre><code>${html}</code></pre></div>`;
+}
+
+function renderMd(src, mathProcessed = false) {
+  const { text: mdSrc, restore } = mathProcessed ? {text: src, restore: html => html} : extractMath(src);
   src = mdSrc;
   const inline = (s) => esc(s)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -1101,20 +1140,66 @@ function renderMd(src) {
       : url.startsWith('pdf:') ? `<a href="${url}" class="pdf-link">${text}</a>`
       : `<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
   const out = [];
-  let para = [], list = null, code = null;
+  let para = [], list = null, code = null, codeLanguage = '';
   const flushPara = () => { if (para.length) out.push(`<p>${inline(para.join(' '))}</p>`); para = []; };
   const flushList = () => {
-    if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`);
+    if (list) out.push(`<${list.tag}>${list.items.map((i) => {
+      const task = /^\[([ xX])\]\s+(.*)$/.exec(i);
+      return task ? `<li class="chat-task"><label><input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}><span>${inline(task[2])}</span></label></li>` : `<li>${inline(i)}</li>`;
+    }).join('')}</${list.tag}>`);
     list = null;
   };
-  for (const line of src.split('\n')) {
+  const lines = src.split('\n');
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
     if (code) {
-      if (line.startsWith('```')) { out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`); code = null; }
+      if (/^\s*```\s*$/.test(line)) { out.push(renderChatCode(code.join('\n'), codeLanguage, true)); code = null; }
       else code.push(line);
       continue;
     }
+    if (/^\s*>/.test(line)) {
+      flushPara(); flushList();
+      const quoted = [];
+      while (lineIndex < lines.length && /^\s*>/.test(lines[lineIndex])) {
+        quoted.push(lines[lineIndex].replace(/^\s*> ?/, '')); lineIndex++;
+      }
+      lineIndex--;
+      out.push(`<blockquote>${renderMd(quoted.join('\n'), true)}</blockquote>`);
+      continue;
+    }
+    if (/^\s*<details(?: open)?>\s*$/.test(line)) {
+      flushPara(); flushList();
+      let depth = 1, contents = [], title = 'More details', open = / open>/.test(line), fenced = false;
+      for (lineIndex++; lineIndex < lines.length; lineIndex++) {
+        const current = lines[lineIndex];
+        if (/^\s*```/.test(current)) { fenced = !fenced; contents.push(current); continue; }
+        if (fenced) { contents.push(current); continue; }
+        if (/^\s*<details(?: open)?>\s*$/.test(current)) depth++;
+        if (/^\s*<\/details>\s*$/.test(current) && --depth === 0) break;
+        const summary = depth === 1 && !contents.some(value => value.trim()) && /^\s*<summary>(.*?)<\/summary>\s*$/.exec(current);
+        if (summary) title = summary[1]; else contents.push(current);
+      }
+      out.push(`<details class="chat-details"${open ? ' open' : ''}><summary>${inline(title)}</summary>${renderMd(contents.join('\n'), true)}</details>`);
+      continue;
+    }
+    const header = markdownTableCells(line);
+    const divider = markdownTableCells(lines[lineIndex + 1] || '');
+    if (!/^\s*(?:```|#{1,4}\s|[-*]\s|\d+\.\s)/.test(line) && header?.length && divider?.length === header.length && divider.every(cell => /^:?-+:?$/.test(cell))) {
+      flushPara(); flushList();
+      const alignment = divider.map(cell => cell.startsWith(':') && cell.endsWith(':') ? 'center' : cell.endsWith(':') ? 'right' : 'left');
+      const row = (cells, tag) => header.map((_, index) => `<${tag}${tag === 'th' ? ' scope="col"' : ''} style="text-align:${alignment[index]}">${inline(cells[index] || '')}</${tag}>`).join('');
+      const rows = [];
+      lineIndex++; // Consume the delimiter row.
+      while (lineIndex + 1 < lines.length) {
+        const cells = markdownTableCells(lines[lineIndex + 1]);
+        if (!cells || /^\s*(?:```|#{1,4}\s|[-*]\s|\d+\.\s)/.test(lines[lineIndex + 1])) break;
+        rows.push(`<tr>${row(cells, 'td')}</tr>`); lineIndex++;
+      }
+      out.push(`<div class="chat-table-scroll" role="region" aria-label="Table" tabindex="0"><table><thead><tr>${row(header, 'th')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`);
+      continue;
+    }
     let m;
-    if (line.startsWith('```')) { flushPara(); flushList(); code = []; }
+    if (/^\s*```/.test(line)) { flushPara(); flushList(); code = []; const name = line.trim().slice(3).trim().toLowerCase(); codeLanguage = /^[\w+-]{1,30}$/.test(name) ? name : ''; }
     else if ((m = line.match(/^\s*(?:[-*]|(\d+)\.)\s+(.*)$/))) {
       flushPara();
       const tag = m[1] ? 'ol' : 'ul';
@@ -1126,7 +1211,7 @@ function renderMd(src) {
     else if (list) list.items[list.items.length - 1] += ' ' + line.trim();
     else para.push(line.trim());
   }
-  if (code) out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+  if (code) out.push(renderChatCode(code.join('\n'), codeLanguage, false));
   flushPara();
   flushList();
   return restore(out.join(''));
@@ -1139,6 +1224,7 @@ function appendMsg(role, html) {
   el.className = `msg ${role}`;
   el.innerHTML = html;
   log.appendChild(el);
+  if (role === 'assistant') NoctuaChatRender.enhance(el);
   log.scrollTop = log.scrollHeight;
   return el;
 }
@@ -1200,7 +1286,7 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
     <li data-id="${esc(c.id)}" class="${c.id === chat.id ? 'current' : ''}">
       <span class="h-title">${esc(c.title || 'Untitled')}</span>
       <span class="h-when">${new Date(c.updated * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-      <button class="h-del icon" title="Delete this chat">×</button>
+      <button class="h-del icon" title="Delete this chat" data-icon="trash-2" aria-label="Delete this chat" data-icon-only>×</button>
     </li>`).join('') : '<li class="hint">No saved chats yet.</li>';
 }
 
@@ -1224,6 +1310,9 @@ function setChatBusy(busy) {
   $('#chat-new').disabled = busy;
   $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
+  $('#chat-send').dataset.icon = busy ? 'square' : 'send';
+  $('#chat-send').setAttribute('aria-label', busy ? 'Stop' : 'Send');
+  $('#chat-send').title = busy ? 'Stop' : 'Send';
   $('#chat-send').classList.toggle('primary', !busy);
 }
 
@@ -1242,7 +1331,7 @@ async function sendChat(text) {
   const handle = (e) => {
     if (e.type === 'chat') setChatId(e.id);
     else if (e.type === 'text_start') { if (md && !md.endsWith('\n\n')) md += '\n\n'; }
-    else if (e.type === 'text') { md += e.text; body.innerHTML = renderMd(md); }
+    else if (e.type === 'text') { md += e.text; NoctuaChatRender.update(body, md); }
     else if (e.type === 'tool') {
       const t = document.createElement('div');
       t.className = 'tool';
@@ -1271,6 +1360,7 @@ async function sendChat(text) {
     else body.insertAdjacentHTML('beforeend', `<p class="error">${esc(e.message)}</p>`);
   } finally {
     body.querySelector('.typing')?.remove();
+    NoctuaChatRender.enhance(body);
     chat.abort = null;
     setChatBusy(false);
   }
@@ -1280,7 +1370,7 @@ function showRightTab(name) {
   document.querySelectorAll('#right .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.rtab === name));
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
-  if (name === 'chat') { updateChatContext(); $('#chat-input').focus(); }
+  if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); $('#chat-input').focus(); }
 }
 
 // ---------------------------------------------------------------- resizable side panels
@@ -1453,6 +1543,8 @@ function readColors() {
   for (const k of ['ink', 'muted', 'accent', 'ref', 'cite', 'sim', 'ok', 'edge', 'node-old', 'node-new', 'panel', 'bg']) {
     colors[k] = cs.getPropertyValue('--' + k).trim();
   }
+  colors.font = cs.getPropertyValue('--font-ui').trim() || '-apple-system, sans-serif';
+  colors.fontScale = Number(cs.getPropertyValue('--ui-font-scale')) || 1;
   colors.oldRgb = hexRgb(colors['node-old']);
   colors.newRgb = hexRgb(colors['node-new']);
 }
@@ -1572,7 +1664,7 @@ function draw() {
   ctx.globalAlpha = 1;
 
   // Labels for big-enough nodes, the focus and its neighbours.
-  ctx.font = `${11 / view.k}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  ctx.font = `${11 * colors.fontScale / view.k}px ${colors.font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (const n of order) {
@@ -1605,7 +1697,7 @@ function arrow(s, t) {
 function drawAxis(w, h, range, count) {
   const spanYears = Math.max(1, range[1] - range[0]);
   const stepYears = [1, 2, 5, 10, 20, 50].find((s) => (spanYears / s) * 70 < w * view.k + 400) || 50;
-  ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.font = `${11 * colors.fontScale}px ${colors.font}`;
   ctx.textAlign = 'center';
   ctx.fillStyle = colors.muted;
   ctx.strokeStyle = colors.edge;
@@ -1779,6 +1871,57 @@ $('#proj-info').addEventListener('click', (e) => {
   focusNode(id);
 });
 document.querySelectorAll('#right .tabs button').forEach((b) => b.addEventListener('click', () => showRightTab(b.dataset.rtab)));
+// Resize the composer from the divider above it, keeping room for the conversation.
+const chatResize = $('#chat-resize');
+let chatResizeDrag = null;
+function chatInputMaxHeight() {
+  return Math.max(60, Math.min(400, innerHeight / 2, $('#chat').clientHeight - 140));
+}
+function setChatInputHeight(height, save = true) {
+  const max = chatInputMaxHeight(), value = Math.round(Math.max(60, Math.min(max, height)));
+  $('#chat-input').style.height = value + 'px';
+  chatResize.setAttribute('aria-valuemax', Math.floor(max));
+  chatResize.setAttribute('aria-valuenow', value);
+  if (save) store.set('noctua.chatInputHeight', String(value));
+}
+function restoreChatInputHeight() {
+  if (!$('#chat').clientHeight || chatResizeDrag) return;
+  const saved = Number(store.get('noctua.chatInputHeight'));
+  if (Number.isFinite(saved) && saved > 0) setChatInputHeight(saved, false);
+  else if ($('#chat-input').style.height) setChatInputHeight($('#chat-input').getBoundingClientRect().height, false);
+}
+chatResize.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || chatResizeDrag) return;
+  e.preventDefault();
+  chatResizeDrag = { id: e.pointerId, y: e.clientY, height: $('#chat-input').getBoundingClientRect().height };
+  chatResize.setPointerCapture(e.pointerId);
+  chatResize.classList.add('dragging');
+  document.body.classList.add('chat-resizing');
+});
+chatResize.addEventListener('pointermove', e => {
+  if (chatResizeDrag?.id === e.pointerId) setChatInputHeight(chatResizeDrag.height + chatResizeDrag.y - e.clientY, false);
+});
+function endChatInputResize(e) {
+  if (chatResizeDrag?.id !== e.pointerId) return;
+  setChatInputHeight($('#chat-input').getBoundingClientRect().height);
+  chatResizeDrag = null;
+  chatResize.classList.remove('dragging');
+  document.body.classList.remove('chat-resizing');
+  if (chatResize.hasPointerCapture(e.pointerId)) chatResize.releasePointerCapture(e.pointerId);
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => chatResize.addEventListener(type, endChatInputResize));
+chatResize.addEventListener('keydown', e => {
+  const height = $('#chat-input').getBoundingClientRect().height;
+  const next = { ArrowUp: height + 20, ArrowDown: height - 20, Home: 60, End: chatInputMaxHeight() }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  setChatInputHeight(next);
+});
+window.addEventListener('resize', restoreChatInputHeight);
+window.addEventListener('storage', e => {
+  if (e.key === 'noctua.chatInputHeight' || e.key === null) restoreChatInputHeight();
+});
+restoreChatInputHeight();
 $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (!chat.ready || chat.switching) return;
@@ -1788,6 +1931,17 @@ $('#chat-form').addEventListener('submit', (e) => {
   $('#chat-input').value = '';
   chat.running = sendChat(text);
 });
+function syncChatFontSize() {
+  const size = NoctuaFonts.getChatSize();
+  $('#chat-font-smaller').disabled = size <= 10;
+  $('#chat-font-larger').disabled = size >= 24;
+  $('#chat-font-smaller').title = `Decrease chat text size (${size}px)`;
+  $('#chat-font-larger').title = `Increase chat text size (${size}px)`;
+}
+$('#chat-font-smaller').addEventListener('click', () => NoctuaFonts.setChatSize(NoctuaFonts.getChatSize() - 1));
+$('#chat-font-larger').addEventListener('click', () => NoctuaFonts.setChatSize(NoctuaFonts.getChatSize() + 1));
+document.addEventListener('noctua-chat-text-change', syncChatFontSize);
+syncChatFontSize();
 $('#chat-mode').addEventListener('click', cycleChatMode);
 $('#chat-input').addEventListener('keydown', (e) => {
   if (mentionKey(e)) return;  // @-mention popup open
@@ -1841,7 +1995,20 @@ window.addEventListener('popstate', () => {
 new ResizeObserver(() => draw()).observe($('#stage'));
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
 
-readColors();
+function setAppTheme(theme) {
+  const next = ['light', 'dark', 'system'].includes(theme) ? theme : 'system';
+  document.documentElement.dataset.theme = next;
+  store.set('noctua.theme', next);
+  if ($('#setup-app-theme')) $('#setup-app-theme').value = next;
+  readColors();
+  draw();
+}
+document.addEventListener('noctua-font-change', e => { if (e.detail.kind === 'ui') { readColors(); draw(); } });
+document.addEventListener('noctua-font-size-change', e => { if (e.detail.kind === 'ui') { readColors(); draw(); } });
+setAppTheme(store.get('noctua.theme'));
+window.addEventListener('storage', (e) => {
+  if (e.key === 'noctua.theme' || e.key === null) setAppTheme(store.get('noctua.theme'));
+});
 setChatMode(chat.mode);
 chatWelcome();
 

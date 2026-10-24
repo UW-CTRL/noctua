@@ -18,6 +18,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
     #[serde(default)]
+    pub assistant: AssistantSettings,
+    #[serde(default)]
     pub agent: Provider,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_path: Option<String>,
@@ -31,6 +33,43 @@ pub struct Settings {
     pub zotero_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
+}
+
+/// Choices are independent for each CLI; old settings retain provider defaults.
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(default)]
+pub struct AssistantSettings {
+    pub claude: AssistantOptions,
+    pub codex: AssistantOptions,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct AssistantOptions {
+    pub model: String,
+    pub reasoning: String,
+    pub fast: bool,
+}
+
+impl AssistantSettings {
+    pub fn for_provider(&self, provider: Provider) -> &AssistantOptions {
+        match provider { Provider::Claude => &self.claude, Provider::Codex => &self.codex }
+    }
+}
+
+impl AssistantOptions {
+    fn validate(&mut self, provider: Provider) -> Result<()> {
+        self.model = self.model.trim().to_string();
+        if self.model.len() > 200 || self.model.starts_with('-') || self.model.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(bad("Enter a model ID without spaces (up to 200 characters)."));
+        }
+        let levels = match provider {
+            Provider::Claude => &["", "low", "medium", "high", "xhigh", "max"][..],
+            Provider::Codex => &["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..],
+        };
+        if !levels.contains(&self.reasoning.as_str()) { return Err(bad("Unsupported reasoning effort for this provider.")); }
+        Ok(())
+    }
 }
 
 impl Settings {
@@ -96,7 +135,9 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         None
     };
     Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
         "agent": s.agent,
+        "assistant": s.assistant,
         "key_source": key_source,
         "key_hint": app.s2.key_hint(),
         "skipped": s.s2_key_skipped,
@@ -106,6 +147,9 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "zotero_suggested": zotero_suggestion(),
         "desktop": app.desktop.is_some(),
         "data_dir": app.data_dir,
+        "storage_pending": crate::storage::pending().ok().flatten(),
+        "storage_error": crate::storage::migration_error(),
+        "storage_override": env_set("NOCTUA_HOME") || env_set("NOCTUA_NOTES"),
     }))
 }
 
@@ -190,6 +234,24 @@ fn expand_home(p: &str) -> PathBuf {
     }
 }
 
+#[derive(Deserialize)]
+pub struct StorageBody {
+    dir: Option<String>,
+}
+
+pub async fn set_storage(State(app): State<Arc<App>>, Json(b): Json<StorageBody>) -> ApiResult {
+    if env_set("NOCTUA_HOME") || env_set("NOCTUA_NOTES") {
+        return Err(bad("Storage is controlled by NOCTUA_HOME or NOCTUA_NOTES. Unset these variables and restart Noctua before changing it here.").into());
+    }
+    let destination = b.dir.map(|d| expand_home(d.trim()));
+    if destination.as_ref().is_some_and(|d| d.as_os_str().is_empty()) {
+        return Err(bad("Enter a folder path.").into());
+    }
+    let pending = crate::storage::schedule(&paths::default_data_dir(), &app.data_dir, destination.as_deref())
+        .map_err(|e| bad(format!("{e:#}")))?;
+    Ok(Json(json!({ "ok": true, "storage_pending": pending })))
+}
+
 fn update(app: &App, f: impl FnOnce(&mut Settings)) -> Result<()> {
     let mut s = app.settings.lock().unwrap();
     let mut next = s.clone();
@@ -202,9 +264,17 @@ fn update(app: &App, f: impl FnOnce(&mut Settings)) -> Result<()> {
 #[derive(Deserialize)]
 pub struct AgentBody {
     pub provider: Provider,
+    pub options: Option<AssistantOptions>,
 }
 
 pub async fn set_agent(State(app): State<Arc<App>>, Json(b): Json<AgentBody>) -> ApiResult {
-    update(&app, |s| s.agent = b.provider)?;
+    let mut options = b.options;
+    if let Some(o) = &mut options { o.validate(b.provider)?; }
+    update(&app, |s| {
+        s.agent = b.provider;
+        if let Some(o) = options {
+            match b.provider { Provider::Claude => s.assistant.claude = o, Provider::Codex => s.assistant.codex = o }
+        }
+    })?;
     Ok(Json(json!({ "ok": true, "agent": b.provider })))
 }

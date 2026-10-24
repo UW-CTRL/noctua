@@ -14,6 +14,15 @@ class URL{constructor(value){if(!/^[a-z]+:/i.test(value))throw Error('invalid');
 """#
 let checks=#"""
 (async()=>{
+ let innerWidth=1200,innerHeight=800;
+ const popup={offsetWidth:480,offsetHeight:300,style:{}};
+ // Positioning reads the browser viewport globals.
+ globalThis.innerWidth=innerWidth;globalThis.innerHeight=innerHeight;
+ positionPDFPreview(popup,200,100);assert(popup.style.left==='212px','preview did not prefer right');
+ positionPDFPreview(popup,1000,100);assert(popup.style.left==='508px','right-edge preview did not move left');
+ positionPDFPreview(popup,600,700);assert(popup.style.left==='612px'&&popup.style.top==='488px','right preference or vertical bounds failed');
+ globalThis.innerWidth=600;
+ positionPDFPreview(popup,500,100);assert(popup.style.left==='12px','narrow viewport did not clamp left placement');
  const viewport={width:612,height:792,convertToViewportRectangle:r=>r};
  const crop=pdfReferenceCrop(viewport,{x:60/612,y:400/792},[{str:'[7]',transform:[1,0,0,10,60,400],width:15,height:10},{str:'Author and title',transform:[1,0,0,10,80,400],width:420,height:10}]);
  assert(crop.width<500&&Math.abs(crop.x+crop.width/2-280)<1,'reference text not centered in a tighter crop');
@@ -37,7 +46,7 @@ let checks=#"""
  globalThis.result='PASS: bounded page rendering, scroll eviction, link safety, named destinations and bibliography previews';
 })().catch(e=>globalThis.result='FAIL: '+e.stack);
 """#
-c.evaluateScript(mocks+section("function pdfRenderWindow", "function disposePDFPage")+section("function safePDFLinkURL", "async function pdfPageLinks")+section("async function resolvePDFDestination", "let pdfLinkTimer")+section("function findNumberedPDFReference", "async function previewNumberedCitation")+section("function pdfReferenceCrop", "async function showPDFLinkPreview")+checks)
+c.evaluateScript(mocks+section("function pdfRenderWindow", "function disposePDFPage")+section("function safePDFLinkURL", "async function pdfPageLinks")+section("async function resolvePDFDestination", "let pdfLinkTimer")+section("function findNumberedPDFReference", "async function previewNumberedCitation")+section("function positionPDFPreview", "function pdfReferenceCrop")+section("function pdfReferenceCrop", "async function showPDFLinkPreview")+checks)
 let deadline=Date().addingTimeInterval(5)
 while c.objectForKeyedSubscript("result").isUndefined && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}
 let result=c.objectForKeyedSubscript("result").toString() ?? "FAIL: timeout"

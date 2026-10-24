@@ -5,6 +5,43 @@ args = sys.argv[1:]
 provider = Path(sys.argv[0]).name
 home = Path(sys.argv[0]).parent
 with (home / 'invocations.jsonl').open('a') as f: f.write(json.dumps({'provider':provider,'args':args})+'\n')
+if provider == 'claude' and '{"disableAllHooks":true}' in args:
+    for line in sys.stdin:
+        message = json.loads(line)
+        assert message['type'] == 'control_request', 'discovery must not send a user prompt'
+        assert message['request']['subtype'] == 'initialize'
+        response = {'request_id':message['request_id'], 'subtype':'success', 'response':{'models':[
+            {'value':'default','displayName':'Organization default','supportedEffortLevels':['medium']},
+            {'value':'new-opus','displayName':'New Opus','supportsFastMode':True,'supportedEffortLevels':['low','high']},
+            {'value':'new-haiku','displayName':'New Haiku'},
+        ]}}
+        if (home / 'model-list-fail').exists(): response = {'request_id':message['request_id'],'subtype':'error','error':'Claude catalog unavailable'}
+        if (home / 'model-list-eof').exists(): sys.exit(0)
+        print(json.dumps({'type':'control_response','response':response}), flush=True)
+    sys.exit(0)
+if args[:1] == ['app-server']:
+    initialized = False
+    for line in sys.stdin:
+        message = json.loads(line)
+        method = message.get('method')
+        if method == 'initialize':
+            print(json.dumps({'id':message['id'], 'result':{}}), flush=True)
+        elif method == 'initialized':
+            initialized = True
+        elif method == 'model/list':
+            assert initialized, 'missing discovery handshake'
+            if (home / 'model-list-fail').exists():
+                print(json.dumps({'id':message['id'], 'error':{'message':'model catalog unavailable'}}), flush=True)
+                continue
+            if (home / 'model-list-eof').exists(): sys.exit(0)
+            print(json.dumps({'method':'account/updated', 'params':{}}), flush=True)
+            model = lambda name, hidden=False: {'id':name, 'model':name, 'hidden':hidden, 'supportedReasoningEfforts':[{'reasoningEffort':'low'}, {'reasoningEffort':'high'}], 'isDefault':name=='catalog-model'}
+            if message['params'].get('cursor'):
+                result = {'data':[model('catalog-model'),model('second-model')], 'nextCursor':None}
+            else:
+                result = {'data':[model('catalog-model'),model('hidden-model',True)], 'nextCursor':'page-two'}
+            print(json.dumps({'id':message['id'], 'result':result}), flush=True)
+    sys.exit(0)
 if args[:2] == ['login','status'] or args[:2] == ['auth','status']:
     sys.exit(0 if (home / (provider+'-signed-in')).exists() else 1)
 if args == ['login'] or args == ['auth','login']:

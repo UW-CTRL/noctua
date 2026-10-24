@@ -8,31 +8,28 @@
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/pdf.css">
+  <link rel="stylesheet" href="/icons.css">
+  <script src="/fonts.js"></script>
 </head>
 <body>
   <header>
     <div class="brand">🦉 <span>Noctua</span></div>
     <div class="mode-switch" role="tablist">
-      <button data-mode="graph" class="active">Graph</button>
-      <button data-mode="notes">Notes</button>
-      <button data-mode="pdf" id="reader-mode" disabled>Reader</button>
+      <button data-mode="graph" class="active" data-icon="network">Graph</button>
+      <button data-mode="notes" data-icon="notebook-pen">Notes</button>
+      <button data-mode="pdf" id="reader-mode" disabled data-icon="book-open">Reader</button>
     </div>
     <form id="search-form" autocomplete="off">
       <input id="search" type="search" placeholder="Search papers, or paste a DOI / arXiv / Semantic Scholar link" required>
-      <button type="submit">Search</button>
+      <button type="submit" data-icon="search" data-icon-only aria-label="Search papers" title="Search papers"></button>
     </form>
-    <button id="clear-graph" class="hidden" title="Close the current paper graph">✕ Close graph</button>
+    <button id="clear-graph" class="hidden" title="Close the current paper graph" data-icon="x">Close graph</button>
     <div id="queue" class="pill" title="Semantic Scholar requests waiting (limit: 1 per second)"></div>
     <div class="library-box">
       <select id="collection" aria-label="Library folder" title="Folder new papers are saved into"></select>
-      <button id="refresh-collections" class="icon" title="Reload Noctua folders">↻</button>
+      <button id="refresh-collections" class="icon" title="Reload Noctua folders" data-icon="refresh-cw" aria-label="Reload Noctua folders" data-icon-only>↻</button>
     </div>
-    <select id="agent-provider" aria-label="Research assistant" title="Backend for chat and drawing transcription" disabled>
-      <option value="claude">Claude Code</option>
-      <option value="codex">Codex</option>
-    </select>
-    <button id="agent-signin" class="open-settings" title="Sign in or manage your research assistant">Sign in</button>
-    <button id="open-settings" class="icon" title="Settings: research assistant, Semantic Scholar key, Noctua folder">⚙</button>
+    <button id="open-settings" class="icon" aria-label="Settings" title="Settings" data-icon="settings" data-icon-only>⚙</button>
   </header>
 
   <main>
@@ -41,37 +38,38 @@
       <div id="notes-side">
         <div class="notes-side-head">
           <select id="notes-target" title="Noctua folder these notes belong to"></select>
-          <button id="note-new" class="primary">New note</button>
+          <button id="note-new" class="primary" data-icon="file-plus" data-icon-only title="New note" aria-label="New note"></button>
         </div>
         <ul id="note-list" class="note-list"></ul>
       </div>
       <nav class="tabs">
-        <button data-tab="results" class="active">Search</button>
-        <button data-tab="library">Library</button>
-        <button data-tab="projects">Projects</button>
-        <button data-tab="nodes">In graph <span id="node-count"></span></button>
+        <button data-tab="results" class="active" data-icon="search" aria-label="Search"><span class="nav-tab-label" aria-hidden="true">Search</span></button>
+        <button data-tab="library" data-icon="library" aria-label="Library"><span class="nav-tab-label" aria-hidden="true">Library</span></button>
+        <button data-tab="projects" data-icon="folder" aria-label="Projects"><span class="nav-tab-label" aria-hidden="true">Projects</span></button>
+        <button data-tab="nodes" data-icon="network" aria-label="In graph"><span class="nav-tab-label" aria-hidden="true">In graph <span id="node-count"></span></span></button>
       </nav>
       <div id="tab-results" class="tab-body">
         <p class="hint">Search for a paper, then pick one to build its citation graph.</p>
       </div>
       <div id="tab-library" class="tab-body hidden">
-        <div class="library-tools"><button id="import-pdf">Import PDF</button><button id="import-zotero">Import from Zotero</button></div>
         <ul id="lib-tree" class="tree"></ul>
         <div class="list-tools">
-          <select id="lib-sort">
+          <div class="library-filter-control">
+          <select id="lib-sort" data-select-icon="list-filter" data-open-on-hover aria-label="Sort library papers">
             <option value="added">Recently added</option>
             <option value="title">Title</option>
             <option value="year-desc">Newest</option>
             <option value="year-asc">Oldest</option>
           </select>
-          <input id="lib-filter" type="search" placeholder="Filter">
+          <input id="lib-filter" type="search" placeholder="Filter" aria-label="Filter library papers">
+          </div>
         </div>
         <ul id="lib-items" class="papers"></ul>
       </div>
       <div id="tab-projects" class="tab-body hidden">
         <div class="list-tools">
           <select id="proj-target" title="Noctua folder"></select>
-          <button id="proj-open" class="primary">Open graph</button>
+          <button id="proj-open" class="primary" data-icon="network">Open graph</button>
         </div>
         <div id="proj-info" class="proj-info">
           <p class="hint">Pick a Noctua folder and open its project graph: how its papers cite each other,
@@ -106,9 +104,9 @@
         <label class="chip shared proj-only" title="Outside papers cited from more than one cluster"><input type="checkbox" data-role="shared" checked> <i></i>Shared references <b id="n-shared">0</b></label>
         <label class="chip plain"><input type="checkbox" id="timeline"> Timeline</label>
         <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
-          <select id="limit"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
+          <select id="limit" data-open-on-hover aria-label="Papers to load"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
         </label>
-        <button id="fit" class="chip plain" title="Fit graph to view">Fit</button>
+        <button id="fit" class="chip plain" title="Fit graph to view" data-icon="maximize" aria-label="Fit graph to view" data-icon-only>Fit</button>
       </div>
       <div class="legend">
         <span class="graph-only"><i class="dot old"></i>older</span><span class="graph-only"><i class="dot new"></i>newer</span>
@@ -126,8 +124,8 @@
 
     <aside id="right">
       <nav class="tabs">
-        <button data-rtab="paper" class="active">Paper</button>
-        <button data-rtab="chat">Chat</button>
+        <button data-rtab="paper" class="active" data-icon="file-text">Paper</button>
+        <button data-rtab="chat" data-icon="messages-square">Chat</button>
       </nav>
       <div id="details" class="details">
         <p class="hint">Click a node to see the paper and add it to Noctua.</p>
@@ -135,14 +133,21 @@
       <div id="chat" class="chat hidden">
         <div class="chat-head">
           <span id="chat-context" class="chat-context"></span>
-          <button id="chat-history-btn" title="Saved conversations">History</button>
-          <button id="chat-new" title="Start a new conversation">New chat</button>
+          <div class="chat-font-actions" role="group" aria-label="Chat text size">
+            <button type="button" id="chat-font-smaller" title="Decrease chat text size" aria-label="Decrease chat text size">A−</button>
+            <button type="button" id="chat-font-larger" title="Increase chat text size" aria-label="Increase chat text size">A+</button>
+          </div>
+          <div class="chat-actions" role="group" aria-label="Conversations">
+            <button id="chat-history-btn" title="Saved conversations" aria-label="Saved conversations" data-icon="history" data-icon-only></button>
+            <button id="chat-new" title="Start a new conversation" aria-label="Start a new conversation" data-icon="message-square-plus" data-icon-only></button>
+          </div>
         </div>
         <ul id="chat-history" class="chat-history hidden"></ul>
         <div id="chat-log" class="chat-log"></div>
+        <div id="chat-resize" class="chat-resize" role="separator" tabindex="0" aria-label="Resize chat input" aria-orientation="horizontal" aria-controls="chat-input" aria-valuemin="60" aria-valuemax="400" aria-valuenow="60" title="Drag to resize chat input"></div>
         <form id="chat-form" class="chat-form">
           <textarea id="chat-input" rows="2" placeholder="Ask about these papers, or ask me to find, graph or save papers…"></textarea>
-          <button type="submit" id="chat-send" class="primary">Send</button>
+          <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
         </form>
         <div class="chat-foot">
           <button type="button" id="chat-mode" class="chat-mode" title="Click or press Shift+Tab in the chat box to change mode"></button>
@@ -159,6 +164,9 @@
   <script src="/vendor/katex/katex.min.js"></script>
   <script src="/latex.js"></script>
   <script src="/ink.js"></script>
+  <script src="/vendor/highlight/highlight.min.js"></script>
+  <script src="/vendor/highlight/latex.min.js"></script>
+  <script src="/chat-render.js"></script>
   <script src="/app.js"></script>
   <script src="/notes.js"></script>
   <script src="/mentions.js"></script>
@@ -166,5 +174,6 @@
   <script src="/library.js"></script>
   <script src="/pdf.js"></script>
   <script src="/setup.js"></script>
+  <script src="/select.js"></script>
 </body>
 </html>
