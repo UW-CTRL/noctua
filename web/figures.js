@@ -227,6 +227,8 @@ function imageNames(fileName, usedLabels) {
 
 // URL of an images/… path of the open note's folder, for the renderer.
 function noteImageUrl(path) {
+  const file=/^files\/(f[a-zA-Z0-9_-]+)$/.exec(path.trim());
+  if(file&&N.target)return `/api/workspaces/${enc(N.target)}/files/${file[1]}/content`;
   const m = /^(images|media)\/([A-Za-z0-9_-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm))$/i.exec(path.trim());
   return m && N.target ? `/api/note-${m[1] === 'images' ? 'images' : 'media'}/${enc(N.target)}/${m[2]}` : null;
 }
@@ -294,6 +296,7 @@ async function importMediaFiles(files, { blockId = null, index = null, forceNew 
     addFigureItems(fig, items);
     setBlockSrc(b, b.src.slice(0, span.start) + figureSrc(fig) + b.src.slice(span.end));
     selectImage(b.id, first);
+    if(typeof loadWorkspace==='function')loadWorkspace(N.target);
     return;
   }
   const src = figureSrc(newFigure(items));
@@ -310,6 +313,7 @@ async function importMediaFiles(files, { blockId = null, index = null, forceNew 
   markDirty();
   renderEditor();
   selectImage(target.id, 0);
+  if(typeof loadWorkspace==='function')loadWorkspace(N.target);
   document.querySelector(`.nb[data-id="${target.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 

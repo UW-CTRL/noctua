@@ -65,9 +65,11 @@ workflow does not produce or upload installers, create tags, or publish releases
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,
-and the manual PR media generators `tests/pr3-recordings.swift` and
-`tests/pr3-screenshots.swift`. The recordings require local paper and saved-analysis
-inputs in the ignored `target/pr3-recording/` directory. Run these tools explicitly
+and the manual PR media generators `tests/pr3-recordings.swift`,
+`tests/pr3-screenshots.swift`, and `tests/note-qol-recordings.swift`. Reader
+recordings require local inputs under ignored `target/pr3-recording/`; note-QOL
+recordings require an isolated demo backend and data under
+`target/note-qol-recording/`. Run these tools explicitly
 when updating PR media; CI does not generate screenshots or GIFs.
 The full PDF rendering integration fixtures (`tests/reader.html` and
 `tests/pdf-reader.html`) remain manual because that suite has a known timeout.

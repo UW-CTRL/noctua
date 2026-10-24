@@ -9,7 +9,7 @@ context.exceptionHandler = { _, error in
     failed = true
 }
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-for name in ["web/figures.js", "web/latex.js", "web/app.js", "web/lineage.js", "web/setup.js", "web/notes.js", "web/library.js", "web/shell.js", "web/mentions.js", "web/select.js", "web/fonts.js", "web/chat-render.js", "web/chat-selections.js", "web/pdf.js", "web/pdf-objects.js"] {
+for name in ["web/edit-history.js", "web/workspace.js", "web/figures.js", "web/latex.js", "web/app.js", "web/lineage.js", "web/setup.js", "web/notes.js", "web/library.js", "web/shell.js", "web/mentions.js", "web/select.js", "web/fonts.js", "web/chat-render.js", "web/chat-selections.js", "web/pdf.js", "web/pdf-objects.js"] {
     let source = try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
     _ = context.objectForKeyedSubscript("Function").call(withArguments: [source])
     if failed { print("FAIL: \(name)"); exit(1) }

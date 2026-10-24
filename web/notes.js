@@ -15,7 +15,6 @@ const N = {
   typesetTimer: null,
   focusBlock: null,    // block new blocks are inserted after (⌘⇧D)
   suggestions: [],     // the assistant's pending edits: { id, op, block_id, latex, reason, summary }
-  agentUndo: [],      // block lists from before each direct edit by Claude
   imgSel: null,        // selected image: { block, k } (figures.js)
 };
 
@@ -53,7 +52,8 @@ function notesRefreshFolders() {
 
 async function loadNoteFolder(target) {
   if (!target) return;
-  await saveNow();
+  try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});$('#notes-target').value=N.target||'';return;}
+  W.file=null;
   N.target = target;
   store.set('noctua.notesTarget', target);
   $('#notes-target').value = target;
@@ -67,6 +67,9 @@ async function loadNoteFolder(target) {
     toast(e.message, { error: true });
   }
   renderNoteList();
+  await loadWorkspace(target);
+  const hidden=new Set((W.manifest?.entries||[]).filter(e=>e.deleted&&e.note).map(e=>e.note));
+  N.list=N.list.filter(n=>!hidden.has(n.id));
   const last = store.get('noctua.note.' + target);
   if (N.list.some((n) => n.id === last)) await openNote(last);
   else if (N.list.length) await openNote(N.list[0].id);
@@ -74,6 +77,7 @@ async function loadNoteFolder(target) {
 }
 
 function renderNoteList() {
+  if(W.manifest&&W.target===N.target)renderWorkspaceTree();
   const el = $('#note-list');
   if (!N.list.length) {
     el.innerHTML = '<p class="hint">No notes in this folder yet.</p>';
@@ -89,12 +93,13 @@ function renderNoteList() {
 
 async function createNote() {
   if (!N.target) return;
-  await saveNow();
   try {
+    await saveWorkspaceFile();await flushNoteEdits();
     const doc = await api('/api/notes', { target: N.target, title: '' });
     N.list.unshift({ id: doc.id, title: doc.title, created: doc.created, updated: doc.updated });
     REF.notes.push({ id: doc.id, title: doc.title, updated: doc.updated, target: N.target });
     showNote(doc);
+    loadWorkspace(N.target);
     startEdit(doc.blocks[0].id);
     const t = $('.note-title');
     t.focus();
@@ -121,8 +126,8 @@ async function deleteNote(id) {
 }
 
 async function openNote(id) {
-  await saveNow();
   try {
+    await saveWorkspaceFile();await flushNoteEdits();
     showNote(await api(`/api/notes/${enc(N.target)}/${enc(id)}`));
   } catch (e) {
     toast(e.message, { error: true });
@@ -130,8 +135,10 @@ async function openNote(id) {
 }
 
 function showNote(doc) {
-  if (N.doc?.id !== doc.id) { N.suggestions = []; N.agentUndo = []; N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
+  if (N.doc?.id !== doc.id) { N.suggestions = []; N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
+  W.file=null;
+  resetNoteHistory();
   N.editing = null;
   N.focusBlock = null;
   store.set('noctua.note.' + N.target, doc.id);
@@ -143,6 +150,7 @@ function showNote(doc) {
 // ---------------------------------------------------------------- saving
 
 function markDirty() {
+  recordNoteChange();
   N.dirty = true;
   if (N.conflict) return;  // keep the conflict notice until the user picks
   setStatus('Unsaved');
@@ -185,13 +193,16 @@ async function saveNow() {
   const doc = N.doc, target = N.target;
   N.dirty = false;
   N.saving = true;
+  const historyFrames=NoteUndo.frames.splice(0);
+  NoteUndo.group=null;
   setStatus('Saving…');
   try {
     const r = await fetch(`/api/notes/${enc(target)}/${enc(doc.id)}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...doc,_history:historyFrames}),
     });
     const j = await r.json().catch(() => ({}));
     if (r.status === 409 && N.doc === doc) {
+      NoteUndo.frames.unshift(...historyFrames);
       N.dirty = true;
       N.conflict = true;
       showConflict();
@@ -203,9 +214,10 @@ async function saveNow() {
     if (entry) { entry.updated = j.updated; entry.title = doc.title; }
     const ref = REF.notes.find((n) => n.id === doc.id);
     if (ref) { ref.updated = j.updated; ref.title = doc.title; }
-    if (N.doc === doc) setStatus('Saved');
+    if (N.doc === doc) { setStatus('Saved'); refreshNoteHistory(); }
   } catch (e) {
     if (N.doc === doc) {
+      NoteUndo.frames.unshift(...historyFrames);
       N.dirty = true;
       setStatus(`Save failed (${e.message}); retrying…`);
       N.saveTimer = setTimeout(saveNow, 3000);
@@ -248,12 +260,11 @@ function renderEditor() {
     return;
   }
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
-  stage.innerHTML = `<div class="note-page">
+  stage.innerHTML = `<div class="note-toolbar" role="toolbar" aria-label="Note editing">${historyButtons('note')}<span>Note editing</span></div><div class="note-page">
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
       <div class="nb-tools"><button id="note-help" title="Note guide" aria-label="Note guide">?</button><button id="note-preamble-toggle" title="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon="settings" aria-label="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon-only>⚙</button></div>
       <input class="note-title" value="${esc(N.doc.title)}" placeholder="Untitled note" aria-label="Note title" spellcheck="false">
-      <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span>${N.agentUndo.length
-        ? ` · <a href="#" id="note-undo-agent">Undo assistant's edit</a>` : ''}${N.suggestions.length > 1
+      <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span>${N.suggestions.length > 1
         ? ` · ${N.suggestions.length} suggestions: <a href="#" id="sg-accept-all">accept all</a> / <a href="#" id="sg-reject-all">reject all</a>` : ''}</div>
       ${N.preambleOpen ? `<div class="note-preamble">
         <textarea class="nb-src" spellcheck="false" placeholder="% Preamble: applies to the whole note and takes no space on the page
@@ -281,6 +292,7 @@ function renderEditor() {
   N.suggestions = N.suggestions.filter((x) => !x.block_id || blockIndex(x.block_id) >= 0);
   typeset();
   restoreVideos(stage, media);
+  updateHistoryButtons();
 }
 
 function showNoteHelp() {
@@ -310,8 +322,11 @@ See Section \ref{sec:intro}.
 E = mc^2 \label{eq:energy}
 \end{equation}
 See Equation \eqref{eq:energy}.`)}</section>
-      <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys are Noctua library item keys.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach a paper or note to your question.</p></section>
-      <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode applies requested edits immediately; use Undo assistant's edit to revert them.</p></section>`;
+      <section><h3>Undo and redo</h3><p>Use the Undo/Redo buttons in the full-width toolbar above the note or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
+      <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The + File and + Folder buttons open an in-app form for the name and destination folder. Create folders and text files, import files, rename or move entries using their menu, and preview media. Notes retain their block editor. Import a .bib file, then select Bibliographies to enable its citation keys alongside library papers. Duplicate keys must be renamed. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
+      <section><h3>Agent skills</h3><p>Use Skills in the project tree or chat toolbar to import a folder, ZIP, or SKILL.md, inspect its files, and enable it for this project or override this chat. Both backends use the same skill selection. Every script run requires approval; it executes local code, not an OS sandbox. Scripts receive temporary copies of selected files. Review and accept their output before it changes project files. Plan mode cannot run scripts. No dependencies are installed automatically.</p></section>
+      <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach a paper or note to your question.</p></section>
+      <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode applies requested edits immediately; use Undo to revert them.</p></section>`;
     dialog.addEventListener('click', event => {
       if (event.target !== dialog) return;
       const rect = dialog.getBoundingClientRect();
@@ -493,14 +508,16 @@ function resolveSuggestion(id, accept) {
 
 // Called for the chat's `note_edit` action (the edit_note tool).
 async function noteEditFromChat(a) {
+  await saveWorkspaceFile();
+  if(W.file){W.file=null;renderEditor();}
   if (!isNotesMode()) setMode('notes');
-  if (N.target !== a.folder) { N.target = null; await loadNoteFolder(a.folder); }
+  if (N.target !== a.folder) { await loadNoteFolder(a.folder); }
   if (N.doc?.id !== a.note_id) await openNote(a.note_id);
   if (N.doc?.id !== a.note_id) return toast("Couldn't open the note the assistant wanted to edit.", { error: true });
   stopEdit();
   const edits = (a.edits || []).map((e) => ({ ...e, id: newId('s'), summary: a.summary }));
   if (a.mode === 'direct') {
-    N.agentUndo.push(JSON.stringify(N.doc.blocks));
+
     const touched = [];
     let skipped = 0;
     for (const e of edits) {
@@ -550,7 +567,7 @@ function blockEl(b) {
       if (N.editing !== b.id) startEdit(b.id);
     });
   } else {
-    N.pads.set(b.id, Ink.mount(body, b, markDirty));
+    N.pads.set(b.id, Ink.mount(body, b, markDirty, {undo:()=>undoNote(),redo:()=>undoNote(true)}));
     body.addEventListener('focusin', () => { N.focusBlock = b.id; });
   }
   el.querySelector('.nb-tools').addEventListener('click', (e) => {
@@ -864,10 +881,12 @@ function notesContext(sentKey) {
   if (!isNotesMode()) return { lines: [], key: null };
   const folder = collections.targets.find((t) => t.id === N.target);
   const lines = [`Notes mode. Folder: ${folder ? `${folder.name} (${folder.id})` : 'none'}.`];
+  if(W.manifest)lines.push(`Project workspace: ${W.target}. Enabled bibliography files: ${(W.manifest.bibliographies||[]).join(', ')||'none'}. Use list_project_files/read_project_file for imported keys and files.`);
+  if(W.file){lines.push(`Open project file ID: ${W.file}. Use project file tools to inspect it.`);return {lines,key:`file:${W.target}:${W.file}:${W.fileRevision}`};}
   if (!N.doc) return { lines: [...lines, 'No note open.'], key: null };
   const text = noteText(N.doc);
   const key = `${N.doc.id}:${text.length}:${text.slice(0, 50)}:${text.slice(-200)}`;
-  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys are Noctua item keys of the folder's papers.`);
+  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys resolve to library papers and enabled project bibliographies.`);
   const sel = N.imgSel && N.doc.blocks.find((b) => b.id === N.imgSel.block);
   const at = sel && imageOffsets(sel.src)[N.imgSel.k];
   if (at != null) lines.push(`Selected media (the user clicked it): ${texArgs(sel.src, at + mediaCommandLength(sel.src, at)).arg} in block ${sel.id}.`);
@@ -891,7 +910,7 @@ window.addEventListener('storage', (e) => {
 });
 
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-$('#notes-target').addEventListener('change', (e) => { N.target = null; loadNoteFolder(e.target.value); });
+$('#notes-target').addEventListener('change', (e) => { loadNoteFolder(e.target.value); });
 $('#note-new').addEventListener('click', createNote);
 $('#note-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');
@@ -924,22 +943,11 @@ $('#notes-stage').addEventListener('click', (e) => {
     followNoteReference(reference.dataset.texRef);
     return;
   }
-  const act = e.target.closest('#note-undo-agent, #sg-accept-all, #sg-reject-all');
-  if (act) {
-    e.preventDefault();
-    if (act.id === 'note-undo-agent' && N.agentUndo.length) {
-      stopEdit();
-      N.doc.blocks = JSON.parse(N.agentUndo.pop());
-      markDirty();
-      renderEditor();
-    } else if (act.id !== 'note-undo-agent') {
-      const accept = act.id === 'sg-accept-all';
-      for (const sg of [...N.suggestions]) resolveSuggestion(sg.id, accept);
-    }
-    return;
-  }
+  const act = e.target.closest('#sg-accept-all, #sg-reject-all');
+  if(act){e.preventDefault();const accept=act.id==='sg-accept-all';NoteUndo.batch++;try{for(const sg of [...N.suggestions])resolveSuggestion(sg.id,accept);}finally{NoteUndo.batch--;recordNoteChange();}return;}
   const a = e.target.closest('a.cite');
   if (!a) return;
+  if(showBibReference(a.dataset.key)){e.preventDefault();return;}
   e.preventDefault();
   e.stopPropagation();
   const it = N.items.get(a.dataset.key);
@@ -977,4 +985,4 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
-if (store.get('noctua.mode') === 'notes' && !location.hash.startsWith('#pdf=')) collectionsReady.then(() => { if (!location.hash.startsWith('#pdf=')) setMode('notes'); });
+window.addEventListener('DOMContentLoaded',()=>{ if (store.get('noctua.mode') === 'notes' && !location.hash.startsWith('#pdf=')) collectionsReady.then(() => { if (!location.hash.startsWith('#pdf=')) setMode('notes'); }); });

@@ -26,7 +26,7 @@ Semantic Scholar; AI features use your assistant CLI and account.
 - **Explore:** follow citation networks and research threads over time.
 - **Organize:** collect papers, import PDFs, or bring in a Zotero library.
 - **Read:** preview references, annotate papers, and generate AI outlines and highlights.
-- **Write:** combine LaTeX, handwriting, and media in linked collection notes.
+- **Write:** combine LaTeX, handwriting, and media with project files, imported bibliographies, and undo/redo.
 - **Discuss:** ask questions about sources and review assistant edits before accepting them.
 
 ## Guides

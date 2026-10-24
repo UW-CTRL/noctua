@@ -27,6 +27,8 @@ const SYSTEM: &str = concat!(include_str!("prompts/chat.md"), "\n\n", include_st
 #[derive(Deserialize)]
 pub struct ChatBody {
     message: String,
+    project_target: Option<String>,
+    skill_ids: Option<Vec<String>>,
     provider: Option<Provider>,
     #[serde(default)]
     context: String,
@@ -144,9 +146,11 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
     .to_string();
     std::fs::create_dir_all(&app.chat_dir)?;
 
+    let enabled=crate::skills::set_context(app,chat_id,body.project_target.as_deref(),body.skill_ids.as_ref())?;
+    let instructions=format!("{SYSTEM}\nEnabled imported skills for this chat: {enabled}");
     let session = app.history.session(chat_id, provider);
     let mut cmd = if provider == Provider::Codex {
-        let mut c = agent::codex_command(app, Some(url.as_str()), SYSTEM);
+        let mut c = agent::codex_command(app, Some(url.as_str()), &instructions);
         if let Some(s) = &session { c.args(["resume", s]); }
         c.arg("-");
         c
@@ -155,7 +159,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
         provider.configure(app, &mut c);
         c.args(["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"])
             .args(["--tools", "", "--strict-mcp-config", "--mcp-config", &mcp])
-            .args(["--allowedTools", "mcp__noctua", "--system-prompt", SYSTEM]);
+            .args(["--allowedTools", "mcp__noctua", "--system-prompt", &instructions]);
         if let Some(s) = &session { c.args(["--resume", s]); }
         c
     };

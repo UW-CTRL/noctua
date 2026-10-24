@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title></head><body class="notes-mode">
+<div id="notes-side"><ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
+const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){}};
+let errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
+const clone=v=>JSON.parse(JSON.stringify(v));
+async function api(path,body){if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
+function typeset(){} function renderEditor(){} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
+window.prompt=()=>{throw Error('Native prompt must not be used');};
+// Drain mocked API promises, then allow one task for dialog close events.
+// Background WebKit throttles timers, so repeated timers can exceed the runner deadline.
+async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(r=>setTimeout(r,0));}
+function assert(ok,message){if(!ok)throw Error(message)}
+</script>
+<script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
+<script>
+(async()=>{
+ await loadWorkspace('L1');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
+ assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');
+ $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
+ $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
+ for(const folder of [true,false]){
+  $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');
+  dialog.querySelector('[data-name]').value=folder?'Drafts':'new.bib';dialog.querySelector('[data-parent]').value='folder';dialog.querySelector('form').requestSubmit();await settle();
+  assert(!$('dialog'),'successful creation closes dialog');assert(server.entries.some(e=>e.name===(folder?'Drafts':'new.bib')&&e.parent==='folder'),'entry created in selected folder');
+  if(!folder)assert(W.file.startsWith('created')&&$('#workspace-editor textarea'),'new file opens');
+ }
+ await openWorkspaceFile('f1');let ta=$('#workspace-editor textarea');assert(ta.value===source,'file editor loaded');
+ ta.value='@book{k,title={New}}';ta.dispatchEvent(new Event('input'));assert(W.dirty,'typing marks pending changes');await saveWorkspaceFile();assert(source.includes('New')&&!W.dirty,'typing saves');
+ assert(!$('#workspace-editor [data-undo]').disabled,'undo enabled after save');
+ server.revision++;await loadWorkspace('L1');ta=$('#workspace-editor textarea');ta.value='keep this draft';ta.dispatchEvent(new Event('input'));
+ let rejected=false;try{await saveWorkspaceFile()}catch{rejected=true;}
+ assert(rejected&&W.dirty&&W.text==='keep this draft','external revisions cannot overwrite unsaved files');
+ assert($('#workspace-editor [data-file-status]').textContent.includes('Save failed'),'save conflict visible');clearTimeout(W.timer);W.dirty=false;
+ window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, and cross-window draft protection');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

@@ -380,6 +380,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_files_bibliographies_and_history() -> Result<()> {
+        let f=Fixture::new()?;
+        let note=f.app.notes.create("L1","A: note")?;
+        f.app.notes.create("L1","Another note")?;
+        let m=f.json("/api/workspaces/L1",None).await;
+        assert_eq!(m["entries"].as_array().unwrap().len(),2);
+        let m=f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"create","name":"references.bib","text":"@article{Lovelace1843,title={Notes on the Engine},author={Lovelace, Ada},year=1843}"}))).await;
+        let id=m["entries"].as_array().unwrap().last().unwrap()["id"].clone();
+        let m=f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","bibliographies":[id]}))).await;
+        assert_eq!(m["bib_index"][0]["key"],"Lovelace1843");
+        let m=f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"edit","id":id,"text":"@article{broken"}))).await;
+        assert!(m["bib_error"].is_string());assert_eq!(m["bib_index"][0]["key"],"Lovelace1843");
+        let restored=f.json("/api/workspaces/L1/history",Some(json!({"revision":m["revision"],"redo":false}))).await;
+        assert!(restored["bib_error"].is_null());
+        let stale=f.request("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"rename","id":id,"name":"stale.bib"})),None).await;
+        assert_eq!(stale.status(),StatusCode::CONFLICT);
+        let bad=f.request("/api/workspaces/L1",Some(json!({"revision":restored["revision"],"op":"create","name":"../outside","text":"bad"})),None).await;
+        assert!(!bad.status().is_success());
+        let nid=note["id"].as_str().unwrap();let mut changed=note.clone();changed["title"]=json!("Renamed");
+        let mut second=changed.clone();second["blocks"]=json!([]);
+        second["_history"]=json!([{"doc":changed,"label":"Rename"},{"doc":crate::editing::content(second.clone()),"label":"Delete block"}]);
+        let revision=f.app.notes.save("L1",nid,second)?;
+        let undo=f.app.notes.history("L1",nid,Some(false),Some(revision))?;
+        assert_eq!(undo["doc"]["blocks"],note["blocks"]);assert_eq!(undo["doc"]["title"],"Renamed");
+        assert!(f.app.notes.history("L1",nid,Some(false),Some(revision)).is_err());
+        let undo2=f.app.notes.history("L1",nid,Some(false),undo["doc"]["updated"].as_u64())?;
+        assert_eq!(undo2["doc"]["title"],note["title"]);
+        let redo=f.app.notes.history("L1",nid,Some(true),undo2["doc"]["updated"].as_u64())?;
+        assert_eq!(redo["doc"]["title"],"Renamed");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn app_icon_native_failure_keeps_the_previous_saved_preference() -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let f = Fixture::with_desktop(Some(tx))?;
@@ -396,6 +429,84 @@ mod tests {
         assert_eq!(Settings::load(&f.root).app_icon, crate::AppIcon::Light);
         assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");
         native.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn file_histories_are_independent() -> Result<()> {
+        let f=Fixture::new()?;let mut m=f.json("/api/workspaces/L1",None).await;
+        let mut ids=Vec::new();for name in ["a.txt","b.txt"]{m=f.json("/api/workspaces/L1",Some(json!({"op":"create","name":name,"text":"original","revision":m["revision"]}))).await;ids.push(m["entries"].as_array().unwrap().last().unwrap()["id"].as_str().unwrap().to_owned());}
+        for id in &ids{m=f.json("/api/workspaces/L1",Some(json!({"op":"edit","id":id,"text":"changed","revision":m["revision"]}))).await;}
+        let url=format!("/api/workspaces/L1/files/{}/history",ids[0]);
+        m=f.json(&url,Some(json!({"revision":m["revision"],"redo":false}))).await;
+        assert_eq!(crate::workspace::read(&f.app,"L1",&ids[0])?["text"],"original");
+        assert_eq!(crate::workspace::read(&f.app,"L1",&ids[1])?["text"],"changed");
+        f.json(&url,Some(json!({"revision":m["revision"],"redo":true}))).await;
+        assert_eq!(crate::workspace::read(&f.app,"L1",&ids[0])?["text"],"changed");Ok(())
+    }
+
+    #[tokio::test]
+    async fn annotation_undo_restores_ids_and_protects_revisions() -> Result<()> {
+        let f=Fixture::new()?;let key=f.app.library.upload("L1","history.pdf",b"%PDF-1.7 history fixture")?;
+        let a=f.app.library.annotate(&key,&json!({"kind":"comment","page":1,"comment":"before"}),"user",false)?;
+        let id=a["id"].as_str().unwrap();
+        let updated=f.app.library.update_annotation(&key,id,&json!({"revision":a["revision"],"comment":"after"}))?;
+        f.app.library.delete_annotation(&key,id,updated["revision"].as_i64().unwrap())?;
+        f.app.library.annotation_history(&key,Some(&json!({"redo":false,"expected":[]})))?;
+        let list=f.app.library.annotations(&key)?;assert_eq!(list[0]["id"],id);assert_eq!(list[0]["comment"],"after");assert!(list[0]["revision"].as_i64().unwrap()>updated["revision"].as_i64().unwrap());
+        assert!(f.app.library.update_annotation(&key,id,&json!({"revision":updated["revision"],"comment":"stale"})).is_err());
+        f.app.library.annotation_history(&key,Some(&json!({"redo":false,"expected":list})))?;
+        let list=f.app.library.annotations(&key)?;assert_eq!(list[0]["comment"],"before");
+        assert!(f.app.library.annotation_history(&key,Some(&json!({"redo":true,"expected":[]}))).is_err());
+        f.app.library.annotation_history(&key,Some(&json!({"redo":true,"expected":list})))?;
+        assert_eq!(f.app.library.annotations(&key)?[0]["comment"],"after");Ok(())
+    }
+
+    #[tokio::test]
+    async fn skill_zip_import_and_stale_run_are_safe() -> Result<()> {
+        use std::io::Write;
+        let f=Fixture::new()?;
+        let archive=|name:&str|->Result<Vec<u8>> {let mut zip=zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));zip.start_file(name,zip::write::SimpleFileOptions::default())?;zip.write_all(b"# ZIP skill")?;Ok(zip.finish()?.into_inner())};
+        let upload=|data:Vec<u8>|Request::builder().uri("/api/skills/import-zip").method("POST").header("host","127.0.0.1:7878").body(Body::from(data)).unwrap();
+        let r=f.router.clone().oneshot(upload(archive("skill/SKILL.md")?)).await?;assert_eq!(r.status(),StatusCode::OK);
+        let imported:Value=serde_json::from_slice(&to_bytes(r.into_body(),4096).await?)?;
+        assert!(crate::skills::read(&f.app,imported["id"].as_str().unwrap(),"SKILL.md")?["text"].as_str().unwrap().contains("ZIP skill"));
+        let r=f.router.clone().oneshot(upload(archive("../SKILL.md")?)).await?;assert!(!r.status().is_success());
+        use base64::Engine;let b64=|s:&str|base64::engine::general_purpose::STANDARD.encode(s);
+        let imported=f.json("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":b64("# Stale")},{"path":"run.sh","data":b64("printf 'should not run' > output.txt")}]}))).await;
+        let id=imported["id"].as_str().unwrap();crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![id.into()]))?;
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"run.sh","args":[],"files":[]}))?;
+        std::fs::write(f.root.join("skills").join(id).join("run.sh"),"echo changed")?;
+        let url=format!("/api/skill-runs/{}",run["id"].as_str().unwrap());f.json(&url,Some(json!({"action":"approve"}))).await;
+        let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
+        assert_eq!(result["status"],"failed");assert!(result["error"].as_str().unwrap().contains("Skill contents changed"));
+        assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());Ok(())
+    }
+
+    #[tokio::test]
+    async fn skill_execution_requires_approval_and_output_review() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;let b64=|s:&str|base64::engine::general_purpose::STANDARD.encode(s);
+        let imported=f.json("/api/skills",Some(json!({"files":[{"path":"demo/SKILL.md","data":b64("# Demo\nWrite an output file.")},{"path":"demo/scripts/run.sh","data":b64("printf 'review me' > result.txt\nprintf 'done'\n")}]}))).await;
+        let id=imported["id"].as_str().unwrap();let m=f.json("/api/workspaces/L1",None).await;
+        f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","skills":[id]}))).await;
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        assert!(crate::skills::enabled(&f.app,Some("different"),id).is_err());
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"scripts/run.sh","args":[],"files":[]}))?;
+        let rid=run["id"].as_str().unwrap();assert_eq!(run["status"],"approval_required");
+        assert!(!f.root.join(".skill-runs").join(rid).exists());
+        let url=format!("/api/skill-runs/{rid}");f.json(&url,Some(json!({"action":"approve"}))).await;
+        let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(20)).await;}
+        assert_eq!(result["status"],"review_required","{result}");assert_eq!(result["stdout"],"done");
+        assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());
+        let applied=f.json(&url,Some(json!({"action":"apply"}))).await;
+        let file=applied["entries"][0]["id"].as_str().unwrap();assert_eq!(crate::workspace::read(&f.app,"L1",file)?["text"],"review me");
+        let undone=crate::workspace::history(&f.app,"L1",&json!({"revision":applied["revision"],"redo":false}))?;
+        assert!(undone["entries"].as_array().unwrap().iter().all(|e|e["deleted"]==true));
+        let traversal=f.request("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":b64("# Bad")},{"path":"../escape","data":b64("bad")}]})),None).await;
+        assert!(!traversal.status().is_success());
+        let tools=f.json("/mcp?mode=plan",Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))).await;
+        assert!(!tools["result"]["tools"].as_array().unwrap().iter().any(|t|t["name"]=="request_skill_run"||t["name"]=="edit_project_file"));
         Ok(())
     }
 

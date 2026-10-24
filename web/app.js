@@ -1298,6 +1298,9 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
 
 function runChatAction(a) {
   if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
+  if (a.action === 'skill_run') { showSkillRun(a.id); return; }
+  if (a.action === 'workspace_proposal') { showWorkspaceProposal(a); return; }
+  if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_edit') return noteEditFromChat(a);
   if (a.action !== 'library' && (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode'))) setMode('graph');
   if (a.action === 'graph') loadGraph(a.id);
@@ -1357,7 +1360,7 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
+      body: JSON.stringify({ message: text, provider, context, project_target: chatProjectTarget(), skill_ids: getChatSkillOverride(), chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);

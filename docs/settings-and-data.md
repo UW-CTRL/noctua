@@ -25,7 +25,11 @@ Desktop and browser modes share a local data folder:
 | Windows | `%APPDATA%\Noctua` |
 | Linux | `~/.local/share/noctua` |
 
-It contains your library, PDFs, annotations, notes, media, settings, and chats.
+It contains your library, PDFs, annotations, notes, media, project files, imported
+skills, settings, and chats. Collection manifests and immutable file versions
+live beneath the notes directory in `.workspace/manifest.json` and `.files/`;
+imported skill packages live in `skills/`. Undo history and skill run results
+last only for the backend session.
 App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
 

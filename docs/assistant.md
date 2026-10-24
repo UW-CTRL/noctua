@@ -18,7 +18,7 @@ passages, and edit note text through Noctua's tools.
 
 | Mode | Behavior |
 | --- | --- |
-| Suggest (default) | Proposes note edits and PDF annotations/replies for Accept/Reject |
+| Suggest (default) | Proposes note edits, project file changes, and PDF annotations/replies for Accept/Reject |
 | Plan | Investigates and answers without writing changes |
 | Direct | Applies supported changes immediately; note edits can be undone |
 
@@ -51,6 +51,23 @@ Mermaid diagrams. Notes use their own LaTeX subset.
 Credentials stay in the CLI's credential store. Context sent to an assistant is
 processed through that provider's CLI and account; local storage does not mean
 local AI inference.
+
+## Project files and imported skills
+
+The assistant can list and read project files, create or edit text files, and
+rename or move entries using stable IDs and revision checks. Suggest mode asks
+for review; Direct applies supported changes; Plan is read-only. File deletion
+and bibliography activation remain UI actions. See [Notes](notes.md#project-files-bibliographies-and-skills).
+
+Open **Skills** in the project tree or chat toolbar to import a skill folder, ZIP,
+or `SKILL.md`. Packages are stored inside Noctua, shared by Claude and Codex, and
+enabled per project with optional per-chat overrides. The assistant can read
+enabled instructions and supporting resources. Every bundled script invocation
+requires approval of its script, arguments, and inputs, followed by separate
+review before applying output changes. Scripts run with local user permissions
+on temporary input copies, not inside an OS sandbox. Plan mode cannot request
+execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skills)
+for package limits, runtimes, and timeouts.
 
 ## AI prompts
 

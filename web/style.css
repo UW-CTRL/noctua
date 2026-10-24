@@ -1200,3 +1200,36 @@ header .web-select-trigger { height: var(--header-control-height); }
 .settings-app-icon:has(input:disabled){opacity:.65;cursor:wait}
 .settings-app-icon input{position:absolute;top:8px;right:8px;margin:0;accent-color:var(--accent)}
 .settings-app-icon img{display:block}
+
+/* Collection file workspace and shared editing controls. */
+.edit-history { display:inline-flex; gap:4px; margin-right:8px; }
+.edit-history button:disabled { opacity:.35; cursor:default; }
+#workspace-tree { overflow:auto; min-height:0; padding:8px; }
+.workspace-tools { display:flex; flex-wrap:wrap; gap:5px; padding-bottom:8px; }
+.workspace-tools strong { flex-basis:100%; }
+.workspace-entry { display:flex; align-items:center; gap:3px; }
+.workspace-entry>button:first-child { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+.workspace-entry.active { background:var(--raise); }
+.workspace-error { color:var(--danger); font-size:12px; }
+#workspace-editor { display:flex; flex-direction:column; height:100%; gap:12px; padding:20px; box-sizing:border-box; }
+#workspace-editor header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.workspace-source { flex:1; min-height:300px; resize:none; font-family:monospace; line-height:1.5; padding:15px; tab-size:2; }
+#workspace-editor>img,#workspace-editor>video { max-width:100%; max-height:80%; object-fit:contain; }
+#workspace-editor>iframe { width:100%; flex:1; border:0; }
+.workspace-dialog { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:10px; width:min(720px,85vw); max-height:80vh; overflow:auto; padding:20px; }
+.workspace-dialog::backdrop { background:#0008; }
+.workspace-dialog header { display:flex; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.workspace-dialog label { display:block; margin:10px 0; }
+.workspace-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:40vh; overflow:auto; }
+
+/* Keep document actions available across the full editing pane. */
+.note-toolbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 20px; background: var(--np-raise); color: var(--np-muted); border-bottom: 1px solid var(--np-line); font: 12px var(--font-ui, sans-serif); }
+.note-toolbar .edit-history { margin: 0; }
+.note-toolbar button { color: var(--np-ink); padding: 6px 12px; }
+.note-toolbar [data-undo]::after { content: ' Undo'; }
+.note-toolbar [data-redo]::after { content: ' Redo'; }
+.workspace-create { display: grid; gap: 14px; padding-top: 16px; }
+.workspace-create label { display: grid; gap: 6px; }
+.workspace-create input, .workspace-create select { width: 100%; box-sizing: border-box; padding: 8px; }
+.workspace-create footer { display: flex; justify-content: flex-end; gap: 8px; }
+.workspace-create [data-error]:empty { display: none; }

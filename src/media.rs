@@ -85,6 +85,10 @@ fn range(value: &str, size: u64) -> Option<(u64, u64)> {
 pub(crate) async fn get(State(app): Shared, Path((target, file)): Path<(String, String)>, headers: HeaderMap) -> Response {
     let found = app.library.folder_id(&target).and_then(|f| path(&app.notes.root, &f, &file));
     let Ok((path, mime)) = found else { return StatusCode::NOT_FOUND.into_response() };
+    serve(path,mime,headers).await
+}
+
+pub(crate) async fn serve(path:PathBuf,mime:&'static str,headers:HeaderMap)->Response {
     let Ok(mut file) = tokio::fs::File::open(path).await else { return StatusCode::NOT_FOUND.into_response() };
     let Ok(meta) = file.metadata().await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     let size = meta.len();
