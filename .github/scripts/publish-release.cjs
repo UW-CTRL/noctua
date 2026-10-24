@@ -31,6 +31,7 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
     const manifest = require('./updater-manifest.cjs');
     await manifest({ github, context, release, assets });
   }
+  await require('./download-aliases.cjs')({ github, context, release: { ...release, id: params.release_id }, assets });
   // Let GitHub choose Latest by version/date instead of promoting an older retry.
   const { data: published } = await github.rest.repos.updateRelease({ ...params, draft: false, make_latest: 'legacy' });
   core.info(`Published: ${published.html_url}`);

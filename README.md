@@ -1,5 +1,11 @@
 # Noctua 🦉
 
+<p align="center">
+  <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-macOS-universal.dmg"><img src="https://img.shields.io/badge/Download-macOS-222222?style=for-the-badge" alt="Download for macOS"></a>
+  <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-Windows-x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge" alt="Download for Windows"></a>
+  <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-Linux-amd64.AppImage"><img src="https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge" alt="Download for Linux"></a>
+</p>
+
 A small, fast research-paper explorer. Search Semantic Scholar, see a
 Connected-Papers-style graph of what a paper builds on and what builds on it,
 trace how a line of research developed over time in the Lineage view,

@@ -149,6 +149,16 @@ available for recovery. A successful run publishes automatically; there is no
 manual publication approval step. Download and test installers on the supported
 operating systems; build success alone does not verify application behavior.
 
+Before publication, the workflow also copies the DMG, Windows setup EXE, and Linux
+AppImage to `Noctua-macOS-universal.dmg`, `Noctua-Windows-x64-setup.exe`, and
+`Noctua-Linux-amd64.AppImage`. README download buttons use GitHub's
+`releases/latest/download/<filename>` URLs, so they follow the latest stable
+release without editing version numbers. The original versioned assets remain
+available for the updater and alternative downloads. A failed alias download or
+upload leaves the release in draft; publication retries replace existing aliases.
+Releases published before this change need these three copies added once before
+the README buttons can target them.
+
 Merging this workflow does not publish existing drafts retroactively. For an
 existing draft such as `v0.1.1`, dispatch **Actions → release → Run workflow** from
 updated `main` with that existing tag. It rebuilds the tagged source, preserves

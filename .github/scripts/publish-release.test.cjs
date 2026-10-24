@@ -10,11 +10,13 @@ function fixture() {
     'Noctua-0.1.1-1.x86_64.rpm',
   ];
   const release = { tag_name: 'v0.1.1', draft: true, name: 'Edited title', body: '![Demo](https://example.com/demo.gif)', prerelease: false };
-  const assets = names.map(name => ({ name, state: 'uploaded', size: 123 }));
+  const assets = names.map((name, id) => ({ id, name, state: 'uploaded', size: 123 }));
   const calls = [];
   const repos = {
     getRelease: async () => ({ data: release }),
     listReleaseAssets: () => {},
+    getReleaseAsset: async () => ({ data: Buffer.alloc(123) }),
+    uploadReleaseAsset: async () => {},
     updateRelease: async params => { calls.push(params); return { data: { html_url: 'https://example.com/release' } }; },
   };
   return {
@@ -90,6 +92,15 @@ test('a publication API failure fails the job instead of reporting success', asy
   await assert.rejects(publish(f.args), /Publication denied/);
 });
 
+test('download alias failures keep the release unpublished', async () => {
+  for (const method of ['getReleaseAsset', 'uploadReleaseAsset']) {
+    const f = fixture();
+    f.args.github.rest.repos[method] = async () => { throw new Error('Alias transfer failed'); };
+    await assert.rejects(publish(f.args), /Alias transfer failed/);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test('updater-enabled releases stay in draft when signatures are missing', async () => {
   const f = fixture();
   await assert.rejects(publish({ ...f.args, updaterEnabled: true }), /Missing completed updater asset/);
@@ -106,7 +117,7 @@ test('updater manifest upload must succeed before an enabled release is publishe
     const repos = f.args.github.rest.repos;
     repos.listReleases = () => {};
     f.args.github.paginate = async method => method === repos.listReleases ? [] : f.assets;
-    repos.getReleaseAsset = async () => ({ data: 'c2lnbmF0dXJl' });
+    repos.getReleaseAsset = async params => ({ data: params.asset_id === 10 ? 'c2lnbmF0dXJl' : Buffer.alloc(123) });
     let uploaded = false;
     repos.uploadReleaseAsset = async params => {
       assert.equal(params.release_id, 42);
