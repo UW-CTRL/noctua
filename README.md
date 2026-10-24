@@ -114,6 +114,9 @@ installers for all three systems with GitHub Actions
 (`.github/workflows/release.yml`) as a draft release.
 See [Releasing Noctua](docs/releases.md) for version selection, tag validation,
 categorized release notes, screenshots and GIFs, draft publication, and recovery.
+Pull requests targeting `main` and pushes to `main` run backend, frontend, and
+release/workflow checks. See [Continuous integration](docs/ci.md) for coverage,
+local commands, known gaps, and merge-protection configuration.
 
 Environment overrides (all optional):
 
