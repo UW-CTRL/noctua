@@ -1,17 +1,59 @@
-# Builds the desktop app for macOS, Windows and Linux when a version tag
-# (v1.2.3) is pushed, and attaches the installers to a draft GitHub release.
+# Validate an existing version tag, prepare one draft, then upload installers.
 name: release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to build (for example, v0.1.0)"
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 .github/scripts/check-release-version.py "$RELEASE_TAG"
+
+      - name: Resolve tagged commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare draft release
+        id: release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        with:
+          script: |
+            const prepare = require('./.github/scripts/prepare-release.cjs');
+            await prepare({ github, context, core, tag: process.env.RELEASE_TAG });
+
   build:
+    needs: prepare
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +67,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
 
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -47,7 +91,7 @@ jobs:
         with:
           projectPath: app
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: Noctua ${{ github.ref_name }}
-          releaseDraft: true
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          # No updater is configured; avoid concurrent writes to shared latest.json.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}

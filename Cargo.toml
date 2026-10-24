@@ -1,6 +1,6 @@
 [package]
 name = "noctua"
-version = "0.0.3"
+version.workspace = true
 edition = "2021"
 description = "Research-paper explorer: Semantic Scholar citation graphs, a native PDF library and LaTeX notes"
 
@@ -9,6 +9,9 @@ description = "Research-paper explorer: Semantic Scholar citation graphs, a nati
 [workspace]
 members = ["app"]
 default-members = ["."]
+
+[workspace.package]
+version = "0.1.0"
 
 [dependencies]
 anyhow = "1"

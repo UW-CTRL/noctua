@@ -1,6 +1,6 @@
 [package]
 name = "noctua-app"
-version = "0.0.3"
+version.workspace = true
 edition = "2021"
 description = "Noctua desktop app"
 

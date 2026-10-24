@@ -112,6 +112,8 @@ settings. Linux builds of the desktop app need WebKitGTK (`libwebkit2gtk-4.1-dev
 and friends; see the release workflow). Pushing a tag like `v0.2.0` builds
 installers for all three systems with GitHub Actions
 (`.github/workflows/release.yml`) as a draft release.
+See [Releasing Noctua](docs/releases.md) for version selection, tag validation,
+categorized release notes, screenshots and GIFs, draft publication, and recovery.
 
 Environment overrides (all optional):
 
