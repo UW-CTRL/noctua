@@ -10,6 +10,8 @@ mkdir -p "$SWIFT_MODULECACHE_PATH"
 for test in tests/*.swift; do
   case "$test" in
     tests/reader.swift|tests/chat-rendering.swift) continue ;;
+    # Manual media generators require local inputs and are not regression tests.
+    tests/pr3-recordings.swift|tests/pr3-screenshots.swift) continue ;;
   esac
   echo "Running $test"
   swift -module-cache-path "$SWIFT_MODULECACHE_PATH" "$test"

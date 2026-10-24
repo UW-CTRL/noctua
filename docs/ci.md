@@ -25,15 +25,15 @@ used in the Universal release; the release workflow still performs the final
 linking and packaging.
 
 For pull requests only, desktop checks are skipped when every changed path is
-exactly `README.md` or under `docs/` (including documentation images). The release
+exactly `README.md` or under `docs/`, `web/`, or `tests/`. The release
 and workflow job compares the event's base/head commits using their merge base;
 it includes both deleted and added paths for renames. Classification uses the
 whole PR diff, not just the last pushed commit. Any other path requires
-desktop checks, including `src/prompts/*.md`, code, assets, dependencies, tests,
-and workflow files. An empty/failed comparison conservatively runs desktop
-checks. Main pushes and manual runs always run desktop checks. Backend,
-frontend, release/workflow, and security jobs still run for documentation-only
-PRs; desktop setup and compilation steps are skipped. Each desktop runner only
+desktop checks, including `src/prompts/*.md`, Rust source, native app assets,
+dependencies, and workflow files. An empty/failed comparison conservatively runs
+desktop checks. Main pushes and manual runs always run desktop checks. Backend,
+frontend, release/workflow, and security jobs still run for these PRs; desktop
+setup and compilation steps are skipped. Each desktop runner only
 reports a skip message, keeping all three named checks successful and available
 for branch protection. Keep the documentation allowlist aligned with build
 inputs if future code starts consuming files under `docs/`.
@@ -56,7 +56,11 @@ another test or local session cannot change the results. The
 workflow does not produce or upload installers, create tags, or publish releases.
 
 The frontend runner automatically includes `tests/*.swift` except the two
-explicit WebKit launchers, which it invokes separately with selected fixtures.
+explicit WebKit launchers, which it invokes separately with selected fixtures,
+and the manual PR media generators `tests/pr3-recordings.swift` and
+`tests/pr3-screenshots.swift`. The recordings require local paper and saved-analysis
+inputs in the ignored `target/pr3-recording/` directory. Run these tools explicitly
+when updating PR media; CI does not generate screenshots or GIFs.
 The full PDF rendering integration fixtures (`tests/reader.html` and
 `tests/pdf-reader.html`) remain manual because that suite has a known timeout.
 Targeted PDF navigation, selection, zoom, theme, and reader-detail checks still
@@ -102,8 +106,9 @@ Those manual checks are not counted as passing CI checks.
 ## PRs and main
 
 Push a working branch and open a PR into `main`. Review all seven checks before
-merging, allowing the three desktop checks to be skipped on documentation-only
-PRs as described above. Fix failures in the same branch; pushing another commit runs CI again.
+merging, allowing the three desktop checks to be skipped for PRs without native
+compilation changes as described above. Fix failures in the same branch; pushing
+another commit runs CI again.
 For an infrastructure-only change such as CI, a PR verifies the workflow itself
 before it reaches `main`.
 
