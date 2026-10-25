@@ -169,9 +169,11 @@ SyncTeX integration queries use the exact source names recorded by the compiler,
 including Windows paths, and report the command and output if no location is found.
 
 The real-compiler fixture places SyncTeX sidecars beyond 260 characters to cover
-Windows path limits. Forward queries and the application's inverse queries run
-inside the mapping directory with a short output basename; the actual PDF remains
-in the artifact directory. This avoids passing long absolute filenames to SyncTeX.
+Windows path limits. Forward queries and the application's inverse queries copy the immutable map
+to a separate temporary directory and use a short output basename. The query copy
+is removed afterward; the actual PDF and saved mapping remain in the artifact
+directories. Merely changing cwd inside the long mapping path was insufficient
+on Windows; diagnostic probes confirmed both engines work from a short directory.
 
 On integration failure, CI uploads `paper-diagnostics-<platform>` for seven days.
 These artifacts contain only synthetic fixture build files, the traceback, and

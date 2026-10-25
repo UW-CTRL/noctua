@@ -157,17 +157,24 @@ def run(engine):
                 sync_dir = paper_root/'sync'/last['fingerprint']
                 source = recorded_source(sync_dir, last['artifact'], path)
                 command = [str(synctex),'view','-i',f"{line}:0:{source}",
-                           '-o',last['artifact']+'.pdf']
+                           '-o','map.pdf']
                 sidecar = sync_dir / (last['artifact']+'.synctex.gz')
                 assert len(str(sidecar)) > 260, 'Fixture must exercise a long sidecar path'
-                forward=subprocess.run(command,cwd=sync_dir,capture_output=True,text=True,timeout=10)
+                # Match the app's query staging. Changing cwd alone still lets
+                # Windows SyncTeX hit MAX_PATH when it resolves the full name.
+                # Preserve map bytes and their source records exactly.
+                with tempfile.TemporaryDirectory(prefix='ns-') as temp:
+                    query_dir = Path(temp)
+                    suffix = 'synctex.gz' if sidecar.exists() else 'synctex'
+                    shutil.copyfile(sync_dir/(last['artifact']+'.'+suffix), query_dir/('map.'+suffix))
+                    forward=subprocess.run(command,cwd=query_dir,capture_output=True,text=True,timeout=10)
                 values=dict(re.findall(r'^(Page|x|y):([^\n]+)',forward.stdout,re.M))
                 if forward.returncode != 0 or not {'Page','x','y'} <= values.keys():
                     report = synctex_diagnostics(synctex, sync_dir, last['artifact'], source, path, line)
                     (paper_root/'synctex-diagnostics.txt').write_text(report, encoding='utf-8')
                     print(report, flush=True)
                 assert forward.returncode == 0 and {'Page','x','y'} <= values.keys(), (
-                    f"SyncTeX command: {command!r}\nWorking directory: {sync_dir}\nExit: {forward.returncode}\n"
+                    f"SyncTeX command: {command!r}\nWorking directory: {query_dir} (temporary copy of {sync_dir})\nExit: {forward.returncode}\n"
                     + forward.stdout + forward.stderr)
                 return {'fingerprint':last['fingerprint'],'page':int(values['Page']),'x':float(values['x']),'y':float(values['y'])}
             point=source_point(result,'sections/intro.tex',1)

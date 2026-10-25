@@ -207,11 +207,13 @@ Its mapping filename was 266 characters long. A follow-up changes both forward
 tests and application inverse lookup to run from the mapping directory using a
 short output basename, avoiding long absolute paths in SyncTeX's C file APIs.
 The integration fixture now explicitly exercises sidecar paths over 260 characters.
-Windows CI still failed after this change, so path length is not a confirmed
-root cause. Failure diagnostics now compare compressed/plain maps from a short
-temporary directory, source-name variants, and an inverse query. CI retains the
-synthetic build files and runs both engines even after an individual failure.
-The Windows issue remains unresolved pending these diagnostics.
+Windows CI still failed after this change. Diagnostic probes then confirmed that
+both engines' mappings work from a short temporary directory, in compressed and
+plain form, with both forward and inverse queries. The application and integration
+test now copy the immutable map into a unique temporary directory for each query
+and remove the copy afterward. Saved PDFs, mappings, and source records remain
+unchanged. The full Windows suite still needs to confirm this implementation.
+CI retains synthetic failure artifacts and runs both engines after a failure.
 
 ## Validation
 
@@ -234,7 +236,7 @@ Additional feature coverage lives in `tests/paper.html`, `tests/paper-source.htm
 `tests/workspace.html`. See [CI](ci.md) for backend and frontend test commands.
 These suites are not claimed as freshly rerun for this documentation update.
 
-**Outstanding:** diagnose and resolve the Windows SyncTeX failure, then complete
+**Outstanding:** confirm temporary mapping staging in the full Windows suite, then complete
 release packaging for all target platforms. Rerunning a release on an unchanged
 older tag does not incorporate these fixes.
 
