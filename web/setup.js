@@ -228,6 +228,11 @@ function appearanceSection() {
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
   return `<section data-step="data"><h2>Data & storage</h2>
+    <div class="settings-group" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
+    <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
+      <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
+    <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
+    </div>
     <p>Choose where Noctua saves your papers, notes, and chats. Location changes apply after restarting.</p>
     ${s.storage_override || s.storage_pending ? `<p>Current folder:</p><code class="settings-path">${esc(s.data_dir)}</code>` : ''}
     ${temporary ? '<p class="settings-warning">This session uses temporary storage. The system may remove these files.</p>' : ''}
@@ -590,6 +595,15 @@ function openSetup({ firstRun = false, tab } = {}) {
       if (id === 'custom' && !input.value.trim()) { input.focus(); msg(e.target.closest('section'), 'Enter an installed font name.'); return; }
       NoctuaFonts.set(kind, id, input.value);
       msg(e.target.closest('section'), 'Saved.', true); return;
+    }
+    if (e.target.id === 'setup-include-subfolders') {
+      const control = e.target;
+      const previous = settings.include_subfolders !== false;
+      control.disabled = true;
+      try { control.checked = await setIncludeSubfolders(control.checked); msg(control.closest('section'), 'Folder view updated.', true); }
+      catch (error) { control.checked = previous; msg(control.closest('section'), error.message); }
+      finally { control.disabled = false; }
+      return;
     }
     if (['setup-app-theme', 'setup-notes-theme', 'setup-reader-theme'].includes(e.target.id)) {
       if (e.target.id === 'setup-app-theme') setAppTheme(e.target.value);

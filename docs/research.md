@@ -32,6 +32,11 @@ inputs, output format, and [source instructions](../src/prompts/lineage.md).
 Use **Add to Noctua**, **Import PDF**, or the optional
 [Zotero importer](getting-started.md#import-from-zotero-optional). Collections
 can be nested, and one paper can belong to several without duplicating its PDF.
+**Settings → Data & storage → Include papers from subfolders** is on by default.
+It controls folder paper lists, counts, and folder graphs, including assistant
+folder tools. Duplicate papers appear once even if saved in multiple nested
+folders. The library root always shows all papers. Notes and project files keep
+their own folder scope.
 The library supports filtering, sorting, and metadata editing.
 
 In **Projects**, select a collection and choose **Open graph** to explore

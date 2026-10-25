@@ -530,6 +530,18 @@ function refreshAll() {
   draw();
 }
 
+async function setIncludeSubfolders(include) {
+  const saved = await api('/api/settings/library', { include_subfolders: include });
+  settings.include_subfolders = saved.include_subfolders;
+  const target = G.project?.target;
+  await loadCollections();
+  if (target && G.project?.target === target) {
+    if (target === 'L1') G.project.include_subfolders = saved.include_subfolders;
+    else openProject(target);
+  }
+  return saved.include_subfolders;
+}
+
 function collectionOptions(selected) {
   return collections.targets.map((t) =>
     `<option value="${esc(t.id)}"${t.id === selected ? ' selected' : ''}>${' '.repeat(t.level || 0)}${esc(t.name)}</option>`

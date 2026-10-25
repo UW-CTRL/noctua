@@ -52,13 +52,13 @@ fn tools(mode: &str) -> Value {
              json!({ "paper_id": paper_id }), &["paper_id"]),
         tool("select_paper", "Highlight a paper in the Noctua window. If it isn't in the current graph, its own graph is opened instead.",
              json!({ "paper_id": paper_id }), &["paper_id"]),
-        tool("list_library_collections", "List the user's Noctua libraries and folders with their ids.",
+        tool("list_library_collections", "List the user's Noctua libraries and folders with their ids and paper counts. Counts follow the Include subfolders setting.",
              json!({}), &[]),
-        tool("list_folder_items", "List the papers in a Noctua folder or library.",
+        tool("list_folder_items", "List the papers in a Noctua folder or library, including nested folders when Include subfolders is enabled (the default).",
              json!({ "folder_id": folder_id }), &["folder_id"]),
-        tool("get_project_graph", "Citation structure of a Noctua folder's papers: clusters of papers connected by direct citations, unconnected papers, and the references that link clusters. Uses the saved copy; only new or changed items are looked up.",
+        tool("get_project_graph", "Citation structure of a Noctua folder's papers (respecting the Include subfolders setting): clusters of papers connected by direct citations, unconnected papers, and the references that link clusters. Uses the saved copy; only new or changed items are looked up.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
-        tool("show_project_graph", "Show a Noctua folder's project graph in the Noctua window.",
+        tool("show_project_graph", "Show a Noctua folder's project graph in the Noctua window, respecting the Include subfolders setting.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
         tool("list_notes", "List the user's notes attached to a Noctua folder.",
              json!({ "folder_id": folder_id }), &["folder_id"]),
@@ -248,9 +248,9 @@ async fn run(app: &App, name: &str, args: &Value, mode: &str, chat_id: Option<&s
             ui(json!({ "action": "select", "id": p["paperId"] }));
             Ok(json!("Selected in the Noctua window."))
         }
-        "list_zotero_folders" | "list_library_collections" => Ok(app.library.collections()?["targets"].clone()),
+        "list_zotero_folders" | "list_library_collections" => Ok(app.library_collections()?["targets"].clone()),
         "list_folder_items" => {
-            let items = app.library.items(arg("folder_id")?)?;
+            let items = app.library_items(arg("folder_id")?)?;
             Ok(json!(items
                 .iter()
                 .map(|it| json!({

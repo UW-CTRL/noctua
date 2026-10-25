@@ -18,6 +18,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
     #[serde(default)]
+    pub library: LibrarySettings,
+    #[serde(default)]
     pub app_icon: AppIcon,
     #[serde(default)]
     pub highlight_palette: HighlightPalette,
@@ -39,6 +41,21 @@ pub struct Settings {
     pub zotero_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LibrarySettings {
+    #[serde(default = "enabled")]
+    pub include_subfolders: bool,
+}
+fn enabled() -> bool { true }
+impl Default for LibrarySettings {
+    fn default() -> Self { Self { include_subfolders: true } }
+}
+
+pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<LibrarySettings>) -> ApiResult {
+    update(&app, |s| s.library = body.clone())?;
+    Ok(Json(json!({"include_subfolders": body.include_subfolders})))
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
@@ -211,6 +228,7 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "agent": s.agent,
         "app_icon": s.app_icon,
+        "include_subfolders": s.library.include_subfolders,
         "assistant": s.assistant,
         "highlight_colors": s.highlight_colors,
         "highlight_palette": s.highlight_palette,

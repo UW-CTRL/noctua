@@ -15,6 +15,11 @@ user highlights keep their colors.
 **Connections** holds the Semantic Scholar key and optional Zotero source;
 **Research assistant** holds provider and model settings.
 
+**Settings → Data & storage → Include papers from subfolders** is enabled by
+default and saved with Noctua's data. Turn it off to show only direct collection
+members in folder lists, counts, and graphs. The library root always includes
+all papers. Scope changes keep existing graph lookups cached.
+
 ## Storage and backups
 
 Desktop and browser modes share a local data folder:

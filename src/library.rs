@@ -41,9 +41,16 @@ impl Library {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         Ok(Self { edit_gate:Mutex::new(()), conn: Mutex::new(conn), root })
     }
-    pub fn collections(&self) -> Result<Value> {
+    pub fn collections(&self) -> Result<Value> { self.collections_scoped(false) }
+    /// Folder counts deduplicate papers across descendants when enabled.
+    pub fn collections_scoped(&self, include_subfolders: bool) -> Result<Value> {
         let c = self.conn.lock().unwrap();
-        let mut stmt = c.prepare("SELECT id,name,parent,(SELECT count(*) FROM memberships WHERE collection=collections.id) FROM collections ORDER BY name COLLATE NOCASE")?;
+        let sql = if include_subfolders {
+            "WITH RECURSIVE descendants(root,id) AS (SELECT id,id FROM collections UNION SELECT d.root,c.id FROM descendants d JOIN collections c ON c.parent=d.id) SELECT id,name,parent,(SELECT count(DISTINCT m.paper) FROM memberships m JOIN descendants d ON m.collection=d.id WHERE d.root=collections.id) FROM collections ORDER BY name COLLATE NOCASE"
+        } else {
+            "SELECT id,name,parent,(SELECT count(*) FROM memberships WHERE collection=collections.id) FROM collections ORDER BY name COLLATE NOCASE"
+        };
+        let mut stmt = c.prepare(sql)?;
         let rows: Vec<(String,String,Option<String>,i64)> = stmt.query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?.collect::<rusqlite::Result<_>>()?;
         let total: i64 = c.query_row("SELECT count(*) FROM papers", [], |r| r.get(0))?;
         fn walk(rows: &[(String,String,Option<String>,i64)], parent: Option<&str>, depth: usize, out: &mut Vec<Value>) {
@@ -74,11 +81,13 @@ impl Library {
         if self.conn.lock().unwrap().execute("UPDATE collections SET name=?1 WHERE id=?2",params![name,target])?==0 { return Err(missing()); }
         Ok(())
     }
-    pub fn items(&self, target: &str) -> Result<Vec<Value>> {
+    pub fn items(&self, target: &str) -> Result<Vec<Value>> { self.items_scoped(target, false) }
+    /// The library root always contains all papers; collections optionally include descendants.
+    pub fn items_scoped(&self, target: &str, include_subfolders: bool) -> Result<Vec<Value>> {
         self.folder_id(target)?;
         let c=self.conn.lock().unwrap();
-        let mut stmt=c.prepare("SELECT data,pdf_hash,revision FROM papers WHERE ?1='L1' OR key IN (SELECT paper FROM memberships WHERE collection=?1) ORDER BY key")?;
-        let rows=stmt.query_map([target], |r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,i64>(2)?)))?;
+        let mut stmt=c.prepare("WITH RECURSIVE scope(id) AS (SELECT ?1 UNION SELECT c.id FROM collections c JOIN scope s ON c.parent=s.id WHERE ?2) SELECT data,pdf_hash,revision FROM papers WHERE ?1='L1' OR key IN (SELECT paper FROM memberships WHERE collection IN (SELECT id FROM scope)) ORDER BY key")?;
+        let rows=stmt.query_map(params![target,include_subfolders], |r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,i64>(2)?)))?;
         rows.map(|r| { let (s,h,revision)=r?; let mut v:Value=serde_json::from_str(&s)?;v["has_pdf"]=json!(h.is_some());v["pdf_hash"]=json!(h);v["revision"]=json!(revision);Ok(v) }).collect()
     }
     pub fn paper(&self, key: &str) -> Result<Value> {

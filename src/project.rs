@@ -119,10 +119,12 @@ fn todo_of(it: &Value) -> Todo {
 /// saved copy first if the collection changed.
 pub async fn graph(app: &App, target: &str) -> Result<Value> {
     let _one_at_a_time = app.projects.building.lock().await;
-    let items = app.library.items(target)?;
+    let include = app.settings.lock().unwrap().library.include_subfolders;
+    let all_items = app.library.items_scoped(target, true)?;
+    let items = if include { all_items.clone() } else { app.library.items(target)? };
     let (mut st, mut updated) = app.projects.load(target)?;
 
-    let present: HashSet<&str> = items.iter().filter_map(|it| it["key"].as_str()).collect();
+    let present: HashSet<&str> = all_items.iter().filter_map(|it| it["key"].as_str()).collect();
     let before = st.entries.len();
     st.entries.retain(|k, _| present.contains(k.as_str()));
     let mut changed = st.entries.len() != before;
@@ -174,7 +176,7 @@ pub async fn graph(app: &App, target: &str) -> Result<Value> {
     }
     let keep: HashSet<&String> = shared_ids.iter().collect();
     let before = st.ext.len();
-    st.ext.retain(|id, _| keep.contains(id));
+    if include || target == "L1" { st.ext.retain(|id, _| keep.contains(id)); }
     changed |= st.ext.len() != before;
     for s in out["shared"].as_array_mut().into_iter().flatten() {
         if let Some(Value::Object(meta)) = s["paperId"].as_str().and_then(|id| st.ext.get(id)) {
@@ -188,6 +190,7 @@ pub async fn graph(app: &App, target: &str) -> Result<Value> {
         updated = app.projects.save(target, &st)?;
     }
     out["target"] = json!(target);
+    out["include_subfolders"] = json!(include);
     out["updated"] = json!(updated);
     out["fetched"] = json!(fetched);
     out["warning"] = json!(warning);
