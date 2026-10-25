@@ -82,7 +82,7 @@
       row.setAttribute('aria-disabled', String(!!disabled(option)));
       const text = document.createElement('span'); text.textContent = option.label;
       row.append(text);
-      if (state.select.id !== 'limit') {
+      if (state.select.id !== 'limit' && state.select.dataset.selectIcon !== 'list-filter') {
         const mark = document.createElement('span'); mark.className = 'web-select-check'; mark.innerHTML = check;
         row.append(mark);
       }

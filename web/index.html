@@ -15,19 +15,16 @@
   <header>
     <div class="brand">🦉 <span>Noctua</span></div>
     <div class="mode-switch" role="tablist">
-      <button data-mode="graph" class="active" data-icon="network">Graph</button>
+      <button data-mode="graph" class="active" data-icon="library">Library</button>
       <button data-mode="notes" data-icon="notebook-pen">Notes</button>
       <button data-mode="pdf" id="reader-mode" disabled data-icon="book-open">Reader</button>
     </div>
-    <form id="search-form" autocomplete="off">
-      <input id="search" type="search" placeholder="Search papers, or paste a DOI / arXiv / Semantic Scholar link" required>
-      <button type="submit" data-icon="search" data-icon-only aria-label="Search papers" title="Search papers"></button>
-    </form>
-    <button id="clear-graph" class="hidden" title="Close the current paper graph" data-icon="x">Close graph</button>
-    <div id="queue" class="pill" title="Semantic Scholar requests waiting (limit: 1 per second)"></div>
-    <div class="library-box">
-      <select id="collection" aria-label="Library folder" title="Folder new papers are saved into"></select>
-      <button id="refresh-collections" class="icon" title="Reload Noctua folders" data-icon="refresh-cw" aria-label="Reload Noctua folders" data-icon-only>↻</button>
+    <div id="research-search">
+      <form id="search-form" autocomplete="off" role="search">
+        <input id="search" type="search" placeholder="Search papers, or paste a DOI / arXiv / Semantic Scholar link" aria-label="Search papers, DOI or arXiv" aria-controls="tab-results" required>
+        <button type="submit" data-icon="search" data-icon-only aria-label="Search papers" title="Search papers"></button>
+      </form>
+      <section id="tab-results" class="search-results hidden" aria-label="Paper search results" aria-live="polite"></section>
     </div>
     <button id="open-settings" class="icon" aria-label="Settings" title="Settings" data-icon="settings" data-icon-only>⚙</button>
   </header>
@@ -42,18 +39,16 @@
         </div>
         <ul id="note-list" class="note-list"></ul>
       </div>
-      <nav class="tabs">
-        <button data-tab="results" class="active" data-icon="search" aria-label="Search"><span class="nav-tab-label" aria-hidden="true">Search</span></button>
-        <button data-tab="library" data-icon="library" aria-label="Library"><span class="nav-tab-label" aria-hidden="true">Library</span></button>
-        <button data-tab="projects" data-icon="folder" aria-label="Projects"><span class="nav-tab-label" aria-hidden="true">Projects</span></button>
-        <button data-tab="nodes" data-icon="network" aria-label="In graph"><span class="nav-tab-label" aria-hidden="true">In graph <span id="node-count"></span></span></button>
-        <button data-tab="threads" class="lineage-only" data-icon="threads" aria-label="Threads"><span class="nav-tab-label" aria-hidden="true">Threads</span></button>
-      </nav>
-      <div id="tab-results" class="tab-body">
-        <p class="hint">Search for a paper, then pick one to build its citation graph.</p>
+      <div id="layout" class="visualization-tabs" role="group" aria-label="Visualization">
+        <button data-layout="library" data-icon="library" class="active" aria-pressed="true" title="Browse every paper in your library">Library</button>
+        <button data-layout="network" data-icon="network" aria-pressed="false" title="Force-directed citation network">Graph</button>
+        <button data-layout="lineage" data-icon="threads" aria-pressed="false" title="Papers in time order, grouped into research threads">Lineage</button>
       </div>
-      <div id="tab-library" class="tab-body hidden">
-        <ul id="lib-tree" class="tree"></ul>
+      <div id="research-sidebar">
+      <div id="tab-library" class="tab-body">
+        <div id="graph-folders">
+          <ul id="lib-tree" class="tree"></ul>
+        </div>
         <div class="list-tools">
           <div class="library-filter-control">
           <select id="lib-sort" data-select-icon="list-filter" data-open-on-hover aria-label="Sort library papers">
@@ -67,58 +62,77 @@
         </div>
         <ul id="lib-items" class="papers"></ul>
       </div>
-      <div id="tab-projects" class="tab-body hidden">
-        <div class="list-tools">
-          <select id="proj-target" title="Noctua folder"></select>
-          <button id="proj-open" class="primary" data-icon="network">Open graph</button>
-        </div>
-        <div id="proj-info" class="proj-info">
-          <p class="hint">Pick a Noctua folder and open its project graph: how its papers cite each other,
-            which clusters form, and which references link the clusters. It's saved, and only papers you add
-            or edit are looked up again.</p>
-        </div>
+      <div id="folder-divider" class="graph-view-only" role="separator" tabindex="0" aria-label="Resize folders and papers" aria-orientation="horizontal" aria-controls="tab-library" aria-valuemin="60" aria-valuemax="500" aria-valuenow="440"></div>
+      <div id="graph-list-switch" class="tabs graph-list-tabs lineage-only graph-view-only" role="group" aria-label="Sidebar list">
+        <button data-graph-list="nodes" data-icon="file-text" class="active" aria-pressed="true" aria-controls="tab-nodes">Papers</button>
+        <button data-graph-list="threads" data-icon="threads" aria-pressed="false" aria-controls="tab-threads">Threads</button>
       </div>
-      <div id="tab-nodes" class="tab-body hidden">
-        <div class="list-tools">
-          <select id="sort">
+      <section id="tab-nodes" class="tab-body graph-view-only" aria-label="Graph papers">
+        <div class="graph-papers-heading">
+          <select id="sort" data-select-icon="list-filter" aria-label="Sort papers in graph">
             <option value="citations">Most cited</option>
             <option value="year-desc">Newest</option>
             <option value="year-asc">Oldest</option>
             <option value="links">Most connected</option>
           </select>
-          <input id="filter" type="search" placeholder="Filter">
+          <div id="papers-filter-control" class="papers-filter">
+            <input id="filter" type="search" placeholder="Filter 0 papers" aria-label="Filter papers in graph">
+            <button type="button" data-icon="search" data-icon-only aria-label="Filter graph papers" title="Filter papers"></button>
+          </div>
         </div>
         <ul id="node-list" class="papers"></ul>
-      </div>
-      <div id="tab-threads" class="tab-body hidden">
+      </section>
+      <section id="tab-threads" class="tab-body lineage-only graph-view-only hidden" aria-label="Lineage threads">
         <div id="thread-list" class="threads"></div>
+      </section>
       </div>
     </aside>
 
     <section id="stage">
+      <section id="library-view" aria-label="Library papers">
+        <div class="library-heading">
+          <div><h1 id="library-title">Library</h1><span id="library-count" class="hint"></span></div>
+          <div id="library-filter-control" class="expanding-filter">
+            <input id="library-table-filter" type="search" placeholder="Filter library…" aria-label="Filter library table" aria-controls="library-rows">
+            <button type="button" data-icon="search" data-icon-only aria-label="Filter library" title="Filter library"></button>
+          </div>
+        </div>
+        <div id="library-table-scroll"><table id="library-table">
+          <thead><tr>
+            <th scope="col" aria-sort="none"><button data-library-sort="title">Title</button></th>
+            <th scope="col">Authors</th>
+            <th scope="col" aria-sort="none"><button data-library-sort="year-desc">Year</button></th>
+            <th scope="col">Publication</th><th scope="col">Actions</th>
+          </tr></thead>
+          <tbody id="library-rows"></tbody>
+        </table><p id="library-table-status" class="hint" role="status">Loading library…</p></div>
+      </section>
       <canvas id="graph"></canvas>
       <div id="empty" class="empty">
         <div class="owl">🦉</div>
         <p>Search for a paper to see what it builds on and what builds on it.</p>
       </div>
-      <div class="controls">
-        <label class="chip ref graph-only"><input type="checkbox" data-role="ref" checked> <i></i>References <b id="n-ref">0</b></label>
-        <label class="chip cite graph-only"><input type="checkbox" data-role="cite" checked> <i></i>Cited by <b id="n-cite">0</b></label>
-        <label class="chip sim graph-only"><input type="checkbox" data-role="sim" checked> <i></i>Similar <b id="n-sim">0</b></label>
-        <label class="chip shared proj-only" title="Outside papers cited from more than one cluster"><input type="checkbox" data-role="shared" checked> <i></i>Shared references <b id="n-shared">0</b></label>
-        <div id="layout" class="seg" role="group" aria-label="Layout">
-          <button data-layout="network" class="active" title="Force-directed citation network">Network</button>
-          <button data-layout="lineage" title="Papers in time order, grouped into threads of work that build on each other">Lineage</button>
+      <div class="graph-toolbar">
+        <div class="controls">
+          <label class="chip ref graph-only"><input type="checkbox" data-role="ref" checked> <i></i>References <b id="n-ref">0</b></label>
+          <label class="chip cite graph-only"><input type="checkbox" data-role="cite" checked> <i></i>Cited by <b id="n-cite">0</b></label>
+          <label class="chip sim graph-only"><input type="checkbox" data-role="sim" checked> <i></i>Similar <b id="n-sim">0</b></label>
+          <label class="chip shared proj-only" title="Outside papers cited from more than one cluster"><input type="checkbox" data-role="shared" checked> <i></i>Shared references <b id="n-shared">0</b></label>
+          <label class="chip plain lineage-only" title="Maximum threads to draw; fewer may be found from the citation links">Threads
+            <select id="thread-count" aria-label="Maximum threads"><option>3</option><option selected>5</option><option>8</option><option>12</option><option>16</option><option>24</option></select>
+          </label>
+          <button id="explain-threads" class="chip plain lineage-only" title="Ask the research assistant to name each thread and summarize how its papers build on each other">Summarize threads</button>
+          <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
+            <select id="limit" data-open-on-hover aria-label="Papers to load"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
+          </label>
+          <button id="fit" class="chip plain" title="Fit graph to view" data-icon="maximize" aria-label="Fit graph to view" data-icon-only>Fit</button>
         </div>
-        <label class="chip plain lineage-only" title="Most threads to draw">Threads
-          <select id="thread-count"><option>3</option><option selected>5</option><option>8</option></select>
-        </label>
-        <button id="explain-threads" class="chip plain lineage-only" title="Ask the research assistant to name each thread and summarize how its papers build on each other">Summarize threads</button>
-        <label class="chip plain graph-only" title="How many references and citations to load (most-cited first)">Top
-          <select id="limit" data-open-on-hover aria-label="Papers to load"><option>30</option><option selected>60</option><option>100</option><option>200</option></select>
-        </label>
-        <button id="fit" class="chip plain" title="Fit graph to view" data-icon="maximize" aria-label="Fit graph to view" data-icon-only>Fit</button>
+        <div id="graph-filter-control" class="expanding-filter">
+          <input id="graph-filter" type="search" placeholder="Filter papers…" aria-label="Filter papers in graph" aria-controls="graph node-list">
+          <button type="button" data-icon="search" data-icon-only aria-label="Filter graph" title="Filter graph"></button>
+        </div>
       </div>
+      <p id="graph-filter-empty" class="graph-filter-empty" role="status" hidden>No papers match this filter.</p>
       <div class="legend">
         <span class="graph-only network-only"><i class="dot old"></i>older</span><span class="graph-only network-only"><i class="dot new"></i>newer</span>
         <span class="proj-only network-only">colour = cluster</span><span class="proj-only network-only"><i class="dot single"></i>unconnected</span>

@@ -7,7 +7,7 @@
 | Guide | Covers |
 | --- | --- |
 | [Getting started](getting-started.md) | Install, read a first paper, write a note, and add optional connections. |
-| [Research](research.md) | Search, citation graphs, Lineage, and collections. |
+| [Research](research.md) | Library, Graph, Lineage, search, and collections. |
 | [PDF reader](reader.md) | Navigation, previews, annotations, and AI analysis. |
 | [Notes](notes.md) | Project files, bibliographies, LaTeX, media, and undo/redo. |
 | [Research assistant](assistant.md) | Chat, attachments, imported skills, edit modes, and capabilities. |

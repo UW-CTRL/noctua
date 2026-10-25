@@ -22,7 +22,7 @@ async function nativePDFOutline(){nativeCalls++;return nativeResult;}
 async function indexPDF(){}function updatePDFOutlineSelection(){}function clearTimeout(){}
 function setTimeout(fn,delay){timers.push({fn,delay});return timers.length;}
 function assert(v,m){if(!v)throw Error(m);}
-"""#+section(app,"let toastTimer =", "function showTab(")+section(pdf,"function pdfOutlineState(","function updatePDFOutlineSelection()"))
+"""#+section(app,"let toastTimer =", "let graphSidebarList =")+section(pdf,"function pdfOutlineState(","function updatePDFOutlineSelection()"))
 context.evaluateScript(#"""
 (async()=>{
  await loadPDFOutline('paper',PDF.doc);
