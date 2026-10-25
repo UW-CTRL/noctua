@@ -5,7 +5,7 @@ edition = "2021"
 description = "Research-paper explorer: Semantic Scholar citation graphs, a native PDF library and LaTeX notes"
 
 # The desktop app (Tauri) lives in app/. Plain `cargo build` / `cargo run`
-# builds only the browser version, without the desktop dependencies.
+# builds only the independent server/CLI, without desktop dependencies.
 [workspace]
 members = ["app"]
 default-members = ["."]
@@ -15,6 +15,7 @@ version = "0.2.5"
 
 [dependencies]
 anyhow = "1"
+libc = "0.2"
 base64 = "0.22"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }

@@ -110,10 +110,12 @@ pub fn stream(app: Arc<App>, body: ChatBody) -> Result<Body, crate::ApiError> {
     if !app.chat_jobs.lock().unwrap().insert(chat_id.clone()) {
         return Err(crate::Status(axum::http::StatusCode::CONFLICT, "This chat is already replying in another tab.".into()).into());
     }
+    let cancel=Arc::new(tokio::sync::Notify::new());
+    app.chat_cancels.lock().unwrap().insert(chat_id.clone(),cancel.clone());
     tokio::spawn(async move {
         let _ = tx.send(json!({ "type": "chat", "id": chat_id })).await;
         let mut turn = Turn::default();
-        if let Err(e) = run(&app, provider, &chat_id, &body, &tx, &mut turn).await {
+        if let Err(e) = run(&app, provider, &chat_id, &body, &tx, &mut turn, &cancel).await {
             let ev = json!({ "type": "error", "message": format!("{e:#}") });
             turn.record(&ev);
             let _ = tx.send(ev).await;
@@ -130,6 +132,7 @@ pub fn stream(app: Arc<App>, body: ChatBody) -> Result<Body, crate::ApiError> {
             eprintln!("chat: could not save history: {e:#}");
             let _ = tx.send(json!({ "type": "error", "message": format!("Could not save this conversation: {e:#}") })).await;
         }
+        app.chat_cancels.lock().unwrap().remove(&chat_id);
         app.chat_jobs.lock().unwrap().remove(&chat_id);
     });
     Ok(Body::from_stream(
@@ -137,14 +140,19 @@ pub fn stream(app: Arc<App>, body: ChatBody) -> Result<Body, crate::ApiError> {
     ))
 }
 
-async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: &mpsc::Sender<Value>, turn: &mut Turn) -> Result<()> {
+async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: &mpsc::Sender<Value>, turn: &mut Turn, cancel: &tokio::sync::Notify) -> Result<()> {
     let mut url = reqwest::Url::parse(&format!("{}/mcp", app.base_url))?;
     url.query_pairs_mut().append_pair("mode", mode_or_default(&body.mode)).append_pair("chat_id", chat_id);
     let mcp = json!({
-        "mcpServers": { "noctua": { "type": "http", "url": url.as_str() } }
+        "mcpServers": { "noctua": { "type": "http", "url": url.as_str(), "headers": {"Authorization":format!("Bearer {}",app.runtime.as_ref().map(|r|r.owner.token.as_str()).unwrap_or("test"))} } }
     })
     .to_string();
     std::fs::create_dir_all(&app.chat_dir)?;
+    struct PrivateMcp(std::path::PathBuf);
+    impl Drop for PrivateMcp { fn drop(&mut self) { let _=std::fs::remove_file(&self.0); } }
+    let mcp_file=PrivateMcp(app.chat_dir.join(format!(".mcp-{}.json",uuid::Uuid::new_v4())));
+    crate::paths::write_private(&mcp_file.0,&mcp)?;
+    let mcp=mcp_file.0.to_string_lossy().into_owned();
 
     let enabled=crate::skills::set_context(app,chat_id,body.project_target.as_deref(),body.skill_ids.as_ref())?;
     let instructions=format!("{SYSTEM}\nEnabled imported skills for this chat: {enabled}");
@@ -193,7 +201,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
 
     loop {
         tokio::select! {
-            _ = tx.closed() => {
+            _ = cancel.notified() => {
                 turn.stopped = true;
                 let _ = child.kill().await;
                 let _ = stderr.await;
@@ -203,19 +211,14 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
                 let Some(line) = line? else { break };
                 for ev in if provider == Provider::Codex { translate_codex(&line, &mut finished) } else { translate(&line, &mut finished) } {
                     turn.record(&ev);
-                    if tx.send(ev).await.is_err() {
-                        turn.stopped = true;
-                        return Ok(()); // browser went away; kill_on_drop stops the CLI
-                    }
+                    // A client stream is a subscriber, not the owner of this job.
+                    let _ = tx.send(ev).await;
                 }
             }
             Ok(mut a) = actions.recv() => {
                 if a["chat_id"].as_str() != Some(chat_id) { continue; }
                 a["type"] = json!("action");
-                if tx.send(a).await.is_err() {
-                    turn.stopped = true;
-                    return Ok(());
-                }
+                let _ = tx.send(a).await;
             }
         }
     }

@@ -82,3 +82,6 @@ impl Drop for ProcessGroup {fn drop(&mut self){
         unsafe {kill(-(id as i32),9);}
     }
 }}
+
+/// Detached imported-skill executions must finish before server shutdown.
+pub(crate) fn busy() -> bool { !cancellations().lock().unwrap().is_empty() }

@@ -4,37 +4,21 @@
 
 ## Run and build
 
-Install [Rust](https://rustup.rs), then run from the repository root:
+Build the independent server and CLI, then use a separate development profile:
 
 ```sh
-cargo run --release
+cargo build --locked -p noctua
+NOCTUA_HOME=/absolute/isolated/data target/debug/noctua ensure
+NOCTUA_HOME=/absolute/isolated/data target/debug/noctua token
 ```
 
-The browser app opens at `http://127.0.0.1:7878`. For desktop development, install
-the Tauri CLI and platform prerequisites, then:
+Open the returned URL and sign in with the token. Ensure reuses the verified
+owner or detaches a separate process; it never registers login auto-start.
+Use `status`, `stop`, or `restart` to manage this server explicitly. Closing an
+interface leaves server jobs running. See [Server operations](server.md).
 
-```sh
-cargo install tauri-cli --version "^2" --locked
-cd app
-cargo tauri dev
-# Build installers instead:
-cargo tauri build
-```
-
-Installers appear under `target/release/bundle/`. See the
-[release workflow](../.github/workflows/release.yml) for platform dependencies,
-including WebKitGTK on Linux.
-
-To preview changes alongside an existing server, use a separate port:
-
-```sh
-NOCTUA_PORT=7879 NOCTUA_NO_OPEN=1 cargo run --locked
-```
-
-Open `http://127.0.0.1:7879`. This uses the same configured library and data
-folder as the app; set `NOCTUA_HOME` to use separate development data. Web assets
-are embedded at build time, so stop and rerun the command after edits, then
-refresh the browser.
+For desktop development, build the headless server above before starting Tauri.
+The desktop and browser connect to the same authenticated backend.
 
 ## Project structure and checks
 
@@ -111,8 +95,10 @@ Find the file inventory in the [prompt index](../src/prompts/AGENTS.md).
 | `ZOTERO_DATA_DIR` | Zotero source folder |
 | `NOCTUA_NOTES` | Notes folder |
 | `NOCTUA_CLAUDE` / `NOCTUA_CODEX` | Assistant CLI paths |
-| `NOCTUA_PORT` | Browser port; default 7878 (desktop uses 47878) |
-| `NOCTUA_NO_OPEN` | Prevent automatic browser opening |
+| `NOCTUA_PORT` | Preferred loopback server port; default 47878, recorded fallback reuse |
+| `NOCTUA_PROFILE_HOME` | Isolated profile root for migration tests |
+| `NOCTUA_CLIENT_HOME` | Device-local configuration and staged server executables |
+| `NOCTUA_ORIGINS` | Allowed private HTTPS origins |
 | `NOCTUA_DEBUG` | Log requests |
 
 For an assistant CLI not found automatically, you can also set `claude_path` or

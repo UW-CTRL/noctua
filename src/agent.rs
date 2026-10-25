@@ -223,6 +223,8 @@ pub fn codex_command(app: &App, mcp_url: Option<&str>, instructions: &str) -> Co
     Provider::Codex.configure(app, &mut cmd);
     if let Some(url) = mcp_url {
         cmd.arg("-c").arg(format!("mcp_servers.noctua.url={}", json!(url)))
+            .arg("-c").arg(format!("mcp_servers.noctua.bearer_token_env_var={}",json!("NOCTUA_MCP_TOKEN")))
+            .env("NOCTUA_MCP_TOKEN",app.runtime.as_ref().map(|r|r.owner.token.as_str()).unwrap_or("test"))
             .args(["-c", "mcp_servers.noctua.required=true", "-c", "mcp_servers.noctua.tool_timeout_sec=600"])
             .args(["-c", "mcp_servers.noctua.default_tools_approval_mode=\"approve\""]);
     }
@@ -328,8 +330,8 @@ mod tests {
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
-                notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, settings: std::sync::Mutex::new(settings),
-                desktop, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
+                notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, runtime: None, settings: std::sync::Mutex::new(settings),
+                desktop, chat_cancels: std::sync::Mutex::new(Default::default()), login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
             Ok(Self { root, router, app })
@@ -1001,7 +1003,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disconnect_saves_partial_replies_and_rejects_concurrent_turns() -> Result<()> {
+    async fn disconnect_keeps_jobs_running_and_explicit_stop_saves_partial_replies() -> Result<()> {
         let f = Fixture::new()?;
         for provider in ["claude", "codex"] {
             let r = f.request("/api/chat", Some(json!({ "message": "slow", "provider": provider })), None).await;
@@ -1015,7 +1017,10 @@ mod tests {
             }
             let concurrent = f.request("/api/chat", Some(json!({ "message": "another tab", "provider": provider, "chat_id": id })), None).await;
             assert_eq!(concurrent.status(), StatusCode::CONFLICT);
-            drop(stream); // equivalent to the browser's AbortController
+            drop(stream); // closing an interface does not cancel the server job
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(f.json(&format!("/api/chats/{id}?provider={provider}"),None).await["busy"],true);
+            f.json(&format!("/api/chats/{id}/stop"),Some(json!({}))).await;
             let c = f.settled(&id, provider).await;
             assert_eq!(c["messages"][1]["text"], "Partial");
             assert_eq!(c["messages"][1]["stopped"], true);
@@ -1043,7 +1048,7 @@ mod tests {
         assert_eq!(serde_json::from_slice::<Value>(&bytes)?["action"], "select");
         assert!(tokio::time::timeout(Duration::from_millis(50), streams[1].next()).await.is_err(), "another backend's action leaked into this chat");
         drop(streams);
-        for (id, provider) in ids.iter().zip(["claude", "codex"]) { f.settled(id, provider).await; }
+        for (id, provider) in ids.iter().zip(["claude", "codex"]) { f.json(&format!("/api/chats/{id}/stop"),Some(json!({}))).await; f.settled(id, provider).await; }
         Ok(())
     }
 

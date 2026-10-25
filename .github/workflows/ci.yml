@@ -2,7 +2,6 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
     paths-ignore:
@@ -36,6 +35,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Compile and test the backend
         run: cargo test --locked -p noctua
+      - name: Test isolated server lifecycle and authentication
+        run: |
+          cargo build --locked -p noctua
+          python3 tests/server-lifecycle.py
 
   frontend:
     name: Frontend tests
@@ -48,7 +51,9 @@ jobs:
       - name: Test JavaScriptCore and WebKit behavior
         env:
           SWIFT_MODULECACHE_PATH: ${{ runner.temp }}/noctua-swift-module-cache
-        run: bash tests/run-frontend.sh
+        run: |
+          bash tests/run-frontend.sh
+          node tests/pdf-comments.cjs
 
   desktop:
     name: Desktop check (${{ matrix.platform }})

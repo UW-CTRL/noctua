@@ -2,7 +2,7 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
-`.github/workflows/ci.yml` runs on pull requests targeting `main`, pushes to
+`.github/workflows/ci.yml` runs on all pull requests, including feature-branch targets, pushes to
 `main`, and manual execution. Pushes to `main` skip CI when every changed file is `README.md`, `AGENTS.md`,
 `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`, `LICENSE.*`, `NOTICE`, or under
 `docs/`. Any other changed path still triggers CI, including
@@ -133,3 +133,12 @@ modify repository protection settings.
 If a runner or download fails transiently, use **Re-run failed jobs** in Actions.
 If a test or workflow fails consistently, inspect its log and correct the cause
 rather than bypassing the check.
+
+## Independent server regression
+
+After `cargo build --locked -p noctua`, run `python3 tests/server-lifecycle.py`.
+It uses temporary data/profile/client/service directories and a fake OS manager.
+It covers concurrent ensure, detached lifetime, authenticated identity, Host/Origin/
+CSRF protection, safe stop/restart, busy responses, note version conflicts,
+relative paths, serialized service refresh and data relocation. Registering login
+auto-start never starts a server. No real user service is registered by tests.

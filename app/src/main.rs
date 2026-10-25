@@ -1,4 +1,4 @@
-//! The Noctua desktop app: runs Noctua's local server and shows it in native
+//! The Noctua desktop app: connects to a separate data server from native
 //! windows, each with its own tabs (web/shell.html), plus a native menu and an
 //! app icon. Requests from the pages (new window, open a link in the browser,
 //! pick a folder) arrive as `DesktopCmd`s.
@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use noctua::{DesktopCmd, ServeOptions};
+use noctua::DesktopCmd;
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
@@ -40,25 +40,10 @@ fn main() {
         .manage(updater::Updates::default())
         .manage(icons::Icons::default())
         .setup(|app| {
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            let (url, server) = tauri::async_runtime::block_on(async {
-                match noctua::start(ServeOptions { port: PORT, desktop: Some(tx.clone()) }).await {
-                    Ok(s) => Ok(s),
-                    Err(_) => noctua::start(ServeOptions { port: 0, desktop: Some(tx) }).await,
-                }
-            })?;
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = server.await {
-                    eprintln!("Noctua's server stopped: {e}");
-                }
-            });
+            let executable=std::env::current_exe()?.with_file_name(if cfg!(windows){"noctua.exe"}else{"noctua"});
+            let identity=tauri::async_runtime::block_on(noctua::server::ensure(&executable,PORT))?;
+            let url=identity["url"].as_str().ok_or_else(||anyhow::anyhow!("Invalid local server identity"))?.to_string();
             app.manage(Shell { url, windows: AtomicUsize::new(0) });
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                while let Some(cmd) = rx.recv().await {
-                    run(&handle, cmd);
-                }
-            });
             app.set_menu(menu(app.handle())?)?;
             open_window(app.handle(), None);
             Ok(())

@@ -9,7 +9,7 @@ context.exceptionHandler = { _, error in
     failed = true
 }
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-for name in ["web/edit-history.js", "web/workspace.js", "web/figures.js", "web/latex.js", "web/app.js", "web/lineage.js", "web/setup.js", "web/notes.js", "web/library.js", "web/shell.js", "web/mentions.js", "web/select.js", "web/fonts.js", "web/chat-render.js", "web/chat-selections.js", "web/pdf.js", "web/pdf-objects.js"] {
+for name in ["web/connection.js", "web/edit-history.js", "web/workspace.js", "web/figures.js", "web/latex.js", "web/app.js", "web/lineage.js", "web/setup.js", "web/notes.js", "web/library.js", "web/shell.js", "web/mentions.js", "web/select.js", "web/fonts.js", "web/chat-render.js", "web/chat-selections.js", "web/pdf.js", "web/pdf-objects.js"] {
     let source = try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
     _ = context.objectForKeyedSubscript("Function").call(withArguments: [source])
     if failed { print("FAIL: \(name)"); exit(1) }
@@ -90,3 +90,17 @@ while context.objectForKeyedSubscript("testResult").isUndefined && Date() < dead
 let result = context.objectForKeyedSubscript("testResult").toString() ?? "FAIL: no result"
 print(result)
 if failed || !result.hasPrefix("PASS:") { exit(1) }
+
+let storage = JSContext()!
+storage.exceptionHandler = { _, error in print(error?.toString() ?? "Storage regression failed"); exit(1) }
+let start = app.range(of:"const clientPreference")!.lowerBound
+let stop = app.range(of:"// ---------------------------------------------------------------- API")!.lowerBound
+storage.evaluateScript("const window={noctuaServerId:'A'},values=new Map(),localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};" + String(app[start..<stop]) + #"""
+function check(v,m){if(!v)throw Error(m)}
+store.set('pdf-draft:fontHeight','A draft');store.set('noctua.theme','dark');
+window.noctuaServerId='B';check(store.get('pdf-draft:fontHeight')===null,'cache key text bypassed server isolation');
+store.set('pdf-draft:fontHeight','B draft');store.remove('pdf-draft:fontHeight');check(store.get('pdf-draft:fontHeight')===null,'scoped cache removal failed');
+check(store.get('noctua.theme')==='dark','device appearance was unexpectedly server-scoped');
+window.noctuaServerId='A';check(store.get('pdf-draft:fontHeight')==='A draft','another server removed this draft');
+"""#)
+print("PASS: server-scoped cache reads/writes/removal and shared device appearance")

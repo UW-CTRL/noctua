@@ -137,3 +137,13 @@ These use separate task prompts rather than the combined chat instructions.
 | Execution | Reader analysis and handwriting run separately from chat; Reader workers have no tools. |
 | Editing | Source files only; no Settings prompt editor. `AGENTS.md` governs repository work. |
 | Applying changes | Rebuild and restart; cached analysis may be reused. See [Development](development.md#ai-prompts). |
+
+## Server job lifetime
+
+Closing a desktop window, losing the connection or switching servers leaves an
+AI reply running on its original server. Reopen that server's chat history to
+see its busy state and eventual persisted result. Use **Stop server reply** in
+a restored running chat, or the Stop control for the current stream, to request
+explicit cancellation. Stopping retains the partial reply. A client disconnect
+is not a stop request. Provider changes/new chat retain their explicit stop
+behavior for the currently attached stream.
