@@ -72,13 +72,13 @@ Update these together in the same change:
 | User-visible behavior | Implementation, relevant validation, and the affected guide from the [documentation index](README.md). Explain activation, behavior, and limits. |
 | Note features | [`notes.md` prompt](../src/prompts/notes.md), `showNoteHelp()` in `web/notes.js`, [Notes](notes.md), and relevant [assistant guidance](assistant.md). |
 | Chat rendering | [`chat-formatting.md`](../src/prompts/chat-formatting.md), [assistant guidance](assistant.md), and rendering checks. |
-| Tool behavior | Descriptions and schemas in [`src/mcp.rs`](../src/mcp.rs). |
+| Tool behavior | Descriptions and schemas in [`src/mcp.rs`](../src/mcp.rs) and [`src/mcp_data.rs`](../src/mcp_data.rs); review prompts for stale claims without copying tool contracts into them. |
 | Overview or navigation | Affected project README summaries and links; add new guides to the [documentation index](README.md). |
 
 Describe supported syntax, activation, and actual assistant capabilities. Separate
 UI-only controls from tool actions, and do not claim unimplemented tools. Keep
 examples valid for Noctua's LaTeX subset and distinguish it from chat Markdown.
-The note capability prompt is included in both Claude and Codex chat instructions.
+The shared note syntax prompt is included in both Claude and Codex chat instructions.
 Backend prompt changes require rebuilding and restarting before they affect chats.
 
 ## AI prompts
@@ -98,7 +98,7 @@ Find the file inventory in the [prompt index](../src/prompts/AGENTS.md).
 | Claude chat and Reader analysis | Instructions passed through `--system-prompt` |
 | Codex | Instructions passed through `developer_instructions` |
 | Other one-shot tasks | Retain their task-specific input handling |
-| Tool descriptions and schemas | Defined in [`src/mcp.rs`](../src/mcp.rs) |
+| Tool descriptions and schemas | Delivered through MCP from [`src/mcp.rs`](../src/mcp.rs) and [`src/mcp_data.rs`](../src/mcp_data.rs) |
 | Applying prompt edits | Rebuild and restart the backend |
 | Cached results | May be reused after a prompt change; review the feature's cache policy |
 

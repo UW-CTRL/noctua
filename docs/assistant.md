@@ -147,9 +147,13 @@ Chat combines all three prompts:
 
 | Prompt | Instructions |
 | --- | --- |
-| [`chat.md`](../src/prompts/chat.md) | Research role, tools, current view, source links, and download confirmation. |
-| [`notes.md`](../src/prompts/notes.md) | Supported LaTeX, targeted block edits, and UI-only boundaries. |
+| [`chat.md`](../src/prompts/chat.md) | Research role, request scope, current view, source links, and truthful outcome reporting. |
+| [`notes.md`](../src/prompts/notes.md) | Supported note syntax, references, media, and document semantics. |
 | [`chat-formatting.md`](../src/prompts/chat-formatting.md) | Markdown, math, Mermaid, and source attachment interpretation. |
+
+Tool arguments, result formats, limits, and tool-specific mode behavior are
+delivered through the MCP catalog. The shared prompts keep common behavioral
+rules and note/chat syntax rather than repeating those contracts.
 
 ### Edit mode instructions
 
@@ -157,9 +161,9 @@ Each message adds the selected mode. Tools also enforce the mode.
 
 | Mode and prompt | Behavior |
 | --- | --- |
-| [Suggest](../src/prompts/mode-suggest.md) | Targeted edits; note edits and PDF annotations/replies await acceptance. |
-| [Plan](../src/prompts/mode-plan.md) | Read-only investigation; write tools are unavailable. |
-| [Direct](../src/prompts/mode-direct.md) | Requested changes apply immediately; note edits support undo. |
+| [Suggest](../src/prompts/mode-suggest.md) | Preference for small, targeted changes for user review. |
+| [Plan](../src/prompts/mode-plan.md) | Investigation and planning without changing user data. |
+| [Direct](../src/prompts/mode-direct.md) | Only requested direct changes, preserving unrelated content. |
 
 ### Dedicated AI features
 

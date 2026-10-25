@@ -62,7 +62,8 @@ pub fn catalog(list: &mut Value) {
         }
         match name.as_str() {
             "search_papers" => {
-                props.insert("include_abstract".into(), boolean());
+                props.insert("include_abstract".into(), json!({"type":"boolean","description":"Include up to 2000 characters of each abstract; omitted by default."}));
+                t["description"]=json!("Search Semantic Scholar with paginated results: 10 by default, up to 30 per call. Basic metadata is returned unless include_abstract is requested.");
             }
             "get_paper" => {
                 props.insert("char_offset".into(), integer(0, u32::MAX as u64));
@@ -111,7 +112,7 @@ pub fn catalog(list: &mut Value) {
                 t["description"]=json!("Apply targeted block edits and/or title/preamble with updated from read_note. replace/delete/move require block_id; insert_after may omit it for first. move requires after_block_id (empty for first). Replacing ink preserves it and inserts text below. Direct persists atomically before applied; Suggest stores a durable proposal for app review. Unknown blocks and stale versions fail.");
             }
             "save_to_library" => {
-                props.insert("download_pdf".into(), boolean());
+                props.insert("download_pdf".into(), json!({"type":"boolean","description":"Defaults to true. Set false to save metadata/membership without attempting a PDF download."}));
             }
             "list_project_files" => {
                 props.insert("include_trashed".into(), boolean());
@@ -130,6 +131,7 @@ pub fn catalog(list: &mut Value) {
                 props.insert("cluster_id".into(), integer(1, u32::MAX as u64));
             }
             "get_skill_run" => {
+                t["description"]=json!("Read bounded run status and change metadata by default. view=stdout/stderr reads a log range; view=diff requires path and returns bounded before/after text. Does not return script source or base64 outputs. Applied status confirms user-approved output was saved.");
                 props.insert(
                     "view".into(),
                     json!({"type":"string","enum":["summary","stdout","stderr","diff"]}),
@@ -139,6 +141,7 @@ pub fn catalog(list: &mut Value) {
                 props.insert("max_chars".into(), integer(1, 20000));
             }
             "read_pdf" => {
+                t["description"]=json!("Read saved PDF text, defaulting to up to 5 pages and 12000 characters. Each call is capped at 20 pages and 40000 characters. Continue with next_page and next_char_offset. Empty text may indicate a scan.");
                 props.insert("char_offset".into(), integer(0, u32::MAX as u64));
                 props.insert("max_chars".into(), integer(1, 40000));
             }
@@ -168,6 +171,16 @@ pub fn catalog(list: &mut Value) {
         if name == "annotate_pdf" {
             props.get_mut("comment").unwrap()["maxLength"] = json!(100000);
             props.get_mut("quote").unwrap()["maxLength"] = json!(4000);
+        }
+        for (field,description) in [
+            ("offset","Zero-based result or block offset; follow the returned next_offset."),
+            ("limit","Maximum items in a result page; inspect has_more and continuation fields."),
+            ("char_offset","Zero-based Unicode character offset within the current text, PDF page, or note block."),
+            ("max_chars","Maximum Unicode characters per text range; use continuation metadata to read the remainder."),
+            ("updated","Saved note version from read_note. Required for edits; stale versions are rejected."),
+            ("revision","Workspace version from list_project_files/read_project_file. Stale versions are rejected."),
+        ] {
+            if let Some(property)=props.get_mut(field){property["description"]=json!(description);}
         }
         t["inputSchema"]["properties"] = json!(props);
         t["inputSchema"]["additionalProperties"] = json!(false);

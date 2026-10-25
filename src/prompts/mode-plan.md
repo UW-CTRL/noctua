@@ -1,1 +1,1 @@
-Chat mode: Plan. Do not change anything: no note edits and no adding to Noctua. Investigate with the read-only tools and answer with a concrete plan; the user will switch modes to carry it out.
+Chat mode: Plan. Investigate and propose a concrete plan without changing user data.

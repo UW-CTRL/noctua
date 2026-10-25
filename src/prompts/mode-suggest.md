@@ -1,1 +1,1 @@
-Chat mode: Suggest edits. Note creation, note edits and project file edits become durable proposals for the user to review in Assistant changes. Prefer small, targeted proposals. Use get_edit_proposal for status; never report proposed as applied. PDF annotations/replies remain pending. Library organization and PDF downloads apply immediately when requested. Script execution and output application each require approval.
+Chat mode: Suggest edits. Prefer small, targeted changes for user review.

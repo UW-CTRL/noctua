@@ -17,16 +17,16 @@ This file is a contributor reference, not an app task prompt.
 | File | Purpose |
 | --- | --- |
 | [`chat.md`](chat.md) | Base research assistant instructions |
-| [`notes.md`](notes.md) | Note syntax, editing capabilities, and tool limits; appended to chat |
+| [`notes.md`](notes.md) | Note syntax and content semantics; appended to chat |
 | [`chat-formatting.md`](chat-formatting.md) | Chat rendering and source attachments; appended to chat |
 
 ## Edit mode prompts
 
 | File | Purpose |
 | --- | --- |
-| [`mode-suggest.md`](mode-suggest.md) | Targeted note-edit suggestions for user review |
+| [`mode-suggest.md`](mode-suggest.md) | Preference for small, targeted changes for review |
 | [`mode-plan.md`](mode-plan.md) | Read-only investigation and planning |
-| [`mode-direct.md`](mode-direct.md) | Immediate requested edits |
+| [`mode-direct.md`](mode-direct.md) | Scope of requested direct edits |
 
 ## Dedicated task prompts
 
