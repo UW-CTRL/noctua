@@ -324,8 +324,13 @@ async fn query_source(app:&App,target:&str,body:&Value)->Result<Value>{
     let mut command=tokio::process::Command::new(tex_program("synctex")?);
     // Never pass -x or inherit an editor command: this subprocess only reports
     // locations. No source-provided path is ever opened by this endpoint.
-    command.args(["edit","-o"]).arg(format!("{page}:{x}:{y}:{}",root.join(format!("{artifact}.pdf")).display()))
-        .arg("-d").arg(&folder).env_remove("SYNCTEX_EDITOR").current_dir(&root).kill_on_drop(true);
+    // SyncTeX opens the sidecar by replacing the output filename's extension;
+    // it does not need to open the PDF itself. Use a basename in the mapping
+    // directory so its C file APIs never receive the >260-character absolute
+    // sidecar paths produced by Windows user/temp roots plus our two hashes.
+    // Rust still sets the working directory using the native filesystem API.
+    command.args(["edit","-o"]).arg(format!("{page}:{x}:{y}:{artifact}.pdf"))
+        .env_remove("SYNCTEX_EDITOR").current_dir(&folder).kill_on_drop(true);
     #[cfg(windows)] command.creation_flags(0x08000000);
     let output=tokio::time::timeout(Duration::from_secs(5),command.output()).await.context("Source lookup timed out")??;
     anyhow::ensure!(output.status.success(),"No source location found here; try nearby PDF text");

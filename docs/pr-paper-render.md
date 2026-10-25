@@ -202,8 +202,12 @@ The Windows integration test reached SyncTeX but received no forward-search
 location. The test now uses the exact `Input` path recorded by the compiler instead
 of reconstructing it from Python's filesystem path. Added tests cover Windows
 drive letters, backslashes, extended paths, spaces, and compressed/plain mappings.
-Failures now report the command, exit status, and output. Native Windows CI still
-needs to confirm whether this resolves the observed failure.
+Failures now report the command, exit status, and output. The next CI run confirmed Ubuntu passed, but Windows still returned no location.
+Its mapping filename was 266 characters long. A follow-up changes both forward
+tests and application inverse lookup to run from the mapping directory using a
+short output basename, avoiding long absolute paths in SyncTeX's C file APIs.
+The integration fixture now explicitly exercises sidecar paths over 260 characters.
+Native Windows CI still needs to confirm this follow-up.
 
 ## Validation
 
@@ -226,7 +230,7 @@ Additional feature coverage lives in `tests/paper.html`, `tests/paper-source.htm
 `tests/workspace.html`. See [CI](ci.md) for backend and frontend test commands.
 These suites are not claimed as freshly rerun for this documentation update.
 
-**Outstanding:** confirm the follow-up fixes on Ubuntu and Windows CI and complete
+**Outstanding:** confirm the latest SyncTeX fix on Windows CI and complete
 release packaging for all target platforms. Rerunning a release on an unchanged
 older tag does not incorporate these fixes.
 

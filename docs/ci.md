@@ -167,3 +167,8 @@ cache invalidation, cancellation, and last-successful PDF retention.
 
 SyncTeX integration queries use the exact source names recorded by the compiler,
 including Windows paths, and report the command and output if no location is found.
+
+The real-compiler fixture places SyncTeX sidecars beyond 260 characters to cover
+Windows path limits. Forward queries and the application's inverse queries run
+inside the mapping directory with a short output basename; the actual PDF remains
+in the artifact directory. This avoids passing long absolute filenames to SyncTeX.

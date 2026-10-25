@@ -36,13 +36,17 @@ def recorded_source(sync_dir, artifact, path):
 
 def run(engine):
     with tempfile.TemporaryDirectory(prefix='noctua-paper-test-') as temp:
-        data = Path(temp)
+        # Keep the real compiler/source paths short enough for Windows TeX, but
+        # force the fingerprint + artifact sidecar path beyond MAX_PATH. Both
+        # forward lookup here and the app's inverse lookup must use a basename.
+        data = Path(temp)/('project-' + 'x' * 32)
+        data.mkdir()
         (data/'settings.json').write_text('{"s2_key_skipped":true}')
         (data/'notes').mkdir()
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        env = dict(os.environ, NOCTUA_HOME=temp, NOCTUA_PORT=str(port), NOCTUA_NO_OPEN='1', PATH='')
+        env = dict(os.environ, NOCTUA_HOME=str(data), NOCTUA_PORT=str(port), NOCTUA_NO_OPEN='1', PATH='')
         binary = ROOT/'target'/'debug'/('noctua.exe' if os.name == 'nt' else 'noctua')
         process = subprocess.Popen([str(binary)], cwd=temp, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         base = f'http://127.0.0.1:{port}'
@@ -118,11 +122,13 @@ def run(engine):
                 sync_dir = paper_root/'sync'/last['fingerprint']
                 source = recorded_source(sync_dir, last['artifact'], path)
                 command = [str(synctex),'view','-i',f"{line}:0:{source}",
-                           '-o',str(paper_root/(last['artifact']+'.pdf')),'-d',str(sync_dir)]
-                forward=subprocess.run(command,capture_output=True,text=True,timeout=10)
+                           '-o',last['artifact']+'.pdf']
+                sidecar = sync_dir / (last['artifact']+'.synctex.gz')
+                assert len(str(sidecar)) > 260, 'Fixture must exercise a long sidecar path'
+                forward=subprocess.run(command,cwd=sync_dir,capture_output=True,text=True,timeout=10)
                 values=dict(re.findall(r'^(Page|x|y):([^\n]+)',forward.stdout,re.M))
                 assert forward.returncode == 0 and {'Page','x','y'} <= values.keys(), (
-                    f"SyncTeX command: {command!r}\nExit: {forward.returncode}\n"
+                    f"SyncTeX command: {command!r}\nWorking directory: {sync_dir}\nExit: {forward.returncode}\n"
                     + forward.stdout + forward.stderr)
                 return {'fingerprint':last['fingerprint'],'page':int(values['Page']),'x':float(values['x']),'y':float(values['y'])}
             point=source_point(result,'sections/intro.tex',1)
