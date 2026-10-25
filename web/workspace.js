@@ -24,9 +24,9 @@ function renderWorkspaceTree(){
   return `<div class="workspace-entry ${active?'active':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-menu="${esc(e.id)}" data-icon="ellipsis" data-icon-only title="Actions for ${esc(title)}" aria-label="Actions for ${esc(title)}"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
- tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-bibliographies','library','Bibliographies')}${action('data-skills','sparkles','Agent skills')}${action('data-trash','trash-2','Project trash')}</div>${historyButtons('workspace')}</div>`;
+ tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-bibliographies','library','Bibliographies')}${action('data-trash','trash-2','Project trash')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
- $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-skills]').onclick=showSkills;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;
+ $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;
  tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true})));
  tree.querySelectorAll('[data-file-menu]').forEach(b=>b.onclick=()=>workspaceFileMenu(b.dataset.fileMenu));
  bindWorkspaceDrag(tree);
@@ -185,20 +185,6 @@ function showBibReference(key){const it=N.items.get(key);if(!it?.bib)return fals
 window.addEventListener('beforeunload',e=>{if(W.dirty){e.preventDefault();e.returnValue='';}});
 
 function chatProjectTarget(){return isNotesMode()?N.target:(G.project?.target||lib.target||N.target||null);}
-function getChatSkillOverride(){const value=store.get('noctua.chatSkills.'+chat.id);if(value==null)return null;try{return JSON.parse(value);}catch{return null;}}
-async function showSkills(){
- try{const skills=await api('/api/skills');const target=chatProjectTarget();let manifest=target?await api(`/api/workspaces/${enc(target)}`):null;const selected=getChatSkillOverride();const enabled=manifest?.skills||[];
- const d=workspaceDialog('Agent skills',`<p>Project: ${esc(target||'none')}. Skills are stored inside Noctua and shared by Claude and Codex. Importing never runs scripts. Enable instructions for this project, or override the selection for this chat.</p><button data-folder>Import folder</button><button data-zip>Import ZIP</button><button data-md>Import SKILL.md</button><label><input type="checkbox" data-override ${selected!==null?'checked':''}> Override skills for this chat</label><div data-skill-list>${skills.map(s=>`<section><label><input type="checkbox" data-skill="${s.id}" ${(selected??enabled).includes(s.id)?'checked':''}> ${esc(s.name||s.id)}</label><p>${esc(s.description)}</p><button data-inspect="${s.id}">Read instructions and files</button></section>`).join('')||'<p>No imported skills yet.</p>'}</div><button data-enable>Save selection</button>`);
- const importFiles=(kind)=>{const input=document.createElement('input');input.type='file';if(kind==='folder'){input.multiple=true;input.setAttribute('webkitdirectory','');}else input.accept=kind==='zip'?'.zip':'.md';input.onchange=async()=>{try{
-  let response;if(kind==='zip'){response=await fetch('/api/skills/import-zip',{method:'POST',body:input.files[0]});const r=await response.json();if(!response.ok)throw Error(r.error||'Import failed');}
-  else {const files=[];let total=0;for(const f of input.files){if((f.webkitRelativePath||f.name).split('/').some(p=>['.DS_Store','__MACOSX','.git'].includes(p)))continue;total+=f.size;if(total>32*1024*1024||files.length>=512)throw Error('Skill packages support at most 512 files and 32 MB.');const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));files.push({path:kind==='md'?'SKILL.md':f.webkitRelativePath||f.name,data:btoa(binary)});}await api('/api/skills',{files});}
-  d.close();await showSkills();
- }catch(e){toast(e.message,{error:true});}};input.click();};
- for(const kind of ['folder','zip','md'])d.querySelector(`[data-${kind}]`).onclick=()=>importFiles(kind);
- d.querySelectorAll('[data-inspect]').forEach(b=>b.onclick=async()=>{try{const id=b.dataset.inspect,r=await api(`/api/skills/${id}/files/SKILL.md`);const view=workspaceDialog('Skill package',`<select data-resource>${r.files.map(p=>`<option ${p==='SKILL.md'?'selected':''}>${esc(p)}</option>`).join('')}</select><pre>${esc(r.text)}</pre>`);view.querySelector('select').onchange=async(e)=>{try{const f=await api(`/api/skills/${id}/files/${e.target.value.split('/').map(enc).join('/')}`);view.querySelector('pre').textContent=f.text;}catch(err){toast(err.message,{error:true});}};}catch(e){toast(e.message,{error:true});}});
- d.querySelector('[data-enable]').onclick=async()=>{try{const ids=[...d.querySelectorAll('[data-skill]:checked')].map(e=>e.dataset.skill);if(d.querySelector('[data-override]').checked)store.set('noctua.chatSkills.'+chat.id,JSON.stringify(ids));else{localStorage.removeItem('noctua.chatSkills.'+chat.id);if(!manifest)throw Error('Select a project before saving project skills.');if(W.target===target)await saveWorkspaceFile();const updated=await api(`/api/workspaces/${enc(target)}`,{revision:manifest.revision,op:'config',skills:ids});if(W.target===target){W.manifest=updated;W.fileRevision=updated.revision;renderWorkspaceTree();}}d.close();toast('Skill selection saved. It applies to the next chat turn.');}catch(e){toast(e.message,{error:true});}};
- }catch(e){toast(e.message,{error:true});}
-}
 async function showSkillRun(id){
  const d=workspaceDialog('Skill script request','<div data-run>Loading…</div>');let timer;
  const update=async()=>{if(!d.isConnected)return;try{const r=await api('/api/skill-runs/'+enc(id));const pending=r.status==='approval_required',review=r.status==='review_required';
@@ -210,8 +196,6 @@ async function showSkillRun(id){
 }
 function showWorkspaceProposal(a){const d=workspaceDialog('Proposed project file change',`<pre>${esc(JSON.stringify(a.change,null,2))}</pre><button data-accept>Accept</button><button data-reject>Reject</button>`);d.querySelector('[data-reject]').onclick=()=>d.close();d.querySelector('[data-accept]').onclick=async()=>{try{await saveWorkspaceFile();const m=await api(`/api/workspaces/${enc(a.target)}`,a.change);if(W.target===a.target){W.manifest=m;await refreshWorkspaceView(a.target);}d.close();}catch(e){toast(e.message,{error:true});}};}
 
-document.getElementById('chat-skills-btn')?.addEventListener('click',showSkills);
-
 async function refreshWorkspaceView(target){
  const file=W.target===target?W.file:null;
  await loadWorkspace(target);
@@ -219,3 +203,64 @@ async function refreshWorkspaceView(target){
 }
 
 function showWorkspaceTrash(){const entries=(W.manifest?.entries||[]).filter(e=>e.deleted);const d=workspaceDialog('Project trash',`<p>Restore individual entries here, including after restarting Noctua. Restore a folder before its children to keep their original placement; otherwise entries return to the root.</p>${entries.map(e=>`<p>${esc(e.name)} <button data-restore="${e.id}" data-icon="undo-2">Restore</button></p>`).join('')||'<p>Trash is empty.</p>'}`);d.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{try{await workspaceChange({op:'restore',id:b.dataset.restore});d.close();showWorkspaceTrash();}catch(e){toast(e.message,{error:true});}});}
+
+// Slash commands select available skills for one message, without changing defaults.
+window.NoctuaSkillPicker=(()=>{
+ const input=$('#chat-input'),popup=$('#skill-picker');
+ let results=[],index=0,version=0,active=null;
+ const token=s=>'/'+(s.name||s.id).trim().replace(/\s+/g,'-');
+ function commands(skills){
+  const counts=new Map();for(const s of skills)counts.set(token(s),(counts.get(token(s))||0)+1);
+  return skills.map(s=>({...s,command:token(s)+(counts.get(token(s))>1?'-'+s.id:'')}));
+ }
+ function query(){
+  if(!input||input.selectionStart!==input.selectionEnd)return null;
+  const before=input.value.slice(0,input.selectionEnd),m=/(?:^|\s)\/([^\s/]{0,100})$/.exec(before);
+  return m?{text:before,start:before.length-m[1].length-1,q:m[1].toLowerCase()}:null;
+ }
+ function close(){version++;active=null;results=[];if(popup)popup.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}}
+ function render(message){
+  popup.innerHTML=results.length?results.map((s,i)=>`<div role="option" id="skill-option-${i}" aria-selected="${i===index}" data-skill-index="${i}" class="skill-option${i===index?' active':''}"><strong>${esc(s.command)}</strong><small>${esc([s.project_name,s.description].filter(Boolean).join(' · ')||'Skill')}</small></div>`).join(''):`<div class="skill-empty" role="status">${esc(message)}</div>`;
+  popup.hidden=false;input.setAttribute('aria-expanded','true');
+  if(results.length)input.setAttribute('aria-activedescendant','skill-option-'+index);else input.removeAttribute('aria-activedescendant');
+  popup.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});
+ }
+ async function update(){
+  const q=query();if(!q||chat.busy||chat.switching)return close();
+  const request=++version;active=q;results=[];index=0;render('Loading skills…');
+  try{
+   const skills=commands(await api('/api/skills'));
+   if(request!==version||query()?.text!==q.text||document.activeElement!==input)return;
+   results=skills.filter(s=>`${s.command} ${s.description||''} ${s.project_name||''}`.toLowerCase().includes(q.q)).sort((a,b)=>a.command.localeCompare(b.command));
+   render(skills.length?'No matching skills.':'No skills found. Install a global skill with the Skills CLI or import one in Settings → Skills.');
+  }catch(e){if(request===version)render('Could not load skills: '+e.message);}
+ }
+ function pick(i){
+  const s=results[i],q=query();if(!s||!q||q.text!==active?.text)return close();
+  const end=input.selectionEnd;input.setRangeText(s.command+' ',q.start,end,'end');close();input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));
+ }
+ function key(e){
+  if(!popup||popup.hidden||e.isComposing||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey)return false;
+  if(!['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(e.key))return false;
+  e.preventDefault();
+  if(e.key==='Escape')close();
+  else if(e.key==='Enter'||e.key==='Tab'){if(results.length)pick(index);else if(e.key==='Tab')close();}
+  else if(results.length){index=(index+(e.key==='ArrowDown'?1:results.length-1))%results.length;render();}
+  return true;
+ }
+ async function prepare(text){
+  const tokens=new Set(text.split(/\s+/));
+  if(![...tokens].some(t=>t.startsWith('/')))return {ids:[],instructions:''};
+  const selected=commands(await api('/api/skills')).filter(s=>tokens.has(s.command));
+  if(!selected.length)return {ids:[],instructions:''};
+  return {ids:selected.map(s=>s.id),instructions:'The user explicitly selected these skills for this message. Read each SKILL.md with read_skill and follow its instructions within the current mode and tool permissions:\n'+selected.map(s=>`${s.command}: skill_id=${JSON.stringify(s.id)}, path="SKILL.md"`).join('\n')};
+ }
+ if(input&&popup){
+  input.addEventListener('input',update);input.addEventListener('click',update);
+  input.addEventListener('blur',close);
+  input.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key))update();});
+  popup.addEventListener('mousedown',e=>{e.preventDefault();const item=e.target.closest('[data-skill-index]');if(item)pick(Number(item.dataset.skillIndex));});
+  document.addEventListener('pointerdown',e=>{if(e.target!==input&&!popup.contains(e.target))close();});
+ }
+ return {key,close,prepare};
+})();

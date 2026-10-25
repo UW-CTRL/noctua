@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"></head><body>
+<form class="chat-form" style="position:absolute;bottom:10px;width:420px"><div id="skill-picker" class="skill-picker" role="listbox" hidden></div><textarea id="chat-input"></textarea></form>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chat={busy:false,switching:false},calls=[];
+let skills=[{id:'react',name:'vercel-react-best-practices',description:'React performance'},{id:'paper',name:'Paper review',description:'Review research methods'}],fail=false,pending=null;
+async function api(path){calls.push(path);if(path==='/api/skills'){if(pending)return pending;if(fail)throw Error('offline');return skills;}if(path==='/api/workspaces/L1')return {skills:['default']};throw Error(path);}
+function assert(ok,message){if(!ok)throw Error(message);}
+async function settle(){for(let i=0;i<30;i++)await Promise.resolve();}
+async function type(text){input.value=text;input.focus();input.setSelectionRange(text.length,text.length);input.dispatchEvent(new Event('input'));await settle();}
+function key(value,options={}){const e=new KeyboardEvent('keydown',{key:value,cancelable:true,...options});return NoctuaSkillPicker.key(e);}
+</script><script src="../web/workspace.js"></script><script>
+const input=$('#chat-input'),popup=$('#skill-picker');
+(async()=>{
+ await type('/');assert(!popup.hidden&&popup.querySelectorAll('[role=option]').length===2,'slash lists all imported skills');
+ const box=popup.getBoundingClientRect();assert(box.top>=0&&box.bottom<=input.getBoundingClientRect().top&&box.width<=420,'picker fits above composer');
+ key('ArrowDown');assert(popup.querySelector('[aria-selected=true]').textContent.includes('vercel'),'arrow selects next');
+ assert(key('Enter')&&input.value==='/vercel-react-best-practices '&&popup.hidden,'Enter picks without sending');
+ let result=await NoctuaSkillPicker.prepare(input.value+'help');assert(result.ids.join(',')==='react'&&result.instructions.includes('skill_id="react"'),'invocation sends additional skill IDs');
+ result=await NoctuaSkillPicker.prepare('/Paper-review summarize');assert(result.ids.join(',')==='paper','command selects the requested skill');
+ result=await NoctuaSkillPicker.prepare('/Paper-review /vercel-react-best-practices');assert(result.ids.length===2,'multiple commands with no project');
+ result=await NoctuaSkillPicker.prepare('ordinary question');assert(result.ids.length===0&&!result.instructions,'no command inherits defaults');
+ result=await NoctuaSkillPicker.prepare('/unknown');assert(!result.instructions&&result.ids.length===0,'unknown command is ordinary text');
+ await type('Compare /methods');assert(popup.textContent.includes('Paper-review'),'description search');key('Tab');assert(input.value==='Compare /Paper-review ','Tab selects');
+ await type('/');popup.querySelector('[data-skill-index="0"]').dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));assert(input.value==='/Paper-review ','mouse selects');
+ await type('/missing');assert(!popup.hidden&&popup.textContent.includes('No matching'),'no match state');assert(key('Enter'),'empty result does not submit');key('Escape');assert(popup.hidden&&input.getAttribute('aria-expanded')==='false','Esc closes');
+ await type('https://example.org/path');assert(popup.hidden,'URL does not trigger slash');
+ await type('/');assert(!key('Enter',{isComposing:true})&&!key('Tab',{shiftKey:true}),'IME and mode cycling untouched');
+ chat.busy=true;await type('/');assert(popup.hidden,'busy chat suppresses picker');chat.busy=false;
+ skills=[];await type('/');assert(popup.textContent.includes('No skills found'),'empty import guidance');
+ fail=true;await type('/');assert(popup.textContent.includes('offline'),'load failure visible');fail=false;
+ let resolve;pending=new Promise(r=>resolve=r);await type('/');input.value='gone';input.dispatchEvent(new Event('input'));resolve([{id:'stale',name:'Stale'}]);await settle();assert(popup.hidden,'late results cannot reopen dismissed picker');pending=null;
+ skills=[{id:'one',name:'Same'},{id:'two',name:'Same'}];await type('/');assert(popup.textContent.includes('/Same-one')&&popup.textContent.includes('/Same-two'),'duplicate names distinguishable');
+ key('Enter');result=await NoctuaSkillPicker.prepare(input.value);assert(result.ids.join(',')==='one','duplicate name invokes correct package');
+ window.webkit.messageHandlers.result.postMessage('PASS: slash picker keyboard, mouse, filtering, layout, message invocation, defaults, duplicates, IME, empty/error and stale loading');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

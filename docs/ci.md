@@ -18,7 +18,7 @@ automatically after every platform build and installer verification succeeds.
 | Check | Runner | Coverage |
 | --- | --- | --- |
 | Backend tests | Ubuntu | `cargo test --locked -p noctua` compiles and tests the backend, including chats, tool isolation, library/PDF/media handling, model discovery, and storage relocation/failure recovery. |
-| Frontend tests | macOS | `bash tests/run-frontend.sh` runs the JavaScriptCore checks for syntax, settings, models, typography, chat Markdown, notes/media, and targeted PDF behavior, plus WebKit checks for Research views and search, chat rendering, fonts, dropdowns, project files, and sticky note controls, title editing, compact project creation/import dialogs, upload validation and partial-failure retry, and layout at narrow pane widths. |
+| Frontend tests | macOS | `bash tests/run-frontend.sh` runs the JavaScriptCore checks for syntax, settings, models, typography, chat Markdown, notes/media, and targeted PDF behavior, plus WebKit checks for Research views and search, chat rendering, fonts, dropdowns, Settings global skill location, grouped project imports/disconnect and chat defaults, slash skill invocation, project files, and sticky note controls, title editing, compact project creation/import dialogs, upload validation and partial-failure retry, and layout at narrow pane widths. |
 | Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for both Apple Silicon and Intel targets. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |

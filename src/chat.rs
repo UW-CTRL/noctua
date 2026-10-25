@@ -28,6 +28,7 @@ const SYSTEM: &str = concat!(include_str!("prompts/chat.md"), "\n\n", include_st
 pub struct ChatBody {
     message: String,
     project_target: Option<String>,
+    /// Skills explicitly invoked for this message, added to project defaults.
     skill_ids: Option<Vec<String>>,
     provider: Option<Provider>,
     #[serde(default)]
@@ -147,7 +148,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
     std::fs::create_dir_all(&app.chat_dir)?;
 
     let enabled=crate::skills::set_context(app,chat_id,body.project_target.as_deref(),body.skill_ids.as_ref())?;
-    let instructions=format!("{SYSTEM}\nEnabled imported skills for this chat: {enabled}");
+    let instructions=format!("{SYSTEM}\nEnabled skills for this chat: {enabled}");
     let session = app.history.session(chat_id, provider);
     let mut cmd = if provider == Provider::Codex {
         let mut c = agent::codex_command(app, Some(url.as_str()), &instructions);

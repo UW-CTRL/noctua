@@ -69,11 +69,25 @@ Histories are separate by document/paper/workspace, remain available during the 
 session, and clear when it exits. New edits clear redo. Conflicting saves must be
 resolved before undoing; failed operations do not consume history.
 
-Open the **Agent skills** icon below the project tree or in the chat toolbar to import a skill directory, ZIP,
-or standalone `SKILL.md`. Packages may contain scripts and supporting resources (up to
-512 files / 32 MB). Inspect them before enabling. Packages live in Noctua's `skills/`
-directory and work with both Claude and Codex; project enablement can be overridden for
-an individual chat.
+In **Settings → Skills**, **Global Agent Skills** reads packages in place from
+**Location** (default `~/.agents/skills`). Save another existing folder or choose
+**Use default**. **Import Skills from Project** imports multiple `SKILL.md`
+packages from a project or skills folder as a named group. Click each project to
+expand or collapse its skill list. **Disconnect** removes that group's Noctua
+copies without changing the original project or other groups.
+
+Imports are snapshots. Up to 100 skills, 512 files, and 32 MB can be imported in
+one project group. **Import an individual skill** also supports a folder, ZIP,
+or standalone `SKILL.md`; these appear under **Other imported skills**.
+See [Skills settings](settings-and-data.md#skills) for location, import, and
+reconnection details. Both providers use the same available skills.
+
+Under **Chat project defaults**, choose a Noctua project, select skills, and save.
+These defaults are separate from source-project groups. Type `/` in chat to
+search all available skills and select with Up/Down and Enter/Tab or a click
+(Esc closes). An inserted `/skill-name` command activates that skill for one
+message without changing defaults. Delete it to remove that invocation; multiple
+commands can be used in one message.
 
 Every script invocation requires approval showing its source, arguments, and selected
 project files. Scripts run with your local user permissions: the temporary working
