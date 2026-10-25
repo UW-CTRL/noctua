@@ -172,3 +172,8 @@ The real-compiler fixture places SyncTeX sidecars beyond 260 characters to cover
 Windows path limits. Forward queries and the application's inverse queries run
 inside the mapping directory with a short output basename; the actual PDF remains
 in the artifact directory. This avoids passing long absolute filenames to SyncTeX.
+
+On integration failure, CI uploads `paper-diagnostics-<platform>` for seven days.
+These artifacts contain only synthetic fixture build files, the traceback, and
+SyncTeX probes comparing compressed/plain mappings in short temporary directories.
+Both engines run even if one fails; the job still fails if either engine fails.

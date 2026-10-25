@@ -7,6 +7,8 @@ from pathlib import Path
 import socket
 import platform
 import re
+import shutil
+import traceback
 import subprocess
 import tempfile
 import time
@@ -32,6 +34,39 @@ def recorded_source(sync_dir, artifact, path):
                or name.replace('\\', '/').endswith('/' + path)]
     assert len(matches) == 1, f"Expected one SyncTeX Input for {path!r}: {names!r}"
     return matches[0]
+
+
+def synctex_diagnostics(program, sync_dir, artifact, source, relative, line):
+    """Probe a failed query without weakening its assertion or changing app data.
+
+    Exit zero with only the banner does not distinguish a path lookup failure
+    from an unreadable map. Compare compressed/plain copies in a genuinely short
+    directory and try inverse lookup independently of source-name matching.
+    """
+    compressed = sync_dir / (artifact + '.synctex.gz')
+    raw = (gzip.decompress(compressed.read_bytes()) if compressed.exists()
+           else (sync_dir / (artifact + '.synctex')).read_bytes())
+    report = [f'Platform: {platform.platform()}', f'Map bytes: {len(raw)}',
+              f'Original directory: {sync_dir}',
+              'Map preamble:\n' + raw.decode('utf-8', errors='replace').split('Content:', 1)[0]]
+    for zipped in (True, False):
+        with tempfile.TemporaryDirectory(prefix='ns-') as temp:
+            folder = Path(temp)
+            sidecar = folder / ('probe.synctex.gz' if zipped else 'probe.synctex')
+            sidecar.write_bytes(gzip.compress(raw) if zipped else raw)
+            candidates = list(dict.fromkeys([source, source.replace('\\', '/'), relative]))
+            commands = [[str(program), 'view', '-i', f'{line}:0:{name}', '-o', 'probe.pdf']
+                        for name in candidates]
+            commands.append([str(program), 'edit', '-o', '1:100:100:probe.pdf'])
+            for command in commands:
+                report.append(f'cwd={folder!s}; sidecar length={len(str(sidecar))}; argv={command!r}')
+                try:
+                    result = subprocess.run(command, cwd=folder, capture_output=True, text=True,
+                                            errors='replace', timeout=10)
+                    report.append(f'exit={result.returncode}\n{result.stdout}\n{result.stderr}')
+                except Exception as error:
+                    report.append(repr(error))
+    return '\n'.join(report)
 
 
 def run(engine):
@@ -127,6 +162,10 @@ def run(engine):
                 assert len(str(sidecar)) > 260, 'Fixture must exercise a long sidecar path'
                 forward=subprocess.run(command,cwd=sync_dir,capture_output=True,text=True,timeout=10)
                 values=dict(re.findall(r'^(Page|x|y):([^\n]+)',forward.stdout,re.M))
+                if forward.returncode != 0 or not {'Page','x','y'} <= values.keys():
+                    report = synctex_diagnostics(synctex, sync_dir, last['artifact'], source, path, line)
+                    (paper_root/'synctex-diagnostics.txt').write_text(report, encoding='utf-8')
+                    print(report, flush=True)
                 assert forward.returncode == 0 and {'Page','x','y'} <= values.keys(), (
                     f"SyncTeX command: {command!r}\nWorking directory: {sync_dir}\nExit: {forward.returncode}\n"
                     + forward.stdout + forward.stderr)
@@ -240,12 +279,28 @@ def run(engine):
             pdfs=list((data/'notes').glob('*/.workspace/paper/*.pdf'))
             assert len(pdfs)<=2, pdfs
             print('PASS: artifact retention bounded to two PDFs')
+        except Exception:
+            # Preserve only this synthetic test project's build data, never the
+            # user's library. CI uploads it before the temporary fixture vanishes.
+            diagnostics = ROOT/'target/paper-diagnostics'/engine
+            diagnostics.mkdir(parents=True, exist_ok=True)
+            (diagnostics/'failure.txt').write_text(traceback.format_exc(), encoding='utf-8')
+            for paper_dir in (data/'notes').glob('*/.workspace/paper'):
+                shutil.copytree(paper_dir, diagnostics/paper_dir.parents[1].name, dirs_exist_ok=True)
+            raise
         finally:
             process.terminate()
             try: process.wait(timeout=10)
             except subprocess.TimeoutExpired: process.kill();process.wait()
 
 if __name__=='__main__':
+    failures = []
     for engine in ('tectonic','pdflatex'):
         print("Testing",engine,flush=True)
-        run(engine)
+        try:
+            run(engine)
+        except Exception:
+            traceback.print_exc()
+            failures.append(engine)
+    if failures:
+        raise SystemExit('Paper integration failed: ' + ', '.join(failures))
