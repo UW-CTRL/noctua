@@ -136,6 +136,11 @@ rather than bypassing the check.
 
 ## Paper rendering
 
+Desktop CI and release builds select Python 3.12 before preparing the compilers.
+This avoids the Ubuntu 22.04 system Python tar extraction failure on TinyTeX's
+relative symlinks while retaining the archive data filter and checksum validation.
+Use Python 3.12 when reproducing compiler setup locally.
+
 Desktop CI prepares the pinned managed compiler, builds the browser backend, and
 runs `python3 tests/paper-integration.py` on macOS, Windows, and Linux. This uses
 isolated temporary storage and tests real custom-class/BibTeX/image builds,
@@ -159,3 +164,6 @@ source/preview and restoring the layout across editor remounts.
 Paper integration checks prepare both bundled compilers, then exercise Tectonic
 and pdfLaTeX/BibTeX, project settings, engine switching, bibliography spacing,
 cache invalidation, cancellation, and last-successful PDF retention.
+
+SyncTeX integration queries use the exact source names recorded by the compiler,
+including Windows paths, and report the command and output if no location is found.

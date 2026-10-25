@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Real compiler/API regression. Requires cargo build and both compiler setup scripts."""
+import gzip
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,25 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+
+def recorded_source(sync_dir, artifact, path):
+    """Use the compiler's Input spelling, including Windows drive/relative paths.
+
+    Reconstructing an absolute path from Python can differ from Tectonic's
+    recorded path on Windows. SyncTeX may then exit successfully without a hit.
+    Split at most twice: an Input name may itself contain a drive-letter colon.
+    """
+    sync = sync_dir / (artifact + '.synctex.gz')
+    content = (gzip.decompress(sync.read_bytes()) if sync.exists()
+               else (sync_dir / (artifact + '.synctex')).read_bytes())
+    names = [line.split(':', 2)[2] for line in content.decode('utf-8').splitlines()
+             if line.startswith('Input:')]
+    matches = [name for name in names
+               if name.replace('\\', '/').removeprefix('./') == path
+               or name.replace('\\', '/').endswith('/' + path)]
+    assert len(matches) == 1, f"Expected one SyncTeX Input for {path!r}: {names!r}"
+    return matches[0]
+
 
 def run(engine):
     with tempfile.TemporaryDirectory(prefix='noctua-paper-test-') as temp:
@@ -95,9 +115,15 @@ def run(engine):
             synctex=ROOT/'target/texlive/bin'/tex_platform/('synctex.exe' if os.name=='nt' else 'synctex')
             def source_point(build,path,line):
                 last=build['last_success']
-                forward=subprocess.run([str(synctex),'view','-i',f"{line}:0:{paper_root/'work'/path}",'-o',str(paper_root/(last['artifact']+'.pdf')),'-d',str(paper_root/'sync'/last['fingerprint'])],capture_output=True,text=True,timeout=10)
+                sync_dir = paper_root/'sync'/last['fingerprint']
+                source = recorded_source(sync_dir, last['artifact'], path)
+                command = [str(synctex),'view','-i',f"{line}:0:{source}",
+                           '-o',str(paper_root/(last['artifact']+'.pdf')),'-d',str(sync_dir)]
+                forward=subprocess.run(command,capture_output=True,text=True,timeout=10)
                 values=dict(re.findall(r'^(Page|x|y):([^\n]+)',forward.stdout,re.M))
-                assert values,forward.stdout+forward.stderr
+                assert forward.returncode == 0 and {'Page','x','y'} <= values.keys(), (
+                    f"SyncTeX command: {command!r}\nExit: {forward.returncode}\n"
+                    + forward.stdout + forward.stderr)
                 return {'fingerprint':last['fingerprint'],'page':int(values['Page']),'x':float(values['x']),'y':float(values['y'])}
             point=source_point(result,'sections/intro.tex',1)
             found=api(url+'/paper/source',point)
