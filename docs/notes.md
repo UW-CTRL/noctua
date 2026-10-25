@@ -50,7 +50,7 @@ restore the parent folder before its children to preserve their placement.
 
 Import or create a `.bib`, then select the **Bibliographies** icon below the tree to enable it for this
 collection. Its keys become available in the normal citation picker alongside library
-keys, using the existing author/year display. Duplicate keys must be renamed. Invalid
+keys, using the existing author/year display. Suggestions list collection and bibliography sources separately, including duplicates. Invalid
 source remains editable; a visible error marks the retained citation index as out of
 date. Clicking an imported citation shows its reference details and DOI/URL when
 available. Importing a bibliography does not download its papers.
@@ -153,3 +153,50 @@ changes, media insertion, and layout controls remain UI actions.
 Use **Suggest** to review edits, **Plan** for read-only discussion, or **Direct**
 for immediate changes with note-edit undo. Attach a note with @ in chat or select
 rendered text and choose **Add to chat**. See [Research assistant](assistant.md).
+
+For standard `.tex` papers with custom classes and a faithful PDF preview, use the
+[Paper editor](papers.md). Its settings gear selects bundled Tectonic or pdfLaTeX
+per project, with no separate TeX installation. This is separate from note cells
+and their KaTeX preview.
+
+## Find and citation suggestions
+
+Press **Cmd/Ctrl+F** to search the current text file, including `.bib` and `.tex`.
+In block notes, Find searches the active cell's source while editing; otherwise it
+searches rendered note text, including text across inline formatting. Hidden math
+accessibility representations are excluded so they do not duplicate results.
+Enter/Shift+Enter or the arrow buttons navigate matches; Escape closes Find.
+
+Typing `\cite{` searches both collection papers and enabled bibliographies.
+Suggestions render title math and identify **Collection** or **Bib: filename**.
+The same paper may appear in both sources. If sources reuse an identical key,
+rendered note citations retain collection-first, then first-enabled-bibliography
+resolution; use distinct keys when you need to distinguish entries.
+
+### Chat approval for project files
+
+In Suggest mode, the first edit to each project file asks inline in chat with
+**Allow this file**, **Decline**, and an optional scrollable diff preview. Approval
+covers further edits to that file during the current response, including renames
+and moves. Other files need separate approval. Permission expires when the
+response ends or is stopped. Direct mode edits files immediately without approval
+requests or popups. Note block suggestions, PDF annotations, and skill scripts
+keep their existing review controls.
+
+### Mention project files in chat
+
+Type `@` in chat to search current-project files and folders, library papers,
+notes, or collections. Any file extension can be selected, including `.tex` and
+`.bib`. Results show their type and project path. Text files attach an excerpt
+(including the current unsaved draft when open), folders attach a descendant
+listing, and media attach file references. The agent can use the attached IDs
+to read individual files. A folder mention does not inline all of its contents.
+
+Use the thin left/right arrow rails to hide or reopen project navigation and chat.
+Collapsed panes retain their contents and previous widths; note drafts stay open.
+
+The assistant can read paper compiler logs and browse internal build files using
+`inspect_workspace`; see [Paper editor](papers.md). This is read-only in all modes.
+
+Double-click text in a compiled paper preview to jump to its source line; see
+[PDF-to-source navigation](papers.md#jump-from-pdf-to-source).

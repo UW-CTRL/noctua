@@ -11,8 +11,51 @@ pub fn safe_path(s:&str)->Result<()> {
  if s.is_empty()||s.len()>500||s.contains(['\\','\0',':'])||s.split('/').any(|c|c.is_empty()||c=="."||c==".."||c.starts_with('.')) {bail!("Use a relative path without hidden or parent directories");} Ok(())
 }
 pub fn dir(app:&App,target:&str)->Result<PathBuf>{let folder=app.library.folder_id(target)?;crate::notes::check_id(&folder)?;Ok(app.notes.root.join(folder))}
+/// Read-only diagnostics under a collection's internal workspace. Never expose a
+/// general filesystem path or follow links out of this project. Reads are bounded
+/// because compiler logs can grow while an agent is inspecting them.
+pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
+ use std::io::{Read,Seek,SeekFrom};
+ let requested=args.get("path").map(|v|v.as_str().context("path must be a string")).transpose()?.unwrap_or("");
+ let path=if requested==".workspace"{""}else{requested.strip_prefix(".workspace/").unwrap_or(requested)};
+ anyhow::ensure!(path.len()<=1000&&!path.contains(['\\','\0',':'])&&(path.is_empty()||path.split('/').all(|s|!s.is_empty()&&s!="."&&s!="..")),"Use a relative path inside .workspace without parent directories");
+ let offset=args.get("offset").map(|v|v.as_u64().context("offset must be a nonnegative integer")).transpose()?.unwrap_or(0);
+ let tail=args.get("tail").map(|v|v.as_bool().context("tail must be a boolean")).transpose()?.unwrap_or(false);
+ anyhow::ensure!(!tail||offset==0,"Choose tail or offset, not both");
+ let project=dir(app,target)?;
+ let root=project.join(".workspace");
+ if !root.exists()&&path.is_empty(){return Ok(json!({"path":"","kind":"directory","exists":false,"entries":[]}));}
+ let mut resolved=project;
+ for part in std::iter::once(".workspace").chain(path.split('/').filter(|p|!p.is_empty())){
+  resolved.push(part);
+  let meta=std::fs::symlink_metadata(&resolved).context("Workspace path does not exist (a build may not have run yet)")?;
+  anyhow::ensure!(!meta.file_type().is_symlink(),"Workspace symlinks cannot be inspected");
+ }
+ anyhow::ensure!(resolved.canonicalize()?.starts_with(root.canonicalize()?),"Path is outside the workspace");
+ let meta=std::fs::metadata(&resolved)?;
+ if meta.is_dir(){
+  anyhow::ensure!(!tail,"tail applies only to files");
+  let mut entries=Vec::new();
+  for e in std::fs::read_dir(&resolved)? {let e=e?;let t=e.file_type()?;let name=e.file_name().to_string_lossy().into_owned();entries.push(json!({"name":name,"path":if path.is_empty(){name.clone()}else{format!("{path}/{name}")},"kind":if t.is_symlink(){"symlink"}else if t.is_dir(){"directory"}else if t.is_file(){"file"}else{"other"}}));}
+  entries.sort_by(|a,b|a["name"].as_str().cmp(&b["name"].as_str()));
+  let start=offset.min(entries.len() as u64) as usize;let end=(start+200).min(entries.len());
+  return Ok(json!({"path":path,"kind":"directory","exists":true,"entries":entries[start..end],"total_entries":entries.len(),"next_offset":if end<entries.len(){Some(end)}else{None}}));
+ }
+ anyhow::ensure!(meta.is_file(),"Only regular files and directories can be inspected");
+ let mut file=std::fs::File::open(&resolved)?;
+ let size=file.metadata()?.len();let start=if tail{size.saturating_sub(64*1024)}else{offset.min(size)};
+ file.seek(SeekFrom::Start(start))?;let mut bytes=Vec::new();file.take(64*1024).read_to_end(&mut bytes)?;
+ // PDF/images are visible in listings, but returning binary bytes as tool text
+ // is neither useful nor safe for context budgets. UTF-8 boundary fragments in
+ // paginated text are replaced; offsets always count original bytes.
+ let binary=path.to_lowercase().ends_with(".pdf")||bytes.iter().any(|b|*b<32&&!matches!(*b,b'\n'|b'\r'|b'\t'|12));
+ let end=start+bytes.len() as u64;
+ Ok(json!({"path":path,"kind":"file","size_bytes":size,"offset":start,"end_offset":end,"truncated":start>0||end<size,"next_offset":if end<size{Some(end)}else{None},"binary":binary,"text":if binary{None}else{Some(String::from_utf8_lossy(&bytes).into_owned())},"note":if binary{"Binary file; content is not returned"}else{"Build files can change during compilation; this is a read-only snapshot"}}))
+}
+
 fn manifest_path(app:&App,target:&str)->Result<PathBuf>{Ok(dir(app,target)?.join(".workspace").join("manifest.json"))}
 fn load(app:&App,target:&str)->Result<Value>{let p=manifest_path(app,target)?;if p.exists(){Ok(serde_json::from_slice(&std::fs::read(p)?)?)}else{Ok(json!({"revision":0,"entries":[],"bibliographies":[],"skills":[]}))}}
+pub(crate) fn paper_manifest(app:&App,target:&str)->Result<Value>{let _gate=GATE.lock().unwrap();load(app,target)}
 fn save(app:&App,target:&str,v:&Value)->Result<()>{let p=manifest_path(app,target)?;std::fs::create_dir_all(p.parent().unwrap())?;crate::notes::write_atomic(&p,&v.to_string())}
 fn history_content(v:Value)->Value{let mut v=crate::editing::content(v);if let Some(entries)=v["entries"].as_array_mut(){entries.retain(|e|e["deleted"]!=true);}v}
 fn file_content(e:&Value)->Value{json!({"blob":e["blob"],"size":e["size"]})}
@@ -80,7 +123,7 @@ pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>
    match op {"edit"=>{if e["kind"]!="file"||e.get("legacy").is_some(){bail!("Use the note editor for notes; managed media are immutable");}let data=b["text"].as_str().context("Text required")?.as_bytes();if data.len()>2<<20{bail!("Text exceeds 2 MB");}e["blob"]=json!(blob(app,target,data)?);e["size"]=json!(data.len());},"rename"=>{e["name"]=b["name"].clone();e["renamed"]=json!(true);},"move"=>e["parent"]=b["parent"].clone(),_=>e["deleted"]=json!(true)}
    if op=="delete" {loop{let gone:Vec<Value>=m["entries"].as_array().unwrap().iter().filter(|e|e["deleted"]==true).map(|e|e["id"].clone()).collect();let mut changed=false;for e in m["entries"].as_array_mut().unwrap(){if e["deleted"]!=true&&gone.contains(&e["parent"]){e["deleted"]=json!(true);changed=true;}}if !changed{break;}}}
   },
-  "config"=>{for field in ["bibliographies","skills"]{if let Some(v)=b.get(field){if !v.is_array(){bail!("Expected a list");}m[field]=v.clone();}}},
+  "config"=>{if let Some(paper)=b.get("paper"){m["paper"]=crate::paper::merge_settings(&m["paper"],paper,m["entries"].as_array().unwrap())?;}for field in ["bibliographies","skills"]{if let Some(v)=b.get(field){if !v.is_array(){bail!("Expected a list");}m[field]=v.clone();}}},
   _=>bail!("Unknown file operation"),
  }
  if op=="create"{organize_media(&mut m);}

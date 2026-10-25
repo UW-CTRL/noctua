@@ -88,9 +88,21 @@ jobs:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         if: needs.release-checks.outputs.run_desktop != 'false'
+      - name: Prepare managed paper compiler
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        shell: bash
+        run: |
+          python3 scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
+          python3 scripts/setup-pdflatex.py
       - name: Check the desktop app
         if: needs.release-checks.outputs.run_desktop != 'false'
         run: cargo check --locked -p noctua-app ${{ matrix.args }}
+      - name: Exercise real paper compilation
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        shell: bash
+        run: |
+          cargo build --locked --bin noctua
+          python3 tests/paper-integration.py
 
   release-checks:
     name: Release and workflow checks

@@ -140,12 +140,12 @@ button.icon { padding: 4px 9px; }
 
 main {
   --left-w: 320px; --right-w: 360px;
-  flex: 1; display: grid; grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w); min-height: 0; position: relative;
+  flex: 1; display: grid; grid-template-columns: var(--left-track,var(--left-w)) 16px minmax(0, 1fr) 16px var(--right-track,var(--right-w)); min-height: 0; position: relative;
 }
 /* Invisible 9px handles centred on the panel borders; they light up on hover and while dragging. */
-.gutter { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 20; cursor: col-resize; }
-#gutter-left { left: calc(var(--left-w) - 5px); }
-#gutter-right { right: calc(var(--right-w) - 4px); }
+.gutter { position: absolute; top: 0; bottom: 0; width: 16px; z-index: 20; background:var(--panel); cursor: col-resize; }
+#gutter-left { left: var(--left-track,var(--left-w)); }
+#gutter-right { right: var(--right-track,var(--right-w)); }
 .gutter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; background: transparent; transition: background .12s .08s; }
 .gutter:hover::after, .gutter.dragging::after { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
@@ -342,14 +342,12 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
 .role.exp { background: var(--muted); }
 
 @media (max-width: 1100px) {
-  main { grid-template-columns: 260px minmax(0, 1fr) 300px; }
+  main { --left-w:260px; --right-w:300px; }
 }
 @media (max-width: 800px) {
   body { overflow: auto; }
   header { flex-wrap: wrap; }
   #search-form { order: 3; flex-basis: 100%; max-width: none; }
-  main { display: flex; flex-direction: column; }
-  #stage { height: 60vh; flex: none; }
   #left, #right { border: 0; max-height: none; }
 }
 
@@ -684,6 +682,7 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
   display: inline-block; font-size: calc(9px * var(--ui-font-scale)); font-weight: 700; letter-spacing: .06em; padding: 1px 5px;
   border-radius: 4px; margin-right: 6px; vertical-align: 1px; color: #fff;
 }
+.ref-kind.file,.ref-kind.folder,.ref-kind.collection { background:var(--line); color:var(--ink); }
 .ref-kind.paper { background: var(--ref); }
 .ref-kind.note { background: var(--accent); color: var(--accent-ink); }
 .mention { background: rgba(255, 255, 255, .22); border-radius: 4px; padding: 0 3px; font-weight: 600; }
@@ -1508,3 +1507,65 @@ body.library-view #folder-divider { display: none; }
 .settings-skill-project > summary { cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
 .settings-skill-project > summary small { color:var(--muted); font-weight:400; }
 .skill-individual-import { margin-top:14px; }
+
+/* Real TeX paper editor: source and PDF share the available document pane. */
+.paper-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); font-size:12px; }
+.paper-toolbar [data-paper-main] { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.paper-toolbar [data-paper-status] { flex:1; min-width:120px; color:var(--muted); }
+.paper-toolbar label { display:flex; align-items:center; gap:4px; }
+#paper-split { display:flex; flex:1; min-height:240px; overflow:hidden; }
+.paper-source { flex:0 0 var(--paper-source-width,50%); min-width:0; display:flex; }
+.paper-source .workspace-source { width:100%; min-width:0; min-height:0; border:0; outline-offset:-3px; line-height:1.5; }
+.paper-divider { position:relative; flex:0 0 16px; background:var(--line); cursor:col-resize; touch-action:none; }
+.paper-divider:hover,.paper-divider:focus-visible { background:var(--accent); }
+#paper-pages { flex:1; min-width:0; overflow:auto; padding:20px; background:var(--bg); }
+.paper-page { position:relative; background:white; color:black; box-shadow:0 2px 8px #0003; margin:0 auto 18px; overflow:hidden; }
+.paper-page canvas { display:block; }
+.paper-page .textLayer { position:absolute; inset:0; }
+.paper-empty { color:var(--muted); line-height:1.6; }
+.paper-logs { flex:none; max-height:30vh; overflow:auto; border-top:1px solid var(--line); padding:8px 12px; font-size:12px; }
+.paper-logs pre { white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; }
+.paper-logs [data-paper-errors] { display:flex; flex-wrap:wrap; gap:6px; }
+.paper-page .textLayer ::selection { background:#85b7ff80; }
+.cp-source { font-size:11px; color:var(--accent); margin-top:4px; }
+.cp-title { white-space:normal; }
+.cp-title p { margin:0; }
+#document-find { position:fixed; z-index:85; top:64px; right:20px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; max-width:calc(100vw - 40px); padding:10px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:10px; box-shadow:0 5px 18px #0005; font-size:12px; }
+#document-find input { width:200px; min-width:90px; }
+#document-find [data-find-count] { max-width:260px; }
+#document-find-overlay { position:fixed; inset:0; z-index:70; pointer-events:none; }
+#document-find-overlay i,.document-find-pdf i { position:absolute; background:#ffb80055; outline:2px solid #d58a00; border-radius:2px; pointer-events:none; }
+.document-find-pdf { position:absolute; inset:0; pointer-events:none; z-index:6; }
+
+/* File permissions live inside chat; optional diffs stay bounded and scrollable. */
+.chat-edit-approval { border:1px solid var(--line); border-radius:8px; padding:12px; margin:12px 0; font-size:13px; }
+.chat-edit-approval > p { margin:0 0 8px; }
+.chat-edit-approval summary { cursor:pointer; color:var(--muted); margin:8px 0; }
+.chat-edit-approval [data-status]:empty,.chat-edit-approval [data-error]:empty { display:none; }
+.chat-edit-approval footer { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.chat-edit-approval footer[hidden] { display:none; }
+.edit-diff-scroll { overflow:auto; min-height:0; max-height:55vh; border:1px solid var(--line); border-radius:6px; }
+.edit-diff-file h4 { margin:0; padding:10px; background:var(--panel); border-bottom:1px solid var(--line); }
+.edit-diff-file h4 small { color:var(--muted); font-weight:normal; }
+.edit-diff-file > p { padding:0 12px; }
+.chat-edit-approval .edit-diff { margin:0; padding:8px 0; max-height:none; overflow:visible; white-space:pre-wrap; font-size:12px; }
+.edit-diff span { display:block; padding:1px 10px; overflow-wrap:anywhere; }
+.diff-added { background:#22c55e20; border-left:3px solid #22c55e; }
+.diff-removed { background:#ef444420; border-left:3px solid #ef4444; }
+.diff-context,.diff-gap { border-left:3px solid transparent; color:var(--muted); }
+
+/* Rails retain their own track even with both side panes completely hidden. */
+main > #left { grid-column:1; grid-row:1; min-width:0; }
+main > #right { grid-column:5; grid-row:1; min-width:0; }
+main > #stage,main > #notes-stage,main > #pdf-stage { grid-column:3; grid-row:1; min-width:0; }
+main.left-collapsed { --left-track:0px; }
+main.right-collapsed { --right-track:0px; }
+main.left-collapsed > #left,main.right-collapsed > #right { visibility:hidden; overflow:hidden; border:0; }
+.gutter::after { pointer-events:none; }
+button.pane-toggle { position:absolute; top:calc(50% - 22px); left:0; width:16px; min-width:0; height:44px; padding:0; margin:0; border:0; border-radius:3px; z-index:1; display:flex; align-items:center; justify-content:center; color:var(--muted); background:var(--panel); cursor:pointer; }
+button.pane-toggle::before { width:14px; height:14px; margin:0; }
+button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent); background:var(--bg); }
+
+.paper-source[hidden],#paper-pages[hidden] { display:none; }
+.paper-divider .paper-pane-toggle[data-paper-pane="source"] { top:calc(50% - 46px); }
+.paper-divider .paper-pane-toggle[data-paper-pane="preview"] { top:calc(50% + 2px); }

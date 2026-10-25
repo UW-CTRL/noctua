@@ -15,6 +15,8 @@ const body={querySelector:()=>null,insertAdjacentHTML:()=>{throw Error('Unexpect
 const $=()=>null,enc=encodeURIComponent;
 const AbortController=function(){this.signal={aborted:false};};
 function appendMsg(){return {querySelector:()=>body};}
+let approvalClosures=0;
+function closeFileEditApprovals(){approvalClosures++;}
 function setChatBusy(b){chat.busy=b;}
 function userMsgHtml(t){return t;}
 function chatContext(){return {context:'project',key:'key',noteKey:null};}
@@ -35,8 +37,9 @@ function assert(ok,message){if(!ok)throw Error(message);}
  await sendChat('next question');
  assert(requests[1].skill_ids.length===0&&!requests[1].attachments.includes('skill_id='),'one-message skill leaked into next request');
  assert(!chat.busy&&!chat.abort,'request did not finish');
+ assert(approvalClosures===2,'file approvals were not closed after each skill turn');
  globalThis.testResult='PASS: actual chat payload enables selected skills, preserves attachments and Plan mode, and restores defaults next turn';
-})().catch(e=>globalThis.testResult='FAIL: '+e.stack);
+})().catch(e=>globalThis.testResult='FAIL: '+e.message+'\n'+e.stack);
 """#)
 let deadline=Date().addingTimeInterval(5)
 while context.objectForKeyedSubscript("testResult").isUndefined && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}

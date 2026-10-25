@@ -133,3 +133,29 @@ modify repository protection settings.
 If a runner or download fails transiently, use **Re-run failed jobs** in Actions.
 If a test or workflow fails consistently, inspect its log and correct the cause
 rather than bypassing the check.
+
+## Paper rendering
+
+Desktop CI prepares the pinned managed compiler, builds the browser backend, and
+runs `python3 tests/paper-integration.py` on macOS, Windows, and Linux. This uses
+isolated temporary storage and tests real custom-class/BibTeX/image builds,
+subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
+artifact retention. It requires network for uncached TeX resources.
+
+The frontend suite includes `tests/paper.html` for editor/preview behavior, save
+conflicts, debounced builds, cancellation, and stale PDF-load protection.
+
+`tests/document-tools.html` covers citation source labels and duplicate results,
+rendered title math, stale suggestion requests, line-comment shortcuts, and Find
+scopes for file source, active cells, rendered notes, PDF text, and user comments.
+
+`tests/mentions.html` checks project file/folder mentions, typed labels, duplicate
+titles, unsaved excerpts, scoped listings, binary references, and project-switch races.
+
+`tests/panes.html` verifies collapsed rails across graph, notes, and reader modes,
+restored widths, retained drafts, and focus. Paper checks also cover collapsing
+source/preview and restoring the layout across editor remounts.
+
+Paper integration checks prepare both bundled compilers, then exercise Tectonic
+and pdfLaTeX/BibTeX, project settings, engine switching, bibliography spacing,
+cache invalidation, cancellation, and last-successful PDF retention.

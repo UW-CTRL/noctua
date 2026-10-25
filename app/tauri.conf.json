@@ -8,7 +8,9 @@
   "plugins": {
     "updater": {
       "pubkey": "",
-      "endpoints": ["https://github.com/UW-CTRL/noctua/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://github.com/UW-CTRL/noctua/releases/latest/download/latest.json"
+      ]
     }
   },
   "app": {
@@ -32,6 +34,10 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "resources": {
+      "../target/tectonic/": "tectonic/",
+      "../target/texlive/": "texlive/"
     }
   }
 }

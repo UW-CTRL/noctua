@@ -1349,9 +1349,10 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
     </li>`).join('') : '<li class="hint">No saved chats yet.</li>';
 }
 
-function runChatAction(a) {
+function runChatAction(a, host) {
   if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
+  if (a.action === 'file_edit_approval') { showFileEditApproval(a, host); return; }
   if (a.action === 'workspace_proposal') { showWorkspaceProposal(a); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_edit') return noteEditFromChat(a);
@@ -1405,7 +1406,7 @@ async function sendChat(text) {
       t.textContent = `⚙ ${TOOL_LABEL[e.name] || e.name}…`;
       el.insertBefore(t, body);
     }
-    else if (e.type === 'action') runChatAction(e);
+    else if (e.type === 'action') runChatAction(e, el);
     else if (e.type === 'done') { chat.sentGraphKey = key; chat.sentNoteKey = noteKey; }
     else if (e.type === 'error') body.insertAdjacentHTML('beforeend', `<p class="error">${esc(e.message)}</p>`);
     log.scrollTop = log.scrollHeight;
@@ -1431,6 +1432,7 @@ async function sendChat(text) {
     body.querySelector('.typing')?.remove();
     NoctuaChatRender.enhance(body);
     chat.abort = null;
+    closeFileEditApprovals();
     setChatBusy(false);
   }
 }
@@ -1442,45 +1444,6 @@ function showRightTab(name, { focus = true } = {}) {
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
   if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); if (focus) $('#chat-input').focus(); }
-}
-
-// ---------------------------------------------------------------- resizable side panels
-
-// Drag the line between a side panel and the middle to resize it (double-click
-// resets). Widths are remembered.
-const PANES = { left: { def: 320, min: 200, max: 640 }, right: { def: 360, min: 260, max: 760 } };
-
-function setPaneWidth(side, w, save = true) {
-  const p = PANES[side];
-  const other = side === 'left' ? 'right' : 'left';
-  const otherW = parseFloat(getComputedStyle($('main')).getPropertyValue(`--${other}-w`)) || PANES[other].def;
-  // Keep at least 320px for the graph / note page in the middle.
-  w = Math.round(Math.max(p.min, Math.min(p.max, w, window.innerWidth - otherW - 320)));
-  $('main').style.setProperty(`--${side}-w`, w + 'px');
-  if (save) store.set(`noctua.pane.${side}`, String(w));
-}
-
-for (const side of ['left', 'right']) {
-  const saved = Number(store.get(`noctua.pane.${side}`));
-  if (saved) setPaneWidth(side, saved, false);
-  const g = $(`#gutter-${side}`);
-  g.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    g.setPointerCapture(e.pointerId);
-    g.classList.add('dragging');
-    document.body.classList.add('resizing');
-    const move = (ev) => setPaneWidth(side, side === 'left' ? ev.clientX : window.innerWidth - ev.clientX, false);
-    const up = (ev) => {
-      g.removeEventListener('pointermove', move);
-      g.removeEventListener('pointerup', up);
-      g.classList.remove('dragging');
-      document.body.classList.remove('resizing');
-      setPaneWidth(side, side === 'left' ? ev.clientX : window.innerWidth - ev.clientX);
-    };
-    g.addEventListener('pointermove', move);
-    g.addEventListener('pointerup', up);
-  });
-  g.addEventListener('dblclick', () => setPaneWidth(side, PANES[side].def));
 }
 
 // ---------------------------------------------------------------- toast / tabs
