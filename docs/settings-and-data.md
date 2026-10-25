@@ -2,11 +2,27 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Server & connection
+
+The native Settings menu opens the local connection manager, including while
+servers are offline. It selects this computer or another server, tests and retries
+connections, shows identity/version/status and errors/logs, and manages **this
+computer's** server and user-login auto-start. These local controls remain local
+when a remote server is selected. Start/stop/restart and login auto-start are
+separate actions; app exit and connection changes leave servers running.
+
+Connection selection is device-local; remote tokens use the OS secure store.
+AI CLI, API keys, Zotero and data-folder fields in the server UI belong to the
+server computer. Client uploads are separate browser file controls. A connection
+switch flushes every open editor first and is blocked by failed saves/conflicts.
+Read [Server and connections](server.md) for operations, backup and recovery.
+
 ## Personalize the workspace
 
 In **Settings → Appearance**, choose App, Notes, and Reader themes independently.
-The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork separately; Light is the
-default and the choice is applied on the next desktop launch.
+The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in the local connection manager’s Desktop
+section; Light is the default. The device-local choice applies immediately and
+is restored on launch. Server-hosted pages do not change native app artwork.
 
 Checkboxes and selected graph filters follow the app theme's accent color:
 brown in Light and purple in Dark, including when System changes appearance.
@@ -69,15 +85,28 @@ App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
 
 To move storage, choose an empty folder in **Settings → Data & storage**, save,
-then quit all Noctua apps and servers and restart. Noctua copies the data and
+then use **Restart safely** after other tasks finish. Closing a desktop window
+alone does not stop the independent server. An enabled login definition follows
+the relocated data, and the source remains available as a backup. Noctua copies the data and
 keeps the original. Unset `NOCTUA_HOME` and `NOCTUA_NOTES` if they override the
 location you want to select.
 
 ## Updates
 
-Official desktop builds check for updates at startup. You can also use
-**Settings → About & shortcuts → Check for updates**. Save work before installing.
+Use the local connection manager's **Desktop → Check desktop update**.
+Server-hosted web pages do not control the native updater. Save work before installing.
 Linux in-app updates require AppImage; use your package manager for other builds.
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.
+
+## Independent server updates
+
+Desktop updates do not stop or replace a running server. The server executable
+is staged outside the app bundle by version/content hash. Use an explicit safe
+Restart in the local connection manager after tasks finish to use the newly
+bundled server and refresh an enabled service definition. Coordinate with other
+clients before restarting. Unknown data-format versions are rejected before DB
+open; first conversion and server version changes snapshot the SQLite databases.
+See [server backup and updates](server.md#drafts-backup-and-updates) for complete
+backup/restore and validation limits.

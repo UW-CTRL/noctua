@@ -2,6 +2,17 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Choose a server
+
+On first launch the desktop shows **Server & connection** even when no server is
+running. Choose **Use this computer** to reuse/start an independent background
+server, or enter another computer's private HTTPS address and authentication
+token. Remote use requires no AI CLI or API key on this client. Closing the app
+leaves the server running; login auto-start is a separate opt-in setting.
+The saved connection is retried next launch. If it fails, retry or change it from
+the same screen; Noctua never silently switches a remote connection to local data.
+See [Server and connections](server.md) for browser login, CLI and Tailscale Serve.
+
 ## Install and open
 
 Download the installer for your OS from
@@ -21,7 +32,7 @@ you do not need them to read local PDFs or write notes.
 | 4. Write | Switch to **Notes**, select the same collection, and choose **New note**. Enter a title and write a short takeaway; changes save automatically. |
 
 If a search result has no downloadable PDF, use **Attach PDF** in its saved
-paper details to add a local copy. The PDF and note are stored locally.
+paper details to add a local copy. The PDF and note are stored on the connected server.
 
 For more, see [Research](research.md), [PDF reader](reader.md), and [Notes](notes.md).
 
@@ -34,7 +45,7 @@ online search uses a slower shared pool and may encounter rate limits.
 
 ### Connect an assistant (optional)
 
-Install [Codex CLI](https://developers.openai.com/codex/cli) or
+On the **server computer**, install [Codex CLI](https://developers.openai.com/codex/cli) or
 [Claude Code](https://code.claude.com/docs/en/overview), then:
 
 1. Open **Settings → Research assistant** and choose the provider.
@@ -46,7 +57,7 @@ See [Research assistant](assistant.md) for capabilities, edit modes, and prompts
 
 ### Import from Zotero (optional)
 
-Set the Zotero data folder in **Settings → Connections**, then choose
+Set the Zotero data folder on the **server computer** in **Settings → Connections**, then choose
 **Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
 
 Noctua copies nested collections, metadata, citation keys, and available local

@@ -10,6 +10,50 @@ to the app. Changing to a remote server preserves the local data and server.
 Replication, merging, multiple-user collaboration and organization accounts are
 outside this release.
 
+## First launch and recovery
+
+The desktop starts with a bundled **Server & connection** screen that needs no
+server. Choose **Use this computer** to validate and reuse an existing server, or
+start a detached background process when none owns the data. Validation checks
+product, persistent server identity, instance identity, API version, data folder
+and readiness; a listening port or PID is insufficient. Parallel clients share
+an ensure lock and the server holds an exclusive lifetime ownership lock.
+
+Choose **Connect to another computer** and enter its HTTPS origin and token.
+**Test connection** authenticates the identity endpoint; **Connect / retry** also
+creates the WebView's HttpOnly browser session before opening the UI. Redirects
+are refused and HTTPS certificate verification stays enabled. Remote use never
+starts a local data server or requires local AI installation. The saved mode is
+retried next launch. A failure leaves the connection manager available and never
+falls back to local data.
+
+The selection is in the operating system's config directory under `NoctuaClient`,
+independent of server storage. Tokens use macOS Keychain, Windows Credential
+Manager, or Linux Secret Service (`secret-tool` must be installed and a keyring
+unlocked). Storage errors leave the connection manager available. Resetting the
+connection selection does not delete research data or remove credentials from
+the OS keyring. Credentials never belong in URLs.
+
+Use the native **Settings** menu to reopen the manager at any time, including
+while disconnected. Settings → **Server & connection** in the web UI shows the
+server origin, identifier and version, and offers a connection test. In a browser,
+connect to another server by opening that server's HTTPS address and signing in;
+OS service and process controls are restricted to the local desktop screen/CLI.
+
+Before a desktop connection switch, input is frozen in every existing content
+window, including the end of any in-progress drawing stroke. Every window must then flush its notes,
+project text, PDF comments and chat draft. Failed saves or unresolved conflicts
+block the switch. The old windows stay open and resume editing on failure.
+Status polling does not replace connection settings you are still typing. A successful switch opens
+fresh server content and closes the old windows, so old responses cannot update
+the new interface. Server-owned tab state, chat drafts and note drafts are
+namespaced by server identity. Browser requests also carry that identity; the
+server rejects an old window’s requests if the same address now serves different
+data, before any stale content can be written. Tasks stay on their original server; reconnect to
+that server to view them. Closing a chat subscriber does not cancel its reply;
+request Stop explicitly to cancel and preserve the partial result. Admitted HTTP
+AI/write jobs also retain their server lifetime when a response subscriber leaves. No server is stopped by a connection switch.
+
 ## Local commands
 
 Build with `cargo build --locked -p noctua`, then use `target/debug/noctua`
@@ -109,14 +153,22 @@ does not grant the server stop operation: that needs `server-control`, kept priv
 on the server computer and never returned by the identity API.
 
 Server content has no Tauri native management privilege. Its old desktop HTTP
-endpoints report unavailable. Windows/tabs, external web links, client file
+endpoints report unavailable. Same-server app links open native windows and preserve the requested app path;
+external links open the system browser. **Open in new window** saves first and
+keeps the source tab open. Windows/tabs, client file
 uploads, app icons and signed desktop updates remain client responsibilities.
 AI CLI configuration, API credentials, Zotero imports and typed data paths in the
 server Settings refer to the **server computer**. Client uploads use browser file
 inputs; they do not choose a server data path.
 
+## Drafts, backup and updates
 
-## Backup and recovery
+Desktop updates leave a running server alone. Server executables are staged by
+version and content hash in the client config folder, so replacing the app bundle
+does not remove their path. An explicit safe Restart uses the newly bundled server;
+it refuses when work is active and refreshes an enabled login registration. Other
+clients disconnect and must reconnect; coordinate this action before updating.
+There is no automatic server update or forced task cancellation.
 
 `server-format.json` fences the data format before databases open. A binary that
 implements this protocol rejects an unknown data version. Before first conversion
@@ -129,5 +181,16 @@ all servers, restoring the entire folder to a separate location, selecting it
 explicitly and starting its matching binary. Never mix database snapshots from
 different generations or open newer data with an old pre-protocol app.
 
+## Validation limits
 
-Real login, keyring and platform installation remain release smoke tests. Lifecycle regressions use isolated data and mocked OS service managers.
+The automated lifecycle test uses temporary data and fake OS service managers;
+it does not register a real resident service. macOS code checks, linked desktop
+build, backend tests and WebKit regression cover the implementation. An isolated
+native macOS smoke also verifies WebView cookie authentication/readiness, saved
+connection selection and the same server surviving desktop process exit. Run it
+with `python3 tests/desktop-smoke.py` after building both binaries. Actual login,
+logout, signed installer/update replacement and a live Tailscale/multiple-computer
+network still require a release-environment smoke test. Windows and Linux service,
+credential-store and installer behavior is implemented but has not been exercised
+on those OSes in this development environment. Do not interpret a generated
+service file or successful compile as a verified login service installation.

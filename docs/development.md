@@ -4,7 +4,7 @@
 
 ## Run and build
 
-Build the independent server and CLI, then use a separate development profile:
+Install [Rust](https://rustup.rs), then run from the repository root:
 
 ```sh
 cargo build --locked -p noctua
@@ -12,13 +12,38 @@ NOCTUA_HOME=/absolute/isolated/data target/debug/noctua ensure
 NOCTUA_HOME=/absolute/isolated/data target/debug/noctua token
 ```
 
-Open the returned URL and sign in with the token. Ensure reuses the verified
-owner or detaches a separate process; it never registers login auto-start.
-Use `status`, `stop`, or `restart` to manage this server explicitly. Closing an
-interface leaves server jobs running. See [Server operations](server.md).
+Open the URL returned by ensure in a browser and sign in with the token. The
+server remains running after ensure exits. Stop that isolated server explicitly
+with `NOCTUA_HOME=/absolute/isolated/data target/debug/noctua stop`. Never use
+production data for tests. See [Server operations](server.md) for CLI semantics.
 
-For desktop development, build the headless server above before starting Tauri.
-The desktop and browser connect to the same authenticated backend.
+For desktop development, build the headless binary first, then the Tauri app:
+
+```sh
+cargo build --locked -p noctua
+cargo install tauri-cli --version "^2" --locked
+cd app
+cargo tauri dev
+# Build installers (also builds and bundles the headless executable):
+cargo tauri build
+```
+
+Installers appear under `target/release/bundle/`. The bundled local connection
+screen opens without starting a data server. `app/prepare-server.py` runs from
+the build hook, builds the requested server target and puts it in the bundle's
+`binaries/` resources. Universal macOS builds combine both architectures with
+lipo. Tauri supplies the target through its [build hook environment](https://v2.tauri.app/reference/config/#buildconfig).
+The desktop stages a version/content-addressed durable copy before ensure, so
+an app update does not remove a running server's executable.
+
+Use `NOCTUA_HOME` and `NOCTUA_CLIENT_HOME` pointing to separate temporary folders
+for parallel development. A second port does not permit a second writer to the
+same data. `NOCTUA_SERVICE_HOME` redirects generated definitions and
+`NOCTUA_SERVICE_MANAGER` substitutes a fake manager executable for tests; always
+set both for service tests. Do not install a real service during development.
+Server web assets are embedded: rebuild, explicitly stop/restart your isolated
+server, then refresh. Rebuilding the desktop alone does not update a running
+server. Platform prerequisites are in the [release workflow](../.github/workflows/release.yml).
 
 ## Project structure and checks
 
@@ -29,7 +54,8 @@ The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
 | `src/` | Rust server, domain models, assistant integration, and MCP tools. |
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
-| `app/` | Tauri desktop shell, native controls, icons, and updater. |
+| `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
+| `src/server.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, server authentication, local user services and device-local configuration/OS credentials. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
@@ -95,11 +121,25 @@ Find the file inventory in the [prompt index](../src/prompts/AGENTS.md).
 | `ZOTERO_DATA_DIR` | Zotero source folder |
 | `NOCTUA_NOTES` | Notes folder |
 | `NOCTUA_CLAUDE` / `NOCTUA_CODEX` | Assistant CLI paths |
-| `NOCTUA_PORT` | Preferred loopback server port; default 47878, recorded fallback reuse |
-| `NOCTUA_PROFILE_HOME` | Isolated profile root for migration tests |
-| `NOCTUA_CLIENT_HOME` | Device-local configuration and staged server executables |
-| `NOCTUA_ORIGINS` | Allowed private HTTPS origins |
-| `NOCTUA_DEBUG` | Log requests |
+| `NOCTUA_PORT` | Preferred loopback server port; default 47878, free-port fallback on conflict |
+| `NOCTUA_PROFILE_HOME` | Isolated server profile/config root; preserves migration locking in tests |
+| `NOCTUA_CLIENT_HOME` | Device-local connection preferences and staged server binaries |
+| `NOCTUA_ORIGINS` | Comma-separated exact HTTPS origins, overriding server-config.json |
+| `NOCTUA_SERVICE_HOME` / `NOCTUA_SERVICE_MANAGER` | Isolated definition directory and fake service manager for tests |
+| `NOCTUA_SERVER_NAME` | Human-readable name in server identity |
 
 For an assistant CLI not found automatically, you can also set `claude_path` or
 `codex_path` in `settings.json`.
+
+## Connection and shutdown transactions
+
+The server control lock spans ensure, stop and restart, including an enabled
+service's executable refresh. Migration also locks the source data owner before
+copying. Response bodies retain the admitted request count until consumed or
+abandoned; safe shutdown refuses an active stream or detached AI/write job.
+
+Native connection callbacks are bound to a window and purpose. The provisional
+window and callback are discarded on any error; the old connection is saved only
+after the new WebView authenticates and every old editor freezes and flushes.
+Failure resumes the old editors. Device preferences use exact shared keys, while
+server state and its removal operations share the same namespace.

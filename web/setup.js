@@ -7,7 +7,7 @@ let settings = null;
 const keyNeeded = (s) => !s.key_source && !s.skipped;
 
 function keySection(s, firstRun) {
-  const intro = '<h2>Semantic Scholar API key</h2><p>An optional API key for paper searches and citation lookups.</p>';
+  const intro = '<h2>Server Semantic Scholar API key</h2><p>An optional API key for paper searches and citation lookups.</p>';
   if (s.key_source === 'env') {
     return `<section data-step="key">${intro}
       <p class="setup-current"><code>${esc(s.key_hint || '')}</code> · <code>NOCTUA_S2_KEY</code></p></section>`;
@@ -30,7 +30,7 @@ function keySection(s, firstRun) {
 }
 
 function zoteroSection(s, firstRun) {
-  const intro = '<h2>Import from Zotero</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const intro = '<h2>Import from Zotero on the server computer</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
   const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
@@ -138,9 +138,15 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
-  ['appearance', 'Appearance'], ['agent', 'Research assistant'],
+  ['appearance', 'Appearance'], ['server', 'Server & connection'], ['agent', 'Research assistant'],
   ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
 ];
+
+function serverSection() {
+  const id=window.noctuaServerId || 'Unavailable';
+  const desktop=window.noctuaDesktopClient || window.top?.noctuaDesktopClient;
+  return `<section><h2>Server &amp; connection</h2><p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File upload controls choose files on this client.</p>${desktop ? '<p>Use Settings from the native menu or <a href="https://noctua.invalid/settings" target="_top">open the local connection manager</a>. It works while the server is offline, and provides connection tests, switching, local start/stop/restart, login auto-start and server logs.</p>' : '<p>To connect to another server in a browser, open its HTTPS address and sign in.</p>'}<p>In a browser, open another server’s HTTPS address and sign in there. Local process, service, credentials, app icons and desktop update controls are only available in the desktop app or local CLI. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
+}
 
 function fontSizeSetting(kind, label) {
   return `<select id="setup-${kind}-font-size" aria-label="${label}">${NoctuaFonts.sizeChoices(kind).map(value => `<option value="${value}" ${value === NoctuaFonts.getSize(kind) ? 'selected' : ''}>${value}px</option>`).join('')}</select>`;
@@ -199,6 +205,7 @@ async function saveHighlightPalette(colors){
   if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
 }
 function appIconSettings() {
+  if (!settings?.desktop) return ''; // Native artwork is managed by the local connection screen.
   const selected = settings?.app_icon || 'light';
   const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
   return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App icon</h3>
@@ -385,6 +392,8 @@ function openSetup({ firstRun = false, tab } = {}) {
   el.innerHTML = `<div class="setup-card ${firstRun ? '' : 'settings-card'}" role="dialog" aria-modal="true" aria-labelledby="settings-title"></div>`;
   document.body.appendChild(el);
   const card = el.querySelector('.setup-card');
+  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & connection: desktop Settings menu opens the local connection manager even while offline. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
+  el.prepend(context);
   let loginAbort = null;
   let assistantSaving = false;
   const close = () => {
@@ -483,11 +492,11 @@ function openSetup({ firstRun = false, tab } = {}) {
       card.querySelector('.setup-input')?.focus();
       return;
     }
-    const panels = { appearance: appearanceSection(), agent: agentSection(settings),
+    const panels = { appearance: appearanceSection(), server: serverSection(), agent: agentSection(settings),
       connections: keySection(settings, false) + zoteroSection(settings, false), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',agent:'bot',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
@@ -528,6 +537,11 @@ function openSetup({ firstRun = false, tab } = {}) {
     try {
       busy(true);
       switch (t.dataset.act) {
+        case 'reconnect-server': {
+          const current=await api('/api/server');
+          if(current.api_version!==1||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');
+          msg(section,`Connected to ${current.server_id}`,true);break;
+        }
         case 'update': await updateApp(t, section, msg); break;
         case 'agent-login': signIn(); break;
         case 'agent-check': await checkAgent(); break;

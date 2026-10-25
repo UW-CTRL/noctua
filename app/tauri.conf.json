@@ -3,12 +3,15 @@
   "productName": "Noctua",
   "identifier": "app.noctua.desktop",
   "build": {
-    "frontendDist": "dist"
+    "frontendDist": "dist",
+    "beforeBuildCommand": "python3 prepare-server.py"
   },
   "plugins": {
     "updater": {
       "pubkey": "",
-      "endpoints": ["https://github.com/UW-CTRL/noctua/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://github.com/UW-CTRL/noctua/releases/latest/download/latest.json"
+      ]
     }
   },
   "app": {
@@ -32,6 +35,9 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
-    }
+    },
+    "resources": [
+      "binaries/"
+    ]
   }
 }
