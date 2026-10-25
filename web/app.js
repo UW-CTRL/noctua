@@ -606,10 +606,10 @@ function renderDetails() {
       ${pdf ? `<a href="${esc(pdf)}" target="_blank" rel="noopener">PDF ↗</a>` : ''}
     </div>
     <div class="paper-primary-actions" role="group" aria-label="Paper actions">
-      <button id="act-read-pdf" class="paper-read-button" data-icon="file-text">Read PDF</button>
-      <button id="act-pdf-tab" data-icon="external-link" data-icon-only title="PDF in new tab" aria-label="PDF in new tab"></button>
-      ${p.paperId !== G.centerId ? '<button id="act-center" data-icon="network" data-icon-only title="Build graph from this paper" aria-label="Build graph from this paper"></button>' : ''}
-      ${n && p.paperId !== G.centerId && !n.expanded ? '<button id="act-expand" title="Expand this paper in the current graph" aria-label="Expand this paper in the current graph" data-icon="expand" data-icon-only></button>' : ''}
+      <button id="act-read-pdf" class="paper-read-button" data-icon="file-text" data-label="Read PDF" aria-label="Read PDF">Read PDF</button>
+      <button id="act-pdf-tab" data-icon="external-link" data-icon-only data-label="New tab" aria-label="PDF in new tab"></button>
+      ${p.paperId !== G.centerId ? '<button id="act-center" data-icon="network" data-icon-only data-label="Graph" aria-label="Build graph from this paper"></button>' : ''}
+      ${n && p.paperId !== G.centerId && !n.expanded ? '<button id="act-expand" data-label="Expand graph" aria-label="Expand this paper in the current graph" data-icon="expand" data-icon-only></button>' : ''}
     </div>
     <div class="library-add">
       ${inLib ? '<div class="in-lib">✓ Already in your Noctua library</div>' : ''}
@@ -916,7 +916,7 @@ function renderLibDetails(it) {
       ${it.url && !it.arxiv && !doi ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">Link ↗</a>` : ''}
     </div>
     <div class="paper-primary-actions" role="group" aria-label="Paper actions">
-      <button id="act-lib-graph" data-icon="network" data-icon-only title="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}" aria-label="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}"></button>
+      <button id="act-lib-graph" data-icon="network" data-icon-only data-label="Graph" aria-label="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}"></button>
     </div>
     <div class="paper-collection-tools"></div>
     <div class="section-label">Abstract</div>${abstractHTML(it,true)}`;

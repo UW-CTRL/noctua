@@ -1479,3 +1479,13 @@ body.library-view #folder-divider { display: none; }
 @media (prefers-reduced-motion: reduce) {
   :where(#notes-side>.workspace-tools [role="group"]>button, .chat-actions>button, .paper-primary-actions>button)::after { transition: none; transform: none; }
 }
+
+.chat-head { position: relative; z-index: 5; }
+:is(.chat-actions, .paper-primary-actions)>button::after { content: attr(data-label); }
+:is(.chat-actions, .paper-primary-actions)>button:hover::after { transition-delay: .3s; }
+:is(.chat-actions, .paper-primary-actions)>button:focus-visible::after { transition-delay: 0s; }
+
+.paper-primary-actions { position: relative; z-index: 2; }
+.paper-primary-actions>button:first-child::after { left: 0; right: auto; }
+
+.paper-primary-actions>button:not([data-icon-only])::after { content: none; }

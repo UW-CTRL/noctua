@@ -37,8 +37,9 @@ function libraryPaperActions(el,it) {
   graph.remove();
   const actionIcons={'Read PDF':'file-text','New tab':'external-link','New window':'app-window','Attach PDF':'paperclip','Download PDF':'download','Edit details':'pencil','Add to collection':'folder-plus','Remove from collection':'folder-minus'};
   const button=(label,fn,{iconOnly=false,parent=box}={})=>{
-    const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.icon=actionIcons[label];
-    if(iconOnly){b.setAttribute('data-icon-only','');b.setAttribute('aria-label',label);b.title=label;}
+    const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.icon=actionIcons[label];b.setAttribute('aria-label',label);
+    if(parent===box)b.dataset.label=label==='Edit details'?'Edit':label;
+    if(iconOnly){b.setAttribute('data-icon-only','');b.setAttribute('aria-label',label);if(parent!==box)b.title=label;}
     b.onclick=()=>Promise.resolve().then(fn).catch(e=>toast(e.message));parent.append(b);return b;
   };
   if(it.has_pdf){

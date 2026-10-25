@@ -10,7 +10,9 @@ Model access and fast-mode availability depend on your CLI and account; fast
 mode may cost extra. Providers keep separate conversations and drafts.
 
 Open **Chat** to discuss the current paper, graph, or notes. Use @ to attach a
-paper or note, and **History** to return to earlier conversations. The assistant
+paper or note, and **History** to return to earlier conversations. Pause the pointer
+over the Skills, History, or New chat icon to reveal its label below. Keyboard
+focus shows the same labels immediately; reduced-motion preferences disable the animation. The assistant
 can search papers, explore your library, save papers, read PDFs, annotate
 passages, and edit note text through Noctua's tools.
 

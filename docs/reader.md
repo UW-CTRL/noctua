@@ -50,7 +50,8 @@ auto-highlight tasks are instructed, with links to their source prompts.
 
 ## Undo and redo
 
-Use the Reader Undo/Redo buttons or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for
+The Reader Undo/Redo icons sit to the right of Page … of …, below the paper
+title, leaving more width for the title. Use these buttons or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for
 highlights, drawings, comments, replies, deletion, and accepted suggestions.
 Automatic highlights form a grouped edit. History is separate for each paper
 and lasts for the backend session. Revision checks prevent overwriting changes
