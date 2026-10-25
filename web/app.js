@@ -530,7 +530,7 @@ async function setIncludeSubfolders(include) {
 
 function collectionOptions(selected) {
   return collections.targets.map((t) =>
-    `<option value="${esc(t.id)}"${t.id === selected ? ' selected' : ''}>${' '.repeat(t.level || 0)}${esc(t.name)}</option>`
+    `<option value="${esc(t.id)}"${t.id === selected ? ' selected' : ''} data-depth="${t.level || 0}">${' '.repeat(t.level || 0)}${esc(t.name)}</option>`
   ).join('');
 }
 

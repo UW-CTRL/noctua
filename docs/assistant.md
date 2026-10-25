@@ -45,6 +45,11 @@ Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while
 chat tools annotate individual passages. See [Notes](notes.md#assistant-edits)
 for note-editing boundaries.
 
+Project root is a drag target shown only while dragging project entries. The project sidebar combines its collection selector and creation controls in one row. Hover or keyboard-focus a creation icon to reveal its label below. The collection menu uses fixed indentation for nested folders and highlights the selection without checkmarks. New note or file offers Note and Text file in one compact form. Import files opens a review queue for chosen or dropped files before uploading; these remain UI actions.
+
+The collection and save status align with the left end of the divider below
+the title. The centered title has extra space above it, follows the divider’s width when space permits, and wraps onto more lines as needed. Only Undo/Redo at the left edge and Note guide and preamble icons at the right edge stay pinned close to the top while scrolling. The editable title scrolls with the document. Only the edge button groups have backgrounds; the center stays transparent and does not block note text or editing. These are UI controls.
+
 Chat renders Markdown, math, tables, code blocks, collapsible explanations, and
 Mermaid diagrams. Notes use their own LaTeX subset.
 
@@ -59,7 +64,7 @@ rename or move entries using stable IDs and revision checks. Suggest mode asks
 for review; Direct applies supported changes; Plan is read-only. File deletion
 and bibliography activation remain UI actions. See [Notes](notes.md#project-files-bibliographies-and-skills).
 
-Open **Skills** in the project tree or chat toolbar to import a skill folder, ZIP,
+Open the **Agent skills** icon below the project tree or the skills icon in the chat toolbar to import a skill folder, ZIP,
 or `SKILL.md`. Packages are stored inside Noctua, shared by Claude and Codex, and
 enabled per project with optional per-chat overrides. The assistant can read
 enabled instructions and supporting resources. Every bundled script invocation

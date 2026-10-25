@@ -91,19 +91,20 @@ function renderNoteList() {
     </li>`).join('');
 }
 
-async function createNote() {
+async function createNote(title = '') {
   if (!N.target) return;
   try {
     await saveWorkspaceFile();await flushNoteEdits();
-    const doc = await api('/api/notes', { target: N.target, title: '' });
+    const doc = await api('/api/notes', { target: N.target, title: typeof title === 'string' ? title : '' });
     N.list.unshift({ id: doc.id, title: doc.title, created: doc.created, updated: doc.updated });
     REF.notes.push({ id: doc.id, title: doc.title, updated: doc.updated, target: N.target });
     showNote(doc);
-    loadWorkspace(N.target);
+    await loadWorkspace(N.target);
     startEdit(doc.blocks[0].id);
     const t = $('.note-title');
     t.focus();
     t.select();
+    return doc;
   } catch (e) {
     toast(e.message, { error: true });
   }
@@ -262,10 +263,12 @@ function renderEditor() {
     return;
   }
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
-  stage.innerHTML = `<div class="note-toolbar" role="toolbar" aria-label="Note editing">${historyButtons('note')}<span>Note editing</span></div><div class="note-page">
+  stage.innerHTML = `<div class="note-actions" role="toolbar" aria-label="Note editing">
+      ${historyButtons('note')}
+      <div class="note-actions-right"><button id="note-help" data-icon="circle-help" data-icon-only title="Note guide" aria-label="Note guide"></button><button id="note-preamble-toggle" data-icon="settings" data-icon-only title="Preamble and page layout" aria-label="Preamble and page layout" aria-expanded="${!!N.preambleOpen}"></button></div>
+    </div><div class="note-page">
+      <textarea class="note-title" rows="1" placeholder="Untitled note" aria-label="Note title" spellcheck="false">${esc(N.doc.title)}</textarea>
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
-      <div class="nb-tools"><button id="note-help" title="Note guide" aria-label="Note guide">?</button><button id="note-preamble-toggle" title="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon="settings" aria-label="Preamble: page margins (\\geometry), \\usepackage, \\newcommand" data-icon-only>⚙</button></div>
-      <input class="note-title" value="${esc(N.doc.title)}" placeholder="Untitled note" aria-label="Note title" spellcheck="false">
       <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span>${N.suggestions.length > 1
         ? ` · ${N.suggestions.length} suggestions: <a href="#" id="sg-accept-all">accept all</a> / <a href="#" id="sg-reject-all">reject all</a>` : ''}</div>
       ${N.preambleOpen ? `<div class="note-preamble">
@@ -297,6 +300,14 @@ function renderEditor() {
   updateHistoryButtons();
 }
 
+// The title shares the document width and grows with its wrapped text.
+function layoutNoteTitle() {
+  const title = $('#notes-stage .note-title');
+  if (!title) return;
+  title.style.height = 'auto';
+  title.style.height = title.scrollHeight + 'px';
+}
+
 function showNoteHelp() {
   let dialog = document.getElementById('note-help-dialog');
   if (!dialog) {
@@ -313,7 +324,7 @@ function showNoteHelp() {
 
 \section{Introduction}
 \textbf{Bold} and \emph{emphasis}`)}</section>
-      <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear beside the note title opens the preamble for page layout and custom LaTeX commands.</p></section>
+      <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear at the far right of the sticky note header opens the preamble for page layout and custom LaTeX commands.</p></section>
       <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
       <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
@@ -324,9 +335,9 @@ See Section \ref{sec:intro}.
 E = mc^2 \label{eq:energy}
 \end{equation}
 See Equation \eqref{eq:energy}.`)}</section>
-      <section><h3>Undo and redo</h3><p>Use the Undo/Redo buttons in the full-width toolbar above the note or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
-      <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The + File and + Folder buttons open an in-app form for the name and destination folder. New files are empty text with no automatic extension: choose .txt, .md, .tex, or .bib yourself. Use New note for the block editor. Move to trash opens an in-app confirmation; folders include their contents. Undo or Trash can restore removed entries. Drag entries onto a folder or Project root to move them within the project; drop onto Trash to confirm removal. Moves preserve references and can be undone. Create folders and text files, import files, rename or move entries using their menu, and preview media. Notes retain their block editor. Import a .bib file, then select Bibliographies to enable its citation keys alongside library papers. Duplicate keys must be renamed. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
-      <section><h3>Agent skills</h3><p>Use Skills in the project tree or chat toolbar to import a folder, ZIP, or SKILL.md, inspect its files, and enable it for this project or override this chat. Both backends use the same skill selection. Every script run requires approval; it executes local code, not an OS sandbox. Scripts receive temporary copies of selected files. Review and accept their output before it changes project files. Plan mode cannot run scripts. No dependencies are installed automatically.</p></section>
+      <section><h3>Undo and redo</h3><p>The collection and save status align with the left end of the divider below the title. The title has extra space above it, follows the divider’s width where space permits, and wraps onto additional lines as you type. Only the Undo/Redo icons at the far left and Note guide and preamble icons at the far right stay pinned to the top while you scroll. The title scrolls with the document. The center between the edge controls stays transparent and does not block note text or editing. Use Undo/Redo or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
+      <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note or Text file, a name, and a destination folder. New folder opens a compact folder form. New files use the exact filename with no automatic extension. Project root appears only while dragging project entries. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, rename or move entries using their menu, and preview media. Notes retain their block editor. Import a .bib file, then select the Bibliographies icon below the tree to enable its citation keys alongside library papers. Duplicate keys must be renamed. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
+      <section><h3>Agent skills</h3><p>Use the Agent skills icon below the project tree or in the chat toolbar to import a folder, ZIP, or SKILL.md, inspect its files, and enable it for this project or override this chat. Both backends use the same skill selection. Every script run requires approval; it executes local code, not an OS sandbox. Scripts receive temporary copies of selected files. Review and accept their output before it changes project files. Plan mode cannot run scripts. No dependencies are installed automatically.</p></section>
       <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach a paper or note to your question.</p></section>
       <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode applies requested edits immediately; use Undo to revert them.</p></section>`;
     dialog.addEventListener('click', event => {
@@ -341,9 +352,8 @@ See Equation \eqref{eq:energy}.`)}</section>
 
 // ---------------------------------------------------------------- preamble (the header cell)
 
-// The page is a sheet drawn at a fixed scale (a letter-size 8.5in sheet is
-// 760px wide); it never shrinks, and the stage scrolls sideways when the page
-// is wider than it. \geometry{paperwidth=…} or `landscape` widens the sheet.
+// The default page fits the writing pane up to 760px. Explicit paper widths
+// keep a fixed scale and scroll horizontally; preamble margins use that scale.
 const PAPER_IN = 8.5;
 const PX_PER_IN = 760 / PAPER_IN;
 const UNIT_IN = { in: 1, cm: 1 / 2.54, mm: 1 / 25.4, pt: 1 / 72.27, bp: 1 / 72, pc: 12 / 72.27, px: 1 / 96 };
@@ -406,6 +416,7 @@ function applyPreamble() {
   }
   page.style.setProperty('--np-parindent', g.par.indent ?? '');
   page.style.setProperty('--np-parskip', g.par.skip ?? '');
+  layoutNoteTitle();
   const status = page.querySelector('.preamble-status');
   if (!status) return;
   const macros = Object.keys(NoctuaLatex.macrosOf(src));
@@ -899,6 +910,11 @@ function notesContext(sentKey) {
 
 // ---------------------------------------------------------------- wiring
 
+new ResizeObserver(layoutNoteTitle).observe($('#notes-stage'));
+document.addEventListener('noctua-font-change', layoutNoteTitle);
+document.addEventListener('noctua-font-size-change', layoutNoteTitle);
+document.fonts?.addEventListener('loadingdone', layoutNoteTitle);
+
 // CSS follows system changes automatically; changing palettes never rewrites note content.
 function setNotesTheme(theme) {
   const next = ['dark', 'light', 'system'].includes(theme) ? theme : 'system';
@@ -913,7 +929,7 @@ window.addEventListener('storage', (e) => {
 
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('#notes-target').addEventListener('change', (e) => { loadNoteFolder(e.target.value); });
-$('#note-new').addEventListener('click', createNote);
+
 $('#note-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');
   if (!li) return;
@@ -923,6 +939,7 @@ $('#note-list').addEventListener('click', (e) => {
 $('#notes-stage').addEventListener('input', (e) => {
   if (!e.target.classList.contains('note-title') || !N.doc) return;
   N.doc.title = e.target.value;
+  layoutNoteTitle();
   const entry = N.list.find((n) => n.id === N.doc.id);
   if (entry) { entry.title = N.doc.title; renderNoteList(); }
   markDirty();

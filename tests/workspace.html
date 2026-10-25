@@ -1,5 +1,13 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title><link rel="stylesheet" href="../web/icons.css"></head><body class="notes-mode">
-<div id="notes-side"><ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
+<!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body class="notes-mode">
+<div id="notes-side">        <div class="workspace-tools" aria-label="Project files">
+          <select id="notes-target" title="Project files collection" aria-label="Project files collection"><option value="L1">Research</option></select>
+          <div role="group" aria-label="Create and import files">
+            <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
+            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New folder"></button>
+            <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
+          </div>
+        </div>
+<ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
@@ -7,6 +15,7 @@ const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){}};
 let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
 const clone=v=>JSON.parse(JSON.stringify(v));
 async function api(path,body){if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
+async function createNote(title){const doc={id:'new-note',title};N.doc=doc;N.list.push(doc);W.file=null;server.entries.push({id:'new-note-entry',kind:'note',note:doc.id,name:title,parent:'',deleted:false});await loadWorkspace('L1');return doc;}
 function typeset(){} function renderEditor(){$('#notes-stage').textContent='No document open';} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
 window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used');};
 // Drain mocked API promises, then allow one task for dialog close events.
@@ -14,19 +23,22 @@ window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used')
 async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
-<script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
+<script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
  await loadWorkspace('L1');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
- assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');
+ assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
  for(const folder of [true,false]){
-  $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');
+  $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');assert(dialog.getBoundingClientRect().width<=420&&dialog.getBoundingClientRect().height<320,'creation form is not compact');
   dialog.querySelector('[data-name]').value=folder?'Drafts':'new.bib';dialog.querySelector('[data-parent]').value='folder';dialog.querySelector('form').requestSubmit();await settle();
   assert(!$('dialog'),'successful creation closes dialog');assert(server.entries.some(e=>e.name===(folder?'Drafts':'new.bib')&&e.parent==='folder'),'entry created in selected folder');
   if(!folder)assert(W.file.startsWith('created')&&$('#workspace-editor textarea'),'new file opens');
  }
+ $('[data-new-file]').click();let noteDialog=$('dialog');noteDialog.querySelector('[data-kind]').value='note';noteDialog.querySelector('[data-name]').value='Research note';noteDialog.querySelector('[data-parent]').value='folder';noteDialog.querySelector('form').requestSubmit();await settle();
+ assert(!$('dialog')&&N.doc.title==='Research note','combined create control creates notes');
+ assert(server.entries.find(e=>e.note==='new-note').parent==='folder','note created in chosen folder');
  await openWorkspaceFile('f1');let ta=$('#workspace-editor textarea');assert(ta.value===source,'file editor loaded');
  ta.value='@book{k,title={New}}';ta.dispatchEvent(new Event('input'));assert(W.dirty,'typing marks pending changes');await saveWorkspaceFile();assert(source.includes('New')&&!W.dirty,'typing saves');
  assert(!$('#workspace-editor [data-undo]').disabled,'undo enabled after save');
@@ -55,6 +67,7 @@ function assert(ok,message){if(!ok)throw Error(message)}
  async function dragEntry(id,destination,override){
   const transfer=new DataTransfer(),row=$(`[data-entry="${id}"]`);assert(row?.draggable,'entry can be dragged');
   row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+  assert(getComputedStyle($('.workspace-root-drop')).display!=='none','root drop target appears while dragging');
   if(override)transfer.setData(workspaceDragType,JSON.stringify(override));
   const target=$(destination);assert(target,'drop target exists');
   target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));
@@ -74,6 +87,18 @@ function assert(ok,message){if(!ok)throw Error(message)}
  await dragEntry(nested,'[data-drop-folder=""]');assert(server.entries.find(e=>e.id===nested).parent==='','folders can be moved');
  await dragEntry('f1','[data-trash]');assert($('dialog [data-confirm-trash]'),'Trash drop opens in-app confirmation');$('dialog [data-cancel]').click();await settle();assert(!server.entries[1].deleted,'cancelled Trash drop preserves file');
  await dragEntry('f1','[data-trash]');$('dialog [data-confirm-trash]').click();await settle();assert(server.entries[1].deleted&&W.file===null,'confirmed Trash drop deletes and closes file');
- window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, and drag-to-trash');
+ // Queue files through the real drag/drop UI; reject oversized files and retry only remaining files.
+ const realFetch=window.fetch;let uploads=[],failUpload=true;
+ window.fetch=async(url,options)=>{const name=new URL(url,location.href).searchParams.get('name');uploads.push(name);if(name==='second.txt'&&failUpload)return {ok:false,json:async()=>({error:'Upload failed'})};server.revision++;return {ok:true,json:async()=>clone(server)};};
+ workspaceImport();let upload=$('dialog');assert(upload.classList.contains('workspace-compact')&&upload.querySelector('[type="submit"]').disabled,'compact upload starts empty');
+ const drop=files=>{const event=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(event,'dataTransfer',{value:{files}});upload.querySelector('.workspace-upload-zone').dispatchEvent(event);};
+ drop([{name:'large.bin',size:33*1024*1024}]);assert(upload.querySelector('[data-error]').textContent.includes('32 MB')&&upload.querySelector('[type="submit"]').disabled,'oversized upload not rejected');
+ const files=[new File(['first'],'first.txt'),new File(['second'],'second.txt')];drop(files);drop(files);
+ assert(upload.querySelectorAll('li').length===2,'duplicate selections were queued');
+ upload.querySelector('[data-remove="1"]').click();assert(upload.querySelectorAll('li').length===1,'queued file cannot be removed');drop([files[1]]);
+ upload.querySelector('form').requestSubmit();await settle();assert(upload.open&&upload.querySelector('[data-error]').textContent==='Upload failed','upload failure not shown inline');
+ assert(upload.querySelectorAll('li').length===1&&upload.querySelector('li').textContent.includes('second.txt'),'successful files stay queued after partial failure');
+ failUpload=false;upload.querySelector('form').requestSubmit();await settle();assert(!$('dialog')&&uploads.join(',')==='first.txt,second.txt,second.txt','retry reuploaded successful files');window.fetch=realFetch;
+ window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, and cross-window draft protection');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

@@ -33,9 +33,13 @@
     <aside id="left">
       <div id="pdf-sidebar"></div>
       <div id="notes-side">
-        <div class="notes-side-head">
-          <select id="notes-target" title="Noctua folder these notes belong to"></select>
-          <button id="note-new" class="primary" data-icon="file-plus" data-icon-only title="New note" aria-label="New note"></button>
+        <div class="workspace-tools" aria-label="Project files">
+          <select id="notes-target" title="Project files collection" aria-label="Project files collection"></select>
+          <div role="group" aria-label="Create and import files">
+            <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
+            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New folder"></button>
+            <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
+          </div>
         </div>
         <ul id="note-list" class="note-list"></ul>
       </div>

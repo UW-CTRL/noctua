@@ -7,17 +7,25 @@ and save-conflict actions remain beside the note.
 
 ## Write in a collection
 
-Select a collection, switch to **Notes**, and choose **New note**. Notes combine
+Select a collection, switch to **Notes**, and use **New note or file** and select **Note**. Notes combine
 text, drawing, and media blocks and save automatically. Click text to edit its
 source with a live preview; click away to finish. Hover between blocks to insert
-content. The **?** beside the title opens the in-app syntax and editing guide.
+content. The **Note guide** question-mark icon at the far right of the note header opens the in-app syntax and editing guide.
 
 ## Project files, bibliographies, and skills
+
+The collection menu uses consistent indentation for nested folders and highlights the selected collection without a checkmark.
+
+The project sidebar has one header row with the collection selector and New note
+or file, New folder, and Import files icons. Hover or focus one of these icons
+to reveal its label underneath without moving the file list. To create a note, choose Note in
+the New note or file form; Text file creates a project text file instead. Both
+use the name and destination folder in the form. Creation forms use compact aligned fields. Import files opens a compact queue: choose or drop files, remove unwanted selections, then click Import. Each file is limited to 32 MB. Failed uploads keep the remaining files available for retry.
 
 Each collection now has a **Project files** tree alongside the existing block note
 editor. Images and videos are grouped in a collapsed Media folder by default; click a
 folder to expand it. Files already placed in custom folders stay there, and later manual
-moves are preserved. The + File and + Folder buttons open an in-app form for the name
+moves are preserved. The **New note or file** and **New folder** icons above the tree open an in-app form for the name
 and destination folder. Create folders and text files, import files, use the entry menu
 to rename/move/remove them, or preview their contents. Removal is recoverable with Undo
 or the project Trash, including after a restart. Files use stable IDs, so moves and
@@ -26,13 +34,13 @@ their original storage. General imports support 32 MB; UTF-8 text editing suppor
 Note media uploads keep their existing larger video limit. This is a file workspace, not
 a LaTeX compiler.
 
-**+ File** creates an empty text file, using the filename exactly as entered. No
+**New note or file → Text file** creates an empty text file, using the filename exactly as entered. No
 extension is added automatically. For example, use `reading-plan.md`, `draft.tex`,
 `references.bib`, or `ideas.txt`. Text files open in the source editor; `.tex` files
-do not become block notes or compile to PDF. Use **New note** for Noctua's block
+do not become block notes or compile to PDF. Select **Note** in the same form for Noctua's block
 editor, or **Import** to bring in existing files, including images and videos.
 
-Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected.
+Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected.
 
 To remove a file or folder, open its **⋯** menu, choose **Move to trash**, then
 confirm in the in-app dialog. Folders include their contents; any removed document
@@ -40,14 +48,20 @@ closes in the editor. Cancel leaves the project unchanged. Use **Undo** to rever
 the operation, or **Trash** to restore entries later. When restoring individually,
 restore the parent folder before its children to preserve their placement.
 
-Import or create a `.bib`, then select **Bibliographies** to enable it for this
+Import or create a `.bib`, then select the **Bibliographies** icon below the tree to enable it for this
 collection. Its keys become available in the normal citation picker alongside library
 keys, using the existing author/year display. Duplicate keys must be renamed. Invalid
 source remains editable; a visible error marks the retained citation index as out of
 date. Clicking an imported citation shows its reference details and DOI/URL when
 available. Importing a bibliography does not download its papers.
 
-Notes have a full-width, sticky toolbar with **Undo / Redo** buttons. These buttons and
+The collection and save status align with the left end of the divider below
+the title. The centered title has extra space above it, follows the divider’s width when space permits, and wraps onto more lines as needed. The pinned controls place **Undo / Redo** at the far left of the writing panel
+and **Note guide** and **Preamble and page layout** at the far right, close to
+the top edge. Only these controls stay visible at the top while scrolling; the title scrolls with the document. The space between the edge buttons stays transparent and does not block note text or editing. Hover over an icon to see its label; all icons
+are keyboard accessible. The project tree highlights the open note or file, with
+file actions available on hover or keyboard focus. Project settings and workspace
+Undo/Redo sit below the scrolling file list. These buttons and
 **Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z** cover note typing, titles, preambles, blocks,
 drawings, media edits, and assistant changes. Reader controls cover highlights,
 drawings, comment text, replies and deletion. File-tree/text changes are also undoable.
@@ -55,7 +69,7 @@ Histories are separate by document/paper/workspace, remain available during the 
 session, and clear when it exits. New edits clear redo. Conflicting saves must be
 resolved before undoing; failed operations do not consume history.
 
-Open **Skills** from the project tree or chat toolbar to import a skill directory, ZIP,
+Open the **Agent skills** icon below the project tree or in the chat toolbar to import a skill directory, ZIP,
 or standalone `SKILL.md`. Packages may contain scripts and supporting resources (up to
 512 files / 32 MB). Inspect them before enabling. Packages live in Noctua's `skills/`
 directory and work with both Claude and Codex; project enablement can be overridden for
@@ -92,7 +106,7 @@ We minimize the cost in \eqref{eq:cost}.
 ```
 
 Use `\label`, `\ref`, and `\eqref` to link within a note. Type `\cite{` to pick
-a paper from the collection or an enabled imported bibliography, or `[[` to link another note. The title's gear
+a paper from the collection or an enabled imported bibliography, or `[[` to link another note. The gear at the far right of the note header
 opens a preamble for shared commands and page layout.
 
 This is not a full TeX installation: arbitrary packages and TikZ are unsupported.

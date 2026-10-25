@@ -10,7 +10,7 @@ Users can drag rendered note text and click **Add to chat**, attach multiple pas
 
 Notes belong to Noctua folders and combine text and drawing blocks. Click text to edit its source with a live preview. Esc, Command/Ctrl + Enter, or clicking away finishes editing. Changes save automatically; Command/Ctrl + S also saves.
 
-Hover between blocks to insert Text, Drawing, or Image / Video. The left block toolbar moves blocks up/down or deletes them. Command + Shift + D adds a drawing after the current block. The question-mark button beside the title opens a scrollable note guide.
+Hover between blocks to insert Text, Drawing, or Image / Video. The left block toolbar moves blocks up/down or deletes them. Command + Shift + D adds a drawing after the current block. The Note guide question-mark icon at the far right of the sticky note header opens a scrollable note guide.
 
 Text supports inline math `$x^2$`, display math `\[x^2\]`, equation/align/gather environments, equation numbering, `\label` and `\eqref`, sections/subsections, itemize/enumerate, theorem-like environments and proofs, `\textbf`, `\emph`, and `\href{URL}{Title}`. Unknown commands are highlighted as unsupported.
 
@@ -40,7 +40,7 @@ Typing `[[` or `\noteref{` opens a note picker across folders. `\noteref{NOTE_ID
 
 ### Layout and appearance
 
-The gear beside the title opens the preamble, which applies to the entire note. It supports custom commands (`\newcommand`, `\def`, `\DeclareMathOperator`), page geometry and margins, and paragraph spacing/indentation. For example, `\geometry{margin=1in}` changes margins and `\setlength{\parindent}{0pt}` removes paragraph indentation. Only supported packages are available; do not imply arbitrary packages can be installed.
+The gear at the far right of the sticky note header opens the preamble, which applies to the entire note. It supports custom commands (`\newcommand`, `\def`, `\DeclareMathOperator`), page geometry and margins, and paragraph spacing/indentation. For example, `\geometry{margin=1in}` changes margins and `\setlength{\parindent}{0pt}` removes paragraph indentation. Only supported packages are available; do not imply arbitrary packages can be installed.
 
 Settings provides separate System, Note, and Chat font families and sizes. App, Notes, and Reader themes independently default to System and preserve saved choices. These are UI controls, not chat tools; equations retain their math typeface.
 
@@ -58,6 +58,13 @@ Notes, project files, and reader annotations have Undo/Redo buttons and Cmd/Ctrl
 
 ### Collection project files and imported bibliographies
 
+The collection menu uses consistent indentation for nested folders and highlights the selected collection without a checkmark.
+
+The project sidebar has one header row with the collection selector and New note
+or file, New folder, and Import files icons. Hovering or keyboard-focusing these icons reveals their labels below without shifting the file list. To create a note, choose Note in
+the New note or file form; Text file creates a project text file instead. Both
+use the name and destination folder in the form. Creation forms use compact aligned fields. Import files opens a compact queue: choose or drop files, remove unwanted selections, then click Import. Each file is limited to 32 MB. Failed uploads keep the remaining files available for retry.
+
 Each library collection is a project workspace. Existing block notes and media remain valid. The tree supports folders, text files, import, rename/move, recoverable removal, and previews. General imports are limited to 32 MB and text editing to 2 MB; use the existing note media upload for larger videos. This does not compile .tex or produce a multi-file LaTeX PDF.
 
 Use list_project_files and read_project_file for file IDs, source, and the workspace revision. edit_project_file can create/edit text files, rename/move entries, or create a folder. Use the returned revision, never guess it. Suggest proposes changes for user acceptance; Direct applies them; Plan cannot mutate files. It does not enable bibliographies/skills or delete files. Note blocks still use read_note/edit_note.
@@ -72,8 +79,9 @@ Skills are stored globally within Noctua and enabled per project, with optional 
 
 request_skill_run requests approval for one bundled Python, Node, or shell script, its exact arguments, and explicit input file IDs. It returns a pending request, not success. Scripts run with installed local runtimes against temporary copies at the inputs' project-relative paths, with a 120-second timeout and bounded output. Noctua does not install dependencies. This is user-approved local code execution, not an OS sandbox. Plan cannot request execution. get_skill_run returns status, logs and proposed file changes. The user must approve each execution and separately accept output changes in both Suggest and Direct modes; never report live files as changed until status is applied. Changed skill contents or project revisions require a new request. Run results are session-only.
 
-The project file tree groups images and videos in a collapsed Media folder by default, preserving existing custom folders and subsequent user moves. This does not change stable file IDs or legacy media references. Users expand folders by clicking them; + File and + Folder open a name/destination form. Notes have a full-width sticky Undo/Redo toolbar above the document. These are UI controls.
+The project file tree groups images and videos in a collapsed Media folder by default, preserving existing custom folders and subsequent user moves. This does not change stable file IDs or legacy media references. Users expand folders by clicking them; New note or file and New folder icons beside the collection selector open a name/destination form. Bibliographies, Skills, Trash, and workspace Undo/Redo sit below the tree. The open note or file is highlighted. The collection and save status align with the left end of the divider below
+the title. The centered title has extra space above it, follows the divider’s width when space permits, and wraps onto more lines as needed. The pinned note controls have Undo/Redo icons at the far left of the writing panel and Note guide and Preamble and page layout icons at the far right, close to the top edge. Only these controls remain visible while scrolling. The editable title scrolls with the document. Only the edge button groups have backgrounds; the center stays transparent and does not block note text or editing. These are UI controls.
 
-+ File creates an empty text file using the exact supplied filename, with no default extension. Users choose extensions such as .txt, .md, .tex, or .bib; New note creates a block-editor note instead. Import preserves an existing file. The entry menu’s Move to trash opens an in-app confirmation and includes folder descendants. It closes removed documents in the editor; Undo or Trash restores removed entries. These deletion controls are UI-only.
+New note or file → Text file creates an empty text file using the exact supplied filename, with no default extension. Users choose extensions such as .txt, .md, .tex, or .bib; Choosing Note in that form creates a block-editor note instead. Import preserves an existing file. The entry menu’s Move to trash opens an in-app confirmation and includes folder descendants. It closes removed documents in the editor; Undo or Trash restores removed entries. These deletion controls are UI-only.
 
-Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected. These drag-and-drop gestures are UI controls; assistants can use edit_project_file with op=move and actual IDs for supported moves, but cannot delete files through that tool.
+Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected. These drag-and-drop gestures are UI controls; assistants can use edit_project_file with op=move and actual IDs for supported moves, but cannot delete files through that tool.
