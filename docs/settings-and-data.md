@@ -20,6 +20,13 @@ default and saved with Noctua's data. Turn it off to show only direct collection
 members in folder lists, counts, and graphs. The library root always includes
 all papers. Scope changes keep existing graph lookups cached.
 
+Temporary progress, completion messages, and errors share one notification at
+the bottom right. It uses a solid theme-accent background with contrasting text;
+errors use a red background. This includes request queues, settings actions,
+note saving, and Reader analysis. Active tasks remain visible until finished;
+completion messages disappear after a few seconds, and errors stay longer.
+Concurrent tasks share the same card and do not overwrite an error message.
+
 ## Storage and backups
 
 Desktop and browser modes share a local data folder:

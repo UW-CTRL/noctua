@@ -28,33 +28,30 @@ async function api(path, body) {
     return j;
   } finally {
     inflight--;
+    if (!inflight) notifyProgress('requests', null);
   }
 }
 
-// Shows how many Semantic Scholar requests are queued behind the 1/s limit.
+// Request progress shares the same notification surface as every feature.
 function watchQueue() {
-  if (queueTimer) return;
-  const el = $('#queue');
+  if (queueTimer !== null) return;
   const tick = async () => {
-    try {
-      const s = await (await fetch('/api/status')).json();
-      if (s.pending > 0) {
-        el.textContent = `Semantic Scholar: ${s.pending} queued · ~${Math.ceil(s.pending * 1.1)}s`;
-        el.classList.add('busy');
-      } else {
-        el.textContent = inflight ? 'Loading…' : '';
-        el.classList.remove('busy');
-      }
-    } catch { /* server gone */ }
+    let message = 'Working…';
     if (inflight > 0) {
+      try {
+        const status = await (await fetch('/api/status')).json();
+        if (status.pending > 0) message = `Semantic Scholar · ${status.pending} queued · about ${Math.ceil(status.pending * 1.1)}s`;
+      } catch { /* The request itself reports connection errors. */ }
+    }
+    if (inflight > 0) {
+      notifyProgress('requests', message);
       queueTimer = setTimeout(tick, 400);
     } else {
       queueTimer = null;
-      el.textContent = '';
-      el.classList.remove('busy');
+      notifyProgress('requests', null);
     }
   };
-  queueTimer = setTimeout(tick, 150);
+  queueTimer = setTimeout(tick, 250);
 }
 
 // ---------------------------------------------------------------- state
@@ -207,7 +204,7 @@ async function loadGraph(id, { push = true, quiet404 = false, libKey = null, swi
     if (token === G.token) toast('Similar papers unavailable: ' + e.message, { error: true });
     return 'ok';
   }
-  if (token === G.token) hideToast();
+  if (token === G.token) hideToast({ keepError: true });
   return 'ok';
 }
 
@@ -219,7 +216,7 @@ function clearGraph({ push = true } = {}) {
   document.title = 'Noctua';
   $('#empty').classList.remove('hidden');
   $('#tooltip').classList.add('hidden');
-  hideToast();
+  hideToast({ keepError: true });
   refreshAll();
   renderLibItems();
 }
@@ -394,7 +391,7 @@ async function expand(id) {
     kick(0.8);
     await loadLinks(token);
     checkLibrary();
-    hideToast();
+    hideToast({ keepError: true });
   } catch (e) {
     toast(e.message, { error: true });
   }
@@ -1328,6 +1325,7 @@ function runChatAction(a) {
 
 function setChatBusy(busy) {
   chat.busy = busy;
+  notifyProgress('assistant', busy ? 'Assistant is working…' : null);
   $('#chat-new').disabled = busy;
   $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
@@ -1355,6 +1353,7 @@ async function sendChat(text) {
     else if (e.type === 'text_start') { if (md && !md.endsWith('\n\n')) md += '\n\n'; }
     else if (e.type === 'text') { md += e.text; NoctuaChatRender.update(body, md); }
     else if (e.type === 'tool') {
+      notifyProgress('assistant', `${TOOL_LABEL[e.name] || e.name}…`);
       const t = document.createElement('div');
       t.className = 'tool';
       t.textContent = `⚙ ${TOOL_LABEL[e.name] || e.name}…`;
@@ -1440,15 +1439,44 @@ for (const side of ['left', 'right']) {
 // ---------------------------------------------------------------- toast / tabs
 
 let toastTimer = null;
-function toast(msg, { error = false, duration } = {}) {
+let toastNotice = null;
+const notificationProgress = new Map();
+
+function renderToast() {
   const el = $('#toast');
-  el.textContent = msg;
-  el.classList.toggle('error', error);
-  el.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, Number.isFinite(duration) ? Math.max(0,duration) : error ? 8000 : 15000);
+  const tasks = [...notificationProgress].sort(([a], [b]) => Number(a === 'requests') - Number(b === 'requests')).map(([, message]) => message);
+  const message = toastNotice?.message || tasks[0] || '';
+  const remaining = toastNotice ? tasks : tasks.slice(1);
+  const detail = remaining.length ? remaining[0] + (remaining.length > 1 ? ` · +${remaining.length - 1} tasks` : '') : '';
+  el.textContent = message;
+  el.dataset.detail = detail;
+  el.classList.toggle('error', !!toastNotice?.error);
+  el.classList.toggle('busy', !toastNotice && !!tasks.length);
+  el.classList.toggle('hidden', !message);
+  el.setAttribute('aria-label', [message, detail].filter(Boolean).join('. '));
+  el.setAttribute('aria-live', toastNotice?.error ? 'assertive' : 'polite');
+  if (message) { el.hidePopover?.(); el.showPopover?.(); } else el.hidePopover?.();
 }
-function hideToast() { $('#toast').classList.add('hidden'); }
+
+function notifyProgress(id, message) {
+  if (message === notificationProgress.get(id)) return;
+  if (message) notificationProgress.set(id, message); else notificationProgress.delete(id);
+  renderToast();
+}
+
+function toast(msg, { error = false, duration } = {}) {
+  if (toastNotice?.error && !error) return;
+  toastNotice = { message: String(msg), error };
+  clearTimeout(toastTimer);
+  renderToast();
+  toastTimer = setTimeout(hideToast, Number.isFinite(duration) ? Math.max(0, duration) : error ? 8000 : 4000);
+}
+function hideToast({ keepError = false } = {}) {
+  if (keepError && toastNotice?.error) return;
+  clearTimeout(toastTimer);
+  toastNotice = null;
+  renderToast();
+}
 
 function showTab(name) {
   document.querySelectorAll('#left > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));

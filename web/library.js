@@ -1,10 +1,14 @@
 'use strict';
 async function libraryRequest(path, method='GET', body) {
-  const raw = body instanceof Blob;
-  const r = await fetch(path, {method, headers: body === undefined ? {} : {'Content-Type':raw ? body.type || 'application/pdf' : 'application/json'}, body:body === undefined ? undefined : raw ? body : JSON.stringify(body)});
-  const data = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-  return data;
+  const task = Symbol('library-request');
+  const timer = setTimeout(() => notifyProgress(task, method === 'GET' ? 'Loading paper…' : 'Updating library…'), 250);
+  try {
+    const raw = body instanceof Blob;
+    const r = await fetch(path, {method, headers: body === undefined ? {} : {'Content-Type':raw ? body.type || 'application/pdf' : 'application/json'}, body:body === undefined ? undefined : raw ? body : JSON.stringify(body)});
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  } finally { clearTimeout(timer); notifyProgress(task, null); }
 }
 const paperURL = key => '/api/library/papers/' + enc(key);
 function choosePDFs(multiple=false) {

@@ -332,7 +332,8 @@ function showUpdatePrompt(result) {
     dialog.querySelectorAll('button').forEach(node => { node.disabled = true; });
     const msg = (_, text, ok) => {
       const node = dialog.querySelector('.setup-msg');
-      node.textContent = text; node.classList.toggle('ok', !!ok);
+      node.textContent = '';
+      if (text) toast(text, { error: !ok });
     };
     // This dialog's Update button is the explicit confirmation of the warning above it.
     try { await updateApp(button, dialog, msg, { confirmInstall: false }); }
@@ -411,7 +412,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     const ctrl = new AbortController(); loginAbort = ctrl;
     const output = $('#agent-login-output');
     output.textContent = 'Opening your browser to sign in…\n';
-    $('#agent-status').textContent = 'Signing in…';
+    notifyProgress('sign-in', 'Waiting for sign-in…');
     $('#setup-agent').disabled = true;
     card.querySelector('[data-act="agent-login"]').disabled = true;
     card.querySelector('[data-act="agent-cancel"]').classList.remove('hidden');
@@ -433,6 +434,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     } catch (e) {
       output.textContent = e.name === 'AbortError' ? 'Sign-in cancelled.' : e.message;
     } finally {
+      notifyProgress('sign-in', null);
       ctrl.abort();
       loginAbort = null;
       if (el.isConnected) {
@@ -483,7 +485,8 @@ function openSetup({ firstRun = false, tab } = {}) {
   };
   const msg = (section, text, ok) => {
     const m = section.querySelector('.setup-msg');
-    m.textContent = text; m.classList.toggle('ok', !!ok);
+    m.textContent = '';
+    if (text) toast(text, { error: !ok });
   };
   card.addEventListener('click', async (e) => {
     card.querySelectorAll('.settings-ai-color-picker[open]').forEach(picker=>{if(!picker.contains(e.target))picker.open=false;});

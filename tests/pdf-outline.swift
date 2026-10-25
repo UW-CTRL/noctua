@@ -11,7 +11,7 @@ func section(_ source:String,_ start:String,_ end:String)->String {
 }
 context.evaluateScript(#"""
 const pdfOutlines=new Map(),PDF={key:'paper',doc:{}},timers=[];
-const classes=new Set(['hidden']),toastElement={textContent:'',classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
+const classes=new Set(['hidden']),toastElement={textContent:'',dataset:{},setAttribute(){},classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
 const panel={innerHTML:'',setAttribute(){},querySelector(){return {addEventListener(){}}},querySelectorAll(){return []}};
 const $=selector=>selector==='#toast'?toastElement:panel;
 const esc=String,paperURL=key=>'/api/papers/'+key;
@@ -46,15 +46,15 @@ context.evaluateScript(#"""
  assert(pdfOutlines.get('paper').documentOutline===nativeResult,'deleting AI must preserve the document outline');
  Object.assign(pdfOutlines.get('paper'),{status:'ready',outline:saved});deleteFailure=true;await deletePDFOutline();deleteFailure=false;
  assert(pdfOutlines.get('paper').outline===saved&&pdfOutlines.get('paper').status==='ready'&&toastElement.textContent==='Could not delete outline','failed deletion must preserve the outline and re-enable its controls');
- const count=timers.length;let reject;
+ hideToast();const count=timers.length;let reject;
  api=async()=>await new Promise((_,r)=>reject=r);
  const pending=loadPDFOutline('paper',PDF.doc,{forceAI:true,regenerate:true});while(!reject)await Promise.resolve();
- assert(panel.innerHTML.includes('Generating outline'),'the selected AI view must expose generation progress');
+ assert(notificationProgress.get('pdf-outline:paper')==='Generating outline…'&&!panel.innerHTML.includes('Generating outline'),'outline generation uses shared bottom-right progress');
  const previousDeletes=deletes;await deletePDFOutline();assert(deletes===previousDeletes,'an active generation job must not be deleted by the current view');
  await setPDFOutlineSource('document');assert(panel.innerHTML.includes('Embedded section')&&!panel.innerHTML.includes('Generating outline'),'document navigation must stay available while AI is generating');
  assert(setPDFOutlineSource('ai')===pending,'repeated AI tab clicks must reuse the running job');
  PDF.key='another-paper';reject(Error('Background failure'));await pending;
- assert(timers.length===count,'a background failure must not interrupt another paper with a toast');
+ assert(timers.length===count&&!notificationProgress.has('pdf-outline:paper'),'background failure clears progress without interrupting another paper with a toast');
  PDF.key='empty-paper';PDF.outlineSource='document';nativeResult=null;const before=apiCalls;await loadPDFOutline(PDF.key,PDF.doc);
  assert(apiCalls===before&&panel.innerHTML.includes('no document outline'),'a PDF without bookmarks must stay empty until the user chooses AI');
  globalThis.result='PASS: document-first source tabs, lazy AI generation, cached and pending job reuse, safe AI deletion, timed error toasts and background isolation';

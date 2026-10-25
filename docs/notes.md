@@ -2,6 +2,9 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+Saving progress appears in the shared bottom-right notification. Unsaved state
+and save-conflict actions remain beside the note.
+
 ## Write in a collection
 
 Select a collection, switch to **Notes**, and choose **New note**. Notes combine
