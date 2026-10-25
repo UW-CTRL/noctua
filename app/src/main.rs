@@ -40,6 +40,7 @@ fn main() {
         .manage(updater::Updates::default())
         .manage(icons::Icons::default())
         .setup(|app| {
+            noctua::paper::set_resources(app.path().resource_dir()?);
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let (url, server) = tauri::async_runtime::block_on(async {
                 match noctua::start(ServeOptions { port: PORT, desktop: Some(tx.clone()) }).await {

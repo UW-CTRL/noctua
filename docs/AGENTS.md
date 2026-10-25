@@ -17,6 +17,7 @@ For cross-feature requirements, follow
 | [getting-started.md](getting-started.md) | First paper, first note, and optional connections. |
 | [research.md](research.md) | Search, graphs, Lineage, and collections. |
 | [reader.md](reader.md) | PDF navigation, annotations, and Reader AI actions. |
+| [papers.md](papers.md) | Standard LaTeX paper editing, compilation, templates, and PDF preview. |
 | [notes.md](notes.md) | Note syntax, handwriting, media, and edits. |
 | [assistant.md](assistant.md) | Chat, attachments, modes, capabilities, and prompt explanations. |
 | [settings-and-data.md](settings-and-data.md) | Settings, storage, backups, and updates. |

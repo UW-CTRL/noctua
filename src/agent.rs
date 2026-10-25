@@ -428,6 +428,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn inspect_workspace_reads_logs_in_all_modes_and_rejects_escape() -> Result<()> {
+        let f=Fixture::new()?;
+        let root=crate::workspace::dir(&f.app,"L1")?.join(".workspace");
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({}))?["exists"],false);
+        std::fs::create_dir_all(root.join("paper/out"))?;
+        let log=format!("{}\n! Undefined control sequence.\n", "a".repeat(70_000));
+        std::fs::write(root.join("paper/build.log"),&log)?;
+        std::fs::write(root.join("paper/out/.noctua-paper.log"),"Compiler details")?;
+        std::fs::write(root.join("paper/output.pdf"),b"%PDF-1.7")?;
+        for mode in ["plan","suggest","direct"] {
+            let endpoint=format!("/mcp?mode={mode}");
+            let listed=f.json(&endpoint,Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))).await;
+            assert!(listed["result"]["tools"].as_array().unwrap().iter().any(|t|t["name"]=="inspect_workspace"));
+            let result=f.json(&endpoint,Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"inspect_workspace","arguments":{"folder_id":"L1","path":"paper/build.log","tail":true}}}))).await;
+            assert_ne!(result["result"]["isError"],true,"{result}");
+            let content:Value=serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())?;
+            assert!(content["text"].as_str().unwrap().ends_with("! Undefined control sequence.\n"));
+            assert_eq!(content["truncated"],true);assert_eq!(content["text"].as_str().unwrap().len(),65536);
+        }
+        let first=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/build.log"}))?;
+        assert_eq!(first["next_offset"],65536);
+        let next=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/build.log","offset":first["next_offset"]}))?;
+        assert_eq!(format!("{}{}",first["text"].as_str().unwrap(),next["text"].as_str().unwrap()),log);
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":".workspace/paper/out/.noctua-paper.log"}))?["text"],"Compiler details");
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/output.pdf"}))?["binary"],true);
+        for path in ["../settings.json","paper/../../outside","/etc/passwd","C:\\secret","paper/missing.log"] {
+            assert!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":path})).is_err(),"{path}");
+        }
+        std::os::unix::fs::symlink(&f.root,root.join("escape"))?;
+        assert!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"escape"})).is_err());
+        for n in 0..205 {std::fs::write(root.join("paper/out").join(format!("{n:03}.aux")),"aux")?;}
+        let list=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/out"}))?;
+        assert_eq!(list["entries"].as_array().unwrap().len(),200);assert_eq!(list["next_offset"],200);
+        let rest=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/out","offset":200}))?;
+        assert_eq!(rest["entries"].as_array().unwrap().len(),6);
+        assert_eq!(std::fs::read_to_string(root.join("paper/build.log"))?,log);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn project_files_bibliographies_and_history() -> Result<()> {
         let f=Fixture::new()?;
         let note=f.app.notes.create("L1","A: note")?;
@@ -446,6 +486,20 @@ mod tests {
         assert_eq!(stale.status(),StatusCode::CONFLICT);
         let bad=f.request("/api/workspaces/L1",Some(json!({"revision":restored["revision"],"op":"create","name":"../outside","text":"bad"})),None).await;
         assert!(!bad.status().is_success());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"][0]["file_name"],"references.bib");
+        let extra=f.json("/api/workspaces/L1",Some(json!({"revision":restored["revision"],"op":"create","name":"also.bib","text":"@article{Lovelace1843,title={A separate source}}"}))).await;
+        let extra_id=extra["entries"].as_array().unwrap().last().unwrap()["id"].clone();
+        let both=f.json("/api/workspaces/L1",Some(json!({"revision":extra["revision"],"op":"config","bibliographies":[id,extra_id]}))).await;
+        assert_eq!(both["bib_index"].as_array().unwrap().len(),2,"separate bibliography sources must remain searchable");
+        assert!(both["bib_error"].is_null());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"].as_array().unwrap().len(),2);
+        let broken=f.json("/api/workspaces/L1",Some(json!({"revision":both["revision"],"op":"edit","id":extra_id,"text":"@article{broken"}))).await;
+        assert!(broken["bib_error"].is_string());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"].as_array().unwrap().len(),1);
+        assert_eq!(search["errors"].as_array().unwrap().len(),1,"one invalid bib must not hide valid citations");
         let nid=note["id"].as_str().unwrap();let mut changed=note.clone();changed["title"]=json!("Renamed");
         let mut second=changed.clone();second["blocks"]=json!([]);
         second["_history"]=json!([{"doc":changed,"label":"Rename"},{"doc":crate::editing::content(second.clone()),"label":"Delete block"}]);
@@ -499,6 +553,7 @@ mod tests {
         let a=f.app.library.annotate(&key,&json!({"kind":"comment","page":1,"comment":"before"}),"user",false)?;
         let id=a["id"].as_str().unwrap();
         let updated=f.app.library.update_annotation(&key,id,&json!({"revision":a["revision"],"comment":"after"}))?;
+        assert_eq!(updated["comment_author"],"user");
         f.app.library.delete_annotation(&key,id,updated["revision"].as_i64().unwrap())?;
         f.app.library.annotation_history(&key,Some(&json!({"redo":false,"expected":[]})))?;
         let list=f.app.library.annotations(&key)?;assert_eq!(list[0]["id"],id);assert_eq!(list[0]["comment"],"after");assert!(list[0]["revision"].as_i64().unwrap()>updated["revision"].as_i64().unwrap());
@@ -529,6 +584,70 @@ mod tests {
         let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
         assert_eq!(result["status"],"failed");assert!(result["error"].as_str().unwrap().contains("Skill contents changed"));
         assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());Ok(())
+    }
+
+    #[tokio::test]
+    async fn file_edit_approval_is_scoped_to_file_and_prompt() -> Result<()> {
+        let f=Fixture::new()?;
+        let target=f.app.library.create_collection("L1","Approval test")?;
+        let manifest=crate::workspace::list(&f.app,&target)?;
+        let turn=crate::chat_approval::Turn::begin(&f.app,"chat-a");
+        let mut events=f.app.actions.subscribe();
+        let args=json!({"folder_id":target,"revision":manifest["revision"],"op":"create","name":"main.tex","text":"First"});
+        let app=f.app.clone();let id=turn.0.clone();let first=args.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&first).await});
+        let event=events.recv().await?;
+        assert_eq!(event["action"],"file_edit_approval");
+        assert_eq!(event["changes"][0]["after"],"First");
+        assert!(!pending.is_finished());
+        assert!(crate::workspace::list(&f.app,&target)?["entries"].as_array().unwrap().is_empty());
+        let app=f.app.clone();let id=turn.0.clone();let parallel_args=args.clone();
+        let parallel=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&parallel_args).await});
+        assert_eq!(events.recv().await?["changes"].as_array().unwrap().len(),2);
+        let approval=event["approval_id"].clone();
+        let url=format!("/api/chat-edit-approvals/{}",turn.0);
+        let wrong=f.request(&url,Some(json!({"chat_id":"chat-b","approval_id":approval,"approve":true})),None).await;
+        assert!(!wrong.status().is_success());
+        f.json(&url,Some(json!({"chat_id":"chat-a","approval_id":approval,"approve":true}))).await;
+        pending.await??;parallel.await??;
+        // Once granted, later calls in this turn need no further UI event.
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&args).await?;
+        assert!(events.try_recv().is_err());
+        let result=f.json(&format!("/mcp?mode=suggest&chat_id=chat-a&turn_id={}",turn.0),Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"edit_project_file","arguments":args}}))).await;
+        assert_ne!(result["result"]["isError"],true);
+        let applied:Value=serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())?;
+        assert!(crate::workspace::change(&f.app,&target,&args,None).is_err(),"Approval never bypasses revision checks");
+        assert_eq!(events.recv().await?["action"],"workspace_changed");
+        let file=applied["entries"].as_array().unwrap().iter().find(|e|e["name"]=="main.tex").unwrap();
+        let edit=json!({"folder_id":target,"revision":applied["revision"],"op":"edit","id":file["id"],"text":"Second"});
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&edit).await?;
+        assert!(events.try_recv().is_err(),"Creating then editing the same file must not ask twice");
+        let mut different=args.clone();different["revision"]=applied["revision"].clone();different["name"]=json!("other.tex");
+        let app=f.app.clone();let id=turn.0.clone();let other=different.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&other).await});
+        let other_event=events.recv().await?;
+        assert_ne!(other_event["approval_id"],approval,"Different files require distinct permission");
+        f.json(&url,Some(json!({"chat_id":"chat-a","approval_id":other_event["approval_id"],"approve":false}))).await;
+        assert!(pending.await?.is_err());
+        assert!(crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&different).await.is_err());
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&edit).await?;
+        let planned=f.json(&format!("/mcp?mode=plan&chat_id=chat-a&turn_id={}",turn.0),Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit_project_file","arguments":args}}))).await;
+        assert_eq!(planned["result"]["isError"],true,"Permission cannot override Plan mode");
+        let expired=turn.0.clone();drop(turn);
+        assert!(crate::chat_approval::authorize(&f.app,&expired,Some("chat-a"),&args).await.is_err());
+        let next=crate::chat_approval::Turn::begin(&f.app,"chat-a");
+        let next_args=edit.clone();
+        let app=f.app.clone();let id=next.0.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&next_args).await});
+        let event=events.recv().await?;assert_eq!(event["turn_id"],next.0);assert!(!pending.is_finished());
+        f.json(&format!("/api/chat-edit-approvals/{}",next.0),Some(json!({"chat_id":"chat-a","approval_id":event["approval_id"],"approve":false}))).await;
+        assert!(pending.await?.is_err());
+        assert!(crate::chat_approval::authorize(&f.app,&next.0,Some("chat-a"),&edit).await.is_err());
+        let direct=f.json(&format!("/mcp?mode=direct&chat_id=chat-a&turn_id={}",next.0),Some(json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"edit_project_file","arguments":edit}}))).await;
+        assert_ne!(direct["result"]["isError"],true,"Direct edits require no approval, even after a Suggest denial");
+        assert_eq!(events.recv().await?["action"],"workspace_changed");
+        assert!(events.try_recv().is_err(),"Direct mode emits no approval request");
+        Ok(())
     }
 
     #[tokio::test]

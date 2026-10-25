@@ -311,7 +311,7 @@ impl Library {
         let (s,rev):(String,i64)=tx.query_row("SELECT data,revision FROM annotations WHERE id=?1 AND paper=?2",params![aid,key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(missing)?;
         if body["revision"].as_i64()!=Some(rev){return Err(conflict("This annotation changed in another tab. Reload it before saving."));}
         let mut a:Value=serde_json::from_str(&s)?;
-        if let Some(v)=body.get("comment"){if !v.is_string()||v.as_str().unwrap().len()>100000{return Err(bad("Invalid comment"));}a["comment"]=v.clone();}
+        if let Some(v)=body.get("comment"){if !v.is_string()||v.as_str().unwrap().len()>100000{return Err(bad("Invalid comment"));}a["comment"]=v.clone();a["comment_author"]=json!("user");}
         if let Some(v)=body.get("color"){if !valid_color(v.as_str().unwrap_or("")){return Err(bad("Use a six-digit hex annotation color"));}a["color"]=v.clone();}
         if let Some(v)=body.get("status"){if v!="accepted"{return Err(bad("Only pending suggestions can be accepted"));}a["status"]=v.clone();}
         a["revision"]=json!(rev+1);tx.execute("UPDATE annotations SET data=?1,revision=revision+1 WHERE id=?2",params![a.to_string(),aid])?;tx.commit()?;Ok(a)
@@ -532,7 +532,7 @@ mod tests {
         lib.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"😀 energy energy","words":[{"start":3,"end":9,"rect":[0.1,0.2,0.2,0.03]},{"start":10,"end":16,"rect":[0.4,0.2,0.2,0.03]}]}]}))?;
         let a=lib.annotate(&key,&json!({"kind":"highlight","page":1,"quote":"energy","occurrence":1,"comment":"$E=mc^2$"}),"assistant",true)?;
         assert_eq!(a["rects"][0][0],0.4);assert_eq!(a["status"],"pending");
-        let aid=a["id"].as_str().unwrap();let accepted=lib.update_annotation(&key,aid,&json!({"revision":1,"status":"accepted"}))?;assert_eq!(accepted["status"],"accepted");
+        let aid=a["id"].as_str().unwrap();let accepted=lib.update_annotation(&key,aid,&json!({"revision":1,"status":"accepted"}))?;assert_eq!(accepted["status"],"accepted");assert!(accepted.get("comment_author").is_none(),"accepting a suggestion does not make its comment user-authored");
         assert!(lib.update_annotation(&key,aid,&json!({"revision":1,"comment":"stale"})).is_err());
         let reply=lib.reply(&key,aid,"$$\\hbar\\omega$$","assistant",true)?;assert_eq!(reply["revision"],3);
         let r=reply["replies"][0]["id"].as_str().unwrap();let final_a=lib.resolve_reply(&key,aid,r,true)?;assert_eq!(final_a["replies"][0]["status"],"accepted");

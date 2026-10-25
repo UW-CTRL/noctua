@@ -10,11 +10,23 @@ Model access and fast-mode availability depend on your CLI and account; fast
 mode may cost extra. Providers keep separate conversations and drafts.
 
 Open **Chat** to discuss the current paper, graph, or notes. Use @ to attach a
-paper or note, and **History** to return to earlier conversations. Pause the pointer
+paper, note, project file, folder, or collection, and **History** to return to earlier conversations. Pause the pointer
 over the Skills, History, or New chat icon to reveal its label below. Keyboard
 focus shows the same labels immediately; reduced-motion preferences disable the animation. The assistant
 can search papers, explore your library, save papers, read PDFs, annotate
 passages, and edit note text through Noctua's tools.
+
+The `@` picker includes every file type in the current project (`.bib`, `.tex`,
+images, and more), plus library papers, notes, and collections. Search by filename,
+folder path, title, or author; results show their type and location. Choose a result
+with the arrow keys and Enter/Tab, or click it. You can mention multiple items.
+
+Text files attach up to 12,000 characters and stable IDs for further reading. The
+open file's unsaved draft is included and labeled as such. Folders attach a bounded
+listing of descendants; collections also include paper references. They do not
+recursively attach every file's contents. Binary/media mentions supply metadata and
+IDs rather than uploading their bytes; supported images can be opened with the
+agent's image tool. Total attachment context is capped at 60,000 characters.
 
 ## Choose an edit mode
 
@@ -63,7 +75,15 @@ local AI inference.
 
 The assistant can list and read project files, create or edit text files, and
 rename or move entries using stable IDs and revision checks. Suggest mode asks
-for review; Direct applies supported changes; Plan is read-only. File deletion
+once per file per prompt, inline in chat. Each request has **Allow this file**
+and **Decline** buttons and an optional scrollable diff snapshot. Allowing a file
+permits further edits to that same file during the response, including after a
+rename or move; other files need their own approval. Newly created files keep
+their approval for subsequent edits. Permission expires when the response ends
+or is stopped. Declining a file does not decline edits to other files.
+Revision checks still protect newer user edits. **Direct mode applies file edits
+immediately, without approval requests or popups.** Plan is read-only. Note/PDF
+suggestions and skill-script execution retain their existing review rules. File deletion
 and bibliography activation remain UI actions. See [Notes](notes.md#project-files-bibliographies-and-skills).
 
 Open the **Agent skills** icon below the project tree or the skills icon in the chat toolbar to import a skill folder, ZIP,
@@ -120,3 +140,28 @@ These use separate task prompts rather than the combined chat instructions.
 | Execution | Reader analysis and handwriting run separately from chat; Reader workers have no tools. |
 | Editing | Source files only; no Settings prompt editor. `AGENTS.md` governs repository work. |
 | Applying changes | Rebuild and restart; cached analysis may be reused. See [Development](development.md#ai-prompts). |
+
+## Paper files
+
+The [Paper editor](papers.md) compiles standard LaTeX project files with bundled Tectonic or pdfLaTeX.
+The settings gear chooses compiler, main file, and automatic compilation per
+collection/project; these compilation controls are UI-only.
+Existing project-file tools can read and edit `.tex`, `.cls`, `.sty`, `.bst`, and
+`.bib` sources. Use project-relative paths and actual BibTeX keys. Library keys
+are not automatically exported to papers. Noctua note-only commands are not valid
+paper syntax. Choosing the main document and requesting compilation are UI actions;
+there is no new agent compilation tool.
+
+Document Find is a UI-only control: reader searches include PDF text and user-authored comment text, excluding annotation quotes and assistant-authored replies. Editing a primary comment in the reader records user authorship without changing the highlight creator.
+
+The chat assistant can inspect internal workspace files with the read-only
+`inspect_workspace` tool in Plan, Suggest, and Direct modes. Ask it to inspect the
+LaTeX build log: `paper/build.log` is relative to the collection's `.workspace`.
+It can list directories, inspect `paper/out` compiler logs, and read the end of long
+logs. Reads are limited to 64 KiB per call and directory pages to 200 entries;
+the agent can request additional pages. Binary files expose metadata only.
+This tool does not trigger compilation or edit generated files.
+
+The paper preview supports double-click PDF-to-source navigation via SyncTeX.
+It opens the corresponding project source and centers the line; this is a UI
+control, separate from the assistant’s read-only build-log inspection.
