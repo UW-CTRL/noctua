@@ -13,6 +13,16 @@ config.websiteDataStore = .nonPersistent()
 config.preferences.setValue(true,forKey:"allowFileAccessFromFileURLs")
 config.userContentController.add(handler,name:"result")
 let web=WKWebView(frame:NSRect(x:0,y:0,width:1100,height:800),configuration:config)
+// Workspace dialogs need an attached window to avoid background WebKit timer throttling.
+var fixtureWindow:NSWindow?
+if CommandLine.arguments.dropFirst().first == "tests/workspace.html" {
+ let window=NSWindow(contentRect:web.frame,styleMask:[.titled],backing:.buffered,defer:false)
+ window.title="Noctua workspace regression"
+ window.contentView=web
+ window.ignoresMouseEvents=true
+ window.orderFront(nil)
+ fixtureWindow=window
+}
 web.navigationDelegate=handler
 web.loadFileURL(root.appendingPathComponent(CommandLine.arguments.dropFirst().first ?? "tests/reader.html"),allowingReadAccessTo:root)
 let deadline=Date().addingTimeInterval(35)

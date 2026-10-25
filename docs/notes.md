@@ -23,6 +23,20 @@ their original storage. General imports support 32 MB; UTF-8 text editing suppor
 Note media uploads keep their existing larger video limit. This is a file workspace, not
 a LaTeX compiler.
 
+**+ File** creates an empty text file, using the filename exactly as entered. No
+extension is added automatically. For example, use `reading-plan.md`, `draft.tex`,
+`references.bib`, or `ideas.txt`. Text files open in the source editor; `.tex` files
+do not become block notes or compile to PDF. Use **New note** for Noctua's block
+editor, or **Import** to bring in existing files, including images and videos.
+
+Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected.
+
+To remove a file or folder, open its **⋯** menu, choose **Move to trash**, then
+confirm in the in-app dialog. Folders include their contents; any removed document
+closes in the editor. Cancel leaves the project unchanged. Use **Undo** to reverse
+the operation, or **Trash** to restore entries later. When restoring individually,
+restore the parent folder before its children to preserve their placement.
+
 Import or create a `.bib`, then select **Bibliographies** to enable it for this
 collection. Its keys become available in the normal citation picker alongside library
 keys, using the existing author/year display. Duplicate keys must be renamed. Invalid

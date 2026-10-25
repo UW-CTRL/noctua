@@ -1,17 +1,17 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title></head><body class="notes-mode">
+<!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title><link rel="stylesheet" href="../web/icons.css"></head><body class="notes-mode">
 <div id="notes-side"><ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
 const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){}};
-let errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
+let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
 const clone=v=>JSON.parse(JSON.stringify(v));
-async function api(path,body){if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
-function typeset(){} function renderEditor(){} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
-window.prompt=()=>{throw Error('Native prompt must not be used');};
+async function api(path,body){if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
+function typeset(){} function renderEditor(){$('#notes-stage').textContent='No document open';} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
+window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used');};
 // Drain mocked API promises, then allow one task for dialog close events.
-// Background WebKit throttles timers, so repeated timers can exceed the runner deadline.
-async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(r=>setTimeout(r,0));}
+// MessageChannel yields a task without background WebKit timer throttling.
+async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
 <script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
@@ -34,6 +34,46 @@ function assert(ok,message){if(!ok)throw Error(message)}
  let rejected=false;try{await saveWorkspaceFile()}catch{rejected=true;}
  assert(rejected&&W.dirty&&W.text==='keep this draft','external revisions cannot overwrite unsaved files');
  assert($('#workspace-editor [data-file-status]').textContent.includes('Save failed'),'save conflict visible');clearTimeout(W.timer);W.dirty=false;
- window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, and cross-window draft protection');
+ await openWorkspaceFile('f1');
+ workspaceFileMenu('f1');$('dialog [data-delete]').click();await settle();
+ assert($('dialog [data-confirm-trash]'),'in-app trash confirmation opens');
+ $('dialog [data-cancel]').click();await settle();assert(!server.entries[1].deleted&&W.file==='f1','cancel keeps file open');
+ workspaceFileMenu('f1');$('dialog [data-delete]').click();await settle();
+ rejectDelete=true;$('dialog [data-confirm-trash]').click();await settle();
+ assert($('dialog [data-error]').textContent.includes('Unable'),'trash errors visible inside dialog');
+ assert(!server.entries[1].deleted&&!$('dialog [data-confirm-trash]').disabled,'failed delete leaves entry intact and allows retry');
+ rejectDelete=false;$('dialog [data-confirm-trash]').click();await settle();
+ assert(server.entries[1].deleted&&W.file===null,'trashing open file closes it');
+ showWorkspaceTrash();$('dialog [data-restore="f1"]').click();await settle();assert(!server.entries[1].deleted,'file restored from trash');$('dialog').close();await settle();
+ await openWorkspaceFile('f1');server.entries.find(e=>e.id==='n').parent='folder';await loadWorkspace('L1');
+ workspaceFileMenu('folder');$('dialog [data-delete]').click();await settle();$('dialog [data-confirm-trash]').click();await settle();
+ assert(server.entries.filter(e=>e.id==='folder'||e.parent==='folder').every(e=>e.deleted),'folder deletion includes descendants');
+ assert(W.file===null&&N.doc===null&&!N.list.length,'deleted descendants close file and note state');
+ showWorkspaceTrash();$('dialog [data-restore="folder"]').click();await settle();$('dialog [data-restore="f1"]').click();await settle();
+ assert(!server.entries[0].deleted&&!server.entries[1].deleted&&server.entries[1].parent==='folder','folder and child restored in place');
+ $('dialog').close();await settle();
+ async function dragEntry(id,destination,override){
+  const transfer=new DataTransfer(),row=$(`[data-entry="${id}"]`);assert(row?.draggable,'entry can be dragged');
+  row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+  if(override)transfer.setData(workspaceDragType,JSON.stringify(override));
+  const target=$(destination);assert(target,'drop target exists');
+  target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+  target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));await settle();
+ }
+ assert($('[data-file-menu]').dataset.icon==='ellipsis'&&$('[data-trash]').dataset.icon==='trash-2','workspace uses Lucide icons');
+ assert(getComputedStyle($('[data-file-menu]'),'::before').webkitMaskImage!=='none','Lucide menu icon renders');
+ await openWorkspaceFile('f1');const demoSource=$('#workspace-editor textarea');
+ demoSource.value='saved before moving';demoSource.dispatchEvent(new Event('input'));
+ await dragEntry('f1','[data-drop-folder=""]');assert(server.entries[1].parent===''&&source==='saved before moving'&&!W.dirty,'drop at root moves entry and saves draft');
+ await dragEntry('f1','[data-drop-folder="folder"]');assert(server.entries[1].parent==='folder'&&W.expanded.has('folder'),'folder accepts file and expands');
+ rejectMove=true;await dragEntry('f1','[data-drop-folder=""]');rejectMove=false;assert(server.entries[1].parent==='folder'&&errors.at(-1)==='Move failed','failed move preserves original placement');
+ let rev=server.revision;await dragEntry('folder','[data-drop-folder="folder"]');assert(server.revision===rev,'self-drop rejected');
+ await workspaceChange({op:'folder',name:'Nested',parent:'folder'});const nested=server.entries.at(-1).id;
+ rev=server.revision;await dragEntry('folder',`[data-drop-folder="${nested}"]`);assert(server.revision===rev,'descendant drop rejected');
+ await dragEntry('f1','[data-drop-folder=""]',{target:'different-project',id:'f1'});assert(server.revision===rev,'cross-project drops rejected');
+ await dragEntry(nested,'[data-drop-folder=""]');assert(server.entries.find(e=>e.id===nested).parent==='','folders can be moved');
+ await dragEntry('f1','[data-trash]');assert($('dialog [data-confirm-trash]'),'Trash drop opens in-app confirmation');$('dialog [data-cancel]').click();await settle();assert(!server.entries[1].deleted,'cancelled Trash drop preserves file');
+ await dragEntry('f1','[data-trash]');$('dialog [data-confirm-trash]').click();await settle();assert(server.entries[1].deleted&&W.file===null,'confirmed Trash drop deletes and closes file');
+ window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, and drag-to-trash');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

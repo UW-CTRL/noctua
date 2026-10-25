@@ -1219,6 +1219,7 @@ header .web-select-trigger { height: var(--header-control-height); }
 .workspace-dialog { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:10px; width:min(720px,85vw); max-height:80vh; overflow:auto; padding:20px; }
 .workspace-dialog::backdrop { background:#0008; }
 .workspace-dialog header { display:flex; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.workspace-dialog footer { display:flex; flex-wrap:wrap; gap:12px; }
 .workspace-dialog label { display:block; margin:10px 0; }
 .workspace-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:40vh; overflow:auto; }
 
@@ -1226,10 +1227,16 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-toolbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 20px; background: var(--np-raise); color: var(--np-muted); border-bottom: 1px solid var(--np-line); font: 12px var(--font-ui, sans-serif); }
 .note-toolbar .edit-history { margin: 0; }
 .note-toolbar button { color: var(--np-ink); padding: 6px 12px; }
-.note-toolbar [data-undo]::after { content: ' Undo'; }
-.note-toolbar [data-redo]::after { content: ' Redo'; }
 .workspace-create { display: grid; gap: 14px; padding-top: 16px; }
 .workspace-create label { display: grid; gap: 6px; }
 .workspace-create input, .workspace-create select { width: 100%; box-sizing: border-box; padding: 8px; }
 .workspace-create footer { display: flex; justify-content: flex-end; gap: 8px; }
 .workspace-create [data-error]:empty { display: none; }
+
+.workspace-entry[draggable="true"] { cursor: grab; }
+.workspace-entry>button[data-file] { display: flex; align-items: center; min-width: 0; }
+.workspace-entry>button[data-file]>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-root-drop { padding: 8px; margin: 4px 0; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; font-size: 12px; }
+.workspace-drop-active { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--raise); }
+.workspace-dragging [data-trash] { border-color: var(--danger); }
+.workspace-dragging .workspace-root-drop { color: var(--ink); border-color: var(--accent); }
