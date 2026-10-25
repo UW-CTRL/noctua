@@ -12,19 +12,29 @@ outside this release.
 
 ## First launch and recovery
 
-The desktop starts with a bundled **Server & connection** screen that needs no
-server. Choose **Use this computer** to validate and reuse an existing server, or
+The desktop opens a bundled **Server & connection** popup that needs no server.
+Setup shows one step at a time: **Choose → Connect → Save**. **Next** moves forward;
+**Back** returns without losing the selected mode, address or tested credential.
+Changing the mode, address or token requires another connection test. Only
+**Save & connect** commits a new connection; a failed test or save keeps the popup
+available. **Close** returns to the connected library, or leaves an **Open
+connection settings** button on the local launcher when no library is open.
+Server controls and desktop options are separate popup tabs.
+
+Choose **Use this computer** to validate and reuse an existing server, or
 start a detached background process when none owns the data. Validation checks
 product, persistent server identity, instance identity, API version, data folder
 and readiness; a listening port or PID is insufficient. Parallel clients share
 an ensure lock and the server holds an exclusive lifetime ownership lock.
 
 Choose **Connect to another computer** and enter its HTTPS origin and token.
-**Test connection** authenticates the identity endpoint; **Connect / retry** also
+**Test connection** (or **Test & continue**) verifies the server through the actual
+WebView. **Save & connect** rechecks its identity and
 creates the WebView's HttpOnly browser session before opening the UI. Redirects
 are refused and HTTPS certificate verification stays enabled. Remote use never
 starts a local data server or requires local AI installation. The saved mode is
-retried next launch. A failure leaves the connection manager available and never
+retried next launch without repeating setup. Success opens the library and hides
+the local launcher. A failure leaves the connection popup available and never
 falls back to local data.
 
 The selection is in the operating system's config directory under `NoctuaClient`,

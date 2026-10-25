@@ -67,6 +67,9 @@ The connection appearance fixture compares the serverless manager with the appâ€
 shared light/dark palette and checks system appearance, UI fonts, narrow layouts,
 login failure recovery, loading and offline status. The native smoke also checks
 that the shell saves appearance locally for the disconnected manager.
+The connection fixture checks one-step-at-a-time popup navigation, Back preserving
+the address and transient credential, test-before-save, failed saves retaining the
+review step, and invalidating a test when the connection changes.
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,

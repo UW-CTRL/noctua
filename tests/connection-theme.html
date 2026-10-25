@@ -18,7 +18,7 @@ const apply=(f,theme)=>{const w=f.contentWindow;w.localStorage.setItem('noctua.t
   apply(manager,theme);apply(reference,theme);
   const cs=w.getComputedStyle(d.body),app=reference.contentWindow.getComputedStyle(reference.contentDocument.body);
   assert(cs.backgroundColor===app.backgroundColor&&cs.color===app.color,theme+' connection colors differ from app');
-  assert(w.getComputedStyle(d.querySelector('.primary')).backgroundColor===app.getPropertyValue('--accent').trim().replace(/^#([a-f\d]{6})$/i,(_,h)=>`rgb(${parseInt(h.slice(0,2),16)}, ${parseInt(h.slice(2,4),16)}, ${parseInt(h.slice(4),16)})`),theme+' primary button does not use app accent');
+  assert(w.getComputedStyle(d.querySelector('#next')).backgroundColor===app.getPropertyValue('--accent').trim().replace(/^#([a-f\d]{6})$/i,(_,h)=>`rgb(${parseInt(h.slice(0,2),16)}, ${parseInt(h.slice(2,4),16)}, ${parseInt(h.slice(4),16)})`),theme+' primary button does not use app accent');
   assert(w.getComputedStyle(d.querySelector('input')).backgroundColor===app.backgroundColor,theme+' input uses a fixed light background');
   assert(w.getComputedStyle(d.querySelector('button')).borderRadius==='8px','button geometry differs from shared controls');
  }
@@ -32,6 +32,7 @@ const apply=(f,theme)=>{const w=f.contentWindow;w.localStorage.setItem('noctua.t
  assert(choices.length===2,'connection mode dropdown is incomplete');
  choices[1].click();
  assert(d.querySelector('#mode').value==='remote'&&!d.querySelector('#remote').hidden,'themed dropdown cannot select a remote connection');
+ w.eval('showStep(1)');
  // Stored device appearance is applied before rendering by native injection.
  w.localStorage.setItem('noctua.theme','light');w.dispatchEvent(new w.StorageEvent('storage',{key:null}));
  assert(d.documentElement.dataset.theme==='light','connection screen does not react to appearance changes');
@@ -40,7 +41,8 @@ const apply=(f,theme)=>{const w=f.contentWindow;w.localStorage.setItem('noctua.t
  assert(w.getComputedStyle(d.documentElement).colorScheme===(w.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),'system theme ignored');
  manager.style.width='360px';
  await new Promise(resolve=>setTimeout(resolve,50));
- assert(d.documentElement.scrollWidth<=d.documentElement.clientWidth+1,'narrow connection page overflows horizontally');
+ const modal=d.querySelector('#connection-dialog');
+ assert(modal.getBoundingClientRect().width<=360&&modal.scrollWidth<=modal.clientWidth+1,'narrow connection popup overflows horizontally');
  w.__TAURI_INTERNALS__={invoke:async()=>{throw Error('Offline test')}};
  await w.eval('operation(()=>connect())');
  assert(d.querySelector('#status').dataset.state==='error'&&!d.querySelector('#connect').disabled,'offline recovery has no error/retry state');

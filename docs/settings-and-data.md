@@ -8,6 +8,10 @@ Connection, recovery and browser sign-in screens use the app’s light/dark colo
 controls and UI typography. The desktop remembers the last connected app’s
 appearance on this device, so its local connection screen keeps that appearance
 even while the server is offline; first launch follows the system theme.
+Connection setup is a popup with **Choose → Connect → Save** steps and **Back**
+navigation. **This computer** and **Desktop** tabs contain management controls,
+so they do not appear alongside the connection steps. Input is retained when
+going back; changing connection details requires a new test before saving.
 
 The native Settings menu opens the local connection manager, including while
 servers are offline. It selects this computer or another server, tests and retries

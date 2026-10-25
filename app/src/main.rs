@@ -90,7 +90,8 @@ fn main() {
             connect_server,
             local_server,
             desktop_action,
-            clear_connection
+            clear_connection,
+            dismiss_connection
         ])
         .setup(|app| {
             app.manage(Shell {
@@ -276,6 +277,7 @@ fn open_settings(app: &AppHandle) {
         .into_values()
         .find(|w| w.label().starts_with('w'))
     {
+        let _ = w.eval("document.querySelector('#open-connection')?.click()");
         let _ = w.show();
         let _ = w.set_focus();
     } else {
@@ -301,6 +303,16 @@ fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     };
     anyhow::ensure!(path.is_file(),"Server executable missing. Build `cargo build -p noctua` for development, or reinstall the desktop app");
     noctua::service::stage(&path)
+}
+#[tauri::command]
+fn dismiss_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    local_only(&window)?;
+    if let Some(content) = app.webview_windows().into_values().find(|w| w.label().starts_with("content")) {
+        let _ = content.show();
+        let _ = content.set_focus();
+        let _ = window.hide();
+    }
+    Ok(())
 }
 #[tauri::command]
 async fn clear_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
@@ -424,6 +436,12 @@ async fn flush_clients(app: &AppHandle, skip: &str) -> Result<(), String> {
     }
     Ok(())
 }
+fn verify_tested_server(identity: &Value, expected: Option<&str>) -> anyhow::Result<()> {
+    if let Some(expected) = expected {
+        anyhow::ensure!(identity["server_id"].as_str() == Some(expected), "The tested server identity changed. Go back and test the connection again before saving");
+    }
+    Ok(())
+}
 #[tauri::command]
 async fn connect_server(
     app: AppHandle,
@@ -434,6 +452,7 @@ async fn connect_server(
     test_only: bool,
     new_window: Option<bool>,
     open_path: Option<String>,
+    expected_server_id: Option<String>,
 ) -> Result<Value, String> {
     local_only(&window)?;
     let shell = app.state::<Shell>();
@@ -449,6 +468,7 @@ async fn connect_server(
         }else{let address=noctua::server::validate_url(&address)?.origin().ascii_serialization();
             let secret=if secret.is_empty(){noctua::client::read_secret(&address)?}else{secret};(address,secret)};
         let identity=noctua::server::probe(&address,&secret).await?;
+        verify_tested_server(&identity,expected_server_id.as_deref())?;
         let old=noctua::client::load()?;
         anyhow::ensure!(old.address!=address||old.server_id.is_empty()||old.server_id==identity["server_id"],"The server identity at this address changed. Choose a different address or clear the saved connection before accepting new data");
         let destination=content_shell_url(&address,window.label(),new_window.unwrap_or(false),open_path.as_deref())?;
@@ -529,6 +549,7 @@ async fn connect_server(
         if !keep_windows {for old_window in app.webview_windows().into_values().filter(|x|x.label().starts_with("content")&&x.label()!=w.label()){let _=old_window.close();}}
         *app.state::<Shell>().connected.lock().unwrap()=Some((address,identity["server_id"].as_str().unwrap().into(),secret));
         provisional.committed=true;
+        let _=window.hide();
         Ok(identity)
     }.await;
     result.map_err(|e| format!("{e:#}"))
@@ -671,6 +692,13 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 #[cfg(test)]
 mod connection_tests {
+    #[test]
+    fn changed_server_cannot_replace_the_reviewed_connection() {
+        let server = serde_json::json!({"server_id":"tested-server"});
+        assert!(super::verify_tested_server(&server, Some("tested-server")).is_ok());
+        assert!(super::verify_tested_server(&server, Some("another-server")).is_err());
+        assert!(super::verify_tested_server(&server, None).is_ok());
+    }
     use super::*;
     #[test]
     fn browser_session_accepts_scoped_and_legacy_names_without_echoing_secrets() {

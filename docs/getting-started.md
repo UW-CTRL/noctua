@@ -4,10 +4,12 @@
 
 ## Choose a server
 
-On first launch the desktop shows **Server & connection** even when no server is
-running. Choose **Use this computer** to reuse/start an independent background
+On first launch the desktop opens a **Server & connection** popup even when no
+server is running. Follow **Choose → Connect → Save**; **Back** keeps your inputs.
+Choose **Use this computer** to reuse/start an independent background
 server, or enter another computer's private HTTPS address and authentication
-token. Remote use requires no AI CLI or API key on this client. Closing the app
+token, test the connection, then choose **Save & connect**. Remote use requires no
+AI CLI or API key on this client. Closing the app
 leaves the server running; login auto-start is a separate opt-in setting.
 The saved connection is retried next launch. If it fails, retry or change it from
 the same screen; Noctua never silently switches a remote connection to local data.
