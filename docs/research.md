@@ -113,11 +113,7 @@ are saved and updated as the collection changes.
 
 ## Assistant organization
 
-Chat can search saved papers without remote lookup, read local paper details,
-create/rename collections, and add/remove existing papers in several projects
-at once. Each paper's membership update is atomic; a batch reports individual
-failures. Removing a membership leaves the paper and PDF in the shared Library.
-Results distinguish direct memberships from papers included through subfolders.
-These requested Library actions apply immediately in Suggest and Direct, and
-are unavailable in Plan. Citation/recommendation tools can read relationships
-without moving the current graph. See [tool results](assistant.md#tool-results-and-limits).
+Chat can search saved papers, inspect their details, create or rename collections,
+and add or remove papers across several projects. Removing a paper from a project
+keeps it and its PDF in the shared Library. These requested actions apply
+immediately in Suggest and Direct; Plan is read-only.

@@ -60,14 +60,7 @@ from another window; resolve save conflicts before undoing.
 
 ## Assistant reads
 
-Chat reads PDF text in bounded page/character ranges and follows continuation
-positions for long pages. Search results are paged matching-line excerpts with
-page/line locations and explicit truncation. Saved AI outlines can be read
-without generating new analysis. Embedded PDF bookmarks and bulk outline or
-auto-highlight generation remain Reader controls.
-
-Annotation tool results retain quotes, comments, categories, authors, approval
-status and revisions. Geometry is omitted by default; callers can explicitly
-request it or filter by page/kind/status. Reply text is optional and paged.
-Uncached PDF text/page images require an active Noctua chat renderer; cached
-reads work independently. Missing rendering support reports `UI_REQUIRED`.
+Chat can search PDF text, read passages in parts, inspect annotations, and read
+saved AI outlines without generating new analysis. Keep a Noctua chat tab open
+when it needs uncached text or page images. Outline generation and
+auto-highlighting remain Reader controls.

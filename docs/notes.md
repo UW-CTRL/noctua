@@ -131,27 +131,17 @@ command; playback is not standard LaTeX export behavior.
 
 ## Assistant edits
 
-The assistant can search active notes across collections, create block notes, read
-bounded source ranges, and edit blocks, titles, preambles, and block order.
-Project trash is excluded from normal lists and @-mentions. Explicit MCP reads
-of a trashed note report its state; editing requires restoring it first.
+The assistant can search active notes, create block notes, and edit blocks,
+titles, preambles, and block order. Restore trashed notes before editing them.
 
-**Direct** edits save on the server before reporting completion. Each change uses
-the saved note's `updated` version, rejects missing blocks and conflicts without
-partial edits, and can be undone. Before sending a chat message the app saves
-pending edits. If you type while the assistant works, conflicting local edits
-are preserved for you to resolve rather than silently overwritten.
+Use **Suggest** to review proposals in **Assistant changes** below the project
+tree, **Plan** for read-only discussion, or **Direct** to save changes immediately
+with note-edit undo. Pending proposals remain available after restarting Noctua.
+If you edit a note while the assistant works, conflicting changes are preserved
+for you to resolve. See [proposal review](assistant.md#assistant-reads-and-review).
 
-**Suggest** stores proposals for review in an in-app dialog. Use **Assistant
-changes** below the project tree to revisit pending proposals, including after a
-restart. Accept applies the whole proposal with a version check; Reject leaves
-the note unchanged. If the note changed, ask for a fresh proposal. **Plan** is
-read-only. Project file proposals use the same review flow. Tree display names
-and note document titles are separate; within-project entry moves preserve IDs.
-
-Chat can inspect a saved drawing with `view_note_drawing`; an uncached preview
-requires an active Noctua chat. The drawing pad's TeX action still performs a
-separate transcription. Videos, stroke editing, media uploads, whole-note deletion
-and cross-project moves remain UI actions or unsupported tool operations.
-Attach a note with @ or select rendered text and choose **Add to chat**.
-See [Research assistant](assistant.md#tool-results-and-limits) for result paging.
+Chat can inspect saved drawings; keep a Noctua chat tab open when a preview is
+needed. The drawing pad's TeX action performs separate handwriting transcription.
+Videos, stroke editing, media uploads, whole-note deletion, and cross-project
+moves remain UI actions or unsupported tool operations. Attach a note with @ or
+select rendered text and choose **Add to chat**.

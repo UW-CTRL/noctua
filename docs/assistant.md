@@ -76,65 +76,18 @@ on temporary input copies, not inside an OS sandbox. Plan mode cannot request
 execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skills)
 for package limits, runtimes, and timeouts.
 
-## Tool results and limits
+## Assistant reads and review
 
-The MCP catalog currently has 35 tools (25 in Plan). It separates remote paper
-search from `search_library`, which searches saved local papers. `get_paper`
-accepts either a remote `paper_id` or a local `paper_key`; local details include
-citation keys, revision, PDF status, and direct collection memberships.
-`update_paper_memberships` organizes multiple saved papers across projects,
-reports each result, and never deletes a Library paper. `edit_collection` creates
-or renames collections. `create_note` makes a block note; creating a text file is
-a separate operation. `get_paper_relations` reads citation/recommendation
-snapshots without changing the window. `read_pdf_outline` reads saved AI outlines
-without starting analysis. `view_note_drawing` renders saved handwriting.
+The assistant searches both remote papers and your saved Library. Long lists and
+PDF or note text are read in parts, so you can ask for a quick overview or a
+closer reading. It can also read saved AI outlines and paper relationships
+without starting new analysis or changing the current graph.
 
-Lists return `items`, `total`, `has_more`, and `next_offset` where the source
-supports paging. Text reads use Unicode character offsets and return their
-continuation position. PDF reads return at most 20 pages and 40,000 characters,
-with smaller defaults; use `next_page` and `next_char_offset` to continue.
-PDF search returns paged matching-line excerpts instead of silently dropping
-matches after 50 pages. A long line's excerpt reports its offset and truncation.
-Remote paper search returns at most 30 results per call. Citation snapshots have
-explicit upstream limits and do not claim to cover the entire corpus.
-
-Note reads return `updated` for edits; workspace reads return `revision`.
-`read_note` can select block IDs and read long blocks in parts. Its preamble
-preview is bounded; use `view=preamble` to continue reading macros. Use
-`list_project_files` with `include_bibliography=true` for paged citation metadata.
-The default omits internal blob hashes, undo history, and full BibTeX fields.
-Workspace snapshots do not auto-organize media. File writes return affected IDs,
-the new version, and bibliography errors rather than the whole workspace.
-
-**Assistant changes** below the project tree lists durable pending note/file
-proposals. The review dialog can accept or reject them; accepting uses the
-original version and rejects stale proposals. `get_edit_proposal` reads status
-but cannot approve a proposal. Direct changes report `applied` only after saving;
-view operations report `ui_requested`, not confirmation that a window opened.
-
-Skill requests/status omit script source, filesystem roots and base64 outputs.
-`get_skill_run` can page `stdout`/`stderr` or a selected file's `diff`; the review
-UI retains full scripts and output bytes for user approval. PDF annotation lists
-omit geometry and reply bodies by default. `include_geometry` and
-`include_replies` explicitly request details, with page/kind/status filters.
-
-Write tools optionally accept `request_id`. Retrying the same successful call
-with identical arguments returns its saved response; changing the arguments
-with that ID fails. This cache is scoped to the backend data root, chat, mode,
-and tool, bounded to 256 responses, and lasts only for the backend session.
-After restarting or cache eviction, inspect current state before retrying a
-non-idempotent operation. Errors carry codes such as `CONFLICT`, `NOT_FOUND`,
-`INVALID_ARGUMENT`, or `UI_REQUIRED`. Partial download failures preserve the
-saved paper key. Always inspect pending states and per-item failures.
-
-The server is still localhost-only, with Host/Origin checks. The edit mode and
-chat ID are not authentication or per-project authorization. Cached PDF text,
-pages and drawings can be read without a renderer; uncached content requires an
-active Noctua chat and reports `UI_REQUIRED` otherwise. The old MCP names
-`add_to_zotero` and `list_zotero_folders` and the duplicate `/api/zotero/*`
-Library routes have been removed. Use `save_to_library`,
-`list_library_collections`, and `/api/library/*`. The optional read-only Zotero
-importer remains available.
+Use **Assistant changes** below the project tree to review pending note and
+project file proposals, including after restarting Noctua. Accept saves a proposal;
+Reject leaves the content unchanged. If the content changed since the proposal
+was made, ask for a fresh proposal. Direct edits are saved before the assistant
+reports completion, and conflicting edits require resolution.
 
 ## AI prompts
 

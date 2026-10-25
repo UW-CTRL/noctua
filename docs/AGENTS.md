@@ -4,8 +4,11 @@ Use the guide map below to find the document relevant to the task. Keep this map
 and the user-facing [documentation index](README.md) current when adding guides. Describe current behavior, activation, and
 limits; PR-specific records do not replace user-guide updates.
 
-Keep detailed instructions in the relevant guide and project README summaries
-short. Check local links and anchors, and include new guides with their links.
+Keep guides concise and focused on what users need to activate, use, and
+understand a feature. Do not turn them into tool catalogs, duplicate API contracts,
+or enumerate internal implementation details; keep technical detail in development
+references only when it helps contributors. Keep project README summaries short.
+Check local links and anchors, and include new guides with their links.
 For cross-feature requirements, follow
 [Feature synchronization](development.md#feature-synchronization).
 
