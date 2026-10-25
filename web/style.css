@@ -2,6 +2,7 @@
   --ui-font-size: 14px;
   --ui-font-scale: 1;
   --note-font-size: 18px;
+  --note-title-font-size: 28px;
   --note-font-scale: 1;
   --font-chat: var(--font-ui);
   --chat-font-size: calc(13px * var(--ui-font-scale));
@@ -1045,13 +1046,13 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-title { font: inherit; font-size: 30px; font-weight: normal; text-align: center; margin-bottom: 8px; padding: 0; }
 .note-title::placeholder { color: var(--np-muted); }
 .note-title:focus-visible { outline: 2px solid var(--np-link); outline-offset: 4px; border-radius: 4px; }
-.note-meta { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0; text-align: center; font: calc(11px * var(--ui-font-scale))/1.5 var(--font-ui); }
+.note-meta { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0; text-align: center; font: 14px/1.5 var(--font-note); }
 .note-folder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
 .note-save-status { color: var(--np-muted); }
 .note-save-status::before { content: "·"; margin-right: 6px; }
 .note-preamble { margin: 16px 0 0; }
 .nb-view.is-empty { min-height: 32px; padding: 4px 0; }
-.nb-view.is-empty::before { font: calc(13px * var(--ui-font-scale))/1.7 var(--font-ui); font-style: normal; opacity: .75; }
+.nb-view.is-empty::before { font: calc(13px * var(--ui-font-scale))/1.7 var(--font-note); font-style: normal; opacity: .75; }
 .note-blocks>.nb ~ .nb .nb-view.is-empty::before { opacity: 0; }
 .note-blocks>.nb:hover .nb-view.is-empty::before, .note-blocks>.nb:focus-within .nb-view.is-empty::before { opacity: .75; }
 .nb-insert { height: 24px; }
@@ -1239,7 +1240,7 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-actions [aria-expanded="true"] { color: var(--np-link); background: var(--np-raise); }
 .note-page { width: min(760px, 100%); padding: 12px clamp(40px, 6%, 64px) 96px; }
 .note-head { padding-bottom: 14px; margin-bottom: 8px; }
-.note-title { min-width: 0; margin: 0 0 20px; padding: 2px 4px; text-align: center; font: 500 30px/1.25 var(--font-note); color: var(--np-ink); resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-title { min-width: 0; margin: 0 0 20px; padding: 2px 4px; text-align: center; font: 500 var(--note-title-font-size)/1.25 var(--font-note); color: var(--np-ink); resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-meta { justify-content: flex-start; text-align: left; }
 .nb-insert:last-child { height: 34px; margin-top: 12px; }
 
@@ -1421,6 +1422,12 @@ body.library-view #folder-divider { display: none; }
 /* Lineage reuses the lower pane for either papers or thread cards. */
 .graph-list-tabs { flex: none; margin: 0 12px 6px; }
 .graph-list-tabs button { flex: 1; min-width: 0; padding: 7px 8px; }
+
+.font-setting-controls.note-font-controls { grid-template-columns: minmax(0, 1fr); }
+.note-size-settings { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; }
+.note-size-settings label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: calc(12px * var(--ui-font-scale)); }
+.note-size-settings select, .note-size-settings .web-select { width: 80px; }
+.font-preview-note-title { font-family: var(--font-note); font-size: var(--note-title-font-size); }
 
 #notes-side>.workspace-tools { flex: none; padding: 8px 10px; }
 #notes-side>.workspace-tools>select, #notes-side>.workspace-tools>.web-select { flex: 1; min-width: 0; width: 0; }

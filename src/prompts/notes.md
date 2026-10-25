@@ -44,6 +44,9 @@ The gear at the far right of the sticky note header opens the preamble, which ap
 
 Settings provides separate System, Note, and Chat font families and sizes. App, Notes, and Reader themes independently default to System and preserve saved choices. These are UI controls, not chat tools; equations retain their math typeface.
 
+In Settings → Appearance → Fonts, Note font applies to the title, body, collection/save metadata, and empty-block writing hint. Title size (12–36 px, default 28 px) and Body size (12–26 px) are independent, apply
+immediately, and are saved for this browser or desktop profile. Collection and save-status text stay at 14 px.
+
 ### Assistant tools and limits
 
 Use `list_notes` and `read_note` to find and read notes. Use `view_note_image` to inspect existing attached images, including equations, plots, or diagrams, then explain them or transcribe them into LaTeX. It accepts images, not videos or drawing markers; images over 5 MB cannot be viewed.

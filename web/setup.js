@@ -142,12 +142,18 @@ const SETTINGS_TABS = [
   ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
 ];
 
+function fontSizeSetting(kind, label) {
+  return `<select id="setup-${kind}-font-size" aria-label="${label}">${NoctuaFonts.sizeChoices(kind).map(value => `<option value="${value}" ${value === NoctuaFonts.getSize(kind) ? 'selected' : ''}>${value}px</option>`).join('')}</select>`;
+}
 function fontSetting(kind, label) {
   const preference = NoctuaFonts.get(kind);
   const choices = NoctuaFonts.choices(kind).map(option => `<option value="${option.id}" ${option.id === preference.id ? 'selected' : ''}>${esc(option.label)}</option>`).join('');
-  const size = `<select id="setup-${kind}-font-size" aria-label="${label} size">${NoctuaFonts.sizeChoices(kind).map(value => `<option value="${value}" ${value === NoctuaFonts.getSize(kind) ? 'selected' : ''}>${value}px</option>`).join('')}</select>`;
-  return `<div class="setting-field"><label for="setup-${kind}-font">${label}</label><div class="font-setting-controls"><select id="setup-${kind}-font">${choices}</select>${size}</div></div>
+  const size = kind === 'note' ? '' : fontSizeSetting(kind, label + ' size');
+  const noteSizes = kind === 'note' ? `<div class="note-size-settings"><label for="setup-noteTitle-font-size">Title size${fontSizeSetting('noteTitle', 'Note title size')}</label><label for="setup-note-font-size">Body size${fontSizeSetting('note', 'Note body size')}</label></div>` : '';
+  return `<div class="setting-field"><label for="setup-${kind}-font">${label}</label><div class="font-setting-controls${kind === 'note' ? ' note-font-controls' : ''}"><select id="setup-${kind}-font">${choices}</select>${size}</div></div>
     <label class="setting-field" id="setup-${kind}-font-name-field" for="setup-${kind}-font-name" ${preference.id === 'custom' ? '' : 'hidden'}><span>Font name</span><input class="setup-input" id="setup-${kind}-font-name" value="${esc(preference.name)}" placeholder="e.g. Pretendard" autocomplete="off" spellcheck="false"></label>
+    ${noteSizes}
+    ${kind === 'note' ? '<p class="font-preview font-preview-note-title"><span>Note title</span></p>' : ''}
     <p class="font-preview font-preview-${kind}"><span title="The quick brown fox jumps over the lazy dog. 0123456789">The quick brown fox jumps over the lazy dog. 0123456789</span></p>`;
 }
 function syncFontSetting(kind) {
@@ -602,7 +608,7 @@ function openSetup({ firstRun = false, tab } = {}) {
       finally{controls.forEach(control=>control.disabled=false);}
       return;
     }
-    const fontSize = e.target.id.match(/^setup-(ui|note|chat)-font-size$/);
+    const fontSize = e.target.id.match(/^setup-(ui|note|noteTitle|chat)-font-size$/);
     if (fontSize) {
       NoctuaFonts.setSize(fontSize[1], e.target.value); msg(e.target.closest('section'), 'Saved.', true); return;
     }

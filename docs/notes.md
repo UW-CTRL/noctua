@@ -90,6 +90,9 @@ Noctua data directory; storage relocation includes project files and imported sk
 Temporary script work directories are removed after execution; approval/results and undo
 histories are session-only.
 
+In Settings → Appearance → Fonts, Note font applies to the title, body, collection/save metadata, and empty-block writing hint. Title size (12–36 px, default 28 px) and Body size (12–26 px) are independent, apply
+immediately, and are saved for this browser or desktop profile. Collection and save-status text stay at 14 px.
+
 ## LaTeX, citations, and links
 
 Notes support a LaTeX subset: inline and display math, numbered equations,
