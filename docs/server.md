@@ -163,6 +163,22 @@ inputs; they do not choose a server data path.
 
 ## Drafts, backup and updates
 
+Open notes snapshot into this device's localStorage on each edit, keyed by server
+identity, collection, note ID and editor tab. Different editor drafts never
+overwrite each other. A recovery chooser presents multiple retained versions,
+including legacy single-slot drafts. This is the first offline scope: it does not
+make the entire library available offline or queue image/media uploads. Browser storage belongs to its web origin, so use a stable server address.
+Browser storage may have a quota or be cleared; the editor reports storage failures and
+must be kept open until a server save succeeds. Do not use private browsing if
+you need drafts to survive application exit.
+
+Reload/relaunch recovers a saved draft when the note is opened. It retains the
+base server version; if another device changed that version, use the existing
+conflict choice. There is no automatic overwrite. A successful server save only
+clears the exact snapshot acknowledged, preserving edits made while saving.
+Explicitly reloading the server copy discards the current draft only after the
+server copy was fetched successfully. See [Notes](notes.md).
+
 Desktop updates leave a running server alone. Server executables are staged by
 version and content hash in the client config folder, so replacing the app bundle
 does not remove their path. An explicit safe Restart uses the newly bundled server;

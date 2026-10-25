@@ -632,6 +632,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/server", get(server_identity))
         .route("/api/server/stop", post(server_stop))
         .route("/auth/login", post(||async{StatusCode::UNAUTHORIZED}))
+        .route("/drafts.js", get(||async{asset(include_str!("../web/drafts.js"),"text/javascript; charset=utf-8")}))
         .route("/connection.js", get(||async{asset(include_str!("../web/connection.js"),"text/javascript; charset=utf-8")}))
         .route("/", get(page_index))
         .route("/app.js", get(|| async { asset(include_str!("../web/app.js"), "text/javascript; charset=utf-8") }))

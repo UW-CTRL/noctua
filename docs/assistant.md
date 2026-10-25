@@ -138,6 +138,13 @@ These use separate task prompts rather than the combined chat instructions.
 | Editing | Source files only; no Settings prompt editor. `AGENTS.md` governs repository work. |
 | Applying changes | Rebuild and restart; cached analysis may be reused. See [Development](development.md#ai-prompts). |
 
+## Local drafts and server edits
+
+The assistant reads saved server content, not unsaved local input. Multiple editor
+drafts remain separate, and another device's edits require conflict resolution.
+See [note draft recovery](notes.md#connection-aware-note-drafts) before discarding
+a draft or explicitly keeping a local version.
+
 ## Server job lifetime
 
 Closing a desktop window, losing the connection or switching servers leaves an

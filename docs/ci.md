@@ -2,12 +2,12 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
-`.github/workflows/ci.yml` runs on all pull requests, including feature-branch targets, pushes to
+`.github/workflows/ci.yml` runs on all pull requests, including stacked feature branches, pushes to
 `main`, and manual execution. Pushes to `main` skip CI when every changed file is `README.md`, `AGENTS.md`,
 `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`, `LICENSE.*`, `NOTICE`, or under
 `docs/`. Any other changed path still triggers CI, including
-runtime prompts under `src/prompts/`. PR checks, manual runs, and the separate
-dependency security workflow retain their existing triggers. Each PR update starts fresh checks and cancels
+runtime prompts under `src/prompts/`. The dependency security workflow also checks all PR targets. Manual runs and
+main-push behavior are unchanged. Each PR update starts fresh checks and cancels
 older runs for that PR. Jobs have read-only repository access and no release or
 deployment steps. The separate release workflow still builds installers only
 for version tags or an explicit manual release run, then publishes the release
@@ -137,8 +137,45 @@ rather than bypassing the check.
 ## Independent server regression
 
 After `cargo build --locked -p noctua`, run `python3 tests/server-lifecycle.py`.
-It uses temporary data/profile/client/service directories and a fake OS manager.
-It covers concurrent ensure, detached lifetime, authenticated identity, Host/Origin/
-CSRF protection, safe stop/restart, busy responses, note version conflicts,
-relative paths, serialized service refresh and data relocation. Registering login
-auto-start never starts a server. No real user service is registered by tests.
+It uses a new temporary server/client/service directory and fake OS manager,
+covering concurrent ensure, detached parent lifetime, identity/data ownership,
+stale records, port collisions, safe restart, token/Host/Origin/CSRF rejection,
+browser sessions, two-device note version conflicts, native isolation and the
+incompatible data-format fence. It never addresses a user's server or registers
+a real resident service. CI runs it on the backend Linux runner.
+
+`tests/connection.html` runs with the nonpersistent WebKit fixture. It covers the
+serverless desktop screen, remote connection test/retry without local fallback,
+secret clearing, local draft persistence and per-server isolation, failed-save
+switch blocking and a late acknowledgment preserving newer input. Backend tests
+also cover lifetime ownership, persistent identity, address validation and nested
+SQLite WAL snapshots. Real OS login, keyring authorization, packaged updates and
+Tailscale/two-computer networking require platform release smoke tests.
+
+For a macOS native WebView smoke, build both packages then run
+`python3 tests/desktop-smoke.py`. It uses a debug-only unique application identifier with explicit temporary
+folders, so it can run without contacting an existing desktop app. It verifies
+actual cookie/session readiness before checking server survival
+after the test desktop exits. It uses isolated data/config/service paths and
+only stops its own server afterward. Backend chat regression verifies that a
+subscriber disconnect leaves the job busy, concurrent turns are rejected, and
+explicit cancellation persists a partial result.
+
+The request-lifetime regression abandons an authenticated request while its handler
+is blocked, then verifies the server job completes and retains its active-request
+count until completion. This prevents interface loss from cancelling admitted
+server AI/write jobs or permitting an unsafe shutdown during their work.
+
+The server lifecycle fixture also blocks a mocked service refresh while another
+ensure runs, proving the restart transaction is serialized. It tests relative
+home paths, registration without starting, and profile relocation with the login
+definition updated to the destination. `NOCTUA_PROFILE_HOME` keeps these tests
+inside a temporary profile while exercising the real migration lease.
+
+`tests/note-drafts.html` verifies newer edits during save, malformed successful
+responses, a full local store plus network failure, failed deletion, and input
+typed during conflict reload. The connection fixture covers editor freezing and
+rollback, independent per-editor drafts, legacy recovery, and recovery selection.
+Server tests retain ownership for unfinished response streams and reject remote
+addresses in local control records. Session capacity evicts one old session
+rather than invalidating every connected client.

@@ -42,7 +42,7 @@ for(const crop of [a,b,full,tall])for(const [w,h] of [[1200,900],[380,320],[220,
 }
 const citation=pdfPreviewSizeKey({dataset:{}}),pageKey=pdfPreviewSizeKey({dataset:{previewKind:'passage',previewLayout:'page.section'}}),columnKey=pdfPreviewSizeKey({dataset:{previewKind:'passage',previewLayout:'column.section'}});
 assert(new Set([citation,pageKey,columnKey]).size===3,'citation, single-column, and double-column manual sizes must be independent');
-const preferences=new Map(),store={get:key=>preferences.get(key),set:(key,value)=>preferences.set(key,value)},localStorage={removeItem:key=>preferences.delete(key)};
+const preferences=new Map(),store={get:key=>preferences.get(key),set:(key,value)=>preferences.set(key,value),remove:key=>preferences.delete(key)},localStorage={removeItem:key=>preferences.delete(key)};
 globalThis.innerWidth=1200;globalThis.innerHeight=900;
 const document={createElement(){return {setAttribute(){}};}};
 const classes=new Set(),popup={dataset:{},style:{},isConnected:true,classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name)},append(node){this.grip=node;},getBoundingClientRect(){return {left:12,top:12,width:parseFloat(this.style.width)||420,height:parseFloat(this.style.height)||280};},get offsetWidth(){return this.getBoundingClientRect().width;},get offsetHeight(){return this.getBoundingClientRect().height;}};

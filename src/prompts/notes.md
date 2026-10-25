@@ -25,3 +25,9 @@ A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be shari
 ### Project content
 
 Block notes and project text files are different document types. A `.tex` project file does not become a block note or compile to a PDF. Enabled project bibliographies provide additional citation keys; do not assume every imported file is active or that an imported reference has been downloaded.
+
+Local drafts are client-owned and isolated by server and editor. A local draft
+status does not confirm a server save, and server reads cannot see unsaved client
+input. Preserve the user's work when a server version conflicts; let the user
+resolve it instead of automatically overwriting another device's edits. Closing
+a client does not cancel jobs on its connected server.

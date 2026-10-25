@@ -143,3 +143,9 @@ window and callback are discarded on any error; the old connection is saved only
 after the new WebView authenticates and every old editor freezes and flushes.
 Failure resumes the old editors. Device preferences use exact shared keys, while
 server state and its removal operations share the same namespace.
+
+Note drafts use an editor-owned slot within each server/note namespace. A legacy
+slot and multiple editor versions remain available for explicit recovery. An
+HTTP success without a valid saved revision does not acknowledge a draft. Test
+quota failures together with disconnection, edits during saves/reloads, and
+multiple tabs before changing this contract.

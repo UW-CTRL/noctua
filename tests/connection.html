@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><title>Connection and durable draft regression</title>
+<script>window.noctuaServerId='server-A';</script><script src="../web/drafts.js"></script>
+<iframe id="client" src="../app/dist/index.html" style="width:100%;height:600px"></iframe><pre id="result">Checking…</pre>
+<script>
+const assert=(v,m)=>{if(!v)throw Error(m)};
+document.querySelector('iframe').onload=async()=>{try{
+ const frame=document.querySelector('iframe'),w=frame.contentWindow,d=frame.contentDocument,calls=[];
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');return{server_id:'server-A',api_version:1,ready:true}};return{}}};
+ await w.eval('refresh()');
+ assert(d.querySelector('h1').textContent.includes('Server'),'serverless connection screen missing');
+ assert(d.querySelector('#connect')&&!d.querySelector('#remote').hidden===false,'initial local choice missing');
+ d.querySelector('#mode').value='remote';d.querySelector('#mode').dispatchEvent(new Event('change'));
+ assert(!d.querySelector('#remote').hidden,'remote address fields hidden');
+ d.querySelector('#address').value='https://example.ts.net';await w.eval('refresh()');assert(d.querySelector('#mode').value==='remote'&&d.querySelector('#address').value==='https://example.ts.net','status refresh discarded pending connection settings');d.querySelector('#secret').value='private-token';
+ await w.eval('connect(true)');
+ const test=calls.find(c=>c.command==='connect_server');assert(test.args.mode==='remote'&&test.args.testOnly,'remote test not sent through configured connection');
+ assert(!calls.some(c=>c.command==='local_server'),'remote connection started a local server');
+ assert(d.querySelector('#secret').value==='','token retained in input after success');
+ d.querySelector('#address').value='https://offline.ts.net';await w.eval('operation(()=>connect())');
+ assert(d.querySelector('#status').textContent.includes('Connection failed'),'failed remote did not preserve recovery screen');
+ assert(d.querySelector('#mode').value==='remote','remote failure fell back to local');
+ assert(!d.querySelector('#connect').disabled,'retry unavailable');
+ // A failed server save must reject connection switching before closing any frame.
+ const shellSource=await (await fetch('../web/shell.js')).text();
+ eval(shellSource.slice(shellSource.indexOf('function safeTabPath'),shellSource.indexOf('function addTab')));
+ assert(safeTabPath('//outside.example')==='/'&&safeTabPath('/\\outside.example')==='/'&&safeTabPath('/#note=kept')==='/#note=kept','tab restoration allowed another origin');
+ const start=shellSource.indexOf('async function flushFrame'),end=shellSource.indexOf('newBtn.addEventListener',start);
+ let saved=[],fail=true,switching=false;
+ const tabs=[{frame:{contentWindow:{document:{body:{inert:false},querySelector:()=>null},prepareEditorSwitch(){saved.push('finalize')},preserveChatDraft(){saved.push('chat')},async saveWorkspaceFile(){saved.push('file')},async flushNoteEdits(){saved.push('note');if(fail)throw Error('Save failed')},async flushPDF(){saved.push('pdf')}}}}];
+ eval(shellSource.slice(start,end));
+ window.noctuaShell.beginSwitch();
+ assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'editors were not frozen before flushing');
+ let blocked=false;try{await window.noctuaShell.flush()}catch{blocked=true}
+ assert(blocked&&!saved.includes('pdf'),'failed save did not block switching');fail=false;saved=[];await window.noctuaShell.flush();assert(saved.join(',')==='chat,file,note,pdf','switch failed to preserve every editor');window.noctuaShell.endSwitch();assert(!switching&&!tabs[0].frame.contentWindow.document.body.inert,'failed switch did not restore editing');
+ // Real browser storage: reload the draft module without clearing storage, as a page restart does.
+ const doc={id:'same-note',updated:10,title:'Kept offline',blocks:[{id:'b',type:'text',src:'typed while disconnected'}]};
+ const sent=NoteDrafts.put('L1',doc);assert(NoteDrafts.get('L1',doc.id).title==='Kept offline','draft not durable');
+ NoteDrafts.server='server-B';assert(NoteDrafts.get('L1',doc.id)===null,'same note ID leaked across servers');
+ NoteDrafts.server='server-A';const newer=NoteDrafts.put('L1',{...doc,title:'Newer input'});
+ NoteDrafts.acknowledge('L1',doc.id,sent);assert(NoteDrafts.get('L1',doc.id).title==='Newer input','late server acknowledgment deleted a newer draft');
+ NoteDrafts.acknowledge('L1',doc.id,newer);assert(!NoteDrafts.get('L1',doc.id),'matching acknowledgment did not clear draft');
+ // Two editors keep separate durable slots, including across module reinitialization.
+ const firstOwner=NoteDrafts.owner;
+ const own=NoteDrafts.put('L1',doc);
+ NoteDrafts.owner='second-editor';const other=NoteDrafts.put('L1',{...doc,title:'Different unsaved input'});
+ assert(NoteDrafts.candidates('L1',doc.id).length===2,'second editor overwrote the first draft');
+ NoteDrafts.owner=firstOwner;NoteDrafts.acknowledge('L1',doc.id,own);
+ assert(NoteDrafts.candidates('L1',doc.id).length===1&&NoteDrafts.get('L1',doc.id).title==='Different unsaved input','one editor cleared another editor draft');
+ const draftSource=await(await fetch('../web/drafts.js')).text();
+ const reloaded=Function(draftSource+';return NoteDrafts;')();
+ assert(reloaded.get('L1',doc.id).title==='Different unsaved input','reload could not recover another editor draft');
+ localStorage.setItem(`noctua.draft.v1:server-A:L1:${doc.id}`,JSON.stringify({...doc,title:'Legacy draft'}));
+ assert(NoteDrafts.candidates('L1',doc.id).length===2,'legacy draft became inaccessible');
+ const noteSource=await(await fetch('../web/notes.js')).text(),N={target:'L1'};
+ const toast=()=>{};
+ eval(noteSource.slice(noteSource.indexOf('function chooseLocalDraft'),noteSource.indexOf('async function showNote')));
+ const choices=NoteDrafts.candidates('L1',doc.id),choice=chooseLocalDraft(choices);
+ const dialog=document.querySelector('dialog.local-draft-recovery');
+ assert(dialog?.open&&dialog.querySelectorAll('section').length===2,'multiple drafts did not offer a recovery choice');
+ dialog.querySelector('section button').click();
+ assert((await choice).key===choices[0].key,'recovery selected the wrong editor draft');
+
+
+ const result='PASS: serverless startup, remote connection test/recovery, no silent fallback, secret clearing, durable drafts, server isolation and late acknowledgment';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+}catch(error){const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}};
+</script>

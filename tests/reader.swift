@@ -15,7 +15,7 @@ config.userContentController.add(handler,name:"result")
 let web=WKWebView(frame:NSRect(x:0,y:0,width:1100,height:800),configuration:config)
 // Workspace dialogs need an attached window to avoid background WebKit timer throttling.
 var fixtureWindow:NSWindow?
-if CommandLine.arguments.dropFirst().first == "tests/workspace.html" {
+if CommandLine.arguments.dropFirst().first == "tests/workspace.html" || CommandLine.arguments.dropFirst().first == "tests/note-drafts.html" || CommandLine.arguments.dropFirst().first == "tests/connection.html" {
  let window=NSWindow(contentRect:web.frame,styleMask:[.titled],backing:.buffered,defer:false)
  window.title="Noctua workspace regression"
  window.contentView=web

@@ -145,3 +145,24 @@ needed. The drawing pad's TeX action performs separate handwriting transcription
 Videos, stroke editing, media uploads, whole-note deletion, and cross-project
 moves remain UI actions or unsupported tool operations. Attach a note with @ or
 select rendered text and choose **Add to chat**.
+
+## Connection-aware note drafts
+
+Open notes save local drafts separately for each server, note, and editor tab.
+After a refresh or relaunch, reopen the note to recover them. If several editors
+have different drafts, choose one in **Recover a local draft**. Opening the server
+copy leaves the other drafts available; **Discard this draft** removes only that
+unchanged snapshot. Legacy drafts remain recoverable.
+
+The status distinguishes **Local draft saved**, **Saving to server**, **Saved to
+server**, and a disconnected or failed save. A local storage failure explicitly
+asks you to keep the window open. If another device changed the server version,
+resolve the conflict; **Keep mine** explicitly overwrites the current server copy.
+New input made while fetching a conflict's server copy is kept.
+
+A save acknowledgment removes only its matching draft, including when another
+tab edits during the request. Browser storage is specific to the server's web
+origin and can be cleared or reach a quota. Keep a stable server address for
+recovery and avoid private browsing. This scope preserves open note content; it
+does not provide a full offline library or queue media uploads. See
+[Server and connections](server.md) for reconnection and switching.

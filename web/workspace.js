@@ -196,7 +196,7 @@ async function showSkills(){
  }catch(e){toast(e.message,{error:true});}};input.click();};
  for(const kind of ['folder','zip','md'])d.querySelector(`[data-${kind}]`).onclick=()=>importFiles(kind);
  d.querySelectorAll('[data-inspect]').forEach(b=>b.onclick=async()=>{try{const id=b.dataset.inspect,r=await api(`/api/skills/${id}/files/SKILL.md`);const view=workspaceDialog('Skill package',`<select data-resource>${r.files.map(p=>`<option ${p==='SKILL.md'?'selected':''}>${esc(p)}</option>`).join('')}</select><pre>${esc(r.text)}</pre>`);view.querySelector('select').onchange=async(e)=>{try{const f=await api(`/api/skills/${id}/files/${e.target.value.split('/').map(enc).join('/')}`);view.querySelector('pre').textContent=f.text;}catch(err){toast(err.message,{error:true});}};}catch(e){toast(e.message,{error:true});}});
- d.querySelector('[data-enable]').onclick=async()=>{try{const ids=[...d.querySelectorAll('[data-skill]:checked')].map(e=>e.dataset.skill);if(d.querySelector('[data-override]').checked)store.set('noctua.chatSkills.'+chat.id,JSON.stringify(ids));else{localStorage.removeItem('noctua.chatSkills.'+chat.id);if(!manifest)throw Error('Select a project before saving project skills.');if(W.target===target)await saveWorkspaceFile();const updated=await api(`/api/workspaces/${enc(target)}`,{revision:manifest.revision,op:'config',skills:ids});if(W.target===target){W.manifest=updated;W.fileRevision=updated.revision;renderWorkspaceTree();}}d.close();toast('Skill selection saved. It applies to the next chat turn.');}catch(e){toast(e.message,{error:true});}};
+ d.querySelector('[data-enable]').onclick=async()=>{try{const ids=[...d.querySelectorAll('[data-skill]:checked')].map(e=>e.dataset.skill);if(d.querySelector('[data-override]').checked)store.set('noctua.chatSkills.'+chat.id,JSON.stringify(ids));else{store.remove('noctua.chatSkills.'+chat.id);if(!manifest)throw Error('Select a project before saving project skills.');if(W.target===target)await saveWorkspaceFile();const updated=await api(`/api/workspaces/${enc(target)}`,{revision:manifest.revision,op:'config',skills:ids});if(W.target===target){W.manifest=updated;W.fileRevision=updated.revision;renderWorkspaceTree();}}d.close();toast('Skill selection saved. It applies to the next chat turn.');}catch(e){toast(e.message,{error:true});}};
  }catch(e){toast(e.message,{error:true});}
 }
 async function showSkillRun(id){
@@ -238,7 +238,7 @@ async function refreshAgentNote(a){
  const entry=N.list.find(n=>n.id===id);if(entry){entry.title=doc.title;entry.updated=doc.updated;}
  if(W.target===target)renderWorkspaceTree();
  if(!active||doc.updated<=N.doc.updated)return;
- showNote(doc);
+ await showNote(doc);
 }
 async function showAgentEdits(){
  const list=await api('/api/agent-edits');
