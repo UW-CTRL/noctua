@@ -1,5 +1,7 @@
 # Repository conventions
 
+Use [Lucide](https://lucide.dev/icons/) as the reference for icons.
+
 Before editing a folder, read its applicable `AGENTS.md` files for local rules
 and file inventories; do not load unrelated inventories.
 
