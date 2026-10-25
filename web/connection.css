@@ -1,0 +1,38 @@
+@import url("ui.css");
+
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: calc(14px * var(--ui-font-scale))/1.6 var(--font-ui); }
+.connection-page { width: min(820px, 100%); margin: 0 auto; padding: 48px 28px; }
+.connection-heading { margin-bottom: 28px; }
+.connection-eyebrow { color: var(--accent); font-size: .86em; font-weight: 600; margin: 0 0 6px; }
+h1 { margin: 0 0 10px; font-size: 1.85em; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
+h2 { margin: 0 0 8px; font-size: 1.1em; font-weight: 600; }
+p { margin: 8px 0 16px; color: var(--muted); }
+.connection-card { padding: 24px; margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.connection-field { display: block; margin: 18px 0; font-size: .93em; font-weight: 500; }
+.connection-field>.web-select { display: flex; width: 100%; margin-top: 6px; }
+.connection-field .web-select-trigger { min-height: var(--control-height); padding: 8px 12px; font-size: inherit; }
+input:not([type=checkbox]), select { display: block; width: 100%; min-height: var(--control-height); margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg); color: var(--ink); }
+input::placeholder { color: var(--muted); opacity: 1; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.connection-actions button { margin: 0; }
+.connection-check { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; }
+.connection-check input { margin: 0; }
+small { display: block; color: var(--muted); font-size: .86em; }
+.connection-status { margin: 10px 0; color: var(--muted); overflow-wrap: anywhere; }
+.connection-status[data-state=error] { color: var(--danger); }
+.connection-status[data-state=ready] { color: var(--ok); }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: .86em/1.6 ui-monospace, monospace; }
+pre:empty { display: none; }
+details { margin: 16px 0; }
+summary { cursor: pointer; color: var(--muted); font-size: .93em; }
+.connection-login { max-width: 520px; padding-top: 12vh; }
+.connection-login button { width: 100%; }
+.connection-loading { max-width: 520px; padding-top: 18vh; }
+.connection-loading .connection-card { border-top: 2px solid var(--accent); }
+[hidden] { display: none !important; }
+@media (max-width: 540px) {
+  .connection-page { padding: 28px 16px; }
+  .connection-card { padding: 18px; }
+  .connection-actions button { flex: 1 1 auto; }
+}

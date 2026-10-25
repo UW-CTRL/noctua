@@ -18,6 +18,7 @@ use tauri_plugin_opener::OpenerExt;
 
 mod icons;
 mod updater;
+mod appearance;
 
 /// A fixed port keeps the pages' origin (and so their saved tabs and layout)
 /// the same between launches; another free port is used if it's taken.
@@ -238,6 +239,7 @@ fn open_window(app: &AppHandle, open: Option<&str>) {
     let label = format!("w{}", shell.windows.fetch_add(1, Ordering::Relaxed) + 1);
     let manager_path = manager_path(open);
     let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(manager_path.into()))
+        .initialization_script(&appearance::local_script())
         .title("Noctua")
         .inner_size(1440.0, 900.0)
         .min_inner_size(820.0, 520.0)
@@ -480,7 +482,7 @@ async fn connect_server(
         let ready_script=format!("(async()=>{{let ok=false;try{{const r=await fetch('/api/server');const s=await r.json();ok=r.ok&&s.api_version===1&&s.ready&&s.server_id==={}}}catch{{}}location.href='https://noctua.invalid/ready/{}/'+ok}})()",expected_id,ready_ticket);
         let mut provisional=ProvisionalWindow{app:app.clone(),label:label.clone(),ticket:ready_ticket.clone(),committed:false};
         let w=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("loading.html".into()))
-            .initialization_script("window.noctuaDesktopClient = true;")
+            .initialization_script(appearance::CONTENT_SCRIPT)
             .visible(false)
             .on_page_load(move |window,payload| {
                 if payload.event()==tauri::webview::PageLoadEvent::Finished && payload.url().origin().ascii_serialization()==ready_origin && !ready_once.swap(true,Ordering::SeqCst) {let _=window.eval(&ready_script);}
@@ -497,6 +499,7 @@ async fn connect_server(
             .title("Noctua").inner_size(1440.,900.).min_inner_size(820.,520.).disable_drag_drop_handler()
             .on_navigation(move|url|{
                 if url.host_str()==Some("noctua.invalid") {
+                    if url.path()=="/appearance" {appearance::remember(&callback_app,url);return false;}
                     if url.path()=="/settings" {open_settings(&callback_app);return false;}
                     let parts=url.path().split('/').collect::<Vec<_>>();
                     if parts.len()==4 {

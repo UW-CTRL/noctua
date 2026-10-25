@@ -1,0 +1,70 @@
+<!doctype html><meta charset="utf-8"><title>Connection appearance regression</title>
+<style>iframe{display:block;width:780px;height:900px;border:0}#reference{display:none}</style>
+<pre id="result">Checking…</pre>
+<script>
+const assert=(value,message)=>{if(!value)throw Error(message)};
+const frame=async(path,html)=>{
+ const f=document.createElement('iframe');
+ const ready=new Promise(resolve=>f.onload=resolve);
+ if(html)f.srcdoc=html;else f.src=path;
+ document.body.append(f);await ready;return f;
+};
+const apply=(f,theme)=>{const w=f.contentWindow;w.localStorage.setItem('noctua.theme',theme);w.dispatchEvent(new w.StorageEvent('storage',{key:null}));w.document.documentElement.dataset.theme=theme;};
+(async()=>{try{
+ const manager=await frame('../app/dist/index.html');
+ const reference=await frame(null,'<link rel="stylesheet" href="../web/style.css"><body>App</body>');reference.id='reference';
+ const d=manager.contentDocument,w=manager.contentWindow;
+ for(const theme of ['light','dark']){
+  apply(manager,theme);apply(reference,theme);
+  const cs=w.getComputedStyle(d.body),app=reference.contentWindow.getComputedStyle(reference.contentDocument.body);
+  assert(cs.backgroundColor===app.backgroundColor&&cs.color===app.color,theme+' connection colors differ from app');
+  assert(w.getComputedStyle(d.querySelector('.primary')).backgroundColor===app.getPropertyValue('--accent').trim().replace(/^#([a-f\d]{6})$/i,(_,h)=>`rgb(${parseInt(h.slice(0,2),16)}, ${parseInt(h.slice(2,4),16)}, ${parseInt(h.slice(4),16)})`),theme+' primary button does not use app accent');
+  assert(w.getComputedStyle(d.querySelector('input')).backgroundColor===app.backgroundColor,theme+' input uses a fixed light background');
+  assert(w.getComputedStyle(d.querySelector('button')).borderRadius==='8px','button geometry differs from shared controls');
+ }
+ w.NoctuaFonts.set('ui','georgia');w.NoctuaFonts.setSize('ui',16);
+ assert(w.getComputedStyle(d.body).fontFamily.includes('Georgia'),'connection font preference ignored');
+ assert(w.getComputedStyle(d.body).fontSize==='16px','connection UI size preference ignored');
+ const modeButton=d.querySelector('.web-select-trigger');
+ assert(modeButton&&modeButton.getBoundingClientRect().height>=34,'connection mode does not use the shared dropdown');
+ modeButton.click();
+ const choices=d.querySelectorAll('[role=option]');
+ assert(choices.length===2,'connection mode dropdown is incomplete');
+ choices[1].click();
+ assert(d.querySelector('#mode').value==='remote'&&!d.querySelector('#remote').hidden,'themed dropdown cannot select a remote connection');
+ // Stored device appearance is applied before rendering by native injection.
+ w.localStorage.setItem('noctua.theme','light');w.dispatchEvent(new w.StorageEvent('storage',{key:null}));
+ assert(d.documentElement.dataset.theme==='light','connection screen does not react to appearance changes');
+ w.localStorage.setItem('noctua.theme','invalid');w.dispatchEvent(new w.StorageEvent('storage',{key:null}));
+ assert(d.documentElement.dataset.theme==='system','invalid preference did not fall back to system');
+ assert(w.getComputedStyle(d.documentElement).colorScheme===(w.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),'system theme ignored');
+ manager.style.width='360px';
+ await new Promise(resolve=>setTimeout(resolve,50));
+ assert(d.documentElement.scrollWidth<=d.documentElement.clientWidth+1,'narrow connection page overflows horizontally');
+ w.__TAURI_INTERNALS__={invoke:async()=>{throw Error('Offline test')}};
+ await w.eval('operation(()=>connect())');
+ assert(d.querySelector('#status').dataset.state==='error'&&!d.querySelector('#connect').disabled,'offline recovery has no error/retry state');
+ const loading=await frame('../app/dist/loading.html');apply(loading,'dark');
+ assert(loading.contentWindow.getComputedStyle(loading.contentDocument.body).backgroundColor==='rgb(18, 19, 23)','loading page flashes a fixed light background');
+ const loginSource=(await(await fetch('../web/login.html')).text()).replaceAll('href="/','href="../web/').replaceAll('src="/','src="../web/');
+ const login=await frame(null,loginSource);apply(login,'dark');
+ assert(login.contentWindow.getComputedStyle(login.contentDocument.body).backgroundColor==='rgb(18, 19, 23)','browser login ignores dark theme');
+ login.contentWindow.fetch=async()=>({ok:false});
+ await login.contentDocument.querySelector('form').onsubmit({preventDefault(){}});
+ assert(login.contentDocument.querySelector('[role=status]').dataset.state==='error'&&!login.contentDocument.querySelector('button').disabled,'browser login cannot retry an authentication failure');
+ const offline=await frame(null,'<link rel="stylesheet" href="../web/style.css"><script>window.fetch=async()=>{throw Error("offline")};<\/script><script src="../web/connection.js"><\/script><body></body>');
+ await new Promise(resolve=>setTimeout(resolve,50));apply(offline,'dark');
+ const banner=offline.contentDocument.querySelector('.connection-banner');
+ assert(banner&&!banner.hidden&&banner.getAttribute('role')==='status','offline banner unavailable');
+ assert(offline.contentWindow.getComputedStyle(banner).backgroundColor==='rgb(27, 29, 34)','offline banner ignores dark palette');
+ const nativeSource=await(await fetch('../app/src/appearance.rs')).text();
+ const injection=nativeSource.split('pub const CONTENT_SCRIPT: &str = r#"')[1].split('"#;')[0];
+ const handlers={},fakeWindow={addEventListener:(event,callback)=>handlers[event]=callback},location={pathname:'/shell'};fakeWindow.top=fakeWindow;
+ const prefs=new Map([['noctua.theme','dark'],['noctua.font.ui',JSON.stringify({id:'georgia',name:''})],['noctua.font.uiSize','16']]);
+ Function('window','location','localStorage',injection)(fakeWindow,location,{getItem:key=>prefs.get(key)});
+ handlers.DOMContentLoaded();
+ const appearance=JSON.parse(new URL(location.href).searchParams.get('value'));
+ assert(appearance.theme==='dark'&&appearance.font_id==='georgia'&&appearance.font_size===16,'native appearance callback omitted theme or typography');
+ const result='PASS: shared light/dark/system palettes, live typography, narrow layout, offline recovery, browser login, loading page, status banner and bounded native appearance channel';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+}catch(error){const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}})();
+</script>

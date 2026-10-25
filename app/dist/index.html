@@ -1,11 +1,39 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Server &amp; connection · Noctua</title>
-<style>body{font:15px system-ui;color:#292923;background:#faf9f6;margin:0}main{max-width:760px;margin:5vh auto;padding:32px}h1{font-size:28px}p{line-height:1.6;color:#62645e}section{border:1px solid #d8dbd2;border-radius:12px;padding:24px;margin:18px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:10px;border-radius:7px;border:1px solid #c4cabc;background:white;color:inherit}input:not([type=checkbox]),select{display:block;width:100%;box-sizing:border-box;margin:6px 0}button{cursor:pointer;margin:4px}.primary{background:#47604c;color:white}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px ui-monospace}[role=status]{min-height:24px}button:disabled{opacity:.5}small{line-height:1.6}</style></head><body><main>
-<h1>Server &amp; connection</h1><p>Noctua stores your library and runs AI on the connected server. Closing the desktop app leaves the server and its tasks running.</p>
-<section><h2>Where do you want to work?</h2><label>Connection mode<select id="mode"><option value="local">Use this computer</option><option value="remote">Connect to another computer</option></select></label>
-<div id="remote" hidden><label>Server HTTPS address<input id="address" type="url" placeholder="https://computer.tailnet-name.ts.net" autocomplete="url"></label><label>Authentication token<input id="secret" type="password" autocomplete="current-password" placeholder="Leave empty to use the OS keyring"></label><small>AI CLIs, API keys, Zotero paths and data folders belong to the server computer. Local AI setup is unnecessary for a remote connection.</small></div>
-<button id="test">Test connection</button><button class="primary" id="connect">Connect / retry</button><button id="change">Clear saved connection</button>
-<p role="status" id="connection-status">No active connection.</p><p role="status" id="status">Choose a connection to begin.</p><pre id="identity"></pre><p>Switching checks every open tab for unsaved notes, files, PDF comments and chat drafts. Failed saves keep the current connection. Tasks continue on their original server; changing servers does not move them.</p></section>
-<section><h2>This computer’s server</h2><p>These controls always manage this computer, even while you use a remote server. Switching connections does not stop a local server.</p><p id="local-status" role="status"></p><div id="local-actions"><button data-action="start">Start</button><button data-action="stop">Stop safely</button><button data-action="restart">Restart safely</button><button data-action="logs">Show server logs</button></div>
-<label><input type="checkbox" id="autostart"> Start at user login</label><p id="service"></p><small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running. Service errors are shown here.</small><pre id="logs"></pre></section>
-<section><h2>Desktop</h2><button data-desktop="light">Light app icon</button><button data-desktop="dark">Dark app icon</button><button data-desktop="check">Check desktop update</button><button data-desktop="install">Install offered update</button><button data-desktop="restart">Restart updated app</button><pre id="update"></pre><p>Desktop updates leave the server running. Update the server explicitly when its tasks are finished; its executable is kept separately from the app bundle.</p></section>
-</main><script src="client.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server &amp; connection · Noctua</title>
+<link rel="stylesheet" href="connection.css">
+<script src="appearance.js"></script><script src="fonts.js"></script>
+</head>
+<body><main class="connection-page">
+<div class="connection-heading"><p class="connection-eyebrow">Noctua · Settings</p>
+<h1>Server &amp; connection</h1><p>Your library and AI tasks live on the connected server. Closing Noctua leaves the server and its tasks running.</p></div>
+<section class="connection-card" aria-labelledby="connection-title">
+<h2 id="connection-title">Where do you want to work?</h2>
+<label class="connection-field">Connection mode<select id="mode"><option value="local">Use this computer</option><option value="remote">Connect to another computer</option></select></label>
+<div id="remote" hidden>
+<label class="connection-field">Server HTTPS address<input id="address" type="url" placeholder="https://computer.tailnet-name.ts.net" autocomplete="url"></label>
+<label class="connection-field">Authentication token<input id="secret" type="password" autocomplete="current-password" placeholder="Leave empty to use the OS keyring"></label>
+<small>AI CLIs, API keys, Zotero paths and data folders belong to the server computer. Local AI setup is unnecessary for a remote connection.</small>
+</div>
+<div class="connection-actions"><button class="primary" id="connect">Connect / retry</button><button id="test">Test connection</button><button id="change">Clear saved connection</button></div>
+<p class="connection-status" role="status" id="connection-status">No active connection.</p>
+<p class="connection-status" role="status" id="status">Choose a connection to begin.</p>
+<details id="server-details"><summary>Server details</summary><pre id="identity"></pre></details>
+<small>Switching checks every open tab for unsaved notes, files, PDF comments and chat drafts. Failed saves keep the current connection. Tasks stay on their original server.</small>
+</section>
+<section class="connection-card" aria-labelledby="local-title">
+<h2 id="local-title">This computer’s server</h2><p>These controls manage this computer, even when you connect to a remote server. Switching connections leaves the local server running.</p>
+<p id="local-status" class="connection-status" role="status"></p>
+<div id="local-actions" class="connection-actions"><button data-action="start">Start</button><button data-action="stop">Stop safely</button><button data-action="restart">Restart safely</button><button data-action="logs">Show server logs</button></div>
+<label class="connection-check"><input type="checkbox" id="autostart"> Start at user login</label><p id="service" class="connection-status"></p>
+<small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running.</small><pre id="logs" aria-label="Server logs"></pre>
+</section>
+<section class="connection-card" aria-labelledby="desktop-title">
+<h2 id="desktop-title">Desktop</h2>
+<div class="connection-actions"><button data-desktop="light">Light app icon</button><button data-desktop="dark">Dark app icon</button></div>
+<div class="connection-actions"><button data-desktop="check">Check desktop update</button><button data-desktop="install">Install offered update</button><button data-desktop="restart">Restart updated app</button></div><pre id="update" role="status"></pre>
+<small>Desktop updates leave the server running. Restart the server explicitly after its tasks finish to use the updated executable.</small>
+</section>
+</main><script src="select.js"></script><script src="client.js"></script></body></html>

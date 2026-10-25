@@ -25,6 +25,12 @@ with tempfile.TemporaryDirectory(prefix='noctua-server-test-') as tmp:
         assert secret not in json.dumps(values)
         assert cli('status').returncode==0 # all ensure parents have already exited
         request('/api/server',expected=401)
+        for path,content_type in [('/ui.css','text/css'),('/connection.css','text/css'),('/appearance.js','text/javascript'),('/fonts.js','text/javascript')]:
+            content,headers=request(path)
+            assert headers['content-type'].startswith(content_type),(path,headers)
+            assert b'<!doctype html>' not in content.lower(), 'login assets returned the sign-in page'
+            request(path,headers={'Host':'attacker.example'},expected=403)
+            request(path,headers={'Origin':'https://attacker.example'},expected=403)
         request('/api/server',headers={**auth,'Host':'attacker.example'},expected=403)
         request('/api/server',headers={**auth,'Origin':'https://attacker.example'},expected=403)
         request('/api/server',headers={**auth,'Host':'private.example.ts.net','Origin':'https://private.example.ts.net'})

@@ -4,6 +4,11 @@
 
 ## Server & connection
 
+Connection, recovery and browser sign-in screens use the app’s light/dark colors,
+controls and UI typography. The desktop remembers the last connected app’s
+appearance on this device, so its local connection screen keeps that appearance
+even while the server is offline; first launch follows the system theme.
+
 The native Settings menu opens the local connection manager, including while
 servers are offline. It selects this computer or another server, tests and retries
 connections, shows identity/version/status and errors/logs, and manages **this

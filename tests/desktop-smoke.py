@@ -23,10 +23,17 @@ with tempfile.TemporaryDirectory(prefix='noctua-desktop-smoke-') as tmp:
             # Preferences are saved only after a fetch in the real WebView verifies identity.
             before=json.loads(subprocess.check_output([str(server),'status'],env=env,text=True))
             assert value['server_id']==before['server_id']
+            appearance=client/'appearance.json'
+            deadline=time.monotonic()+10
+            while not appearance.exists() and time.monotonic()<deadline:time.sleep(.1)
+            assert appearance.exists(), 'Native shell did not persist offline connection-screen appearance'
+            saved_appearance=json.loads(appearance.read_text())
+            assert saved_appearance['theme'] in ['system','light','dark']
+            assert saved_appearance['font_id']=='system' and saved_appearance['font_size']==14
             app.terminate();app.wait(timeout=10)
             after=json.loads(subprocess.check_output([str(server),'status'],env=env,text=True))
             assert after['instance_id']==before['instance_id']
-            print('PASS: native local screen, WebView cookie authentication/readiness, saved connection, detached server survives desktop exit')
+            print('PASS: native local screen, WebView authentication/readiness, saved connection/appearance, detached server survives desktop exit')
         finally:
             if app.poll() is None:app.terminate();app.wait(timeout=10)
             for attempt in range(20):

@@ -63,6 +63,11 @@ WebKit launchers use nonpersistent browser storage so saved preferences from
 another test or local session cannot change the results. The
 workflow does not produce or upload installers, create tags, or publish releases.
 
+The connection appearance fixture compares the serverless manager with the app’s
+shared light/dark palette and checks system appearance, UI fonts, narrow layouts,
+login failure recovery, loading and offline status. The native smoke also checks
+that the shell saves appearance locally for the disconnected manager.
+
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,
 and the manual PR media generators `tests/pr3-recordings.swift`,

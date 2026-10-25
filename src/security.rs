@@ -146,6 +146,13 @@ pub async fn guard(
         .is_some_and(|v| equal(v, &runtime.owner.token));
     let cookie = runtime.cookie_valid(&request);
     let path = request.uri().path();
+    // The login page needs only these bundled cosmetic assets before authentication.
+    // Host and Origin checks above still apply; no data or native controls are public.
+    if request.method() == Method::GET
+        && matches!(path, "/ui.css" | "/connection.css" | "/appearance.js" | "/fonts.js")
+    {
+        return next.run(request).await;
+    }
     if path == "/auth/login" && request.method() == Method::POST {
         if !bearer {
             return (StatusCode::UNAUTHORIZED, "Authentication failed").into_response();

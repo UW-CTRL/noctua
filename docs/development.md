@@ -49,6 +49,12 @@ server. Platform prerequisites are in the [release workflow](../.github/workflow
 
 The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
 
+`web/ui.css` owns shared theme tokens and controls. Connection and sign-in layouts
+use `web/connection.css`; the desktop build copies these and the shared appearance,
+font and dropdown scripts into its offline bundle. For standalone frontend tests, run
+`python3 app/prepare-ui.py` first (`tests/run-frontend.sh` does this automatically).
+Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
+
 | Path | Responsibility |
 | --- | --- |
 | `src/` | Rust server, domain models, assistant integration, and MCP tools. |
