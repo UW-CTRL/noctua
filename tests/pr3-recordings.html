@@ -20,7 +20,7 @@ async function api(path,body){
  if(path.endsWith('/annotations')){if(body){const item={...body,id:crypto.randomUUID(),author:'user',status:'accepted',revision:1,replies:[]};savedAnnotations.push(item);return item;}return savedAnnotations;}
  throw Error('Unexpected recording request: '+path);
 }
-function updateChatContext(){}function setMode(){}function showRightTab(){}function toast(message){window.recordingError=message;}function openPaperView(){}
+function updateChatContext(){}function setMode(){}function showRightTab(){}function notifyProgress(){}function toast(message){window.recordingError=message;}function openPaperView(){}
 history.replaceState=()=>{};
 </script>
 <script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>

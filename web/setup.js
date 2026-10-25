@@ -124,6 +124,7 @@ function agentSection(s) {
     <div class="settings-group" role="group" aria-labelledby="settings-model-title"><h3 id="settings-model-title">Model settings</h3>
     <div id="assistant-options">${assistantOptions(s, provider)}</div>
     </div>
+    ${threadSummarySettings()}
     <div class="settings-group" role="group" aria-labelledby="settings-connection-title"><h3 id="settings-connection-title">Connection</h3>
     <div class="agent-connection-row">
     <p id="agent-status" class="setup-current" role="status">Checking sign-in…</p>
@@ -225,10 +226,29 @@ function appearanceSection() {
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
+function threadSummarySettings() {
+  return `<div class="settings-group" role="group" aria-labelledby="settings-lineage-title"><h3 id="settings-lineage-title">Lineage</h3>
+    <label class="setting-field" for="setup-threads-auto"><span>Summarize threads automatically</span>
+      <input id="setup-threads-auto" type="checkbox" ${store.get('noctua.threadsAuto') !== '0' ? 'checked' : ''}></label>
+    <p class="hint">Use your research assistant to summarize new citation threads automatically. Results are cached. You can also summarize manually in Lineage. This preference is saved in this browser.</p>
+    </div>`;
+}
+
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
   return `<section data-step="data"><h2>Data & storage</h2>
-    <p>Choose where Noctua saves your papers, notes, and chats. Location changes apply after restarting.</p>
+    <div class="settings-group" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
+    <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
+      <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
+    <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
+    </div>
+    <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save destination</h3>
+    <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
+      <select id="setup-save-target">${collectionOptions(defaultSaveTarget())}</select></label>
+    <p class="hint">New papers added from search or a graph are saved here. PDF imports use the selected folder.</p>
+    </div>
+    <div class="settings-group" role="group" aria-labelledby="settings-storage-title"><h3 id="settings-storage-title">Storage</h3>
+    <p class="hint">Choose where Noctua saves your papers, notes, and chats. Location changes apply after restarting.</p>
     ${s.storage_override || s.storage_pending ? `<p>Current folder:</p><code class="settings-path">${esc(s.data_dir)}</code>` : ''}
     ${temporary ? '<p class="settings-warning">This session uses temporary storage. The system may remove these files.</p>' : ''}
     ${s.storage_override ? '<p class="setup-current">Environment override: <code>NOCTUA_HOME</code> / <code>NOCTUA_NOTES</code></p>' : `
@@ -239,6 +259,7 @@ function dataSection(s) {
     ${s.storage_error ? `<p class="settings-warning">${esc(s.storage_error)}</p>` : ''}
     <div class="setup-actions"><button class="primary" data-act="save-storage" data-icon="save">Save location</button>
       ${s.storage_pending ? '<button data-act="cancel-storage" data-icon="x">Cancel change</button>' : ''}</div>`}
+    </div>
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
@@ -327,7 +348,8 @@ function showUpdatePrompt(result) {
     dialog.querySelectorAll('button').forEach(node => { node.disabled = true; });
     const msg = (_, text, ok) => {
       const node = dialog.querySelector('.setup-msg');
-      node.textContent = text; node.classList.toggle('ok', !!ok);
+      node.textContent = '';
+      if (text) toast(text, { error: !ok });
     };
     // This dialog's Update button is the explicit confirmation of the warning above it.
     try { await updateApp(button, dialog, msg, { confirmInstall: false }); }
@@ -406,7 +428,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     const ctrl = new AbortController(); loginAbort = ctrl;
     const output = $('#agent-login-output');
     output.textContent = 'Opening your browser to sign in…\n';
-    $('#agent-status').textContent = 'Signing in…';
+    notifyProgress('sign-in', 'Waiting for sign-in…');
     $('#setup-agent').disabled = true;
     card.querySelector('[data-act="agent-login"]').disabled = true;
     card.querySelector('[data-act="agent-cancel"]').classList.remove('hidden');
@@ -428,6 +450,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     } catch (e) {
       output.textContent = e.name === 'AbortError' ? 'Sign-in cancelled.' : e.message;
     } finally {
+      notifyProgress('sign-in', null);
       ctrl.abort();
       loginAbort = null;
       if (el.isConnected) {
@@ -478,7 +501,8 @@ function openSetup({ firstRun = false, tab } = {}) {
   };
   const msg = (section, text, ok) => {
     const m = section.querySelector('.setup-msg');
-    m.textContent = text; m.classList.toggle('ok', !!ok);
+    m.textContent = '';
+    if (text) toast(text, { error: !ok });
   };
   card.addEventListener('click', async (e) => {
     card.querySelectorAll('.settings-ai-color-picker[open]').forEach(picker=>{if(!picker.contains(e.target))picker.open=false;});
@@ -590,6 +614,25 @@ function openSetup({ firstRun = false, tab } = {}) {
       if (id === 'custom' && !input.value.trim()) { input.focus(); msg(e.target.closest('section'), 'Enter an installed font name.'); return; }
       NoctuaFonts.set(kind, id, input.value);
       msg(e.target.closest('section'), 'Saved.', true); return;
+    }
+    if (e.target.id === 'setup-threads-auto') {
+      setThreadsAuto(e.target.checked);
+      msg(e.target.closest('section'), 'Lineage summary preference saved.', true);
+      return;
+    }
+    if (e.target.id === 'setup-include-subfolders') {
+      const control = e.target;
+      const previous = settings.include_subfolders !== false;
+      control.disabled = true;
+      try { control.checked = await setIncludeSubfolders(control.checked); msg(control.closest('section'), 'Folder view updated.', true); }
+      catch (error) { control.checked = previous; msg(control.closest('section'), error.message); }
+      finally { control.disabled = false; }
+      return;
+    }
+    if (e.target.id === 'setup-save-target') {
+      setDefaultSaveTarget(e.target.value);
+      msg(e.target.closest('section'), 'Default save folder updated.', true);
+      return;
     }
     if (['setup-app-theme', 'setup-notes-theme', 'setup-reader-theme'].includes(e.target.id)) {
       if (e.target.id === 'setup-app-theme') setAppTheme(e.target.value);

@@ -13,7 +13,7 @@ body{margin:0;width:1400px;height:900px}header{height:52px;box-sizing:border-box
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)};const chat={provider:'codex',id:'demo'};
 const NoctuaLatex={renderDoc:blocks=>blocks.map(esc)},paperURL=k=>'/api/demo/'+k;
-async function api(){return PDF.annotations}function updateChatContext(){}function setMode(){}function showRightTab(){}function toast(message){console.log(message)}function openPaperView(){}
+async function api(){return PDF.annotations}function updateChatContext(){}function setMode(){}function showRightTab(){}function notifyProgress(){}function toast(message){console.log(message)}function openPaperView(){}
 </script>
 <script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
 <script type="module">

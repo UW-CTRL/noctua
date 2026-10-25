@@ -103,6 +103,14 @@ struct App {
 }
 
 impl App {
+    fn library_items(&self, target: &str) -> anyhow::Result<Vec<Value>> {
+        let include = self.settings.lock().unwrap().library.include_subfolders;
+        self.library.items_scoped(target, include)
+    }
+    fn library_collections(&self) -> anyhow::Result<Value> {
+        let include = self.settings.lock().unwrap().library.include_subfolders;
+        if include { self.library.collections_scoped(true) } else { self.library.collections() }
+    }
     fn ui(&self, action: Value) {
         let _ = self.actions.send(action);
     }
@@ -193,7 +201,7 @@ async fn status(State(app): Shared) -> Json<Value> {
 }
 
 async fn zotero_collections(State(app): Shared) -> ApiResult {
-    Ok(Json(app.library.collections()?))
+    Ok(Json(app.library_collections()?))
 }
 
 #[derive(Deserialize)]
@@ -211,7 +219,7 @@ async fn match_title(State(app): Shared, Query(q): Query<TitleQ>) -> ApiResult {
 }
 
 async fn zotero_items(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
-    Ok(Json(json!(app.library.items(&q.target)?)))
+    Ok(Json(json!(app.library_items(&q.target)?)))
 }
 
 async fn project_graph(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
@@ -654,6 +662,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))
         .route("/api/settings", get(settings::get))
         .route("/api/settings/app-icon", post(settings::set_app_icon))
+        .route("/api/settings/library", post(settings::set_library))
         .route("/api/settings/storage", post(settings::set_storage))
         .route("/api/settings/agent", post(settings::set_agent))
         .route("/api/settings/highlight-colors", post(settings::set_highlight_colors))

@@ -195,7 +195,8 @@ async function saveNow() {
   N.saving = true;
   const historyFrames=NoteUndo.frames.splice(0);
   NoteUndo.group=null;
-  setStatus('Saving…');
+  const progressKey = `note-save:${target}:${doc.id}`;
+  notifyProgress(progressKey, 'Saving note…');
   try {
     const r = await fetch(`/api/notes/${enc(target)}/${enc(doc.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...doc,_history:historyFrames}),
@@ -223,6 +224,7 @@ async function saveNow() {
       N.saveTimer = setTimeout(saveNow, 3000);
     }
   } finally {
+    notifyProgress(progressKey, null);
     N.saving = false;
   }
   if (N.dirty && N.doc === doc) markDirty();  // edited while saving

@@ -25,6 +25,17 @@ Installers appear under `target/release/bundle/`. See the
 [release workflow](../.github/workflows/release.yml) for platform dependencies,
 including WebKitGTK on Linux.
 
+To preview changes alongside an existing server, use a separate port:
+
+```sh
+NOCTUA_PORT=7879 NOCTUA_NO_OPEN=1 cargo run --locked
+```
+
+Open `http://127.0.0.1:7879`. This uses the same configured library and data
+folder as the app; set `NOCTUA_HOME` to use separate development data. Web assets
+are embedded at build time, so stop and rerun the command after edits, then
+refresh the browser.
+
 ## Project structure and checks
 
 The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.

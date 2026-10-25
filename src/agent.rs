@@ -380,6 +380,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subfolder_scope_defaults_persists_deduplicates_and_preserves_graph_cache() -> Result<()> {
+        let f = Fixture::new()?;
+        assert!(Settings::default().library.include_subfolders);
+        let legacy: Settings = serde_json::from_value(json!({"library":{}}))?;
+        assert!(legacy.library.include_subfolders);
+        assert_eq!(f.json("/api/settings", None).await["include_subfolders"], true);
+        let parent = f.app.library.create_collection("L1", "Parent")?;
+        let child = f.app.library.create_collection(&parent, "Child")?;
+        let grandchild = f.app.library.create_collection(&child, "Grandchild")?;
+        let sibling = f.app.library.create_collection("L1", "Unrelated")?;
+        let shared = json!({"paperId":"cached-a","title":"Shared parent and child paper"});
+        f.app.library.save(&shared, &parent)?;
+        f.app.library.save(&shared, &child)?;
+        f.app.library.save(&json!({"paperId":"cached-b","title":"Child paper"}), &child)?;
+        f.app.library.save(&json!({"paperId":"cached-c","title":"Grandchild paper"}), &grandchild)?;
+        f.app.library.save(&json!({"paperId":"cached-d","title":"Unrelated paper"}), &sibling)?;
+        let mut entries = serde_json::Map::new();
+        for item in f.app.library.items_scoped(&parent, true)? {
+            let value = |key: &str| item[key].as_str().unwrap_or("").trim().to_string();
+            entries.insert(value("key"), json!({
+                "ident": format!("{}|{}|{}|{}",value("s2"),value("arxiv"),value("DOI"),value("title")),
+                "paper":{"paperId":value("s2"),"title":value("title"),"citationCount":0}, "refs":[]
+            }));
+        }
+        rusqlite::Connection::open(f.root.join("projects.sqlite"))?.execute(
+            "INSERT INTO projects (target,data,updated) VALUES (?1,?2,1)",
+            rusqlite::params![parent,json!({"entries":entries,"ext":{}}).to_string()],
+        )?;
+        for (include, count) in [(true,3),(false,1),(true,3)] {
+            let saved = f.json("/api/settings/library", Some(json!({"include_subfolders":include}))).await;
+            assert_eq!(saved["include_subfolders"], include);
+            assert_eq!(Settings::load(&f.root).library.include_subfolders, include);
+            assert_eq!(f.json(&format!("/api/library/items?target={parent}"), None).await.as_array().unwrap().len(), count);
+            let folders = f.json("/api/library/collections", None).await;
+            assert_eq!(folders["targets"].as_array().unwrap().iter().find(|t|t["id"]==parent).unwrap()["count"], count);
+            let graph = f.json(&format!("/api/project?target={parent}"), None).await;
+            assert_eq!(graph["papers"].as_array().unwrap().len(), count);
+            assert_eq!(graph["include_subfolders"], include);
+            assert_eq!(graph["fetched"], 0, "scope changes must reuse existing lookups");
+        }
+        f.json("/api/settings/library", Some(json!({"include_subfolders":false}))).await;
+        assert_eq!(f.json("/api/library/items?target=L1",None).await.as_array().unwrap().len(),4);
+        assert_eq!(f.request("/api/settings/library",Some(json!({"include_subfolders":"no"})),None).await.status(),StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(!Settings::load(&f.root).library.include_subfolders);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn project_files_bibliographies_and_history() -> Result<()> {
         let f=Fixture::new()?;
         let note=f.app.notes.create("L1","A: note")?;

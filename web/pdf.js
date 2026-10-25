@@ -120,8 +120,13 @@ function setPDFOutlineSource(source){
   PDF.outlineSource=source==='ai'?'ai':'document';renderPDFOutline();
   return loadPDFOutline(PDF.key,PDF.doc,{forceAI:PDF.outlineSource==='ai'});
 }
+function updatePDFOutlineProgress(key, state) {
+  const status = ['loading','indexing','generating','deleting'].includes(state.status) ? state.status : state.documentStatus === 'loading' ? 'document' : null;
+  const labels = { document: 'Loading document outline…', loading: 'Loading AI outline…', indexing: 'Preparing paper text…', generating: 'Generating outline…', deleting: 'Deleting AI outline…' };
+  notifyProgress('pdf-outline:' + key, status ? labels[status] : null);
+}
 function loadPDFOutline(key,doc,{forceAI=false,regenerate=false}={}){
-  const state=pdfOutlineState(key),update=()=>{if(PDF.key===key)renderPDFOutline();};
+  const state=pdfOutlineState(key),update=()=>{updatePDFOutlineProgress(key,state);if(PDF.key===key)renderPDFOutline();};
   if(!forceAI&&!regenerate){
     if(state.documentPromise)return state.documentPromise;
     state.documentStatus='loading';update();
@@ -145,21 +150,20 @@ function loadPDFOutline(key,doc,{forceAI=false,regenerate=false}={}){
 async function deletePDFOutline(){
   const key=PDF.key,state=pdfOutlineState(key);
   if(!state.outline?.entries?.length||['loading','indexing','generating','deleting'].includes(state.status))return;
-  const previousStatus=state.status;state.status='deleting';renderPDFOutline();
+  const previousStatus=state.status;state.status='deleting';updatePDFOutlineProgress(key,state);renderPDFOutline();
   state.deletePromise=(async()=>{
     await libraryRequest(paperURL(key)+'/outline','DELETE');
     state.outline=null;state.status='deleted';state.error=null;state.promise=null;
   })().catch(error=>{
     state.status=previousStatus;state.error=error.message;
     if(PDF.key===key&&PDF.outlineSource==='ai')toast(error.message,{error:true,duration:5000});
-  }).finally(()=>{state.deletePromise=null;if(PDF.key===key)renderPDFOutline();});
+  }).finally(()=>{state.deletePromise=null;updatePDFOutlineProgress(key,state);if(PDF.key===key)renderPDFOutline();});
   return state.deletePromise;
 }
 function renderPDFOutline(){
   const panel=$('#pdf-outline-panel');if(!panel)return;
   const state=pdfOutlines.get(PDF.key),ai=PDF.outlineSource==='ai',outline=ai?state?.outline:state?.documentOutline;
   const status=ai?state?.status:state?.documentStatus,busy=['loading','indexing','generating','deleting'].includes(status);
-  const progress=ai?(status==='deleting'?'Deleting AI outline…':status==='indexing'?'Preparing paper text…':'Generating outline…'):'Loading document outline…';
   const sourceId=ai?'ai':'document';
   let content=ai?`<div class="pdf-outline-head pdf-outline-actions"><button data-outline-retry ${busy?'disabled':''}>Regenerate</button><button data-outline-delete data-icon="trash-2" data-icon-only aria-label="Delete AI-generated outline" title="Delete AI-generated outline" ${busy||!outline?.entries?.length?'disabled':''}></button></div>`:'';
   if(outline?.entries?.length){
@@ -172,7 +176,6 @@ function renderPDFOutline(){
     content+=`<nav class="pdf-outline-list" aria-label="Paper outline">${list(roots)}</nav>`;
   }else if(status==='error'&&!ai)content+='<div class="pdf-outline-empty"><button data-outline-retry>Try again</button></div>';
   else if(!busy)content+=`<p class="pdf-outline-empty">${ai?'No AI-generated outline.':'This PDF has no document outline.'}</p>`;
-  if(busy)content=`<p class="pdf-outline-status" role="status">${progress}</p>`+content;
   panel.innerHTML=`<div class="pdf-outline-source-tabs" role="tablist" aria-label="Outline source"><button id="pdf-outline-source-document" role="tab" aria-controls="pdf-outline-content" data-outline-source="document" aria-selected="${!ai}" tabindex="${ai?-1:0}" class="${ai?'':'active'}" aria-label="Document outline" title="Document outline">Document</button><span class="pdf-outline-source-divider" aria-hidden="true">/</span><button id="pdf-outline-source-ai" role="tab" aria-controls="pdf-outline-content" data-outline-source="ai" aria-selected="${ai}" tabindex="${ai?0:-1}" class="${ai?'active':''}" aria-label="AI-generated outline" title="AI-generated outline">AI-generated</button></div><div id="pdf-outline-content" role="tabpanel" aria-labelledby="pdf-outline-source-${sourceId}" aria-busy="${busy}">${content}</div>`;
   for(const button of panel.querySelectorAll('[data-outline-source]')){
     button.onclick=()=>setPDFOutlineSource(button.dataset.outlineSource);
@@ -205,12 +208,17 @@ async function autoHighlightPDF(){
   const key=PDF.key;if(!key)return;
   const previous=pdfAutoHighlights.get(key);if(previous&&['indexing','analyzing'].includes(previous.status))return previous.promise;
   ensurePDFSidebar();setPDFSidebarTab('annotations');setPDFAnnotationFilter(null);
-  const job={status:'indexing',error:null};pdfAutoHighlights.set(key,job);updatePDFAutoHighlightUI();
+  const job={status:'indexing',error:null};pdfAutoHighlights.set(key,job);
+  const update=()=>{
+    notifyProgress('pdf-highlights:'+key, ['indexing','analyzing'].includes(job.status) ? job.status==='indexing'?'Preparing paper text…':'Finding key passages…' : null);
+    if(PDF.key===key)updatePDFAutoHighlightUI();
+  };
+  update();
   job.promise=(async()=>{
-    await indexPDF(key);job.status='analyzing';if(PDF.key===key)updatePDFAutoHighlightUI();
+    await indexPDF(key);job.status='analyzing';update();
     job.result=await api(paperURL(key)+'/auto-highlight',{});job.status='ready';
-    if(PDF.key===key)await refreshPDFAnnotations();
-  })().catch(error=>{job.status='error';job.error=error.message;}).finally(()=>{if(PDF.key===key)updatePDFAutoHighlightUI();});
+    if(PDF.key===key){await refreshPDFAnnotations();if(job.result?.total===0)toast('No grounded key passages found.');}
+  })().catch(error=>{job.status='error';job.error=error.message;if(PDF.key===key)toast(error.message,{error:true});}).finally(update);
   return job.promise;
 }
 function updatePDFAutoHighlightUI(){
@@ -220,10 +228,7 @@ function updatePDFAutoHighlightUI(){
   const button=$('#pdf-stage [data-auto-highlight]');
   if(button){button.disabled=!!busy;button.setAttribute('aria-busy',String(!!busy));button.dataset.complete=String(!!saved.length);button.title=busy?'Auto-highlight agent is analyzing this paper…':'Auto-highlight paper';}
   const status=$('#pdf-auto-highlight-status');if(!status)return;
-  if(busy)status.innerHTML=`<p class="pdf-auto-progress">${job.status==='indexing'?'Preparing paper text…':'Auto-highlight agent is finding key points…'}</p>`;
-  else if(job?.status==='error')status.innerHTML=`<p role="alert">${esc(job.error)}</p><button data-auto-retry>Retry auto-highlight</button>`;
-  else if(job?.status==='ready'&&job.result?.total===0)status.innerHTML='<p>No grounded key passages found.</p>';
-  else status.innerHTML='';
+  status.innerHTML=job?.status==='error'?`<button data-auto-retry title="${esc(job.error)}">Retry auto-highlight</button>`:'';
   status.querySelector('[data-auto-retry]')?.addEventListener('click',autoHighlightPDF);
 }
 function updatePDFAnnotationControls(){

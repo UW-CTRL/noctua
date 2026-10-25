@@ -28,33 +28,30 @@ async function api(path, body) {
     return j;
   } finally {
     inflight--;
+    if (!inflight) notifyProgress('requests', null);
   }
 }
 
-// Shows how many Semantic Scholar requests are queued behind the 1/s limit.
+// Request progress shares the same notification surface as every feature.
 function watchQueue() {
-  if (queueTimer) return;
-  const el = $('#queue');
+  if (queueTimer !== null) return;
   const tick = async () => {
-    try {
-      const s = await (await fetch('/api/status')).json();
-      if (s.pending > 0) {
-        el.textContent = `Semantic Scholar: ${s.pending} queued · ~${Math.ceil(s.pending * 1.1)}s`;
-        el.classList.add('busy');
-      } else {
-        el.textContent = inflight ? 'Loading…' : '';
-        el.classList.remove('busy');
-      }
-    } catch { /* server gone */ }
+    let message = 'Working…';
     if (inflight > 0) {
+      try {
+        const status = await (await fetch('/api/status')).json();
+        if (status.pending > 0) message = `Semantic Scholar · ${status.pending} queued · about ${Math.ceil(status.pending * 1.1)}s`;
+      } catch { /* The request itself reports connection errors. */ }
+    }
+    if (inflight > 0) {
+      notifyProgress('requests', message);
       queueTimer = setTimeout(tick, 400);
     } else {
       queueTimer = null;
-      el.textContent = '';
-      el.classList.remove('busy');
+      notifyProgress('requests', null);
     }
   };
-  queueTimer = setTimeout(tick, 150);
+  queueTimer = setTimeout(tick, 250);
 }
 
 // ---------------------------------------------------------------- state
@@ -81,7 +78,8 @@ const G = {
   selected: null,
   hover: null,
   show: { ref: true, cite: true, sim: true, shared: true },
-  layout: 'network',  // 'network' (force layout) or 'lineage' (lineage.js)
+  filter: '',        // local text filter shared by Graph and Lineage
+  layout: 'library',  // library table, network, or lineage (lineage.js)
   inLib: new Set(),
   token: 0,
   autoFit: false,
@@ -89,7 +87,13 @@ const G = {
   project: null,      // project graph being shown: the /api/project result plus { name }
 };
 // Noctua library browser: selected folder, its items, item shown in details.
-const lib = { target: store.get('noctua.libTarget') || 'L1', items: null, detail: null };
+const lib = {
+  target: store.get('noctua.libTarget') || 'L1', items: null, detail: null,
+  expanded: (() => {
+    try { const saved = JSON.parse(store.get('noctua.expandedFolders') || '["L1"]'); return new Set(Array.isArray(saved) ? saved : ['L1']); }
+    catch { return new Set(['L1']); }
+  })(),
+};
 const view = { x: 0, y: 0, k: 1 };
 let results = [];          // current search results (paper objects)
 let collections = { live: false, targets: [] };
@@ -102,6 +106,12 @@ function resetGraph() {
   G.selected = null;
   G.hover = null;
   G.project = null;
+  G.filter = '';
+  $('#graph-filter').value = '';
+  $('#filter').value = '';
+  $('#graph-filter-control').classList.remove('has-query');
+  $('#papers-filter-control').classList.remove('has-query');
+  $('#graph-filter-empty').hidden = true;
 }
 
 function addNode(p, role, near) {
@@ -137,6 +147,7 @@ function addEdge(s, t) {
 }
 
 function isVisible(n) {
+  if (G.filter && ![n.p.title, ...(n.p.authors || []).map(a => a.name), n.p.venue, n.p.journal?.name, n.p.year].join(' ').toLowerCase().includes(G.filter)) return false;
   if (n.roles.has('center') || n.roles.has('proj') || n.roles.has('exp') || n.expanded || n.id === G.selected) return true;
   for (const r of n.roles) if (G.show[r]) return true;
   return false;
@@ -155,6 +166,8 @@ const graphLimit = () => Number($('#limit').value) || 60;
 
 // Resolves to 'ok', 'notfound' (only with quiet404), 'error' or 'stale'.
 async function loadGraph(id, { push = true, quiet404 = false, libKey = null, switchTab = true } = {}) {
+  if (G.layout === 'library') setLayout('network');
+  closeSearchResults();
   const token = ++G.token;
   toast('Building graph… (references and citations)');
   let g;
@@ -207,7 +220,7 @@ async function loadGraph(id, { push = true, quiet404 = false, libKey = null, swi
     if (token === G.token) toast('Similar papers unavailable: ' + e.message, { error: true });
     return 'ok';
   }
-  if (token === G.token) hideToast();
+  if (token === G.token) hideToast({ keepError: true });
   return 'ok';
 }
 
@@ -219,7 +232,7 @@ function clearGraph({ push = true } = {}) {
   document.title = 'Noctua';
   $('#empty').classList.remove('hidden');
   $('#tooltip').classList.add('hidden');
-  hideToast();
+  hideToast({ keepError: true });
   refreshAll();
   renderLibItems();
 }
@@ -230,11 +243,17 @@ const targetName = (id) => collections.targets.find((t) => t.id === id)?.name ||
 // the outside papers that several clusters cite.
 async function openProject(target, { push = true } = {}) {
   if (!target) return;
+  if (G.layout === 'library') setLayout('network');
+  closeSearchResults();
   const token = ++G.token;
   const name = targetName(target);
-  $('#proj-target').value = target;
-  store.set('noctua.projTarget', target);
-  showTab('projects');
+  if (lib.target !== target && collections.targets.some(t => t.id === target)) {
+    lib.target = target;
+    store.set('noctua.libTarget', target);
+    renderLibTree();
+    loadLibItems();
+  }
+  showTab(G.layout === 'lineage' ? 'threads' : 'nodes');
   toast(`Opening project graph for “${name}”…`);
   let g;
   try {
@@ -277,56 +296,7 @@ async function openProject(target, { push = true } = {}) {
   refreshAll();
   checkLibrary();
   if (g.warning) toast(g.warning, { error: true });
-  else toast(g.fetched ? `Looked up ${g.fetched} new or changed item(s); saved.` : 'Project graph loaded (saved copy, no new lookups).');
-}
-
-function renderProjectInfo() {
-  const el = $('#proj-info');
-  const P = G.project;
-  if (!P) {
-    if (el.dataset.empty !== '1') {
-      el.dataset.empty = '1';
-      el.innerHTML = `<p class="hint">Pick a Noctua folder and open its project graph: how its papers cite each other,
-        which clusters form, and which references link the clusters. It's saved, and only papers you add
-        or edit are looked up again.</p>`;
-    }
-    return;
-  }
-  el.dataset.empty = '';
-  const clusters = P.clusters.filter((c) => c.size > 1);
-  const singles = P.clusters.filter((c) => c.size === 1);
-  const paper = (id) => G.nodes.get(id)?.p;
-  const row = (id, color) => {
-    const p = paper(id);
-    if (!p) return '';
-    return `<li data-id="${esc(id)}"><i class="swatch" style="background:${color}"></i>
-      <span>${esc(p.title)}</span><span class="p-year">${esc(lastName(p))} ${p.year ?? ''}</span></li>`;
-  };
-  const group = (cid) => {
-    const c = P.clusters[cid - 1];
-    if (!c) return `Cluster ${cid}`;
-    if (c.size > 1) return `<i class="swatch" style="background:${clusterColor(cid)}"></i> Cluster ${cid}`;
-    const p = paper(c.papers[0]);
-    return p ? `“${esc(p.title.length > 50 ? p.title.slice(0, 50) + '…' : p.title)}”` : 'a paper';
-  };
-  const refName = (id) => {
-    const p = paper(id);
-    return p ? `<a href="#" data-ref="${esc(id)}">${esc(lastName(p))} ${p.year ?? ''}</a>` : '';
-  };
-  el.innerHTML = `
-    <p class="hint">${P.items} items · ${P.papers.length} found on Semantic Scholar · ${P.edges.length} citation links ·
-      ${clusters.length} cluster${clusters.length === 1 ? '' : 's'} · ${singles.length} unconnected</p>
-    ${P.warning ? `<p class="warn">${esc(P.warning)}</p>` : ''}
-    ${clusters.map((c) => `
-      <div class="section-label"><i class="swatch" style="background:${clusterColor(c.id)}"></i>Cluster ${c.id} · ${c.size} papers</div>
-      <ul>${c.papers.map((id) => row(id, clusterColor(c.id))).join('')}</ul>`).join('')}
-    ${P.links.length ? `<div class="section-label">Connections between clusters (shared references)</div>
-      <ul class="proj-links">${P.links.map((l) => `<li>${group(l.a)} ↔ ${group(l.b)}: <b>${l.shared}</b> shared
-        ${l.refs.length ? `<br><small>e.g. ${l.refs.map(refName).filter(Boolean).join(', ')}</small>` : ''}</li>`).join('')}</ul>` : ''}
-    ${singles.length ? `<div class="section-label">Unconnected · ${singles.length}</div>
-      <ul>${singles.map((c) => row(c.papers[0], colors.muted)).join('')}</ul>` : ''}
-    ${P.unresolved.length ? `<div class="section-label">Not found on Semantic Scholar · ${P.unresolved.length}</div>
-      <ul>${P.unresolved.map((u) => `<li class="hint">${esc(u.title || '(untitled)')}</li>`).join('')}</ul>` : ''}`;
+  else toast(g.fetched ? `${g.fetched} papers updated. Graph ready.` : `${name} graph ready.`);
 }
 
 // Noctua items carry a DOI / arXiv id / Noctua-written S2 id when we have
@@ -394,7 +364,7 @@ async function expand(id) {
     kick(0.8);
     await loadLinks(token);
     checkLibrary();
-    hideToast();
+    hideToast({ keepError: true });
   } catch (e) {
     toast(e.message, { error: true });
   }
@@ -425,22 +395,29 @@ function parseId(s) {
 }
 
 let searchState = { q: '', next: null };
+let searchToken = 0;
+
+function closeSearchResults() { $('#tab-results').classList.add('hidden'); }
 
 async function search(q, offset = 0) {
+  if (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) setMode('graph');
+  const token = ++searchToken;
   const id = parseId(q);
   if (id) return loadGraph(id);
-  showTab('results');
+  $('#tab-results').classList.remove('hidden');
   if (offset === 0) {
     results = [];
     $('#tab-results').innerHTML = '<p class="hint">Searching…</p>';
   }
   try {
     const r = await api(`/api/search?q=${enc(q)}&offset=${offset}`);
+    if (token !== searchToken) return;
     results = results.concat(r.data || []);
     searchState = { q, next: r.next ?? null, total: r.total };
     renderResults();
     checkLibrary();
   } catch (e) {
+    if (token !== searchToken) return;
     $('#tab-results').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
   }
 }
@@ -486,9 +463,7 @@ function renderResults() {
 
 function renderNodeList() {
   const sort = $('#sort').value;
-  const f = $('#filter').value.trim().toLowerCase();
   let ns = visibleNodes();
-  if (f) ns = ns.filter((n) => (n.p.title + ' ' + authorsShort(n.p) + ' ' + (n.p.venue || '')).toLowerCase().includes(f));
   const cmp = {
     citations: (a, b) => (b.p.citationCount || 0) - (a.p.citationCount || 0),
     'year-desc': (a, b) => (b.p.year || 0) - (a.p.year || 0),
@@ -499,7 +474,7 @@ function renderNodeList() {
   const el = $('#node-list');
   if (!G.nodes.size) {
     el.innerHTML = '<p class="hint">No graph open. Pick a paper from Search or Library.</p>';
-    $('#node-count').textContent = '';
+    $('#filter').placeholder = 'Filter 0 papers';
     return;
   }
   el.innerHTML = ns.map((n) => paperLi(n.p, `role-${primaryRole(n)}${n.id === G.selected ? ' selected' : ''}`)).join('');
@@ -507,7 +482,7 @@ function renderNodeList() {
     select(li.dataset.id);
     focusNode(li.dataset.id);
   }));
-  $('#node-count').textContent = G.nodes.size ? `(${ns.length})` : '';
+  $('#filter').placeholder = `Filter ${G.nodes.size} paper${G.nodes.size === 1 ? '' : 's'}`;
 }
 
 function renderCounts() {
@@ -520,14 +495,37 @@ function renderCounts() {
 }
 
 function refreshAll() {
-  $('#clear-graph').classList.toggle('hidden', !G.centerId && !G.project);
+  $('#graph-filter-empty').hidden = !G.filter || !G.nodes.size || !!visibleNodes().length;
   $('#stage').classList.toggle('project', !!G.project);
-  renderProjectInfo();
   updateChatContext();
   renderCounts();
   renderNodeList();
   renderDetails();
   draw();
+}
+
+function defaultSaveTarget() {
+  const saved = store.get('noctua.collection');
+  return collections.targets.some(t => t.id === saved) ? saved
+    : collections.targets.find(t => t.id === 'L1')?.id || collections.targets[0]?.id || '';
+}
+
+function setDefaultSaveTarget(target) {
+  if (!collections.targets.some(t => t.id === target)) return;
+  store.set('noctua.collection', target);
+  renderDetails();
+}
+
+async function setIncludeSubfolders(include) {
+  const saved = await api('/api/settings/library', { include_subfolders: include });
+  settings.include_subfolders = saved.include_subfolders;
+  const target = G.project?.target;
+  await loadCollections();
+  if (target && G.project?.target === target) {
+    if (target === 'L1') G.project.include_subfolders = saved.include_subfolders;
+    else openProject(target);
+  }
+  return saved.include_subfolders;
 }
 
 function collectionOptions(selected) {
@@ -587,7 +585,7 @@ function renderDetails() {
     : r === 'shared' ? `Shared reference · cited by ${n.deg} project papers` : ROLE_LABEL[r];
   const roles = n ? [...n.roles].map((r) => `<span class="role ${r}"${r === 'proj' && !n.single ? ` style="background:${clusterColor(n.cluster)}"` : ''}>${roleText(r)}</span>`).join('') : '';
   const inLib = G.inLib.has(p.paperId);
-  const target = $('#collection').value;
+  const target = defaultSaveTarget();
 
   el.innerHTML = `
     <div class="roles">${roles}</div>
@@ -665,14 +663,26 @@ function renderLibTree() {
     el.innerHTML = `<p class="hint">${esc(collections.error || 'Noctua library not found.')} <a href="#" class="open-settings">Settings</a></p>`;
     return;
   }
-  el.innerHTML = collections.targets.map((t) => `
-    <li data-id="${esc(t.id)}" class="${t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 14}px">
+  const byId = new Map(collections.targets.map(t => [t.id, t]));
+  const parents = new Set(collections.targets.map(t => t.parent).filter(Boolean));
+  const targets = collections.targets.filter(t => {
+    for (let parent = t.parent; parent; parent = byId.get(parent)?.parent) {
+      if (!lib.expanded.has(parent)) return false;
+    }
+    return true;
+  });
+  el.innerHTML = targets.map((t) => `
+    <li data-id="${esc(t.id)}" class="${t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 8}px">
+      ${parents.has(t.id) ? `<button type="button" class="t-toggle" data-icon="${lib.expanded.has(t.id) ? 'chevron-down' : 'chevron-right'}" data-icon-only aria-expanded="${lib.expanded.has(t.id)}" aria-label="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} ${esc(t.name)}" title="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} subfolders"></button>` : '<span class="t-toggle-spacer" aria-hidden="true"></span>'}
       <span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.id.startsWith('L') ? '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>' : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'}</svg></span>
       <span class="t-name">${esc(t.name)}</span>
+      <span class="t-tail">
       <span class="t-count">${t.count ?? ''}</span>
+      <span class="t-actions" role="group" aria-label="Folder actions">
       ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder" data-icon="pencil" aria-label="Rename folder" data-icon-only>✎</button>' : ''}
       <button class="icon t-rename t-new" title="New folder inside" data-icon="folder-plus" aria-label="New folder inside" data-icon-only>+</button>
       ${t.id === lib.target ? '<button id="import-pdf" class="icon t-import" title="Import PDF into this folder" aria-label="Import PDF into this folder" data-icon="file-up" data-icon-only></button>' : ''}
+      </span></span>
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     li.addEventListener('click', () => {
@@ -681,6 +691,15 @@ function renderLibTree() {
       store.set('noctua.libTarget', lib.target);
       renderLibTree();
       loadLibItems();
+      if (G.layout !== 'library') openProject(lib.target);
+    });
+    li.querySelector('.t-toggle')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = li.dataset.id;
+      if (!lib.expanded.delete(id)) lib.expanded.add(id);
+      store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
+      renderLibTree();
+      el.querySelector(`[data-id="${CSS.escape(id)}"] .t-toggle`)?.focus();
     });
     li.querySelector('.t-rename:not(.t-new)')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -736,8 +755,8 @@ function startRename(li) {
 function startNewFolder(li) {
   const level = (collections.targets.find((t) => t.id === li.dataset.id)?.level || 0) + 1;
   const row = document.createElement('li');
-  row.style.paddingLeft = `${8 + level * 14}px`;
-  row.innerHTML = '<span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><input class="t-input" placeholder="New folder name">';
+  row.style.paddingLeft = `${8 + level * 8}px`;
+  row.innerHTML = '<span class="t-toggle-spacer" aria-hidden="true"></span><span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><input class="t-input" placeholder="New folder name">';
   li.after(row);
   const input = row.querySelector('input');
   input.focus();
@@ -753,6 +772,8 @@ function startNewFolder(li) {
       toast(`Created “${name}”`);
       lib.target = id;
       store.set('noctua.libTarget', id);
+      lib.expanded.add(li.dataset.id);
+      store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
       await loadCollections();
     } catch (e) {
       toast(e.message, { error: true });
@@ -770,10 +791,18 @@ async function loadLibItems() {
   const el = $('#lib-items');
   if (!collections.targets.some((t) => t.id === lib.target)) lib.target = collections.targets[0]?.id;
   if (!lib.target) return;
+  const target = lib.target;
+  lib.items = null;
+  renderLibraryTable([]);
+  el.innerHTML = '<p class="hint">Loading library…</p>';
   try {
-    lib.items = await api(`/api/library/items?target=${enc(lib.target)}`);
+    const items = await api(`/api/library/items?target=${enc(target)}`);
+    if (target !== lib.target) return;
+    lib.items = items;
   } catch (e) {
+    if (target !== lib.target) return;
     lib.items = null;
+    $('#library-table-status').textContent = e.message;
     el.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
     return;
   }
@@ -799,6 +828,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
+  renderLibraryTable(items);
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;
@@ -827,12 +857,46 @@ function renderLibItems() {
   });
 }
 
+// The library table includes local items even when Semantic Scholar cannot match them.
+function renderLibraryTable(items) {
+  $('#library-title').textContent = targetName(lib.target) || 'Library';
+  $('#library-count').textContent = lib.items ? `${items.length} of ${lib.items.length} papers` : '';
+  const status = $('#library-table-status');
+  status.hidden = !!items.length;
+  status.textContent = !lib.items ? 'Loading library…' : lib.items.length ? 'No matches.' : 'This folder is empty. Import a PDF or search for papers to get started.';
+  document.querySelectorAll('[data-library-sort]').forEach((button) => {
+    const sort = $('#lib-sort').value;
+    button.closest('th').setAttribute('aria-sort', button.dataset.librarySort === sort ? (sort === 'year-desc' ? 'descending' : 'ascending') : button.dataset.librarySort === 'year-desc' && sort === 'year-asc' ? 'ascending' : 'none');
+  });
+  const rows = $('#library-rows');
+  rows.innerHTML = items.map(it => `<tr data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
+    <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
+    <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
+    <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
+    <td><div class="paper-row-actions">${it.has_pdf ? '<button data-read data-icon="file-text" data-icon-only title="Read PDF" aria-label="Read PDF"></button>' : ''}<button data-network data-icon="network" data-icon-only title="Build citation graph" aria-label="Build citation graph"></button></div></td>
+  </tr>`).join('');
+  const byKey = new Map(items.map(it => [it.key, it]));
+  rows.querySelectorAll('tr').forEach(row => {
+    const it = byKey.get(row.dataset.key);
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-read], [data-network]')) return;
+      showLibItem(it);
+    });
+    row.querySelector('[data-select-paper]').addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showLibItem(it); $('#library-rows').querySelector(`[data-key="${CSS.escape(it.key)}"] [data-select-paper]`)?.focus(); }
+    });
+    row.addEventListener('dblclick', (e) => { if (it.has_pdf && !e.target.closest('[data-read], [data-network]')) openPaperView(it.key); });
+    row.querySelector('[data-read]')?.addEventListener('click', e => openPaperView(it.key, e.metaKey || e.ctrlKey ? 'tab' : 'here'));
+    row.querySelector('[data-network]').addEventListener('click', () => { showLibItem(it); graphFromLibrary(it); });
+  });
+}
+
 function showLibItem(it) {
   lib.detail = it;
   G.selected = null;
   updateChatContext();
   renderDetails();
-  renderLibItems();
+  document.querySelectorAll('#lib-items [data-key], #library-rows [data-key]').forEach(row => row.classList.toggle('selected', row.dataset.key === it.key));
   draw();
 }
 
@@ -862,29 +926,18 @@ function renderLibDetails(it) {
 }
 
 async function loadCollections() {
-  const sel = $('#collection');
   try {
     collections = await api('/api/library/collections');
   } catch (e) {
     collections = { live: false, targets: [], error: e.message };
-    sel.innerHTML = '<option value="">Noctua unavailable</option>';
-    $('#proj-target').innerHTML = sel.innerHTML;
-    sel.title = e.message;
     renderLibTree();
     return;
   }
   renderLibTree();
   loadLibItems();
   if (typeof notesRefreshFolders === 'function') notesRefreshFolders();  // notes.js may still be loading
-  const ids = collections.targets.map((t) => t.id);
-  const saved = store.get('noctua.collection');
-  const pick = ids.includes(saved) ? saved
-    : ids.includes(collections.selected) ? collections.selected
-    : ids[0] || '';
-  sel.innerHTML = collectionOptions(pick);
-  const projSaved = G.project?.target || store.get('noctua.projTarget');
-  $('#proj-target').innerHTML = collectionOptions(ids.includes(projSaved) ? projSaved : ids.find((i) => i.startsWith('C')) || ids[0] || '');
-  sel.title = collections.live ? 'Folder new papers are saved into' : 'Your local Noctua library';
+  const saveFolder = $('#setup-save-target');
+  if (saveFolder) saveFolder.innerHTML = collectionOptions(defaultSaveTarget());
   renderDetails();
 }
 
@@ -1034,7 +1087,7 @@ function chatContext() {
   if (s?.p.abstract) L.push(`Selected paper abstract: ${s.p.abstract.slice(0, 1500)}`);
   if (!s && lib.detail) L.push(`Selected Noctua item: ${lib.detail.title} (${lib.detail.year ?? 'n.d.'}; ${libAuthors(lib.detail)})`);
   if (!s && lib.detail) { L.push(`Native paper_key: ${lib.detail.key}; PDF available: ${!!lib.detail.has_pdf}`); if(lib.detail.abstractNote)L.push(`Selected paper abstract: ${lib.detail.abstractNote}`); }
-  const add = collections.targets.find((t) => t.id === $('#collection').value);
+  const add = collections.targets.find((t) => t.id === defaultSaveTarget());
   if (add) L.push(`Add-to folder: ${add.name} (${add.id})`);
   const open = collections.targets.find((t) => t.id === lib.target);
   if (open) L.push(`Folder open in Library tab: ${open.name} (${open.id})`);
@@ -1316,6 +1369,7 @@ function runChatAction(a) {
 
 function setChatBusy(busy) {
   chat.busy = busy;
+  notifyProgress('assistant', busy ? 'Assistant is working…' : null);
   $('#chat-new').disabled = busy;
   $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
@@ -1343,6 +1397,7 @@ async function sendChat(text) {
     else if (e.type === 'text_start') { if (md && !md.endsWith('\n\n')) md += '\n\n'; }
     else if (e.type === 'text') { md += e.text; NoctuaChatRender.update(body, md); }
     else if (e.type === 'tool') {
+      notifyProgress('assistant', `${TOOL_LABEL[e.name] || e.name}…`);
       const t = document.createElement('div');
       t.className = 'tool';
       t.textContent = `⚙ ${TOOL_LABEL[e.name] || e.name}…`;
@@ -1428,19 +1483,62 @@ for (const side of ['left', 'right']) {
 // ---------------------------------------------------------------- toast / tabs
 
 let toastTimer = null;
-function toast(msg, { error = false, duration } = {}) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.toggle('error', error);
-  el.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, Number.isFinite(duration) ? Math.max(0,duration) : error ? 8000 : 15000);
-}
-function hideToast() { $('#toast').classList.add('hidden'); }
+let toastNotice = null;
+const notificationProgress = new Map();
 
+function renderToast() {
+  const el = $('#toast');
+  const tasks = [...notificationProgress].sort(([a], [b]) => Number(a === 'requests') - Number(b === 'requests')).map(([, message]) => message);
+  const message = toastNotice?.message || tasks[0] || '';
+  const remaining = toastNotice ? tasks : tasks.slice(1);
+  const detail = remaining.length ? remaining[0] + (remaining.length > 1 ? ` · +${remaining.length - 1} tasks` : '') : '';
+  el.textContent = message;
+  el.dataset.detail = detail;
+  el.classList.toggle('error', !!toastNotice?.error);
+  el.classList.toggle('busy', !toastNotice && !!tasks.length);
+  el.classList.toggle('hidden', !message);
+  el.setAttribute('aria-label', [message, detail].filter(Boolean).join('. '));
+  el.setAttribute('aria-live', toastNotice?.error ? 'assertive' : 'polite');
+  if (message) { el.hidePopover?.(); el.showPopover?.(); } else el.hidePopover?.();
+}
+
+function notifyProgress(id, message) {
+  if (message === notificationProgress.get(id)) return;
+  if (message) notificationProgress.set(id, message); else notificationProgress.delete(id);
+  renderToast();
+}
+
+function toast(msg, { error = false, duration } = {}) {
+  if (toastNotice?.error && !error) return;
+  toastNotice = { message: String(msg), error };
+  clearTimeout(toastTimer);
+  renderToast();
+  toastTimer = setTimeout(hideToast, Number.isFinite(duration) ? Math.max(0, duration) : error ? 8000 : 4000);
+}
+function hideToast({ keepError = false } = {}) {
+  if (keepError && toastNotice?.error) return;
+  clearTimeout(toastTimer);
+  toastNotice = null;
+  renderToast();
+}
+
+let graphSidebarList = store.get('noctua.graphSidebarList') === 'threads' ? 'threads' : 'nodes';
+function setGraphSidebarList(name = graphSidebarList) {
+  if (G.layout === 'lineage') {
+    graphSidebarList = name === 'threads' ? 'threads' : 'nodes';
+    store.set('noctua.graphSidebarList', graphSidebarList);
+  }
+  const active = G.layout === 'lineage' ? graphSidebarList : 'nodes';
+  $('#tab-nodes').classList.toggle('hidden', active !== 'nodes');
+  $('#tab-threads').classList.toggle('hidden', active !== 'threads');
+  document.querySelectorAll('[data-graph-list]').forEach(button => {
+    button.classList.toggle('active', button.dataset.graphList === active);
+    button.setAttribute('aria-pressed', String(button.dataset.graphList === active));
+  });
+}
+document.querySelectorAll('[data-graph-list]').forEach(button => button.addEventListener('click', () => setGraphSidebarList(button.dataset.graphList)));
 function showTab(name) {
-  document.querySelectorAll('#left > .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  for (const t of ['results', 'library', 'projects', 'nodes', 'threads']) $('#tab-' + t).classList.toggle('hidden', name !== t);
+  if (name === 'threads' || name === 'nodes') setGraphSidebarList(name);
 }
 
 // ---------------------------------------------------------------- force simulation
@@ -1583,7 +1681,7 @@ function draw() {
   const vis = new Set(ns.map((n) => n.id));
   if (G.layout === 'lineage') { drawLineage(w, h, ns, vis); return; }
   const range = yearRange(ns);
-  const focus = G.hover || G.selected;
+  const focus = [G.hover, G.selected].find(id => vis.has(id));
   const near = new Set();
   if (focus) {
     near.add(focus);
@@ -1725,18 +1823,19 @@ function hit(sx, sy) {
 
 function fit(ns = visibleNodes(), maxK = 2.2) {
   if (!ns.length) return;
-  // Lineage nodes may still be moving; fit where they are heading.
-  const lin = G.layout === 'lineage';
+  G.autoFit = false; // A pending automatic fit must not overwrite a manual/thread fit.
+  if (G.layout === 'lineage') return fitLineage(ns, maxK);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const n of ns) {
-    const x = lin && n.tx != null ? n.tx : n.x, y = lin && n.ty != null ? n.ty : n.y;
+    const x = n.x, y = n.y;
     x0 = Math.min(x0, x); y0 = Math.min(y0, y);
     x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   }
-  const w = canvas.clientWidth, h = canvas.clientHeight - (lin ? 110 : 80);
-  view.k = Math.min(maxK, w / (x1 - x0 + (lin ? 160 : 100)), h / (y1 - y0 + (lin ? 60 : 100)));
+  const w = canvas.clientWidth, h = canvas.clientHeight - 80;
+  if (w <= 0 || h <= 0) return;
+  view.k = Math.min(maxK, w / (x1 - x0 + 100), h / (y1 - y0 + 100));
   view.x = -((x0 + x1) / 2) * view.k;
-  view.y = -((y0 + y1) / 2) * view.k + (lin ? 30 : 20);
+  view.y = -((y0 + y1) / 2) * view.k + 20;
   draw();
 }
 
@@ -1844,30 +1943,73 @@ $('#search-form').addEventListener('submit', (e) => {
   if (q) search(q);
 });
 
-document.querySelectorAll('#left > .tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$('#search-form button').addEventListener('click', (e) => {
+  if (!$('#search').value.trim()) { e.preventDefault(); $('#search').focus(); }
+});
+$('#search').addEventListener('input', () => {
+  searchToken++; // Ignore responses for a query that has since been edited.
+  closeSearchResults();
+});
+$('#search').addEventListener('focus', () => {
+  if (searchState.q === $('#search').value.trim() && results.length) $('#tab-results').classList.remove('hidden');
+});
+$('#research-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeSearchResults(); $('#search').blur(); }
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('#research-search')) closeSearchResults();
+});
+function applyGraphFilter(value) {
+  G.filter = value.trim().toLowerCase();
+  $('#graph-filter').value = value;
+  $('#filter').value = value;
+  $('#graph-filter-control').classList.toggle('has-query', !!value);
+  $('#papers-filter-control').classList.toggle('has-query', !!value);
+  $('#graph-filter-empty').hidden = !G.filter || !G.nodes.size || !!visibleNodes().length;
+  G.hover = null;
+  refreshAll();
+  kick(.8);
+  fit();
+}
+$('#papers-filter-control button').addEventListener('click', () => $('#filter').focus());
+$('#filter').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { applyGraphFilter(''); e.target.blur(); }
+});
+$('#graph-filter-control button').addEventListener('click', () => $('#graph-filter').focus());
+$('#graph-filter').addEventListener('input', e => applyGraphFilter(e.target.value));
+$('#graph-filter').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { applyGraphFilter(''); e.target.blur(); }
+});
+$('#library-filter-control button').addEventListener('click', () => $('#library-table-filter').focus());
+$('#library-table-filter').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.target.value = '';
+    e.target.dispatchEvent(new Event('input'));
+    e.target.blur();
+  }
+});
+$('#library-table-filter').addEventListener('input', (e) => {
+  $('#library-filter-control').classList.toggle('has-query', !!e.target.value);
+  $('#lib-filter').value = e.target.value;
+  renderLibItems();
+});
+document.querySelectorAll('[data-library-sort]').forEach((button) => button.addEventListener('click', () => {
+  let sort = button.dataset.librarySort;
+  if (sort === 'year-desc' && $('#lib-sort').value === sort) sort = 'year-asc';
+  $('#lib-sort').value = sort;
+  renderLibItems();
+}));
+
 document.querySelectorAll('.controls input[data-role]').forEach((cb) => cb.addEventListener('change', () => {
   G.show[cb.dataset.role] = cb.checked;
   refreshAll();
   kick(0.5);
 }));
 $('#limit').addEventListener('change', () => { if (G.centerId) loadGraph(G.centerId, { push: false }); });
-$('#fit').addEventListener('click', fit);
+$('#fit').addEventListener('click', () => fit());
 $('#sort').addEventListener('change', renderNodeList);
-$('#filter').addEventListener('input', renderNodeList);
-$('#collection').addEventListener('change', (e) => { store.set('noctua.collection', e.target.value); renderDetails(); });
-$('#refresh-collections').addEventListener('click', loadCollections);
-$('#clear-graph').addEventListener('click', () => clearGraph());
-$('#proj-open').addEventListener('click', () => openProject($('#proj-target').value));
-$('#proj-info').addEventListener('click', (e) => {
-  const li = e.target.closest('li[data-id]');
-  const ref = e.target.closest('a[data-ref]');
-  const id = li?.dataset.id || ref?.dataset.ref;
-  if (!id) return;
-  e.preventDefault();
-  if (ref && !G.show.shared) { G.show.shared = true; $('.controls input[data-role="shared"]').checked = true; refreshAll(); }
-  select(id);
-  focusNode(id);
-});
+$('#filter').addEventListener('input', e => applyGraphFilter(e.target.value));
+
 document.querySelectorAll('#right > .tabs button').forEach((b) => b.addEventListener('click', () => showRightTab(b.dataset.rtab)));
 // Resize the composer from the divider above it, keeping room for the conversation.
 const chatResize = $('#chat-resize');
@@ -1980,7 +2122,11 @@ $('#chat-log').addEventListener('click', (e) => {
   runChatAction({ action: 'select', id: a.getAttribute('href').slice('paper:'.length) });
 });
 $('#lib-sort').addEventListener('change', renderLibItems);
-$('#lib-filter').addEventListener('input', renderLibItems);
+$('#lib-filter').addEventListener('input', () => {
+  $('#library-table-filter').value = $('#lib-filter').value;
+  $('#library-filter-control').classList.toggle('has-query', !!$('#lib-filter').value);
+  renderLibItems();
+});
 
 window.addEventListener('popstate', () => {
   if (!location.hash.startsWith('#pdf=') && document.body.classList.contains('pdf-mode')) setMode('graph');
@@ -1991,6 +2137,7 @@ window.addEventListener('popstate', () => {
   else if (!location.hash.startsWith('#pdf=')) clearGraph({ push: false });
 });
 new ResizeObserver(() => draw()).observe($('#stage'));
+new ResizeObserver(() => draw()).observe($('#stage .controls'));
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
 
 function setAppTheme(theme) {
@@ -2006,6 +2153,11 @@ document.addEventListener('noctua-font-size-change', e => { if (e.detail.kind ==
 setAppTheme(store.get('noctua.theme'));
 window.addEventListener('storage', (e) => {
   if (e.key === 'noctua.theme' || e.key === null) setAppTheme(store.get('noctua.theme'));
+  if (e.key === 'noctua.collection' || e.key === null) {
+    const select = $('#setup-save-target');
+    if (select) select.value = defaultSaveTarget();
+    renderDetails();
+  }
 });
 setChatMode(chat.mode);
 chatWelcome();
@@ -2015,6 +2167,48 @@ const collectionsReady = loadCollections();
 {
   const m = location.hash.match(/^#paper=(.+)$/);
   const pm = location.hash.match(/^#project=(.+)$/);
-  if (m) loadGraph(decodeURIComponent(m[1]), { push: false });
+  if (m) collectionsReady.then(() => loadGraph(decodeURIComponent(m[1]), { push: false }));
   else if (pm) collectionsReady.then(() => openProject(decodeURIComponent(pm[1]), { push: false }));
 }
+
+// The folder/paper split is shared by Graph and Lineage and remembered locally.
+const folderDivider = $('#folder-divider');
+const defaultFolderHeight = 440;
+function setFolderHeight(height, save = true) {
+  const max = Math.max(60, Math.floor($('#research-sidebar').clientHeight * .65));
+  const value = Math.round(Math.max(60, Math.min(max, height)));
+  $('#research-sidebar').style.setProperty('--folder-height', value + 'px');
+  folderDivider.setAttribute('aria-valuemax', String(max));
+  folderDivider.setAttribute('aria-valuenow', String(value));
+  if (save) store.set('noctua.folderHeight', String(value));
+}
+const savedFolderHeight = Number(store.get('noctua.folderHeight'));
+if (savedFolderHeight) setFolderHeight(savedFolderHeight, false);
+folderDivider.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const startY = e.clientY, startHeight = $('#tab-library').getBoundingClientRect().height;
+  folderDivider.setPointerCapture(e.pointerId);
+  folderDivider.classList.add('dragging');
+  const move = ev => setFolderHeight(startHeight + ev.clientY - startY, false);
+  const end = ev => {
+    folderDivider.removeEventListener('pointermove', move);
+    folderDivider.removeEventListener('pointerup', end);
+    folderDivider.removeEventListener('pointercancel', end);
+    folderDivider.classList.remove('dragging');
+    setFolderHeight(startHeight + ev.clientY - startY);
+  };
+  folderDivider.addEventListener('pointermove', move);
+  folderDivider.addEventListener('pointerup', end);
+  folderDivider.addEventListener('pointercancel', end);
+});
+folderDivider.addEventListener('keydown', e => {
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const height = $('#tab-library').getBoundingClientRect().height;
+  setFolderHeight(e.key === 'Home' ? 60 : e.key === 'End' ? Infinity : height + (e.key === 'ArrowUp' ? -20 : 20));
+});
+folderDivider.addEventListener('dblclick', () => setFolderHeight(defaultFolderHeight));
+new ResizeObserver(() => {
+  if (G.layout !== 'library') setFolderHeight(Number(store.get('noctua.folderHeight')) || defaultFolderHeight, false);
+}).observe($('#research-sidebar'));

@@ -26,6 +26,9 @@ Include the full [data folder](settings-and-data.md#storage-and-backups) in back
 
 ## Use AI while reading
 
+Outline generation and auto-highlighting report progress in the shared bottom-right
+notification. Sidebar controls remain available for navigation and retries.
+
 Connect an [assistant](assistant.md) to enable:
 
 - **AI-generated outline:** select it in **Outline** to generate a navigable

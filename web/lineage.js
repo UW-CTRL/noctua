@@ -324,7 +324,7 @@ const LIN = {
   auto: store.get('noctua.threadsAuto') !== '0',  // summarize threads without a click
   autoTimer: null,
   error: null,         // { key, message } of the last failed summary
-  collapsed: new Set(), // threads showing only their theme, by first>last paper
+  expanded: new Set(), // explicitly opened threads; new cards start collapsed
   openGaps: new Set(),  // expanded "papers in between", by thread and paper
 };
 
@@ -343,7 +343,7 @@ function threadName(t) {
 // Recomputes threads and targets when the papers, links or settings change.
 function ensureLineage(ns) {
   const shape = Math.round((canvas.clientHeight / Math.max(1, canvas.clientWidth)) * 20);
-  const sig = [ns.length, G.nodes.size, G.edges.length, G.centerId, G.project?.target, LIN.max, Object.values(G.show).join(''), shape].join(':');
+  const sig = [ns.length, G.nodes.size, G.edges.length, G.centerId, G.project?.target, LIN.max, G.filter, Object.values(G.show).join(''), shape].join(':');
   if (sig === LIN.sig && LIN.res) return;
   LIN.sig = sig;
   const ids = ns.map((n) => n.id);
@@ -374,7 +374,7 @@ function ensureLineage(ns) {
     LIN.reqKey = key;
     LIN.ai = null;
     clearTimeout(LIN.autoTimer);
-    if (LIN.res.threads.length) requestThreads({ cacheOnly: true });
+    if (LIN.res.threads.length && !G.filter) requestThreads({ cacheOnly: true });
   }
   renderThreads();
   kick(0.8);
@@ -470,18 +470,59 @@ function arrowIn(s) {
   ctx.fill();
 }
 
+function lineageAxisY() {
+  const controls = $('#stage .controls');
+  return (controls ? controls.getBoundingClientRect().bottom - canvas.getBoundingClientRect().top : 40) + 16;
+}
+
+function fitLineage(ns, maxK) {
+  const visible = visibleNodes();
+  ensureLineage(visible); // Refresh targets after filtering or resizing before fitting.
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (w <= 0 || h <= 0) return;
+  const { bands, axis } = LIN.lay;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let labelWidth = 0;
+  ctx.save();
+  ctx.font = `${11 * colors.fontScale}px ${colors.font}`;
+  for (const n of ns) {
+    const r = radius(n);
+    x0 = Math.min(x0, n.tx - r); x1 = Math.max(x1, n.tx + r);
+    y0 = Math.min(y0, n.ty - r); y1 = Math.max(y1, n.ty + r);
+    labelWidth = Math.max(labelWidth, ctx.measureText(`${lastName(n.p)} ${n.p.year ?? ''}`).width);
+  }
+  ctx.restore();
+  for (const b of bands) {
+    if (!ns.some(n => n.ty >= b.y0 && n.ty <= b.y1)) continue;
+    y0 = Math.min(y0, b.y0); y1 = Math.max(y1, b.y1);
+  }
+  if (ns.length === visible.length) {
+    x0 = Math.min(x0, axis.hasUndated ? axis.undatedX : axis.x0);
+    x1 = Math.max(x1, axis.x1);
+  }
+  // The axis, wrapped controls, labels, and legend occupy screen pixels.
+  const side = Math.min(w / 4, Math.max(24, labelWidth / 2 + 8));
+  const top = lineageAxisY() + 32;
+  const legend = $('#stage .legend');
+  const bottom = (legend ? legend.offsetTop : h) - 24;
+  if (bottom <= top) return;
+  view.k = Math.min(maxK, (w - 2 * side) / Math.max(1, x1 - x0), (bottom - top) / Math.max(1, y1 - y0));
+  view.x = -((x0 + x1) / 2) * view.k;
+  view.y = (top + bottom - h) / 2 - ((y0 + y1) / 2) * view.k;
+  draw();
+}
+
 function drawLineage(w, h, ns, vis) {
   ensureLineage(ns);
   const { bands, axis } = LIN.lay;
   const res = LIN.res;
-  const focus = G.hover || G.selected;
+  const focus = [G.hover, G.selected].find(id => vis.has(id));
   const hl = lineageHighlight(focus);
   const sx = (x) => w / 2 + view.x + x * view.k;
   const sy = (y) => h / 2 + view.y + y * view.k;
   const fade = (on) => hl && !on ? hl.dim : 1;
   // The year axis sits just below the graph controls, which may wrap.
-  const controls = $('#stage .controls');
-  const axisY = (controls ? controls.offsetTop + controls.offsetHeight : 40) + 16;
+  const axisY = lineageAxisY();
 
   // Year gridlines (screen space).
   ctx.strokeStyle = colors.edge;
@@ -805,23 +846,15 @@ function renderThreads() {
   const el = $('#thread-list');
   if (!el) return;
   const res = LIN.res;
+  const summarize = $('#explain-threads');
+  summarize.disabled = LIN.explaining || !res?.threads.length;
+  summarize.textContent = LIN.explaining ? 'Summarizing…' : 'Summarize threads';
   if (!G.nodes.size || !res) {
     el.innerHTML = '<p class="hint">Open a graph, then switch to Lineage to see how its papers build on each other over time.</p>';
     return;
   }
-  const links = res.flow.length;
   const year = (id) => G.nodes.get(id)?.p.year;
-  const ids = res.threads.map((t) => threadKey(t));
-  const allCollapsed = ids.length && ids.every((k) => LIN.collapsed.has(k));
-  let html = `<div class="threads-head">
-      <button id="threads-explain" class="primary"${LIN.explaining || !res.threads.length ? ' disabled' : ''}>${LIN.explaining ? 'Summarizing…' : LIN.ai ? 'Summarize again' : 'Summarize threads'}</button>
-      <label class="auto-toggle" title="Uses your research assistant's quota once per new set of threads; answers are saved">
-        <input type="checkbox" id="threads-auto"${LIN.auto ? ' checked' : ''}> Summarize automatically</label>
-      ${ids.length ? `<button id="threads-collapse" class="link-btn">${allCollapsed ? 'Expand all' : 'Collapse all'}</button>` : ''}
-    </div>
-    <p class="hint">${res.threads.length} thread${res.threads.length === 1 ? '' : 's'} · ${links} citation link${links === 1 ? '' : 's'} in time order</p>
-    <p class="hint">A thread is the citation chain that most paths through these papers follow. Hover a paper to see what it builds on (blue)
-      and what builds on it (orange); shift-click a second paper to trace the chains between them.</p>`;
+  let html = '';
   if (LIN.ai?.common) html += `<p class="threads-common">${esc(LIN.ai.common)}</p>`;
   if (!LIN.ai && LIN.error?.key === LIN.reqKey) {
     html += `<p class="warn">Couldn’t summarize the threads: ${esc(LIN.error.message)} <button class="link-btn" data-explain>Retry</button></p>`;
@@ -873,8 +906,8 @@ function renderThreads() {
     });
     const title = ai?.name ? `<b>${esc(ai.name)}</b>`
       : `<b class="guess" title="Keywords from the paper titles, until the thread is summarized">${esc(keywordTitle(t.core) || endpoints(t.core))}</b>`;
-    html += `<div class="thread-card${LIN.collapsed.has(tk) ? ' collapsed' : ''}${LIN.focusThread === i ? ' focused' : ''}${LIN.focusThread != null && LIN.focusThread !== i ? ' dim' : ''}" data-thread="${i}" style="--c:${threadColor(i)}">
-      <div class="thread-head" data-toggle="${esc(tk)}" title="Show or hide the papers" role="button" aria-expanded="${!LIN.collapsed.has(tk)}">
+    html += `<div class="thread-card${LIN.expanded.has(tk) ? '' : ' collapsed'}${LIN.focusThread === i ? ' focused' : ''}${LIN.focusThread != null && LIN.focusThread !== i ? ' dim' : ''}" data-thread="${i}" style="--c:${threadColor(i)}">
+      <div class="thread-head" data-toggle="${esc(tk)}" title="Show or hide the papers" role="button" aria-expanded="${LIN.expanded.has(tk)}">
         <span class="chev" aria-hidden="true">▾</span>
         <div class="thread-title">${title}${pending ? '<span class="summarizing">Summarizing…</span>' : ''}
           <span class="thread-sub">${esc(endpoints(t.core))} · ${span.length ? [...new Set(span)].join('–') + ' · ' : ''}${t.core.length} papers${key.length < t.core.length ? `, ${key.length} key` : ''}</span></div>
@@ -940,7 +973,7 @@ function threadsRequest() {
 // misses and no other requests (links, similar papers) are still loading.
 function scheduleSummary() {
   clearTimeout(LIN.autoTimer);
-  if (!LIN.auto || LIN.ai || !LIN.res?.threads.length || !lineageOn() || LIN.error?.key === LIN.reqKey) return;
+  if (G.filter || !LIN.auto || LIN.ai || !LIN.res?.threads.length || !lineageOn() || LIN.error?.key === LIN.reqKey) return;
   const key = LIN.reqKey;
   LIN.autoTimer = setTimeout(() => {
     if (key !== LIN.reqKey || LIN.ai) return;
@@ -968,7 +1001,7 @@ async function requestThreads({ force = false, cacheOnly = false, auto = false }
       threads: new Map(r.threads.map((t) => [t.id, t])),
       steps: new Map(r.threads.flatMap((t) => t.steps.map((s) => [s.from + '>' + s.to, s]))),
     };
-    if (!cacheOnly && !auto) hideToast();
+    if (!cacheOnly && !auto) hideToast({ keepError: true });
   } catch (e) {
     if (cacheOnly) return;
     LIN.error = { key, message: e.message };
@@ -985,22 +1018,28 @@ async function requestThreads({ force = false, cacheOnly = false, auto = false }
 // ---------------------------------------------------------------- wiring
 
 function setLayout(mode, { user = false } = {}) {
-  G.layout = mode === 'lineage' ? 'lineage' : 'network';
+  const previous = G.layout;
+  G.layout = ['library', 'network', 'lineage'].includes(mode) ? mode : 'library';
+  document.body.classList.toggle('library-view', G.layout === 'library');
   store.set('noctua.layout', G.layout);
   document.body.classList.toggle('lineage', lineageOn());
-  document.querySelectorAll('#layout button').forEach((b) => b.classList.toggle('active', b.dataset.layout === G.layout));
+  setGraphSidebarList();
+  document.querySelectorAll('#layout button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.layout === G.layout);
+    b.setAttribute('aria-pressed', String(b.dataset.layout === G.layout));
+  });
+  if (G.layout === 'library') renderLibItems();
   if (lineageOn()) {
     LIN.sig = '';
-    if (user && G.nodes.size) showTab('threads');
     scheduleSummary();
   } else {
     LIN.trace = null;
     LIN.focusThread = null;
-    if (!$('#tab-threads').classList.contains('hidden')) showTab('nodes');
   }
   G.autoFit = true;
   renderDetails();
   kick(1);
+  if (user && G.layout !== 'library' && (!G.nodes.size || (previous === 'library' && G.project?.target !== lib.target))) openProject(lib.target);
 }
 
 document.querySelectorAll('#layout button').forEach((b) => b.addEventListener('click', () => setLayout(b.dataset.layout, { user: true })));
@@ -1017,31 +1056,23 @@ $('#explain-threads').addEventListener('click', () => requestThreads({ force: !!
 const toggle = (set, k) => { if (!set.delete(k)) set.add(k); };
 
 $('#tab-threads').addEventListener('click', (e) => {
-  if (e.target.closest('#threads-explain')) return requestThreads({ force: !!LIN.ai });
   if (e.target.closest('[data-explain]')) return requestThreads();
   if (e.target.closest('#trace-clear')) return clearLineageFocus();
   const gap = e.target.closest('[data-gap]');
   if (gap) { toggle(LIN.openGaps, gap.dataset.gap); return renderThreads(); }
-  if (e.target.closest('#threads-collapse')) {
-    const keys = LIN.res.threads.map(threadKey);
-    const all = keys.every((k) => LIN.collapsed.has(k));
-    for (const k of keys) all ? LIN.collapsed.delete(k) : LIN.collapsed.add(k);
-    return renderThreads();
-  }
   const li = e.target.closest('[data-lin-id]');
   if (li) { select(li.dataset.linId); focusNode(li.dataset.linId); return; }
   const focus = e.target.closest('[data-focus]')?.closest('.thread-card[data-thread]');
   if (focus) return focusThread(Number(focus.dataset.thread) === LIN.focusThread ? null : Number(focus.dataset.thread));
   const head = e.target.closest('[data-toggle]');
-  if (head) { toggle(LIN.collapsed, head.dataset.toggle); return renderThreads(); }
+  if (head) { toggle(LIN.expanded, head.dataset.toggle); return renderThreads(); }
 });
-$('#tab-threads').addEventListener('change', (e) => {
-  if (e.target.id !== 'threads-auto') return;
-  LIN.auto = e.target.checked;
+function setThreadsAuto(enabled) {
+  LIN.auto = !!enabled;
   store.set('noctua.threadsAuto', LIN.auto ? '1' : '0');
   if (LIN.auto) scheduleSummary(); else clearTimeout(LIN.autoTimer);
   renderThreads();
-});
+}
 $('#details').addEventListener('click', (e) => {
   const li = e.target.closest('[data-lin-id]');
   if (li) { select(li.dataset.linId); focusNode(li.dataset.linId); }
@@ -1051,4 +1082,4 @@ document.addEventListener('keydown', (e) => {
   clearLineageFocus();
 });
 
-setLayout(store.get('noctua.layout') || 'network');
+setLayout(store.get('noctua.layout') || 'library');
