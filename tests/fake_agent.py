@@ -52,6 +52,8 @@ if (home / 'analysis-start-failure').exists():
     print('The selected model is unavailable for this account.', file=sys.stderr)
     sys.exit(1)
 prompt = sys.stdin.read()
+if 'verify-uploaded-files' in prompt:
+    assert '<uploaded_files>' in prompt and '<notes>.txt' in prompt and 'paper.pdf' in prompt and 'image/png' in prompt
 if 'verify-selected-passages' in prompt:
     assert '<selected_passages>' in prompt and 'A grounded passage.' in prompt and 'note-1' in prompt
     (home / (provider+'-selected.txt')).write_text(prompt)

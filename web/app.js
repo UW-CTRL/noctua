@@ -1060,6 +1060,7 @@ const TOOL_LABEL = {
   read_pdf: 'Reading PDF',
   search_pdf: 'Searching PDF',
   view_pdf_page: 'Viewing PDF page',
+  read_chat_file: 'Reading attached file',
   annotate_pdf: 'Annotating PDF',
   comment_on_pdf_annotation: 'Commenting on PDF',
   search_library: 'Searching saved papers',
@@ -1161,9 +1162,9 @@ function extractMath(src) {
 }
 
 // A user's chat message: plain text with @-mention chips and typeset math.
-function userMsgHtml(text, selections=[]) {
+function userMsgHtml(text, selections=[], files=[]) {
   const { text: t, restore } = extractMath(text);
-  return restore(mentionChips(esc(t)))+(window.NoctuaChatSelections?.sentHTML(selections)||'');
+  return restore(mentionChips(esc(t)))+(window.NoctuaChatSelections?.sentHTML(selections)||'')+(window.NoctuaChatFiles?.sentHTML(files)||'');
 }
 
 // Split table rows without treating escaped pipes or inline code as cell boundaries.
@@ -1305,18 +1306,20 @@ function chatWelcome() {
 }
 
 function renderStoredMsg(m) {
-  if (m.role === 'user') return appendMsg('user', userMsgHtml(m.text,m.selections));
+  if (m.role === 'user') return appendMsg('user', userMsgHtml(m.text,m.selections,m.files));
   const tools = (m.tools || []).map((n) => `<div class="tool">⚙ ${esc(TOOL_LABEL[n] || n)}</div>`).join('');
   appendMsg('assistant', `${tools}<div class="body">${renderMd(m.text || '')}${
     m.error ? `<p class="error">${esc(m.error)}</p>` : ''}${m.stopped ? '<p class="tool">Stopped.</p>' : ''}</div>`);
 }
 
 function setChatId(id) {
-  const previousId=chat.id,selectionKey=window.NoctuaChatSelections?.storageKey();
+  const previousId=chat.id,selectionKey=window.NoctuaChatSelections?.storageKey(),fileKey=window.NoctuaChatFiles?.key();
   chat.id = id;
   store.set('noctua.chat.' + chat.provider, id || '');
   if(previousId==null&&id&&chat.busy)window.NoctuaChatSelections?.moveDraft(selectionKey);
   else window.NoctuaChatSelections?.restore();
+  if(previousId==null&&id&&chat.busy)window.NoctuaChatFiles?.moveDraft(fileKey);
+  else window.NoctuaChatFiles?.render();
 }
 
 function newChat() {
@@ -1395,13 +1398,15 @@ function setChatBusy(busy) {
 }
 
 async function sendChat(text) {
+  let uploaded;
+  try { uploaded=window.NoctuaChatFiles?.snapshot()||{files:[]}; } catch(e) { toast(e.message,{error:true}); return; }
   try { stopEdit(); await saveWorkspaceFile(); await flushNoteEdits(); } catch (e) { toast(e.message, {error:true}); return; }
   const provider = chat.provider;
   const selectedPassages=window.NoctuaChatSelections?.snapshot()||{items:[]};
   const ctrl = new AbortController();
   chat.abort = ctrl;
   setChatBusy(true);
-  appendMsg('user', userMsgHtml(text,selectedPassages.items));
+  appendMsg('user', userMsgHtml(text,selectedPassages.items,uploaded.files));
   const el = appendMsg('assistant', '<div class="body"><span class="typing">Thinking…</span></div>');
   const body = el.querySelector('.body');
   const log = $('#chat-log');
@@ -1431,11 +1436,12 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, project_target: chatProjectTarget(), skill_ids: getChatSkillOverride(), chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
+      body: JSON.stringify({ message: text, provider, context, project_target: chatProjectTarget(), skill_ids: getChatSkillOverride(), chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
     window.NoctuaChatSelections?.consume(selectedPassages);
+    window.NoctuaChatFiles?.consume(uploaded);
     await readEvents(r, handle);
   } catch (e) {
     if (e.name === 'AbortError') body.insertAdjacentHTML('beforeend', '<p class="tool">Stopped.</p>');
@@ -2082,8 +2088,9 @@ $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (!chat.ready || chat.switching) return;
   if (chat.busy) { stopChat().catch((err) => toast(err.message, { error: true })); return; }
-  const text = $('#chat-input').value.trim()||(window.NoctuaChatSelections?.count()?'Explain the selected passages.':'');
+  const text = $('#chat-input').value.trim()||(window.NoctuaChatSelections?.count()?'Explain the selected passages.':window.NoctuaChatFiles?.count()?'Describe the attached files.':'');
   if (!text) return;
+  try { window.NoctuaChatFiles?.snapshot(); } catch(err) { toast(err.message,{error:true}); return; }
   $('#chat-input').value = '';
   chat.running = sendChat(text);
 });

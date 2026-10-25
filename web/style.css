@@ -1477,3 +1477,14 @@ body.library-view #folder-divider { display: none; }
 .paper-primary-actions>button:first-child::after { left: 0; right: auto; }
 
 .paper-primary-actions>button:not([data-icon-only])::after { content: none; }
+
+/* Uploaded chat files remain separate from quoted source passages. */
+.chat-file-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chat-file-drafts { flex:none; margin:4px 12px 0; max-height:140px; overflow:auto; }
+.chat-file-list[hidden] { display:none; }
+.chat-file { display:flex; align-items:center; gap:6px; max-width:100%; border:1px solid var(--line); border-radius:8px; padding:5px 8px; overflow-wrap:anywhere; font-size:12px; }
+.chat-file small { display:block; opacity:.7; }
+.chat-file button { flex:none; padding:2px 5px; }
+.chat-file-error { border-color:#c95050; }
+.chat-form.chat-file-drag { outline:2px dashed var(--accent); outline-offset:-4px; }
+.chat-file img { width:42px; height:42px; flex:none; object-fit:contain; border-radius:4px; }

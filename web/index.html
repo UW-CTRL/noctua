@@ -179,7 +179,10 @@
         <div id="chat-log" class="chat-log"></div>
         <div id="chat-resize" class="chat-resize" role="separator" tabindex="0" aria-label="Resize chat input" aria-orientation="horizontal" aria-controls="chat-input" aria-valuemin="60" aria-valuemax="400" aria-valuenow="60" title="Drag to resize chat input"></div>
         <div id="chat-selections" class="chat-selections" hidden></div>
+        <div id="chat-files" class="chat-file-list chat-file-drafts" aria-live="polite" hidden></div>
         <form id="chat-form" class="chat-form">
+          <input id="chat-file-input" type="file" multiple hidden>
+          <button id="chat-attach" type="button" data-icon="paperclip" data-icon-only aria-label="Attach files" title="Attach files"></button>
           <textarea id="chat-input" rows="2" placeholder="Ask about these papers, or ask me to find, graph or save papers…"></textarea>
           <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
         </form>
@@ -202,6 +205,7 @@
   <script src="/vendor/highlight/latex.min.js"></script>
   <script src="/chat-render.js"></script>
   <script src="/chat-selections.js"></script>
+  <script src="/chat-files.js"></script>
   <script src="/app.js"></script>
   <script src="/lineage.js"></script>
   <script src="/edit-history.js"></script>

@@ -112,6 +112,7 @@ fn tools(mode: &str) -> Value {
     ];
     list.as_array_mut().unwrap().extend(vec![
         tool("list_project_files","List a collection workspace, stable file IDs, enabled bibliographies and skills. Unorganized images and videos are grouped in a Media folder; file IDs and media references remain stable. Existing notes still use read_note/edit_note.",json!({"folder_id":folder_id}),&["folder_id"]),
+        tool("read_chat_file","Inspect a file attached to this conversation. Returns image content for PNG/JPEG/GIF/WebP, one page of embedded PDF text, or UTF-8 text. PDF pages are 1-based; offset is a character offset and next_offset continues long text. Images are limited to 5 MB. Scanned PDFs require external OCR; other binary formats are download-only.",json!({"file_id":{"type":"string"},"page":{"type":"integer","minimum":1},"offset":{"type":"integer","minimum":0}}),&["file_id"]),
         tool("read_project_file","Read a UTF-8 project file such as .bib or Markdown. Returns source and workspace revision for safe edits.",json!({"folder_id":folder_id,"file_id":{"type":"string"}}),&["folder_id","file_id"]),
         tool("edit_project_file","Create/edit/rename/move a project text file or create a folder. In Suggest mode the user reviews the proposal; Direct applies revision-checked edits. Use op=create with name/text/parent, edit with id/text, rename with id/name, move with id/parent, or folder with name/parent. Does not delete files or enable skills.",json!({"folder_id":folder_id,"revision":{"type":"integer"},"op":{"type":"string","enum":["create","edit","rename","move","folder"]},"id":{"type":"string"},"name":{"type":"string"},"parent":{"type":"string"},"text":{"type":"string"}}),&["folder_id","revision","op"]),
         tool("read_skill","Read SKILL.md or a supporting text resource of an enabled imported skill. Returns the package file list. Does not execute anything.",json!({"skill_id":{"type":"string"},"path":{"type":"string"}}),&["skill_id","path"]),
@@ -193,6 +194,8 @@ async fn call(app: &App, params: &Value, mode: &str, chat_id: Option<&str>) -> V
             )
             .await?;
             json!({"content":content})
+        } else if name == "read_chat_file" {
+            json!({"content":crate::chat_files::read(app,&args,chat_id)?})
         } else if name == "view_note_image" {
             json!({"content":view_image(app,&args)?})
         } else if name == "view_note_drawing" {

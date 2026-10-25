@@ -5,6 +5,7 @@
 mod agent;
 mod cache;
 mod chat;
+mod chat_files;
 mod history;
 mod library;
 mod reader;
@@ -603,6 +604,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
         .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
         .route("/notes.js", get(|| async { asset(include_str!("../web/notes.js"), "text/javascript; charset=utf-8") }))
+        .route("/chat-files.js", get(|| async { asset(include_str!("../web/chat-files.js"), "text/javascript; charset=utf-8") }))
         .route("/chat-selections.js", get(|| async { asset(include_str!("../web/chat-selections.js"), "text/javascript; charset=utf-8") }))
         .route("/pdf-objects.js", get(|| async { asset(include_str!("../web/pdf-objects.js"), "text/javascript; charset=utf-8") }))
         .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
@@ -633,6 +635,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/match", get(match_title))
         .route("/api/project", get(project_graph))
         .route("/api/threads", post(explain_threads))
+        .route("/api/chat-files", post(chat_files::upload).layer(DefaultBodyLimit::max(56 << 20)))
+        .route("/api/chat-files/{id}", get(chat_files::download))
         .route("/api/chat", post(chat_endpoint))
         .route("/api/notes", get(notes_list).post(notes_create))
         .route("/api/notes/all", get(notes_all))
