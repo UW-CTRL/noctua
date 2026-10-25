@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="../web/style.css">
 <script src="../web/fonts.js"></script>
 <button id="ui-button">Interface</button>
-<div id="notes-stage" style="display:block"><div class="note-page"><input class="note-title" value="Centered note title"><p id="note-text">Note text</p><span class="katex" id="math">x</span><textarea class="nb-src" id="source">Source code</textarea></div></div>
+<div id="notes-stage" style="display:block"><div class="note-page"><textarea class="note-title" rows="1">Note title</textarea><p id="note-text">Note text</p><div id="note-placeholder" class="nb-view is-empty" data-placeholder="Click to write…"></div><div class="note-meta"><span id="note-folder">Noctua Library</span><span id="note-saved">Saved</span></div><span class="katex" id="math">x</span><textarea class="nb-src" id="source">Source code</textarea></div></div>
 <div class="msg assistant" id="chat-message">Chat text<div class="chat-table-scroll"><table id="chat-table"><tr><td>Table</td></tr></table></div></div><div class="chat-form"><textarea id="chat-input">Draft</textarea></div>
 <pre id="result">Checking fonts…</pre>
 <script>
@@ -11,12 +11,13 @@ try{
  const assert=(v,m)=>{if(!v)throw Error(m)},style=id=>getComputedStyle(document.getElementById(id));
  NoctuaFonts.set('ui','arial');NoctuaFonts.set('note','georgia');
  assert(getComputedStyle(document.body).fontFamily.includes('Arial')&&style('ui-button').fontFamily.includes('Arial'),'UI font did not reach interface controls');
- assert(style('note-text').fontFamily.includes('Georgia'),'note font did not reach body text');
- assert(document.querySelector('.note-title')&&getComputedStyle(document.querySelector('.note-title')).textAlign==='center','note title lost centered alignment');
+ assert(style('note-text').fontFamily.includes('Georgia')&&getComputedStyle(document.querySelector('.note-title')).fontFamily.includes('Georgia'),'note font did not reach title and body');
+ assert(document.querySelector('.note-title')&&getComputedStyle(document.querySelector('.note-title')).textAlign==='center','note title lost centered header alignment');
  assert(style('math').fontFamily.includes('KaTeX_Main'),'math font changed with prose font');
+ assert(getComputedStyle(document.getElementById('note-placeholder'),'::before').fontFamily.includes('Georgia'),'empty note hint does not follow Note font');
  assert(!style('source').fontFamily.includes('Georgia'),'source editor lost monospace font');
  NoctuaFonts.set('ui','helvetica');assert(style('note-text').fontFamily.includes('Georgia'),'UI font changed independent note text');
- NoctuaFonts.set('note','times');assert(style('note-text').fontFamily.includes('Times New Roman'),'note font could not change independently');
+ NoctuaFonts.set('note','times');assert(['note-text','note-folder','note-saved'].every(id=>style(id).fontFamily.includes('Times New Roman')),'note font did not reach body and collection/save metadata');
  NoctuaFonts.set('chat','georgia');NoctuaFonts.setChatSize(18);
  assert(style('chat-message').fontFamily.includes('Georgia')&&style('chat-message').fontSize==='18px','chat font/size not applied to messages');
  assert(style('chat-input').fontFamily.includes('Georgia')&&style('chat-input').fontSize==='18px','chat font/size not applied to composer');
@@ -26,12 +27,16 @@ try{
  assert(getComputedStyle(document.body).fontSize==='16px','system size did not scale app typography');
  assert(Math.abs(parseFloat(style('ui-button').fontSize)-13*16/14)<.1,'UI controls did not scale proportionally');
  assert(style('note-text').fontSize==='18px'&&style('chat-message').fontSize==='18px','system size leaked into document/chat content');
- NoctuaFonts.setSize('note',22);assert(style('note-text').fontSize==='22px','note body size did not update');
+ NoctuaFonts.setSize('note',22);assert(style('note-text').fontSize==='22px'&&['note-folder','note-saved'].every(id=>style(id).fontSize==='14px'),'collection/save metadata does not stay at 14px');
  assert(style('chat-message').fontSize==='18px','note size changed chat text');
- assert(getComputedStyle(document.querySelector('.note-title')).fontSize==='30px','note title size changed');
+ assert(getComputedStyle(document.querySelector('.note-title')).fontSize==='28px','body size changed title size');
+ NoctuaFonts.setSize('noteTitle',30);
+ assert(getComputedStyle(document.querySelector('.note-title')).fontSize==='30px','title size did not update');
+ assert(style('note-text').fontSize==='22px','title size changed note body');
+ assert(getComputedStyle(document.querySelector('.note-title')).fontFamily.includes('Times New Roman'),'title did not follow updated note font');
 
 
- const result='PASS: UI, note and chat fonts apply independently; UI/note/chat sizes are independent and chat tables resize; centered title and math/code fonts are preserved';
+ const result='PASS: UI, note and chat fonts apply independently; UI/note/chat sizes are independent and chat tables resize; compact title and math/code fonts are preserved';
  document.getElementById('result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
 }catch(error){const result='FAIL: '+error.stack;document.getElementById('result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}
 </script>

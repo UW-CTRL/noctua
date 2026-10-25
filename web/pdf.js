@@ -429,10 +429,10 @@ async function renderPDF(anchor=null){
   const token=++PDF.token,key=PDF.key;PDF.selection=null;closePDFLinkPreview();
   if(pdfScrollFrame!==null)cancelAnimationFrame(pdfScrollFrame);pdfScrollFrame=null;
   for(const entry of pdfPageEntries)disposePDFPage(entry);pdfPageEntries=[];
-  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar">${historyButtons('reader')}
+  $('#pdf-stage').innerHTML=`<div class="pdf-toolbar">
     <div class="pdf-document-heading">
       <span class="pdf-title" title="${esc(PDF.paper.title)}">${esc(PDF.paper.title)}</span>
-      <label class="pdf-page-position">Page <input data-page type="number" min="1" max="${PDF.doc.numPages}" value="${PDF.page}" aria-label="Page"> of ${PDF.doc.numPages}</label>
+      <div class="pdf-page-actions"><label class="pdf-page-position">Page <input data-page type="number" min="1" max="${PDF.doc.numPages}" value="${PDF.page}" aria-label="Page"> of ${PDF.doc.numPages}</label>${historyButtons('reader')}</div>
     </div>
     <div class="pdf-reader-tools">
       <div class="pdf-tool-group" role="group" aria-label="Zoom">

@@ -145,3 +145,9 @@
 
 .pdf-reference-preview{display:block;width:100%;height:auto;flex:none;margin-top:8px}
 .pdf-preview-sized .pdf-preview-content:has(.pdf-reference-preview){overflow:auto}
+
+/* Keep history beside page navigation so the title uses the full heading width. */
+.pdf-page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pdf-page-actions .edit-history{flex:none}
+.pdf-page-actions .edit-history button{width:24px;height:24px;min-height:24px}
+.pdf-page-actions .edit-history button::before{width:14px;height:14px}

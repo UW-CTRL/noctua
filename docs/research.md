@@ -2,6 +2,11 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+Paper action icons in the details pane reveal labels below after a short hover.
+Keyboard focus shows the labels immediately. Buttons with visible text, such as
+Read PDF, keep hover emphasis without repeating their text below. Icon labels
+cover opening a new tab/window, building a graph, and editing paper details.
+
 ## Choose a view
 
 The top-level **Library** tab has three visualizations: **Library**, **Graph**, and

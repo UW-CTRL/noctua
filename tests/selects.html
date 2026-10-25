@@ -57,6 +57,17 @@
  const collectionTrigger=collection.querySelector('.web-select-trigger');
  assert(collectionTrigger.getBoundingClientRect().width>200,'paper collection dropdown inherited the icon button width');
  assert(collectionTrigger.textContent==='Noctua Library','paper collection value missing');collection.remove();
+ const hierarchy=document.createElement('select');hierarchy.setAttribute('aria-label','Project files collection');
+ hierarchy.innerHTML='<option data-depth="0" value="root">Noctua Library</option><option data-depth="1" value="archive"> Archive</option><option data-depth="2" value="proposals">  Proposals</option><option data-depth="1" value="core"> Core</option>';
+ document.body.append(hierarchy);await tick();const hierarchyTrigger=hierarchy.parentElement.querySelector('button');hierarchyTrigger.click();
+ const rows=[...document.querySelectorAll('.web-select-list [role="option"]')];
+ assert(!document.querySelector('.web-select-check'),'dropdown still displays selection checkmarks');
+ assert(rows[1].textContent==='Archive'&&rows[2].textContent==='Proposals','collection labels retain whitespace indentation');
+ assert(rows[0].getAttribute('aria-selected')==='true','selection accessibility state missing');
+ const x=rows.map(row=>row.querySelector('span').getBoundingClientRect().left);
+ assert(Math.abs(x[1]-x[0]-14)<1&&Math.abs(x[2]-x[1]-14)<1&&x[1]===x[3],'collection levels do not use consistent indentation');
+ rows[2].click();assert(hierarchy.value==='proposals'&&hierarchyTrigger.textContent==='Proposals','selected collection label retains indentation');
+ hierarchy.parentElement.remove();
  const result='PASS: keyboard navigation, cancellation, typeahead, disabled options, native events, programmatic changes, reset, labels, dynamic controls, hover-open icon controls, option groups, themes, collection field width and popup cleanup';
  document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
 })().catch(error=>{const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);});

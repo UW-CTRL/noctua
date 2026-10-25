@@ -47,6 +47,9 @@ completion messages disappear after a few seconds, and errors stay longer.
 Concurrent tasks share the same card and do not overwrite an error message.
 The header no longer shows a separate request indicator or save-folder selector.
 
+In Settings → Appearance → Fonts, Note font applies to the title, body, collection/save metadata, and empty-block writing hint. Title size (12–36 px, default 28 px) and Body size (12–26 px) are independent, apply
+immediately, and are saved for this browser or desktop profile. Collection and save-status text stay at 14 px.
+
 ## Storage and backups
 
 Desktop and browser modes share a local data folder:

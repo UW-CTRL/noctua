@@ -4,7 +4,6 @@
   const controls = new WeakMap();
   let active = null, sequence = 0;
   const arrow = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
-  const check = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';
   function nameOf(select) {
     if (select.getAttribute('aria-label')) return select.getAttribute('aria-label');
     const labelled = (select.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
@@ -17,6 +16,7 @@
     }
     return select.title || ({'lib-sort':'Sort library papers',sort:'Sort graph papers',limit:'Papers to load','add-target':'Collection'}[select.id]) || 'Collection';
   }
+  const optionLabel = option => option?.dataset.depth !== undefined ? option.label.trim() : option?.label;
   const disabled = option => option.disabled || option.parentElement?.disabled || option.hidden || option.parentElement?.hidden;
   function enabled(state) {
     return Array.from(state.select.options).map((option, index) => disabled(option) ? -1 : index).filter(index => index >= 0);
@@ -68,6 +68,7 @@
   }
   function renderOptions(state) {
     state.menu.replaceChildren();
+    state.menu.toggleAttribute('data-collection', Array.from(state.select.options).some(option => option.dataset.depth !== undefined));
     let group = null;
     Array.from(state.select.options).forEach((option, index) => {
       if (option.hidden || option.parentElement?.hidden) return;
@@ -80,12 +81,9 @@
       row.id = state.menu.id + '-' + index; row.className = 'web-select-option'; row.dataset.index = index;
       row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(index === state.select.selectedIndex));
       row.setAttribute('aria-disabled', String(!!disabled(option)));
-      const text = document.createElement('span'); text.textContent = option.label;
+      const text = document.createElement('span'); text.textContent = optionLabel(option);
+      row.style.setProperty('--option-depth', String(Math.max(0, Number(option.dataset.depth) || 0)));
       row.append(text);
-      if (state.select.id !== 'limit' && state.select.dataset.selectIcon !== 'list-filter') {
-        const mark = document.createElement('span'); mark.className = 'web-select-check'; mark.innerHTML = check;
-        row.append(mark);
-      }
       row.addEventListener('pointermove', event => { if (event.pointerType !== 'touch' && !disabled(option)) highlight(state, index, false); });
       row.addEventListener('click', () => choose(state, index));
       state.menu.append(row);
@@ -94,7 +92,7 @@
   }
   function sync(state) {
     const {select, trigger, text, wrapper} = state;
-    const value = select.options[select.selectedIndex]?.label || '—';
+    const value = optionLabel(select.options[select.selectedIndex]) || '—';
     if (text.textContent !== value) text.textContent = value;
     trigger.disabled = select.matches(':disabled');
     if (select.hasAttribute('data-open-on-hover')) trigger.removeAttribute('title');
@@ -146,7 +144,7 @@
       const search = [...state.buffer].every(letter => letter === char) ? char : state.buffer;
       const options = enabled(state), start = search.length === 1 ? options.indexOf(state.index) + 1 : 0;
       const ordered = options.slice(start).concat(options.slice(0,start));
-      const found = ordered.find(index => state.select.options[index].label.toLocaleLowerCase().startsWith(search));
+      const found = ordered.find(index => optionLabel(state.select.options[index]).toLocaleLowerCase().startsWith(search));
       if (found !== undefined) highlight(state, found);
     }
   }

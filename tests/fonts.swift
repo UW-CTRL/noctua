@@ -46,10 +46,40 @@ assert(NoctuaFonts.getChatSize()===20,'UI/note sizing changed chat size');
 assert(values.get('noctua.font.uiSize')==='16'&&values.get('noctua.font.noteSize')==='22','UI/note sizes not saved');
 assert(NoctuaFonts.sizeChoices('ui').includes(16)&&NoctuaFonts.sizeChoices('note').includes(22),'size choices missing');
 values.set('noctua.font.noteSize','24');listeners.storage({key:'noctua.font.noteSize'});assert(NoctuaFonts.getSize('note')===24,'note size did not sync across windows');
+assert(NoctuaFonts.getSize('noteTitle')===28,'title default changed');
+NoctuaFonts.setSize('noteTitle',28);
+assert(properties.get('--note-title-font-size')==='28px'&&NoctuaFonts.getSize('note')===24,'title and body sizes are not independent');
+assert(values.get('noctua.font.noteTitleSize')==='28','title size not saved');
+NoctuaFonts.setSize('noteTitle',100);assert(NoctuaFonts.getSize('noteTitle')===36,'title maximum missing');
+NoctuaFonts.setSize('noteTitle',1);assert(NoctuaFonts.getSize('noteTitle')===12,'title minimum missing');
+NoctuaFonts.setSize('noteTitle','invalid');assert(NoctuaFonts.getSize('noteTitle')===28,'invalid title size not recovered');
+values.set('noctua.font.noteTitleSize','30');listeners.storage({key:'noctua.font.noteTitleSize'});
+assert(NoctuaFonts.getSize('noteTitle')===30&&properties.get('--note-title-font-size')==='30px','title size did not sync across windows');
+
 
 
 """#
 context.evaluateScript(mocks + source + checks)
 // Reloading the module must restore the saved choice before painting.
-context.evaluateScript("NoctuaFonts.set('ui','helvetica');NoctuaFonts.setChatSize(17);" + source + "assert(NoctuaFonts.get('ui').id==='helvetica'&&NoctuaFonts.getChatSize()===17&&NoctuaFonts.getSize('ui')===16&&NoctuaFonts.getSize('note')===24,'font preference not restored on reload');")
+context.evaluateScript("NoctuaFonts.set('ui','helvetica');NoctuaFonts.setChatSize(17);" + source + "assert(NoctuaFonts.get('ui').id==='helvetica'&&NoctuaFonts.getChatSize()===17&&NoctuaFonts.getSize('ui')===16&&NoctuaFonts.getSize('note')===24&&NoctuaFonts.getSize('noteTitle')===30,'font preference not restored on reload');")
 print("PASS: independent font choices, defaults, persistence, reload, custom names, UI/note/chat text sizing, bounds, escaping and cross-window updates")
+
+// Exercise the real Appearance markup and size-change handler.
+let setup = try String(contentsOfFile: "web/setup.js", encoding: .utf8)
+let settingsStart = setup.range(of: "function fontSizeSetting")!.lowerBound
+let settingsEnd = setup.range(of: "function syncFontSetting")!.lowerBound
+let changeStart = setup.range(of: "card.addEventListener('change', async (e) => {")!.upperBound
+let changeEnd = setup.range(of: "\n  });", range: changeStart..<setup.endIndex)!.lowerBound
+context.evaluateScript("const esc=s=>String(s); function msg(){};" + String(setup[settingsStart..<settingsEnd]) + "\nasync function changeFontSetting(e){" + String(setup[changeStart..<changeEnd]) + "\n}")
+context.evaluateScript(#"""
+const noteSettings=fontSetting('note','Note font');
+assert(noteSettings.includes('Title size')&&noteSettings.includes('Body size'),'separate note size labels missing');
+assert(noteSettings.includes('setup-noteTitle-font-size')&&noteSettings.includes('setup-note-font-size'),'separate selectors missing');
+(async()=>{
+ await changeFontSetting({target:{id:'setup-noteTitle-font-size',value:'26',closest:()=>({})}});
+ assert(NoctuaFonts.getSize('noteTitle')===26&&NoctuaFonts.getSize('note')===24,'title setting did not route independently');
+ await changeFontSetting({target:{id:'setup-note-font-size',value:'20',closest:()=>({})}});
+ assert(NoctuaFonts.getSize('note')===20&&NoctuaFonts.getSize('noteTitle')===26,'body setting did not route independently');
+})().catch(e=>{throw e});
+"""#)
+print("PASS: separate title/body size selectors and Appearance change routing")

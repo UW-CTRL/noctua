@@ -13,7 +13,7 @@ function recordNoteChange(){
  while(NoteUndo.frames.length>200||(NoteUndo.frames.length>1&&JSON.stringify(NoteUndo.frames).length>8*1024*1024))NoteUndo.frames.shift();
  NoteUndo.last=doc;NoteUndo.group=group;NoteUndo.time=now;updateHistoryButtons();
 }
-function historyButtons(kind){const compact=kind==='note'?'':' data-icon-only';return `<span class="edit-history" data-history="${kind}"><button data-undo data-icon="undo-2"${compact} title="Undo (⌘/Ctrl+Z)" aria-label="Undo">Undo</button><button data-redo data-icon="redo-2"${compact} title="Redo (⌘/Ctrl+Shift+Z)" aria-label="Redo">Redo</button></span>`;}
+function historyButtons(kind){return `<span class="edit-history" data-history="${kind}"><button data-undo title="Undo (⌘/Ctrl+Z)" aria-label="Undo" data-icon="undo-2" data-icon-only></button><button data-redo title="Redo (⌘/Ctrl+Shift+Z)" aria-label="Redo" data-icon="redo-2" data-icon-only></button></span>`;}
 function updateHistoryButtons(){
  document.querySelectorAll('[data-history="note"]').forEach(el=>{for(const [action,pending]of [['undo',NoteUndo.frames.length],['redo',0]]){const b=el.querySelector(`[data-${action}]`);b.disabled=NoteUndo.busy||(action==='redo'&&NoteUndo.frames.length>0)||!(pending||NoteUndo.status[action]);b.title=`${action==='undo'?'Undo':'Redo'}${NoteUndo.status[action]?': '+NoteUndo.status[action]:''}`;}});
 }
