@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><link rel="stylesheet" href="../web/pdf.css"></head><body>
+<main style="width:1100px;height:650px;flex:none"><aside id="left"><input value="Draft"></aside><section id="stage"></section><section id="notes-stage"></section><section id="pdf-stage"></section><div id="gutter-left" class="gutter"></div><div id="gutter-right" class="gutter"></div><aside id="right"><textarea>Chat draft</textarea></aside></main>
+<script>
+const $=s=>document.querySelector(s),store={data:{'noctua.pane.left.collapsed':'true','noctua.pane.left':'280','noctua.pane.right':'300'},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
+const assert=(v,m)=>{if(!v)throw Error(m)};
+</script><script src="../web/panes.js"></script><script>
+(async()=>{
+ assert(paneCollapsed('left')&&$('#left').inert,'saved collapsed state restored');
+ assert($('#gutter-left button').getAttribute('aria-expanded')==='false','accessible collapsed state');
+ $('#gutter-left button').click();assert(!paneCollapsed('left')&&$('#left').getBoundingClientRect().width===280,'reopen restores saved width');
+ for(const mode of ['', 'notes-mode','pdf-mode']){
+  document.body.className=mode;setPaneCollapsed('left',true);setPaneCollapsed('right',true);
+  assert($('#left').getBoundingClientRect().width===0&&$('#right').getBoundingClientRect().width===0,'both panes fully close in '+mode);
+  assert($('#gutter-left').getBoundingClientRect().width===16&&$('#gutter-right').getBoundingClientRect().width===16,'reopen rails remain visible');
+  const center=$(mode==='pdf-mode'?'#pdf-stage':mode==='notes-mode'?'#notes-stage':'#stage');assert(center.getBoundingClientRect().width>1000,'center receives released space');
+  $('#gutter-left button').click();$('#gutter-right button').click();assert(!paneCollapsed('left')&&!paneCollapsed('right'),'both arrows reopen');
+ }
+ assert($('#left input').value==='Draft'&&$('#right textarea').value==='Chat draft','hidden panels preserve drafts');
+ $('#left input').focus();setPaneCollapsed('left',true);assert(document.activeElement===$('#gutter-left button'),'focus leaves hidden pane');
+ setPaneWidth('right',420);assert(store.get('noctua.pane.right')==='420','width persists separately from collapsed state');
+ setPaneCollapsed('right',true);setPaneCollapsed('right',false);assert($('#right').getBoundingClientRect().width===420,'toggle restores resized width');
+ assert($('#gutter-right button').dataset.icon==='chevron-right','Lucide direction reflects expanded state');
+ window.webkit.messageHandlers.result.postMessage('PASS: collapsible rails in graph/notes/PDF modes, saved state, retained widths/drafts, keyboard focus and Lucide icons');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

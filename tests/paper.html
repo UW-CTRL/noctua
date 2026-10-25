@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><link rel="stylesheet" href="../web/pdf.css"></head><body>
+<div id="notes-stage" style="height:650px;width:1050px"></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
+const W={target:'L1',file:'main',dirty:false,manifest:{revision:1,paper:{main_file:'main'},entries:[{id:'main',kind:'file',name:'main.tex',parent:''},{id:'bib',kind:'file',name:'references.bib',parent:''}]}};
+let requests=[],status={state:'idle',current_revision:1,current_fingerprint:'first',stale:true},saveFails=false,refreshed=0,destroyed=0;
+async function api(path,body){requests.push({path,body});if(path.endsWith('/source'))return {file_id:'main',line:101,blob:W.manifest.entries[0].blob};if(path==='/api/paper-compilers')return {compilers:[{id:'tectonic',available:true,version:'0.17.0'},{id:'pdflatex',available:true,version:'TeX Live 2026'}]};if(path.endsWith('/cancel')){status.state='cancelled';return status;}if(body){if(W.dirty)throw Error('Compile preceded save');status={state:'success',current_revision:W.manifest.revision,current_fingerprint:'new',fingerprint:'new',stale:false,last_success:{fingerprint:'new',main_file:'main',elapsed_ms:250}};}return JSON.parse(JSON.stringify(status));}
+async function saveWorkspaceFile(){if(saveFails)throw Error('Save conflict');W.dirty=false;}
+async function refreshWorkspaceView(){refreshed++;}
+function toast(){} function workspaceDialog(title,html){const d=document.createElement('dialog');d.innerHTML=html;document.body.append(d);d.addEventListener('close',()=>d.remove());d.showModal();return d;}
+async function workspaceChange(body){W.manifest.paper={...W.manifest.paper,...body.paper};return W.manifest;}
+async function openWorkspaceFile(id){W.file=id;mount();$('#workspace-editor textarea').value=Array.from({length:200},(_,i)=>'Source line '+(i+1)).join('\n');}
+const doc={numPages:2,async getPage(number){return {pageNumber:number,userUnit:1,view:[0,0,400,500],getViewport:({scale})=>({width:400*scale,height:500*scale,scale,convertToPdfPoint:(x,y)=>[x/scale,500-y/scale]}),render:()=>({promise:Promise.resolve(),cancel(){}}),getTextContent:async()=>({items:[]})};},async destroy(){destroyed++;}};
+async function pdfjs(){return {getDocument:()=>({promise:Promise.resolve(doc)}),TextLayer:class{constructor(o){this.container=o.container;}async render(){this.container.textContent='Selectable PDF text';}}};}
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function assert(value,message){if(!value)throw Error(message);}
+function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-editor"><textarea class="workspace-source"></textarea></div>';paperMount(W.manifest.entries.find(e=>e.id===W.file));}
+</script><script src="../web/paper.js"></script><script>
+(async()=>{
+ store.set('noctua.paper.auto','false');mount();await delay(100);
+ assert($('#paper-split')&&$('#paper-pages'),'split editor created');assert(!requests.some(r=>r.body),'manual mode does not compile');
+ W.dirty=true;await paperCompile();await delay(100);
+ assert(requests.some(r=>r.body)&&!W.dirty,'compile saves source first');assert($('#paper-pages .paper-page'),'PDF pages mounted');assert(!$('[data-paper-download]').hidden,'successful PDF downloadable');
+ assert($('[data-paper-status]').textContent.includes('up to date'),'success state visible');
+ const initial=Paper.scale;$('[data-paper-plus]').click();await delay(100);assert(Paper.scale>initial,'zoom changes rendering scale');
+ const divider=$('.paper-divider');divider.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));assert(parseFloat($('#paper-split').style.getPropertyValue('--paper-source-width'))===52,'divider keyboard resize');
+ const source=$('.paper-source textarea');source.value='Unsaved source';const previewDoc=Paper.doc;
+ $('[data-paper-pane="source"]').click();await delay(150);assert($('.paper-source').hidden&&!$('#paper-pages').hidden,'source fully collapses');assert(source.value==='Unsaved source'&&Paper.doc===previewDoc,'collapse retains editor and PDF');
+ $('[data-paper-pane="preview"]').click();assert(!$('.paper-source').hidden&&$('#paper-pages').hidden,'hiding preview restores source instead of hiding both');
+ assert($('#paper-split').style.getPropertyValue('--paper-source-width')==='52%','collapse preserves divider ratio');
+ $('[data-paper-pane="preview"]').click();await delay(150);assert(!$('.paper-source').hidden&&!$('#paper-pages').hidden,'preview reopens');
+ $('[data-paper-pane="source"]').click();mount();await delay(100);assert($('.paper-source').hidden,'collapsed state survives remount');$('[data-paper-pane="source"]').click();await delay(100);
+ const calls=requests.filter(r=>r.body).length;W.dirty=true;saveFails=true;await paperCompile();assert(requests.filter(r=>r.body).length===calls,'save failure prevents compile');assert($('[data-paper-status]').textContent==='Save conflict','save failure explained');saveFails=false;W.dirty=false;
+ status.state='error';status.stale=true;status.message='Broken source';status.log='main.tex:7: undefined command';await paperPoll(Paper.generation);
+ assert(Paper.doc&&$('[data-paper-status]').textContent.includes('last successful'),'failed build preserves preview');assert($('.paper-logs').open&&$('[data-paper-errors] button'),'errors and source navigation shown');
+ W.file='bib';mount();await delay(100);assert($('#paper-split'),'supporting bibliography keeps preview');
+ status.state='success';status.stale=false;store.set('noctua.paper.auto','true');
+ const before=requests.filter(r=>r.body).length;W.dirty=true;paperEdited();paperEdited();paperEdited();await delay(1200);
+ assert(requests.filter(r=>r.body).length===before+1,'rapid edits debounce to one saved build');
+ status.state='building';await paperPoll(Paper.generation);assert(!$('[data-paper-stop]').disabled,'running build can stop');$('[data-paper-stop]').click();await delay(100);assert(requests.some(r=>r.path.endsWith('/cancel')),'Stop requests cancellation');
+ const originalEngine=pdfjs,pending={};let oldDisposed=false;const newest={...doc};const older={...doc,destroy:async()=>{oldDisposed=true;}};
+ pdfjs=async()=>({...await originalEngine(),getDocument:({url})=>({promise:new Promise(resolve=>pending[url]=resolve)})});
+ const olderLoad=paperLoadPDF('old',Paper.generation);await delay(0);const newerLoad=paperLoadPDF('new',Paper.generation);await delay(0);pending.new(newest);await newerLoad;pending.old(older);await olderLoad;assert(Paper.doc===newest&&oldDisposed,'late old PDF cannot replace newer preview');pdfjs=originalEngine;
+ await showPaperSettings();await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');
+ settings.querySelector('[data-latex-compiler]').value='pdflatex';settings.querySelector('[data-latex-compiler]').dispatchEvent(new Event('change'));
+ assert(settings.querySelector('[data-compiler-info]').textContent.includes('TeX Live'),'bundled compiler version displayed');
+ settings.querySelector('[data-latex-auto]').checked=false;settings.querySelector('form').dispatchEvent(new Event('submit',{cancelable:true}));await delay(50);
+ assert(W.manifest.paper.compiler==='pdflatex'&&W.manifest.paper.main_file==='main'&&!paperAuto(),'project compiler and auto settings saved without losing main');
+ W.manifest.paper={main_file:'main',compiler:'tectonic',auto_compile:true};assert(paperCompiler()==='tectonic'&&paperAuto(),'next project uses its own settings');
+ const generation=Paper.generation;paperUnmount();await paperPoll(generation);assert(!Paper.target&&!Paper.doc,'leaving editor disposes PDF and polling');
+ window.webkit.messageHandlers.result.postMessage('PASS: paper split view, manual/automatic builds, save conflicts, last-good PDF, diagnostics, zoom, resizing, supporting files, cancellation, and cleanup');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+' '+e.stack));
+</script></body></html>

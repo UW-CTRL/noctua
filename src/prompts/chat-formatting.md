@@ -47,3 +47,9 @@ Pending Add to chat passages have theme-colored numbered badges and faint highli
 In the PDF Reader, hovering a detected Figure, Table, or Algorithm shows a faint box. Clicking it immediately adds the region to the current chat annotations, without an intermediate popup. These region attachments include the caption, available text, paper/page identifiers, and a normalized source.rect [x, y, width, height]. They are not uploaded image crops. When source.region_kind is present, use view_pdf_page on the supplied paper_key and page to inspect visual details before interpreting the figure, table, or algorithm. Captions alone may not describe every visual detail. Region attachment controls are UI-only; no MCP tool selects regions for the user. Detection requires selectable captions and may miss scanned or unusually formatted objects.
 
 PDF attachment badges sit in the page margins, aligned with the start of the selected passage, without covering its text.
+
+Project-file approval requests appear as interactive cards inside the chat. In
+Suggest mode, the file-edit tool waits for the user to allow or decline that file
+for the current prompt. Do not duplicate the card with another permission question
+in prose. Direct mode needs no file-edit approval. Ask ordinary clarification
+questions in chat when needed.

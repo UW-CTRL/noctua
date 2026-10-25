@@ -56,3 +56,20 @@ highlights, drawings, comments, replies, deletion, and accepted suggestions.
 Automatic highlights form a grouped edit. History is separate for each paper
 and lasts for the backend session. Revision checks prevent overwriting changes
 from another window; resolve save conflicts before undoing.
+
+## Find text and user comments
+
+Press **Cmd/Ctrl+F** to search the whole PDF and user-written comments, including
+user replies and unsaved comment drafts. Search is case-insensitive and matches
+phrases across PDF text-layer line breaks. Enter/Shift+Enter or the arrow buttons
+move between results; the result label identifies a PDF page or user comment.
+
+Quoted passages copied into annotation cards and assistant-authored comments are
+excluded. Editing a comment marks that comment as user-authored even when its
+highlight was created by an agent. Older comments without this metadata use their
+annotation's author. Search highlights are temporary and do not change saved
+annotations. Escape closes Find and removes its highlights. Image-only PDFs need
+an existing text layer; Find does not perform OCR.
+
+The thin left/right arrow rails hide or reopen navigation/annotations and chat/details.
+Both side panes can be fully closed without closing the PDF or losing a draft.

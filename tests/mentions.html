@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chat mentions</title></head><body>
+<textarea id="chat-input"></textarea><div id="mention-picker" class="hidden"></div><div id="notes-stage"></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chat={},N={target:'C1',doc:null},W={target:'C1',manifest:{revision:1},file:null,dirty:false};
+const collections={targets:[{id:'L1',name:'Library'},{id:'C1',name:'Research collection'}]};let target='C1',pending=null;
+const chatProjectTarget=()=>target,caretXY=()=>({x:10,y:10}),noteText=d=>d.blocks.map(b=>b.src).join('\n');
+const entries=[{id:'folder',kind:'folder',name:'Sources',parent:''},{id:'tex',kind:'file',name:'main.tex',parent:'folder',size:15},{id:'bib',kind:'file',name:'refs.bib',parent:'',size:20},{id:'image',kind:'file',name:'figure.png',parent:'',size:300},{id:'note-entry',kind:'note',note:'note',name:'My note',parent:'folder'},{id:'gone',kind:'file',name:'trashed.tex',deleted:true}];
+const papers=[{key:'p1',title:'My note',creators:['Ada'],year:2026,has_pdf:true}];
+async function api(path){
+ if(path==='/api/notes/all')return [{id:'note',target:'C1',title:'My note',updated:1}];
+ if(path.startsWith('/api/library/items'))return papers;
+ if(path==='/api/workspaces/C1'){if(pending)return new Promise(r=>pending.resolve=r);return {entries,revision:1};}
+ if(path==='/api/workspaces/C2')return {entries:[{id:'new',name:'other.tex',kind:'file'}],revision:1};
+ if(path.includes('/files/')){const e=entries.find(e=>e.id===path.split('/').pop());if(!e||e.deleted)throw Error('Missing');return {entry:e,text:e.id==='image'?null:'Saved '+e.name,revision:1};}
+ if(path.startsWith('/api/notes/'))return {id:'note',title:'My note',blocks:[{src:'Note contents'}]};
+ throw Error('Unexpected API '+path);
+}
+const assert=(v,m)=>{if(!v)throw Error(m)};
+</script><script src="../web/mentions.js"></script><script>
+(async()=>{
+ await loadRefs();await loadProjectRefs('C1');
+ assert(searchRefs('main.tex')[0].kind==='file','TeX files searchable');
+ assert(searchRefs('refs.bib')[0].kind==='file','Bib files searchable');
+ assert(searchRefs('Sources').some(r=>r.kind==='folder'),'folders searchable');
+ assert(searchRefs('figure.png')[0].kind==='file','binary files searchable');
+ assert(!searchRefs('trashed').length,'trash excluded');
+ assert(searchRefs('Research').some(r=>r.kind==='collection'),'collections searchable');
+ assert(searchRefs('My note',{kinds:['note']}).length===1,'note link results stay note-only and deduplicated');
+ const same=searchRefs('My note'),a=same.find(r=>r.kind==='note'),b=same.find(r=>r.kind==='paper');
+ const at=mentionToken(a);chat.mentions.set(at,a);const bt=mentionToken(b);assert(at!==bt,'equal paper/note titles never overwrite attachment identity');chat.mentions.clear();
+ const ta=$('#chat-input');ta.value='@main';ta.focus();ta.setSelectionRange(5,5);await updateChatMentions();assert(mention.open&&$('#mention-picker').textContent.includes('TEX'),'picker displays file type');mention.onPick(mention.results[0]);assert(ta.value.includes('@[Sources/main.tex]'),'insertion includes path');
+ W.file='tex';W.dirty=true;W.text='Unsaved source';let attached=await chatAttachments(ta.value);assert(attached.includes('file_id tex')&&attached.includes('Unsaved source')&&attached.includes('Unsaved editor draft'),'agent receives current text and stable ID');W.dirty=false;
+ const folder=searchRefs('Sources').find(r=>r.kind==='folder');chat.mentions.set('@[folder]',folder);attached=await chatAttachments('@[folder]');assert(attached.includes('project_folder_id folder')&&attached.includes('file_id tex')&&attached.includes('note_id note')&&!attached.includes('refs.bib'),'folder listing includes only descendants');
+ chat.mentions.set('@[image]',searchRefs('figure.png')[0]);attached=await chatAttachments('@[image]');assert(attached.includes('Contents are not attached')&&attached.includes('view_note_image'),'binary media references are explicit');
+ chat.mentions.set('@[collection]',{kind:'collection',ref:collections.targets[1]});attached=await chatAttachments('@[collection]');assert(attached.includes('refs.bib')&&attached.includes('paper_key p1'),'collection includes file and paper listings');
+ const file=searchRefs('main.tex')[0];chat.mentions.set('@[gone]',{...file,ref:{...file.ref,id:'missing'}});attached=await chatAttachments('@[gone]');assert(attached.includes('could not be read'),'removed entries yield useful context errors');
+ REF.projectAt=0;pending={};const old=loadProjectRefs('C1');target='C2';await loadProjectRefs('C2');pending.resolve({entries,revision:1});pending=null;await old;assert(REF.project==='C2'&&REF.entries[0].id==='new','late project load cannot replace current candidates');
+ window.webkit.messageHandlers.result.postMessage('PASS: file/note/paper/folder mentions, type labels, unique tokens, draft excerpts, folder scope, media references, collection context, missing files and project-switch races');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>
