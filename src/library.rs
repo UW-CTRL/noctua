@@ -97,13 +97,38 @@ impl Library {
         p["has_pdf"]=json!(h.is_some());p["pdf_hash"]=json!(h);p["revision"]=json!(r);
         Ok(p)
     }
-    pub fn save(&self, source: &Value, target: &str) -> Result<String> {
+    /// Direct memberships, independent of the UI's descendant setting.
+    pub fn memberships(&self, key: &str) -> Result<Vec<String>> {
+        self.paper(key)?;
+        let c = self.conn.lock().unwrap();
+        let mut stmt = c.prepare("SELECT collection FROM memberships WHERE paper=?1 ORDER BY collection")?;
+        let rows = stmt.query_map([key], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+    /// One paper's membership changes are atomic; a batch can report per-paper failures.
+    pub fn update_memberships(&self, key: &str, add: &[String], remove: &[String]) -> Result<Value> {
+        self.paper(key)?;
+        for target in add.iter().chain(remove) { self.folder_id(target)?; }
+        if remove.iter().any(|t| t == "L1") { return Err(bad("The Library always contains every paper")); }
+        if add.iter().any(|t| remove.contains(t)) { return Err(bad("Cannot add and remove the same collection")); }
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction()?;
+        let mut added = Vec::new(); let mut removed = Vec::new();
+        for target in add { if tx.execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)", params![target,key])? > 0 { added.push(target); } }
+        for target in remove { if tx.execute("DELETE FROM memberships WHERE collection=?1 AND paper=?2", params![target,key])? > 0 { removed.push(target); } }
+        let direct:Vec<String>={let mut stmt=tx.prepare("SELECT collection FROM memberships WHERE paper=?1 ORDER BY collection")?;let rows=stmt.query_map([key],|r|r.get(0))?.collect::<rusqlite::Result<_>>()?;rows};
+        tx.commit()?;
+        Ok(json!({"paper_key":key,"status":"applied","added":added,"removed":removed,"direct_collections":direct}))
+    }
+    pub fn save(&self, source: &Value, target: &str) -> Result<String> { Ok(self.save_report(source,target)?.0) }
+    pub fn save_report(&self, source: &Value, target: &str) -> Result<(String,bool,bool)> {
         self.folder_id(target)?;
         let mut p=normalize_paper(source);
         if text(&p,"title").trim().is_empty() { return Err(bad("A paper needs a title")); }
         let (s2,doi,arxiv,title)=(text(&p,"s2").to_string(),text(&p,"DOI").trim().to_lowercase(),text(&p,"arxiv").to_lowercase(),norm(text(&p,"title")));
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
         let existing:Option<(String,String)>=tx.query_row("SELECT key,data FROM papers WHERE (?1<>'' AND s2=?1) OR (?2<>'' AND doi=?2) OR (?3<>'' AND arxiv=?3) OR (?4<>'' AND length(?4)>12 AND title_norm=?4) OR (key=?5 AND title_norm=?6) LIMIT 1",params![s2,doi,arxiv,if source["_new_pdf"]==true{""}else{&title},text(source,"key"),title],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let created=existing.is_none();
         let key=if let Some((key,body))=existing {
             let mut old:Value=serde_json::from_str(&body)?;
             let incoming=p.as_object().unwrap();
@@ -122,7 +147,7 @@ impl Library {
             tx.execute("INSERT INTO papers(key,s2,doi,arxiv,title_norm,data) VALUES(?1,?2,?3,?4,?5,?6)",params![key,s2,doi,arxiv,title,p.to_string()])?;
             key
         };
-        tx.execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?;tx.commit()?;Ok(key)
+        let linked=tx.execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?>0;tx.commit()?;Ok((key,created,linked))
     }
     pub fn edit(&self, key: &str, data: &Value) -> Result<Value> {
         let mut p=self.paper(key)?;

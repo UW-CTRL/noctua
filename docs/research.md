@@ -109,3 +109,15 @@ explore connections among its papers. **Papers** contains just the graph paper
 list with sorting and filtering. Colors distinguish citation-connected clusters;
 shared external references reveal connections between clusters. Project graphs
 are saved and updated as the collection changes.
+
+
+## Assistant organization
+
+Chat can search saved papers without remote lookup, read local paper details,
+create/rename collections, and add/remove existing papers in several projects
+at once. Each paper's membership update is atomic; a batch reports individual
+failures. Removing a membership leaves the paper and PDF in the shared Library.
+Results distinguish direct memberships from papers included through subfolders.
+These requested Library actions apply immediately in Suggest and Direct, and
+are unavailable in Plan. Citation/recommendation tools can read relationships
+without moving the current graph. See [tool results](assistant.md#tool-results-and-limits).

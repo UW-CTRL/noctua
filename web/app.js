@@ -1049,13 +1049,11 @@ const TOOL_LABEL = {
   get_project_graph: 'Reading project graph',
   show_project_graph: 'Opening project graph',
   select_paper: 'Selecting paper',
-  list_zotero_folders: 'Reading Noctua folders',
   list_folder_items: 'Reading Noctua folder',
   list_notes: 'Listing notes',
   read_note: 'Reading note',
   view_note_image: 'Looking at image',
   edit_note: 'Editing note',
-  add_to_zotero: 'Adding to Noctua',
   save_to_library: 'Saving to library',
   list_library_collections: 'Reading collections',
   download_pdf: 'Downloading PDF',
@@ -1064,6 +1062,22 @@ const TOOL_LABEL = {
   view_pdf_page: 'Viewing PDF page',
   annotate_pdf: 'Annotating PDF',
   comment_on_pdf_annotation: 'Commenting on PDF',
+  search_library: 'Searching saved papers',
+  update_paper_memberships: 'Organizing project papers',
+  edit_collection: 'Updating collection',
+  create_note: 'Creating note',
+  get_edit_proposal: 'Checking proposed changes',
+  list_project_files: 'Listing project files',
+  read_project_file: 'Reading project file',
+  edit_project_file: 'Editing project file',
+  read_skill: 'Reading skill',
+  request_skill_run: 'Requesting script approval',
+  get_skill_run: 'Checking script result',
+  read_pdf_outline: 'Reading saved outline',
+  get_paper_relations: 'Reading related papers',
+  view_note_drawing: 'Viewing handwriting',
+  show_pdf: 'Opening PDF',
+  list_pdf_annotations: 'Reading PDF annotations',
 };
 
 const paperLine = (p) =>
@@ -1352,9 +1366,10 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
 function runChatAction(a) {
   if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
-  if (a.action === 'workspace_proposal') { showWorkspaceProposal(a); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
-  if (a.action === 'note_edit') return noteEditFromChat(a);
+  if (a.action === 'note_changed') { refreshAgentNote(a).catch(e=>toast(e.message,{error:true})); return; }
+  if (a.action === 'agent_edit_proposal') { showAgentEdit(a.proposal_id).catch(e=>toast(e.message,{error:true})); return; }
+  if (a.action === 'note_drawing') { prepareNoteDrawing(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action !== 'library' && (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode'))) setMode('graph');
   if (a.action === 'graph') loadGraph(a.id);
   else if (a.action === 'project') openProject(a.target);
@@ -1380,6 +1395,7 @@ function setChatBusy(busy) {
 }
 
 async function sendChat(text) {
+  try { stopEdit(); await saveWorkspaceFile(); await flushNoteEdits(); } catch (e) { toast(e.message, {error:true}); return; }
   const provider = chat.provider;
   const selectedPassages=window.NoctuaChatSelections?.snapshot()||{items:[]};
   const ctrl = new AbortController();

@@ -42,7 +42,7 @@ The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/` | Rust server, library, notes, assistant integration, and MCP tools. |
+| `src/` | Rust server and domain models; `mcp.rs` dispatches tools, `mcp_data.rs` defines bounded agent views, and `mcp_edits.rs` persists versioned edits and review proposals. |
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Tauri desktop shell, native controls, icons, and updater. |

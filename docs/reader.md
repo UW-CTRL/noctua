@@ -56,3 +56,18 @@ highlights, drawings, comments, replies, deletion, and accepted suggestions.
 Automatic highlights form a grouped edit. History is separate for each paper
 and lasts for the backend session. Revision checks prevent overwriting changes
 from another window; resolve save conflicts before undoing.
+
+
+## Assistant reads
+
+Chat reads PDF text in bounded page/character ranges and follows continuation
+positions for long pages. Search results are paged matching-line excerpts with
+page/line locations and explicit truncation. Saved AI outlines can be read
+without generating new analysis. Embedded PDF bookmarks and bulk outline or
+auto-highlight generation remain Reader controls.
+
+Annotation tool results retain quotes, comments, categories, authors, approval
+status and revisions. Geometry is omitted by default; callers can explicitly
+request it or filter by page/kind/status. Reply text is optional and paged.
+Uncached PDF text/page images require an active Noctua chat renderer; cached
+reads work independently. Missing rendering support reports `UI_REQUIRED`.

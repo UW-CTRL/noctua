@@ -131,11 +131,27 @@ command; playback is not standard LaTeX export behavior.
 
 ## Assistant edits
 
-The assistant can read notes, inspect attached images, and propose or apply
-text-block edits. Drawing transcription uses the pad's TeX control; chat image
-tools do not read drawing strokes or videos. Whole-note management, preamble
-changes, media insertion, and layout controls remain UI actions.
+The assistant can search active notes across collections, create block notes, read
+bounded source ranges, and edit blocks, titles, preambles, and block order.
+Project trash is excluded from normal lists and @-mentions. Explicit MCP reads
+of a trashed note report its state; editing requires restoring it first.
 
-Use **Suggest** to review edits, **Plan** for read-only discussion, or **Direct**
-for immediate changes with note-edit undo. Attach a note with @ in chat or select
-rendered text and choose **Add to chat**. See [Research assistant](assistant.md).
+**Direct** edits save on the server before reporting completion. Each change uses
+the saved note's `updated` version, rejects missing blocks and conflicts without
+partial edits, and can be undone. Before sending a chat message the app saves
+pending edits. If you type while the assistant works, conflicting local edits
+are preserved for you to resolve rather than silently overwritten.
+
+**Suggest** stores proposals for review in an in-app dialog. Use **Assistant
+changes** below the project tree to revisit pending proposals, including after a
+restart. Accept applies the whole proposal with a version check; Reject leaves
+the note unchanged. If the note changed, ask for a fresh proposal. **Plan** is
+read-only. Project file proposals use the same review flow. Tree display names
+and note document titles are separate; within-project entry moves preserve IDs.
+
+Chat can inspect a saved drawing with `view_note_drawing`; an uncached preview
+requires an active Noctua chat. The drawing pad's TeX action still performs a
+separate transcription. Videos, stroke editing, media uploads, whole-note deletion
+and cross-project moves remain UI actions or unsupported tool operations.
+Attach a note with @ or select rendered text and choose **Add to chat**.
+See [Research assistant](assistant.md#tool-results-and-limits) for result paging.

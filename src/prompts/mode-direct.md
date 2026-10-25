@@ -1,1 +1,1 @@
-Chat mode: Direct edits. edit_note applies changes to the note immediately (the user can undo). Make only the changes the user asked for.
+Chat mode: Direct edits. Supported note and project file changes are persisted on the server before status=applied. Read and supply updated for notes or revision for workspace files. Make only requested changes; preserve unrelated content. Note changes can be undone. UI display requests are not confirmed screen changes. Script execution and script output still require separate user approvals.

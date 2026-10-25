@@ -927,7 +927,7 @@ mod tests {
         let wrong_resume = f.request("/api/chat", Some(json!({ "message": "wrong", "provider": "codex", "chat_id": ids[0] })), None).await;
         assert!(!wrong_resume.status().is_success());
         let tools = f.json("/mcp?mode=plan", Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))).await;
-        assert!(!tools["result"]["tools"].as_array().unwrap().iter().any(|t| t["name"] == "edit_note" || t["name"] == "add_to_zotero"));
+        assert!(!tools["result"]["tools"].as_array().unwrap().iter().any(|t| t["name"] == "edit_note" || t["name"] == "save_to_library"));
         let denied = f.json("/mcp?mode=plan", Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit_note","arguments":{}}}))).await;
         assert_eq!(denied["result"]["isError"], true);
         let calls: Vec<Value> = std::fs::read_to_string(f.root.join("invocations.jsonl"))?.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
@@ -1047,4 +1047,5 @@ mod tests {
         Ok(())
     }
 
+    include!("mcp_tests.rs");
 }
