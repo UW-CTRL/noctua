@@ -56,6 +56,52 @@ window.NoctuaChatFiles = (() => {
       throw new Error(passwordProtected||error.name==='PasswordException'?'Password-protected PDFs must be unlocked before attaching':error.message||'Could not read this PDF');
     } finally { await task.destroy(); }
   }
+  // Use the same bundled PDF renderer as the Reader and return original page
+  // pixels to the CLI's vision model, without importing the file into Library.
+  const rendering = new Map();
+  async function preparePDFPage(action) {
+    const taskKey=`${action.file_id}:${action.page}`;
+    const endpoint=`${url(action.file_id)}/pages/${action.page}?chat_id=${encodeURIComponent(action.chat_id)}&request_id=${encodeURIComponent(action.request_id)}`;
+    let promise=rendering.get(taskKey);
+    if(!promise) {
+      promise=(async()=>{
+        const engine=await pdfjs();
+        const task=engine.getDocument({url:url(action.file_id),isEvalSupported:false,standardFontDataUrl:'/vendor/pdfjs/web/standard_fonts/',cMapUrl:'/vendor/pdfjs/web/cmaps/',cMapPacked:true,wasmUrl:'/vendor/pdfjs/web/wasm/'});
+        let passwordProtected=false;
+        task.onPassword=()=>{passwordProtected=true;task.destroy().catch(()=>{});};
+        try {
+          const doc=await task.promise;
+          if(!Number.isInteger(action.page)||action.page<1||action.page>doc.numPages)throw new Error('Page is outside the attached PDF');
+          const page=await doc.getPage(action.page),base=page.getViewport({scale:1});
+          if(!Number.isFinite(base.width)||!Number.isFinite(base.height)||base.width<=0||base.height<=0)throw new Error('Invalid PDF page dimensions');
+          let scale=Math.min(2,1800/Math.max(base.width,base.height));
+          for(let attempt=0;attempt<5;attempt++) {
+            const viewport=page.getViewport({scale}),canvas=document.createElement('canvas');
+            canvas.width=Math.max(1,Math.ceil(viewport.width));canvas.height=Math.max(1,Math.ceil(viewport.height));
+            try {
+              // Export directly; display intent can wait for animation frames in background tabs.
+              await page.render({canvasContext:canvas.getContext('2d'),viewport,background:'#ffffff',intent:'print'}).promise;
+              const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+              if(blob&&blob.size<=5*1024*1024)return blob;
+            } finally {canvas.width=canvas.height=0;}
+            scale*=.65;
+          }
+          throw new Error('PDF page preview exceeds 5 MB');
+        } catch(error) {
+          throw new Error(passwordProtected?'Unlock this PDF before attaching it':error.message||'Could not render the attached PDF');
+        } finally {await task.destroy();}
+      })();
+      rendering.set(taskKey,promise);
+      promise.finally(()=>rendering.delete(taskKey)).catch(()=>{});
+    }
+    let blob;
+    try {blob=await promise;} catch(error) {
+      await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({error:error.message})});
+      throw error;
+    }
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
+    if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||'Could not save the PDF preview');
+  }
   async function upload(entry,k) {
     entry.error=null;render();
     try {
@@ -107,5 +153,5 @@ window.NoctuaChatFiles = (() => {
     render();
   }
   document.addEventListener('DOMContentLoaded',init);
-  return {add,render,snapshot,consume,moveDraft,key,sentHTML,count:()=>items().length};
+  return {add,render,snapshot,consume,moveDraft,key,sentHTML,preparePDFPage,count:()=>items().length};
 })();

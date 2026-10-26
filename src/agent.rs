@@ -822,13 +822,18 @@ mod tests {
         let pdf=f.json("/api/chat-files",Some(upload("paper.pdf",b"%PDF-1.7\nfixture",json!(["First page","Second page",""])))).await;
         let binary=f.json("/api/chat-files",Some(upload("data.bin",b"\xff\xfe",json!([])))).await;
         let ids=json!([note["id"],image["id"],pdf["id"],binary["id"]]);
-        let call=|id:Value,page:u32,offset:u32|json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_chat_file","arguments":{"file_id":id,"page":page,"offset":offset}}});
+        let call=|id:Value,page:u32,offset:u32|json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_chat_file","arguments":{"file_id":id,"page":page,"offset":offset,"format":"text"}}});
         for provider in ["claude","codex"] {
             let events=f.events("/api/chat",json!({"provider":provider,"message":"verify-uploaded-files","files":ids})).await;
             assert!(events.iter().any(|event|event["type"]=="done"),"{events:?}");
             let id=events.iter().find(|event|event["type"]=="chat").unwrap()["id"].as_str().unwrap();
             let stored=f.settled(id,provider).await;
             assert_eq!(stored["messages"][0]["files"][0],note);
+            if provider == "claude" {
+                let resumed=f.events("/api/chat",json!({"provider":provider,"chat_id":id,"message":"verify-resumed-pdf"})).await;
+                assert!(resumed.iter().any(|event|event["type"]=="done"),"{resumed:?}");
+                f.settled(id,provider).await;
+            }
             let read=crate::mcp::handle(&f.app,&call(note["id"].clone(),1,16000),"plan",Some(id)).await.unwrap();
             let content:Value=serde_json::from_str(read["result"]["content"][0]["text"].as_str().unwrap())?;
             assert_eq!(content["text"],"αα");assert!(content["next_offset"].is_null());
@@ -858,6 +863,57 @@ mod tests {
         for files in [json!(["../../secret"]),json!(["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]),json!(vec![note["id"].clone();11])] {
             assert_eq!(f.request("/api/chat",Some(json!({"message":"bad","files":files})),None).await.status(),StatusCode::BAD_REQUEST);
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn attached_pdf_visuals_are_scoped_cached_and_report_renderer_errors() -> Result<()> {
+        use base64::{engine::general_purpose::STANDARD,Engine};
+        let f=Fixture::new()?;
+        let pdf=f.json("/api/chat-files",Some(json!({"name":"scan.pdf","data":STANDARD.encode(b"%PDF-1.7\nfixture"),"pages":["",""]}))).await;
+        let file_id=pdf["id"].as_str().unwrap();
+        let files=crate::chat_files::validate(&f.app,&[file_id.into()])?;
+        crate::chat_files::grant(&f.app,"visual-chat",&files)?;
+        f.app.chat_jobs.lock().unwrap().insert("visual-chat".into());
+        let mut actions=f.app.actions.subscribe();
+        let call=|page:u32|json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_chat_file","arguments":{"file_id":file_id,"page":page}}});
+        let pending=tokio::spawn({let app=f.app.clone();let request=call(1);async move{crate::mcp::handle(&app,&request,"plan",Some("visual-chat")).await.unwrap()}});
+        let action=tokio::time::timeout(Duration::from_secs(2),actions.recv()).await??;
+        assert_eq!(action["action"],"chat_pdf_page");assert_eq!(action["file_id"],file_id);assert_eq!(action["page"],1);
+        let endpoint=format!("/api/chat-files/{file_id}/pages/1?chat_id=visual-chat&request_id={}",action["request_id"].as_str().unwrap());
+        let png=b"\x89PNG\r\n\x1a\nrendered-chart-or-scan";
+        let request=Request::builder().uri(&endpoint).header("host","127.0.0.1:7878").header("content-type","image/png").method("POST").body(Body::from(png.as_slice())).unwrap();
+        assert_eq!(f.router.clone().oneshot(request).await.unwrap().status(),StatusCode::OK);
+        let rendered=tokio::time::timeout(Duration::from_secs(2),pending).await??;
+        assert_eq!(rendered["result"]["content"][0]["type"],"image");
+        assert_eq!(rendered["result"]["content"][0]["data"],STANDARD.encode(png));
+        assert!(rendered["result"]["content"][1]["text"].as_str().unwrap().contains("scan.pdf, page 1 of 2"));
+        let denied_endpoint=endpoint.replace("chat_id=visual-chat","chat_id=another-chat");
+        assert_eq!(f.request(&denied_endpoint,Some(json!({"error":"wrong chat"})),None).await.status(),StatusCode::BAD_REQUEST);
+        let malformed=f.request(&endpoint,Some(json!({"message":"not a render error"})),None).await;
+        assert_eq!(malformed.status(),StatusCode::BAD_REQUEST);
+        f.app.chat_jobs.lock().unwrap().remove("visual-chat");
+        let cached=crate::mcp::handle(&f.app,&call(1),"plan",Some("visual-chat")).await.unwrap();
+        assert_eq!(cached["result"],rendered["result"]);
+        for chat in [Some("another-chat"),None] {
+            let denied=crate::mcp::handle(&f.app,&call(1),"plan",chat).await.unwrap();assert_eq!(denied["result"]["isError"],true);
+        }
+        assert_eq!(f.request(&endpoint,Some(json!({"error":"stale renderer"})),None).await.status(),StatusCode::BAD_REQUEST);
+        let missing_ui=crate::mcp::handle(&f.app,&call(2),"plan",Some("visual-chat")).await.unwrap();
+        assert!(missing_ui["result"]["content"][0]["text"].as_str().unwrap().contains("UI_REQUIRED"));
+        f.app.chat_jobs.lock().unwrap().insert("visual-chat".into());
+        let pending=tokio::spawn({let app=f.app.clone();let request=call(2);async move{crate::mcp::handle(&app,&request,"plan",Some("visual-chat")).await.unwrap()}});
+        let action=tokio::time::timeout(Duration::from_secs(2),actions.recv()).await??;
+        let endpoint=format!("/api/chat-files/{file_id}/pages/2?chat_id=visual-chat&request_id={}",action["request_id"].as_str().unwrap());
+        assert_eq!(f.request(&endpoint,Some(json!({"error":"Invalid PDF fixture"})),None).await.status(),StatusCode::OK);
+        let failed=tokio::time::timeout(Duration::from_secs(2),pending).await??;
+        assert_eq!(failed["result"]["isError"],true);
+        assert!(failed["result"]["content"][0]["text"].as_str().unwrap().contains("Invalid PDF fixture"));
+        assert!(crate::chat_files::native_path(&f.app,"another-chat",file_id).is_err());
+        let native=crate::chat_files::native_path(&f.app,"visual-chat",file_id)?;
+        assert_eq!(std::fs::read(&native)?,b"%PDF-1.7\nfixture");
+        assert_eq!(native.parent().unwrap(),crate::chat_files::native_dir(&f.app,"visual-chat")?);
+        assert_ne!(native.parent().unwrap(),crate::chat_files::native_dir(&f.app,"another-chat")?);
         Ok(())
     }
 

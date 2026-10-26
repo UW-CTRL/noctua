@@ -1061,6 +1061,7 @@ const TOOL_LABEL = {
   search_pdf: 'Searching PDF',
   view_pdf_page: 'Viewing PDF page',
   read_chat_file: 'Reading attached file',
+  Read: 'Reading attached PDF',
   annotate_pdf: 'Annotating PDF',
   comment_on_pdf_annotation: 'Commenting on PDF',
   search_library: 'Searching saved papers',
@@ -1367,6 +1368,7 @@ async function toggleChatHistory(show = $('#chat-history').classList.contains('h
 }
 
 function runChatAction(a) {
+  if (a.action === 'chat_pdf_page') { window.NoctuaChatFiles.preparePDFPage(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }

@@ -102,6 +102,22 @@ Find the file inventory in the [prompt index](../src/prompts/AGENTS.md).
 | Applying prompt edits | Rebuild and restart the backend |
 | Cached results | May be reused after a prompt change; review the feature's cache policy |
 
+## Chat PDF inspection
+
+Claude chats with attached PDFs run with `--restricted --tools Read` in a
+conversation-specific directory holding copies of that conversation's sent PDFs.
+Claude Code 2.1.248 or later is required for restricted mode. No shell or editing
+tools are enabled; Noctua MCP still enforces the selected edit mode. Existing CLI
+sessions resume by ID, including sessions created before these directories existed.
+
+Codex CLI accepts images rather than raw PDF attachments. Noctua reuses its bundled
+PDF.js renderer to return requested original pages as MCP image content to the
+provider's vision model. This follows the render-and-inspect PDF workflow without
+requiring an installed PDF skill, Python, Poppler, or enabling Codex shell execution.
+PDF page previews are capped at 5 MB, cached locally, and checked against the
+conversation's attachment grants before being returned. Cached previews remain
+readable when no renderer is active; new previews require an active chat tab.
+
 ## Environment overrides
 
 | Variable | Purpose |

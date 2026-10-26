@@ -637,6 +637,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/threads", post(explain_threads))
         .route("/api/chat-files", post(chat_files::upload).layer(DefaultBodyLimit::max(56 << 20)))
         .route("/api/chat-files/{id}", get(chat_files::download))
+        .route("/api/chat-files/{id}/pages/{page}", post(chat_files::save_page).layer(DefaultBodyLimit::max(5 << 20)))
         .route("/api/chat", post(chat_endpoint))
         .route("/api/notes", get(notes_list).post(notes_create))
         .route("/api/notes/all", get(notes_all))

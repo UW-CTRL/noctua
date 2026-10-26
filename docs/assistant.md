@@ -40,9 +40,14 @@ without typing a message. Each message accepts up to 10 files totaling 32 MB;
 PNG, JPEG, GIF, and WebP images must be 5 MB or smaller. The assistant can inspect
 these images and read UTF-8 text files. PDFs are indexed locally before upload,
 with a limit of 1,000 pages and 8 MB of extracted text. Unlock password-protected
-PDFs first. PDF attachments provide embedded text, not page images or OCR;
-scanned pages and visual figures need a separate image attachment. Other binary
-files can be attached and downloaded, but the assistant cannot interpret their
+PDFs first. The original PDF is retained: Claude Code uses its native PDF Read
+capability in a restricted directory containing only PDFs sent in that conversation
+(requires Claude Code 2.1.248 or later). Codex uses rendered PDF page images through
+its vision capability; both providers can also request those page images through
+Noctua. Keep the chat tab open while uncached pages are rendered. Charts, tables,
+handwriting, and scanned pages can be inspected visually without a separate image
+attachment or external OCR. This does not create a searchable OCR index, and small
+or unclear scans can still be misread. Other binary files can be attached and downloaded, but the assistant cannot interpret their
 contents through this feature.
 
 Uploaded files are stored in Noctua's local chat data, independently of Library
