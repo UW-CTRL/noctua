@@ -73,7 +73,9 @@ review step, and invalidating a test when the connection changes.
 The maintenance WebKit fixture verifies editor flushing, draft preservation,
 pause acknowledgments and conflict/cancellation recovery. Backend CI also builds
 an offline next-version fixture and runs the isolated server update regression;
-OS managers are mocked, never installed as resident services.
+OS managers are mocked, never installed as resident services. Fixture polling
+allows for unoptimized ELF executable hashing; identity, editor acknowledgment,
+active-task and backup assertions remain mandatory.
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,

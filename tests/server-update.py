@@ -10,10 +10,10 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
     env={k:v for k,v in os.environ.items() if not k.startswith('NOCTUA_') and k!='ZOTERO_DATA_DIR'}
     env.update(NOCTUA_HOME=str(data),NOCTUA_CLIENT_HOME=str(client),NOCTUA_PROFILE_HOME=str(root/'profile'),NOCTUA_SERVICE_HOME=str(service),NOCTUA_PORT='0')
     agent=root/'fake-claude'
-    agent.write_text('#!/usr/bin/env python3\nimport json,sys,time,pathlib,os\nassert os.environ.get("NOCTUA_S2_KEY")=="isolated-update-secret"\nsys.stdin.read()\npathlib.Path('+repr(str(root/'job-started'))+').touch()\ndeadline=time.monotonic()+60\nwhile not pathlib.Path('+repr(str(root/'job-release'))+').exists() and time.monotonic()<deadline:time.sleep(.05)\nprint(json.dumps({"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Completed safely"}}}),flush=True)\nprint(json.dumps({"type":"result","session_id":"kept-job","result":"Completed safely","is_error":False}),flush=True)\npathlib.Path('+repr(str(root/'job-finished'))+').touch()\n')
+    agent.write_text('#!/usr/bin/env python3\nimport json,sys,time,pathlib,os\nassert os.environ.get("NOCTUA_S2_KEY")=="isolated-update-secret"\nsys.stdin.read()\npathlib.Path('+repr(str(root/'job-started'))+').touch()\ndeadline=time.monotonic()+180\nwhile not pathlib.Path('+repr(str(root/'job-release'))+').exists() and time.monotonic()<deadline:time.sleep(.05)\nprint(json.dumps({"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Completed safely"}}}),flush=True)\nprint(json.dumps({"type":"result","session_id":"kept-job","result":"Completed safely","is_error":False}),flush=True)\npathlib.Path('+repr(str(root/'job-finished'))+').touch()\n')
     agent.chmod(0o700);env.update(NOCTUA_CLAUDE=str(agent),NOCTUA_ORIGINS='https://private.example',NOCTUA_S2_KEY='isolated-update-secret')
     def cli(*args,ok=True,executable=binary):
-        result=subprocess.run([str(executable),*args],env=env,text=True,capture_output=True,timeout=50)
+        result=subprocess.run([str(executable),*args],env=env,text=True,capture_output=True,timeout=90)
         assert (result.returncode==0)==ok,(args,result.stdout,result.stderr)
         return result
     old_hash=hashlib.sha256(binary.read_bytes()).hexdigest()
@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         assert response.status==expected,(path,response.status,payload)
         if expected>=400:return payload
         return json.loads(payload)
-    def wait(predicate,timeout=20):
+    def wait(predicate,timeout=60):
         until=time.monotonic()+timeout
         while time.monotonic()<until:
             try:
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
             time.sleep(.05)
         raise AssertionError('Condition timed out')
     def state():return json.loads((client/'server-update.json').read_text())
-    def launch(target=candidate,ack=True,timeout=15,grace=1):
+    def launch(target=candidate,ack=True,timeout=90,grace=1):
         old=state().get('id') if (client/'server-update.json').exists() else None
         proc=subprocess.Popen([str(binary),'update','--server',str(target),'--force','--grace-seconds',str(grace),'--timeout-seconds',str(timeout)],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         workers.append(proc)
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         result={}
         # Chat responses are NDJSON, so consume without decoding as one JSON document.
         def chat():
-            c=http.client.HTTPConnection('127.0.0.1',port,timeout=60);c.request('POST','/api/chat',json.dumps({'message':'Finish before upgrade','provider':'claude'}),{**auth,'Content-Type':'application/json'});r=c.getresponse();assert r.status==200;result['events']=[json.loads(line) for line in r.read().splitlines()];c.close()
+            c=http.client.HTTPConnection('127.0.0.1',port,timeout=180);c.request('POST','/api/chat',json.dumps({'message':'Finish before upgrade','provider':'claude'}),{**auth,'Content-Type':'application/json'});r=c.getresponse();assert r.status==200;result['events']=[json.loads(line) for line in r.read().splitlines()];c.close()
         thread=threading.Thread(target=chat);thread.start();wait(lambda:(root/'job-started').exists())
         updating=launch();wait(lambda:state()['phase']=='draining')
         assert not (root/'job-finished').exists(),'fixture did not retain an active task'
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         assert 'worker' in duplicate_update.stderr.lower()
         ensuring=subprocess.Popen([str(binary),'ensure'],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE);workers.append(ensuring)
         (root/'job-release').touch()
-        output,error=updating.communicate(timeout=30);assert updating.returncode==0,error
+        output,error=updating.communicate(timeout=90);assert updating.returncode==0,error
         upgraded=json.loads(output);port=int(upgraded['url'].rsplit(':',1)[1]);thread.join(timeout=10);assert not thread.is_alive()
         assert (root/'job-finished').exists() and any(e.get('type')=='done' for e in result['events'])
         chat_id=next(event['id'] for event in result['events'] if event['type']=='chat')
@@ -90,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         assert upgraded['instance_id']!=initial['instance_id'] and upgraded['url']==initial['url']
         refused=cli('restart',ok=False)
         assert 'downgrade' in refused.stderr.lower() and request('/api/server')['instance_id']==upgraded['instance_id']
-        output,error=ensuring.communicate(timeout=20);assert ensuring.returncode==0,error
+        output,error=ensuring.communicate(timeout=90);assert ensuring.returncode==0,error
         assert json.loads(output)['instance_id']==upgraded['instance_id']
         assert not old_stage.exists(),'previous staged executable was not cleaned after verification'
         assert request('/api/server',headers={'Origin':'https://private.example'})['server_id']==initial['server_id']
@@ -104,14 +104,14 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         assert (data/'sentinel.txt').read_text()=='Research is preserved'
         assert 'isolated-update-secret' not in (backup/'server-launch.json').read_text()
         # Repeating an upgrade is idempotent when an earlier retired file is already gone.
-        repeated=launch();output,error=repeated.communicate(timeout=25);assert repeated.returncode==0,error
+        repeated=launch();output,error=repeated.communicate(timeout=90);assert repeated.returncode==0,error
         upgraded=json.loads(output);port=int(upgraded['url'].rsplit(':',1)[1])
         assert state()['phase']=='complete' and not state()['cleanup_pending']
         # Failed editor saves leave the current server running and accepting work.
         request('/api/server',headers={'X-Noctua-Editor':'blocked-editor'});editors={'blocked-editor'}
         failed=launch(ack=False);notice=wait(lambda:request('/api/server').get('maintenance'))
         request('/api/server/update/ack','POST',{'id':notice['id'],'client':'blocked-editor','saved':False})
-        _,error=failed.communicate(timeout=15);assert failed.returncode!=0 and 'editor' in error.lower()
+        _,error=failed.communicate(timeout=90);assert failed.returncode!=0 and 'editor' in error.lower()
         assert request('/api/server')['ready'] and request('/api/server')['maintenance'] is None
         assert request('/api/server')['instance_id']==upgraded['instance_id']
         # Invalid candidate metadata never stops the owner.
@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
         # An expired wait cancels maintenance, never the still-running AI child.
         (root/'job-started').unlink();(root/'job-finished').unlink();(root/'job-release').unlink()
         thread=threading.Thread(target=chat);thread.start();wait(lambda:(root/'job-started').exists())
-        timed_out=launch(timeout=0);_,error=timed_out.communicate(timeout=15)
+        timed_out=launch(timeout=0);_,error=timed_out.communicate(timeout=90)
         assert timed_out.returncode!=0 and 'timed out' in error.lower()
         assert request('/api/server')['ready'] and not (root/'job-finished').exists()
         (root/'job-release').touch();thread.join(timeout=10);assert (root/'job-finished').exists()
@@ -157,12 +157,12 @@ if any(action in a for action in ['kickstart','bootstrap','start']):
             manager.chmod(0o700);env['NOCTUA_SERVICE_MANAGER']=str(manager)
             cli('service','enable',executable=candidate)
             (root/'fail-refresh').touch()
-            failure=launch();_,error=failure.communicate(timeout=25)
+            failure=launch();_,error=failure.communicate(timeout=90)
             assert failure.returncode!=0 and 'service' in error.lower()
             assert request('/api/server')['ready'] and state()['phase']=='failed'
             assert (data/'sentinel.txt').read_text()=='Research is preserved'
             (root/'fail-refresh').unlink()
-            success=launch();output,error=success.communicate(timeout=25);assert success.returncode==0,error
+            success=launch();output,error=success.communicate(timeout=90);assert success.returncode==0,error
             upgraded=json.loads(output);port=int(upgraded['url'].rsplit(':',1)[1]);editors=set()
             registration=json.loads(next(service.glob('*.registration.json')).read_text())
             assert pathlib.Path(registration['executable'])==pathlib.Path(upgraded['executable'])
@@ -174,7 +174,7 @@ if any(action in a for action in ['kickstart','bootstrap','start']):
             cli('service','disable',executable=candidate)
         # A verified candidate which cannot start retains the stopped snapshot and old executable.
         failing=root/'failing-candidate';failing.write_text('#!/usr/bin/env python3\nimport sys,json,pathlib,hashlib\nif sys.argv[1:]==["describe"]:\n print(json.dumps({"product":"noctua","api_version":1,"data_version":1,"version":"99.0.0","executable_hash":hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}))\nelse:sys.exit(42)\n');failing.chmod(0o700)
-        failed=launch(failing);_,error=failed.communicate(timeout=25);assert failed.returncode!=0,error
+        failed=launch(failing);_,error=failed.communicate(timeout=90);assert failed.returncode!=0,error
         failure=state();assert failure['phase']=='failed' and pathlib.Path(failure['backup'],'snapshot-complete.json').exists()
         assert pathlib.Path(upgraded['executable']).exists(),'failed replacement removed the known previous binary'
         handoff=next(client.glob('server-launch-*.json'));assert handoff.stat().st_mode & 0o077==0
