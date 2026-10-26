@@ -79,6 +79,11 @@ installation, upgrades, or live provider behavior works.
 
 ## Run locally
 
+Zotero import coverage includes selectable content and retry/cancel behavior in
+`tests/library-import.html`, PDF coordinate conversion in
+`tests/zotero-annotations.swift`, and SQLite fixtures for notes, annotations,
+re-imports, and PDF mismatches in the backend library tests.
+
 From the repository root:
 
 ```sh

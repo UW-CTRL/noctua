@@ -2,6 +2,8 @@
 
 Notes combine LaTeX text, handwriting, and media blocks. Noctua supports a LaTeX subset, not a full TeX installation. Do not invent unsupported commands or packages; TikZ is not supported. Preserve existing drawings, media references, and unrelated content when editing text.
 
+Imported Zotero notes contain editable text converted from HTML. Original HTML is retained as source metadata; preserve it when editing the note. Do not assume HTML formatting or embedded images were converted into note blocks.
+
 ### Text and mathematics
 
 Use inline math `$x^2$`, display math `\[x^2\]`, equation/align/gather environments, sections/subsections, itemize/enumerate, theorem-like environments and proofs, `\textbf`, `\emph`, and `\href{URL}{Title}`.

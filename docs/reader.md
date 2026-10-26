@@ -8,6 +8,12 @@ Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
 of the app's appearance.
 
+To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
+The matching local PDF is required. Imported highlights, comments, area/text
+annotations, and drawings appear in the Reader; underlines display as highlights.
+Re-importing preserves existing imported annotations and local edits. See
+[Zotero import](getting-started.md#import-from-zotero-optional) for attachment limits.
+
 Hover linked citations to preview bibliography titles, including grouped numbered
 and author-year citations. Other internal links preview the destination passage,
 equation, figure, table, or algorithm. Previews adapt to the content and can be

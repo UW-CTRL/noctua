@@ -10,6 +10,27 @@ use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
+#[derive(serde::Deserialize)]
+#[serde(default)]
+pub struct ImportOptions {
+    pub tags: bool,
+    pub bibliography: bool,
+    pub copy_pdfs: bool,
+    pub copy_notes: bool,
+    pub copy_annotations: bool,
+}
+impl Default for ImportOptions {
+    fn default() -> Self { Self { tags: true, bibliography: true, copy_pdfs: false, copy_notes: false, copy_annotations: false } }
+}
+
+/// Bibliographic details retained alongside Noctua's common paper fields.
+pub const BIBLIOGRAPHIC_FIELDS: &[&str] = &[
+    "date", "publicationTitle", "proceedingsTitle", "bookTitle", "conferenceName",
+    "repository", "websiteTitle", "volume", "issue", "pages", "publisher", "place",
+    "edition", "series", "seriesTitle", "seriesText", "seriesNumber", "ISBN", "ISSN",
+    "language", "shortTitle", "journalAbbreviation", "numPages", "numberOfVolumes",
+];
+
 pub struct Zotero {
     /// `<Zotero data folder>/zotero.sqlite`; None when Zotero isn't set up.
     db_path: std::sync::RwLock<Option<PathBuf>>,
@@ -62,6 +83,7 @@ impl Zotero {
             m.insert("dateAdded".into(), json!(added));
             m.insert("zoteroUrl".into(), json!(format!("zotero://select/{lib}/items/{key}")));
             m.insert("creators".into(), json!([]));
+            m.insert("tags".into(), json!([]));
             items.insert(item_id, m);
             order.push(item_id);
         }
@@ -71,10 +93,7 @@ impl Zotero {
              FROM itemData d
              JOIN fields f ON f.fieldID = d.fieldID
              JOIN itemDataValues v ON v.valueID = d.valueID
-             WHERE d.itemID IN ({ids})
-               AND f.fieldName IN ('title', 'date', 'DOI', 'url', 'extra', 'publicationTitle',
-                                   'proceedingsTitle', 'bookTitle', 'conferenceName',
-                                   'repository', 'archiveID', 'websiteTitle', 'abstractNote')"
+             WHERE d.itemID IN ({ids})"
         ))?;
         let rows = stmt.query_map([id], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
@@ -101,6 +120,22 @@ impl Zotero {
         for (item_id, first, last) in rows.flatten() {
             if let Some(Value::Array(a)) = items.get_mut(&item_id).and_then(|m| m.get_mut("creators")) {
                 a.push(json!(format!("{first} {last}").trim()));
+            }
+        }
+
+        let mut stmt = db.prepare(&format!(
+            "SELECT DISTINCT it.itemID, t.name
+             FROM itemTags it JOIN tags t ON t.tagID = it.tagID
+             WHERE it.itemID IN ({ids})
+             ORDER BY it.itemID, t.name"
+        ))?;
+        let rows = stmt.query_map([id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (item_id, tag) = row?;
+            if let Some(Value::Array(tags)) = items.get_mut(&item_id).and_then(|m| m.get_mut("tags")) {
+                tags.push(json!(tag));
             }
         }
 
@@ -148,7 +183,7 @@ impl Zotero {
 
     pub fn import_collections(&self) -> Result<Vec<Value>> { self.collections_from_db() }
 
-    pub fn local_pdf(&self, library: &str, item_key: &str) -> Result<Option<PathBuf>> {
+    pub fn local_pdf_attachment(&self, library: &str, item_key: &str) -> Result<Option<(String,PathBuf)>> {
         let library_id: i64 = library.strip_prefix('L').context("bad library id")?.parse()?;
         let db = self.open_db()?;
         let mut stmt = db.prepare("SELECT child.key,a.path FROM itemAttachments a
@@ -161,12 +196,59 @@ impl Zotero {
             let file = if let Some(name) = path.strip_prefix("storage:") {
                 let rel = std::path::Path::new(name);
                 if rel.components().any(|c| !matches!(c,std::path::Component::Normal(_))) {continue;}
-                self.db_path()?.parent().unwrap().join("storage").join(key).join(rel)
+                self.db_path()?.parent().unwrap().join("storage").join(&key).join(rel)
             } else if std::path::Path::new(&path).is_absolute() { PathBuf::from(path) }
             else {continue};
-            if file.is_file() {return Ok(Some(file));}
+            if file.is_file() {return Ok(Some((key,file)));}
         }
         Ok(None)
+    }
+
+    /// Child notes follow their paper's direct collections; standalone notes keep their own.
+    pub fn notes(&self, library: &str) -> Result<Vec<Value>> {
+        let library_id: i64 = library.strip_prefix('L').context("bad library id")?.parse()?;
+        let db=self.open_db()?;
+        let mut stmt=db.prepare("SELECT i.itemID,i.key,n.title,n.note,n.parentItemID
+            FROM itemNotes n JOIN items i ON i.itemID=n.itemID JOIN itemTypes t ON t.itemTypeID=i.itemTypeID
+            WHERE i.libraryID=?1 AND t.typeName='note'
+            AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
+            AND (n.parentItemID IS NULL OR n.parentItemID NOT IN (SELECT itemID FROM deletedItems)) ORDER BY i.itemID")?;
+        let rows=stmt.query_map([library_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?.unwrap_or_default(),r.get::<_,Option<String>>(3)?.unwrap_or_default(),r.get::<_,Option<i64>>(4)?)))?;
+        let mut out=Vec::new();
+        for row in rows {
+            let (id,key,title,html,parent)=row?;
+            let mut collections=db.prepare("SELECT c.collectionID FROM collectionItems ci JOIN collections c ON c.collectionID=ci.collectionID WHERE ci.itemID=?1 AND c.collectionID NOT IN (SELECT collectionID FROM deletedCollections) ORDER BY c.collectionID")?;
+            let mut targets=collections.query_map([parent.unwrap_or(id)],|r|Ok(format!("C{}",r.get::<_,i64>(0)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            if targets.is_empty(){targets.push(library.to_owned());}
+            out.push(json!({"title":title,"html":html,"targets":targets,"source":format!("{library_id}:{key}")}));
+        }
+        Ok(out)
+    }
+
+    pub fn annotations(&self, library: &str, attachment: &str) -> Result<Vec<Value>> {
+        let library_id: i64=library.strip_prefix('L').context("bad library id")?.parse()?;
+        let db=self.open_db()?;
+        let mut stmt=db.prepare("SELECT i.key,a.type,a.text,a.comment,a.color,a.pageLabel,a.position,a.authorName
+            FROM itemAnnotations a JOIN items i ON i.itemID=a.itemID JOIN items p ON p.itemID=a.parentItemID
+            WHERE p.libraryID=?1 AND p.key=?2 AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
+            AND p.itemID NOT IN (SELECT itemID FROM deletedItems) ORDER BY a.sortIndex,i.itemID")?;
+        let rows=stmt.query_map(rusqlite::params![library_id,attachment],|r|Ok(json!({
+            "source":format!("{library_id}:{}",r.get::<_,String>(0)?),"type":r.get::<_,i64>(1)?,
+            "text":r.get::<_,Option<String>>(2)?.unwrap_or_default(),"comment":r.get::<_,Option<String>>(3)?.unwrap_or_default(),
+            "color":r.get::<_,Option<String>>(4)?.unwrap_or_else(||"#ffd400".into()),"page_label":r.get::<_,Option<String>>(5)?,
+            "position_json":r.get::<_,String>(6)?,"source_author":r.get::<_,Option<String>>(7)?
+        })))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+    }
+
+    pub fn has_annotations(&self, library: &str, item_key: &str) -> Result<bool> {
+        let library_id:i64=library.strip_prefix('L').context("bad library id")?.parse()?;
+        Ok(self.open_db()?.query_row("SELECT EXISTS(SELECT 1 FROM itemAnnotations a
+            JOIN itemAttachments att ON att.itemID=a.parentItemID
+            JOIN items p ON p.itemID=COALESCE(att.parentItemID,att.itemID)
+            WHERE p.libraryID=?1 AND p.key=?2 AND a.itemID NOT IN (SELECT itemID FROM deletedItems)
+            AND att.itemID NOT IN (SELECT itemID FROM deletedItems))",
+            rusqlite::params![library_id,item_key],|r|r.get(0))?)
     }
 
     /// Switches to another Zotero data folder (or none).
@@ -272,6 +354,42 @@ const TOP_LEVEL: &str = "SELECT i.itemID FROM items i
        AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
        AND i.itemID NOT IN (SELECT itemID FROM itemAttachments WHERE parentItemID IS NOT NULL)";
 
+/// Import HTML as inert text, decoding entities and retaining paragraph boundaries.
+/// LaTeX metacharacters are escaped so a note cannot become executable note syntax.
+pub fn note_text(html: &str) -> String {
+    use std::cell::{Cell, RefCell};
+    use html5ever::{tendril::StrTendril, tokenizer::{BufferQueue, Token, TokenSink, TokenSinkResult, Tokenizer, TagKind}};
+    struct Text { body:RefCell<String>, hidden:Cell<bool> }
+    impl TokenSink for Text {
+        type Handle=();
+        fn process_token(&self, token:Token,_line:u64)->TokenSinkResult<()> {
+            match token {
+                Token::CharacterTokens(s) if !self.hidden.get()=>self.body.borrow_mut().push_str(&s),
+                Token::TagToken(t)=>{
+                    let tag=t.name.as_ref();
+                    if ["script","style"].contains(&tag) { self.hidden.set(t.kind==TagKind::StartTag); }
+                    if !self.hidden.get() && ["p","div","br","li","h1","h2","h3","blockquote","tr"].contains(&tag) {self.body.borrow_mut().push('\n');}
+                    if tag=="img" {self.body.borrow_mut().push_str("[Image omitted]");}
+                },
+                _=>{},
+            }
+            TokenSinkResult::Continue
+        }
+    }
+    let input=BufferQueue::default();input.push_back(StrTendril::from(html));
+    let tokenizer=Tokenizer::new(Text{body:RefCell::new(String::new()),hidden:Cell::new(false)},Default::default());
+    let _=tokenizer.feed(&input);tokenizer.end();
+    let mut out=String::new();
+    for c in tokenizer.sink.body.into_inner().trim().chars() {
+        match c {
+            '\\'=>out.push_str("\\textbackslash{}"),
+            '$'|'%'|'&'|'#'|'_'|'{'|'}'|'^'|'~'=>{out.push('\\');out.push(c);},
+            _=>out.push(c),
+        }
+    }
+    out
+}
+
 /// First four-digit run in a Zotero date ("2017-06-12 2017-06-12" → 2017).
 fn year_of(date: &str) -> Option<u32> {
     let b = date.as_bytes();
@@ -315,4 +433,25 @@ fn arxiv_of(doi: &str, extra: &str, archive: &str, url: &str) -> Option<String> 
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn html_notes_become_escaped_text_with_paragraphs() {
+        let text=note_text("<div><p>한국어 &amp; &lt;text&gt;</p><p>$5 #1 50% a_b {x} ^ ~ \\cite{bad}</p><script>alert(1)</script><style>body{}</style><img src='x'></div>");
+        assert!(text.contains("한국어 \\& <text>\n\n\\$5 \\#1 50\\% a\\_b \\{x\\} \\^ \\~ \\textbackslash{}cite\\{bad\\}"));
+        assert!(!text.contains("alert")&&!text.contains("body"));
+        assert!(text.contains("[Image omitted]"));
+    }
+
+    #[test]
+    fn legacy_import_requests_keep_optional_content_off() -> Result<()> {
+        let options:ImportOptions=serde_json::from_value(json!({"copy_pdfs":true}))?;
+        assert!(options.copy_pdfs&&options.tags&&options.bibliography);
+        assert!(!options.copy_notes&&!options.copy_annotations);
+        Ok(())
+    }
 }

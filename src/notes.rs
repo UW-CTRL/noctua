@@ -106,6 +106,30 @@ impl Notes {
         Ok(doc)
     }
 
+    /// Stable source IDs make imports additive and preserve locally edited notes.
+    pub fn import_zotero(&self, folder: &str, note: &Value) -> Result<bool> {
+        use std::io::Write;
+        use sha2::{Digest,Sha256};
+        let source=note["source"].as_str().context("Missing Zotero note source")?;
+        // Copies in different collections must keep globally distinct note-reference IDs.
+        let digest=format!("{:x}",Sha256::digest(format!("{folder}:{source}").as_bytes()));
+        let id=format!("z{}",&digest[..32]);
+        let path=self.path(folder,&id)?;
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        let t=now_ms();
+        let title=note["title"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or("Zotero note");
+        let doc=json!({"version":1,"id":id,"title":title,"created":t,"updated":t,
+            "zotero_source":note["source"],"zotero_html":note["html"],
+            "blocks":[{"id":"imported","type":"text","src":crate::zotero::note_text(note["html"].as_str().unwrap_or(""))}]});
+        let mut temp=tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
+        temp.write_all(doc.to_string().as_bytes())?;
+        match temp.persist_noclobber(path) {
+            Ok(_)=>Ok(true),
+            Err(e) if e.error.kind()==std::io::ErrorKind::AlreadyExists=>Ok(false),
+            Err(e)=>Err(e.error.into()),
+        }
+    }
+
     /// Replaces the note's contents. Returns the new `updated` time. If the
     /// doc carries the `updated` time it was based on and the file has been
     /// saved since (another tab or window), nothing is written: 409.

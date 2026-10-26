@@ -48,10 +48,32 @@ See [Research assistant](assistant.md) for capabilities, edit modes, and prompts
 
 Set the Zotero data folder in **Settings → Connections**, then choose
 **Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
+The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and PDF
+annotations. Collections and basic paper information are always copied. Cancel
+closes the dialog without importing anything.
 
-Noctua copies nested collections, metadata, citation keys, and available local
-PDFs without changing Zotero. Download cloud-only PDFs in Zotero before importing;
-existing Zotero annotations are not imported. Zotero can stay closed afterward.
+Noctua copies nested collections, metadata, tags (manual and automatic), citation
+keys, and available local PDFs without changing Zotero. Import again to add missing
+tags to existing papers; existing tags are kept and duplicates are skipped.
+Bibliographic details include the full publication date, journal/book/proceedings
+titles, volume, issue, pages, publisher, place, edition, series, ISBN/ISSN, language,
+short title, journal abbreviation, and page/volume counts. Re-importing fills missing
+details without overwriting existing values. These details are stored with the paper;
+the details editor currently exposes only the common paper fields.
+Notes are copied to their paper's collections; standalone notes keep their own
+collections or go to the library root when unfiled. HTML becomes editable text
+with paragraph breaks. Formatting and embedded images are not reproduced; original
+HTML is retained with the note. Re-imports skip existing imported notes and
+annotations, preserving local edits.
+
+PDF annotations include highlights, underlines (shown as highlights), comments,
+area/text annotations, and multi-stroke drawings. Positions, colors, quoted text,
+and comments are retained. Area annotations show their rectangle rather than an
+image thumbnail. Annotations follow the first available local PDF per paper;
+additional attachments are not imported. Selecting annotations also selects PDFs.
+Missing local PDFs or PDFs that differ from Noctua's attached copy produce a
+warning. Download cloud-only PDFs in Zotero before importing. Zotero can stay
+closed afterward.
 
 ## Show or hide side panes
 

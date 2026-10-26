@@ -35,9 +35,8 @@ async fn pdf_asset(Path(file):Path<String>)->Response {
     let mime=if file.ends_with(".mjs")||file.ends_with(".js"){"text/javascript"}else if file.ends_with(".wasm"){"application/wasm"}else if file.ends_with(".ttf"){"font/ttf"}else{"application/octet-stream"};
     ([(header::CONTENT_TYPE,mime),(header::X_CONTENT_TYPE_OPTIONS,"nosniff"),(header::CACHE_CONTROL,"public, max-age=86400")],*bytes).into_response()
 }
-#[derive(Deserialize)]struct Import {#[serde(default)] copy_pdfs:bool}
-async fn import_zotero(State(app):Shared,Json(b):Json<Import>)->ApiResult {
-    let result=tokio::task::spawn_blocking(move||app.library.import_zotero(&app.zotero,b.copy_pdfs)).await.map_err(|e|ApiError(e.into()))??;Ok(Json(result))
+async fn import_zotero(State(app):Shared,Json(b):Json<crate::zotero::ImportOptions>)->ApiResult {
+    let result=tokio::task::spawn_blocking(move||app.library.import_zotero(&app.zotero,&app.notes,&b)).await.map_err(|e|ApiError(e.into()))??;Ok(Json(result))
 }
 #[derive(Deserialize)]struct Upload {target:Option<String>,#[serde(default)]name:String}
 async fn import_pdf(State(app):Shared,Query(q):Query<Upload>,body:Bytes)->ApiResult {

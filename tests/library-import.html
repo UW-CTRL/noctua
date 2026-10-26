@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/pdf.css"></head><body>
+<script>
+const calls=[],messages=[];let failure=false,gate=null;
+function assert(value,message){if(!value)throw Error(message);}
+function toast(message){messages.push(message);}
+async function api(path,body){calls.push({path,body});if(gate)await gate;if(failure)throw Error('Zotero database unavailable');return {papers:2,pdfs:0,notes:1,annotations:0,warnings:[]};}
+async function loadCollections(){}async function loadLibItems(){}
+const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+</script><script src="../web/library.js"></script><script>
+(async()=>{
+ await importZoteroLibrary();let dialog=document.querySelector('dialog'),form=dialog.querySelector('form');
+ assert(dialog.open&&calls.length===0,'opening dialog must not import');
+ assert(dialog.getAttribute('aria-labelledby')==='zotero-import-title','dialog title is not accessible');
+ assert([...form.querySelectorAll('input')].every(input=>input.checked),'default selections missing');
+ await importZoteroLibrary();assert(document.querySelectorAll('dialog').length===1,'duplicate import dialogs');
+ form.querySelector('[data-cancel]').click();await tick();assert(calls.length===0&&!document.querySelector('dialog'),'cancel imported or left dialog behind');
+ await importZoteroLibrary();dialog=document.querySelector('dialog');form=dialog.querySelector('form');
+ form.elements.copy_pdfs.click();assert(!form.elements.copy_annotations.checked,'annotations remained enabled without PDF');
+ form.elements.copy_annotations.click();assert(form.elements.copy_pdfs.checked,'annotations did not select PDFs');
+ form.elements.copy_pdfs.click();form.elements.tags.checked=false;form.elements.bibliography.checked=false;
+ let release;gate=new Promise(resolve=>release=resolve);failure=true;
+ const pending=form.onsubmit({preventDefault(){}});await form.onsubmit({preventDefault(){}});
+ assert(calls.length===1&&form.querySelector('[type="submit"]').disabled,'duplicate submission or enabled busy form');
+ assert(form.querySelector('[data-cancel]').disabled,'cancel enabled during import');
+ assert(calls[0].body.copy_notes&&!calls[0].body.copy_pdfs&&!calls[0].body.copy_annotations&&!calls[0].body.tags&&!calls[0].body.bibliography,'unchecked choices not sent');
+ release();await pending;gate=null;
+ assert(dialog.open&&form.querySelector('.error').textContent.includes('unavailable'),'failure closed dialog or hid error');
+ assert(!form.elements.tags.checked&&!form.querySelector('[type="submit"]').disabled,'retry lost choices or stayed disabled');
+ failure=false;await form.onsubmit({preventDefault(){}});await tick();
+ assert(!document.querySelector('dialog')&&calls.length===2,'successful retry did not close dialog');
+ assert(messages.some(s=>s.includes('1 notes')),'import summary missing');
+ window.webkit.messageHandlers.result.postMessage('PASS: Zotero import selection, dependencies, cancel, busy state, errors and retry');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

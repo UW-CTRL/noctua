@@ -88,6 +88,11 @@ Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while
 chat tools annotate individual passages. See [Notes](notes.md#assistant-edits)
 for note-editing boundaries.
 
+Zotero import is a Library dialog control. Imported notes are ordinary editable
+text notes; imported PDF annotations can be read and edited through the existing
+annotation tools. Re-importing preserves local edits. HTML note formatting and
+embedded images are not reproduced.
+
 Project root is a drag target shown only while dragging project entries. The project sidebar combines its collection selector and creation controls in one row. Hover or keyboard-focus a creation icon to reveal its label below. The collection menu uses fixed indentation for nested folders and highlights the selection without checkmarks. New note or file offers Note and Text file in one compact form. Import files opens a review queue for chosen or dropped files before uploading; these remain UI actions.
 
 The collection and save status align with the left end of the divider below

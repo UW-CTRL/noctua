@@ -12,6 +12,11 @@ text, drawing, and media blocks and save automatically. Click text to edit its
 source with a live preview; click away to finish. Hover between blocks to insert
 content. The **Note guide** question-mark icon at the far right of the note header opens the in-app syntax and editing guide.
 
+**Library → Import from Zotero → Notes** copies standalone and paper notes into
+their collections as editable text notes. Paragraph breaks are retained; HTML
+formatting and embedded images are not reproduced. Re-importing preserves existing
+imported notes and local edits. See [Zotero import](getting-started.md#import-from-zotero-optional).
+
 ## Project files, bibliographies, and skills
 
 The collection menu uses consistent indentation for nested folders and highlights the selected collection without a checkmark.

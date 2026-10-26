@@ -80,9 +80,28 @@ async function importLibraryPDF(target = lib.target || 'L1') {
   } catch (e) { toast(e.message); }
 }
 async function importZoteroLibrary() {
-  toast('Copying Zotero collections and available PDFs…');
-  const result = await api('/api/library/import-zotero', {copy_pdfs:true});
-  await loadCollections(); await loadLibItems();
-  toast('Import complete. ' + JSON.stringify(result));
-  return result;
+  if(document.querySelector('#zotero-import-dialog'))return;
+  const dialog=document.createElement('dialog');dialog.id='zotero-import-dialog';dialog.className='paper-editor zotero-import';
+  dialog.setAttribute('aria-labelledby','zotero-import-title');
+  const choices=[['bibliography','Detailed bibliography'],['tags','Tags'],['copy_pdfs','Local PDFs'],['copy_notes','Notes'],['copy_annotations','PDF annotations']];
+  dialog.innerHTML='<form><h2 id="zotero-import-title">Import from Zotero</h2><p>Collections and basic paper information are always imported. Choose what else to copy.</p>'+choices.map(([name,label])=>`<label><input type="checkbox" name="${name}" checked> ${label}</label>`).join('')+'<p>Notes become text notes. Re-importing keeps existing notes and annotations. PDF annotations require the matching local PDF; only one PDF per paper is imported.</p><p>Close Zotero first for the freshest snapshot.</p><p class="error" role="alert"></p><button type="button" data-cancel>Cancel</button> <button type="submit">Import</button></form>';
+  document.body.append(dialog);dialog.showModal();dialog.onclose=()=>dialog.remove();
+  const form=dialog.querySelector('form'),submit=form.querySelector('[type="submit"]');let busy=false;
+  dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+  dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
+  form.elements.copy_annotations.onchange=()=>{if(form.elements.copy_annotations.checked)form.elements.copy_pdfs.checked=true;};
+  form.elements.copy_pdfs.onchange=()=>{if(!form.elements.copy_pdfs.checked)form.elements.copy_annotations.checked=false;};
+  form.onsubmit=async e=>{
+    e.preventDefault();if(busy)return;busy=true;
+    const body=Object.fromEntries(choices.map(([name])=>[name,form.elements[name].checked]));
+    form.querySelectorAll('input,button').forEach(el=>el.disabled=true);submit.textContent='Importing…';
+    form.querySelector('.error').textContent='';
+    try{
+      const result=await api('/api/library/import-zotero',body);
+      await loadCollections();await loadLibItems();
+      dialog.close();toast(`Import complete: ${result.papers} papers, ${result.pdfs} PDFs, ${result.notes} notes, ${result.annotations} annotations.`);
+      if(result.warnings?.length)toast(result.warnings.join('\n'));
+    }catch(error){form.querySelector('.error').textContent=error.message;}
+    finally{busy=false;form.querySelectorAll('input,button').forEach(el=>el.disabled=false);submit.textContent='Import';}
+  };
 }
