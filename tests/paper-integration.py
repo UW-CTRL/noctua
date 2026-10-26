@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Real compiler/API regression. Requires cargo build and both compiler setup scripts."""
+import gzip
 import json
 import os
 from pathlib import Path
 import socket
 import platform
 import re
+import shutil
+import traceback
 import subprocess
 import tempfile
 import time
@@ -14,15 +17,71 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def recorded_source(sync_dir, artifact, path):
+    """Use the compiler's Input spelling, including Windows drive/relative paths.
+
+    Reconstructing an absolute path from Python can differ from Tectonic's
+    recorded path on Windows. SyncTeX may then exit successfully without a hit.
+    Split at most twice: an Input name may itself contain a drive-letter colon.
+    """
+    sync = sync_dir / (artifact + '.synctex.gz')
+    content = (gzip.decompress(sync.read_bytes()) if sync.exists()
+               else (sync_dir / (artifact + '.synctex')).read_bytes())
+    names = [line.split(':', 2)[2] for line in content.decode('utf-8').splitlines()
+             if line.startswith('Input:')]
+    matches = [name for name in names
+               if name.replace('\\', '/').removeprefix('./') == path
+               or name.replace('\\', '/').endswith('/' + path)]
+    assert len(matches) == 1, f"Expected one SyncTeX Input for {path!r}: {names!r}"
+    return matches[0]
+
+
+def synctex_diagnostics(program, sync_dir, artifact, source, relative, line):
+    """Probe a failed query without weakening its assertion or changing app data.
+
+    Exit zero with only the banner does not distinguish a path lookup failure
+    from an unreadable map. Compare compressed/plain copies in a genuinely short
+    directory and try inverse lookup independently of source-name matching.
+    """
+    compressed = sync_dir / (artifact + '.synctex.gz')
+    raw = (gzip.decompress(compressed.read_bytes()) if compressed.exists()
+           else (sync_dir / (artifact + '.synctex')).read_bytes())
+    report = [f'Platform: {platform.platform()}', f'Map bytes: {len(raw)}',
+              f'Original directory: {sync_dir}',
+              'Map preamble:\n' + raw.decode('utf-8', errors='replace').split('Content:', 1)[0]]
+    for zipped in (True, False):
+        with tempfile.TemporaryDirectory(prefix='ns-') as temp:
+            folder = Path(temp)
+            sidecar = folder / ('probe.synctex.gz' if zipped else 'probe.synctex')
+            sidecar.write_bytes(gzip.compress(raw) if zipped else raw)
+            candidates = list(dict.fromkeys([source, source.replace('\\', '/'), relative]))
+            commands = [[str(program), 'view', '-i', f'{line}:0:{name}', '-o', 'probe.pdf']
+                        for name in candidates]
+            commands.append([str(program), 'edit', '-o', '1:100:100:probe.pdf'])
+            for command in commands:
+                report.append(f'cwd={folder!s}; sidecar length={len(str(sidecar))}; argv={command!r}')
+                try:
+                    result = subprocess.run(command, cwd=folder, capture_output=True, text=True,
+                                            errors='replace', timeout=10)
+                    report.append(f'exit={result.returncode}\n{result.stdout}\n{result.stderr}')
+                except Exception as error:
+                    report.append(repr(error))
+    return '\n'.join(report)
+
+
 def run(engine):
     with tempfile.TemporaryDirectory(prefix='noctua-paper-test-') as temp:
-        data = Path(temp)
+        # Keep the real compiler/source paths short enough for Windows TeX, but
+        # force the fingerprint + artifact sidecar path beyond MAX_PATH. Both
+        # forward lookup here and the app's inverse lookup must use a basename.
+        data = Path(temp)/('project-' + 'x' * 32)
+        data.mkdir()
         (data/'settings.json').write_text('{"s2_key_skipped":true}')
         (data/'notes').mkdir()
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        env = dict(os.environ, NOCTUA_HOME=temp, NOCTUA_PORT=str(port), NOCTUA_NO_OPEN='1', PATH='')
+        env = dict(os.environ, NOCTUA_HOME=str(data), NOCTUA_PORT=str(port), NOCTUA_NO_OPEN='1', PATH='')
         binary = ROOT/'target'/'debug'/('noctua.exe' if os.name == 'nt' else 'noctua')
         process = subprocess.Popen([str(binary)], cwd=temp, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         base = f'http://127.0.0.1:{port}'
@@ -95,9 +154,28 @@ def run(engine):
             synctex=ROOT/'target/texlive/bin'/tex_platform/('synctex.exe' if os.name=='nt' else 'synctex')
             def source_point(build,path,line):
                 last=build['last_success']
-                forward=subprocess.run([str(synctex),'view','-i',f"{line}:0:{paper_root/'work'/path}",'-o',str(paper_root/(last['artifact']+'.pdf')),'-d',str(paper_root/'sync'/last['fingerprint'])],capture_output=True,text=True,timeout=10)
+                sync_dir = paper_root/'sync'/last['fingerprint']
+                source = recorded_source(sync_dir, last['artifact'], path)
+                command = [str(synctex),'view','-i',f"{line}:0:{source}",
+                           '-o','map.pdf']
+                sidecar = sync_dir / (last['artifact']+'.synctex.gz')
+                assert len(str(sidecar)) > 260, 'Fixture must exercise a long sidecar path'
+                # Match the app's query staging. Changing cwd alone still lets
+                # Windows SyncTeX hit MAX_PATH when it resolves the full name.
+                # Preserve map bytes and their source records exactly.
+                with tempfile.TemporaryDirectory(prefix='ns-') as temp:
+                    query_dir = Path(temp)
+                    suffix = 'synctex.gz' if sidecar.exists() else 'synctex'
+                    shutil.copyfile(sync_dir/(last['artifact']+'.'+suffix), query_dir/('map.'+suffix))
+                    forward=subprocess.run(command,cwd=query_dir,capture_output=True,text=True,timeout=10)
                 values=dict(re.findall(r'^(Page|x|y):([^\n]+)',forward.stdout,re.M))
-                assert values,forward.stdout+forward.stderr
+                if forward.returncode != 0 or not {'Page','x','y'} <= values.keys():
+                    report = synctex_diagnostics(synctex, sync_dir, last['artifact'], source, path, line)
+                    (paper_root/'synctex-diagnostics.txt').write_text(report, encoding='utf-8')
+                    print(report, flush=True)
+                assert forward.returncode == 0 and {'Page','x','y'} <= values.keys(), (
+                    f"SyncTeX command: {command!r}\nWorking directory: {query_dir} (temporary copy of {sync_dir})\nExit: {forward.returncode}\n"
+                    + forward.stdout + forward.stderr)
                 return {'fingerprint':last['fingerprint'],'page':int(values['Page']),'x':float(values['x']),'y':float(values['y'])}
             point=source_point(result,'sections/intro.tex',1)
             found=api(url+'/paper/source',point)
@@ -208,12 +286,28 @@ def run(engine):
             pdfs=list((data/'notes').glob('*/.workspace/paper/*.pdf'))
             assert len(pdfs)<=2, pdfs
             print('PASS: artifact retention bounded to two PDFs')
+        except Exception:
+            # Preserve only this synthetic test project's build data, never the
+            # user's library. CI uploads it before the temporary fixture vanishes.
+            diagnostics = ROOT/'target/paper-diagnostics'/engine
+            diagnostics.mkdir(parents=True, exist_ok=True)
+            (diagnostics/'failure.txt').write_text(traceback.format_exc(), encoding='utf-8')
+            for paper_dir in (data/'notes').glob('*/.workspace/paper'):
+                shutil.copytree(paper_dir, diagnostics/paper_dir.parents[1].name, dirs_exist_ok=True)
+            raise
         finally:
             process.terminate()
             try: process.wait(timeout=10)
             except subprocess.TimeoutExpired: process.kill();process.wait()
 
 if __name__=='__main__':
+    failures = []
     for engine in ('tectonic','pdflatex'):
         print("Testing",engine,flush=True)
-        run(engine)
+        try:
+            run(engine)
+        except Exception:
+            traceback.print_exc()
+            failures.append(engine)
+    if failures:
+        raise SystemExit('Paper integration failed: ' + ', '.join(failures))
