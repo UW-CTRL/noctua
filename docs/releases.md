@@ -239,6 +239,11 @@ interrupt the user. Installation always requires confirmation; there are no
 background installations. Linux supports in-app updates only for AppImage;
 package-manager installations must update through their package manager.
 
+Settings uses an in-app confirmation dialog, with **Install update** and **Cancel**
+buttons, rather than relying on the browser confirmation dialog inside desktop
+tabs. Cancel or Esc sends no installation request. The startup update prompt's
+own Update button remains its confirmation and does not open a second dialog.
+
 Users of an older release without the updater must manually install a build
 containing this feature once. Test updates between two signed packaged versions
 on each supported OS before relying on them; unit tests and compilation do not

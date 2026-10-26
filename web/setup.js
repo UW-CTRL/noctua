@@ -444,10 +444,37 @@ function aboutSection(s) {
     </section>`;
 }
 
+// Browser confirm() is not reliable inside the desktop shell's tab webviews.
+function confirmUpdateInstall(version) {
+  if (document.querySelector('#app-update-confirm-dialog')) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const previousFocus = document.activeElement;
+    const dialog = document.createElement('dialog');
+    dialog.id = 'app-update-confirm-dialog';
+    dialog.className = 'setup-card';
+    dialog.setAttribute('aria-labelledby', 'app-update-confirm-title');
+    dialog.innerHTML = `<h2 id="app-update-confirm-title">Install Noctua ${esc(version)}?</h2>
+      <p>Save your work before continuing. Noctua may close and restart during installation.</p>
+      <div class="setup-actions end"><button data-cancel>Cancel</button><button class="primary" data-confirm>Install update</button></div>`;
+    let confirmed = false;
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      if (previousFocus?.isConnected) previousFocus.focus();
+      resolve(confirmed);
+    }, { once: true });
+    dialog.querySelector('[data-cancel]').addEventListener('click', () => dialog.close());
+    dialog.querySelector('[data-confirm]').addEventListener('click', () => { confirmed = true; dialog.close(); });
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    dialog.querySelector('[data-cancel]').focus();
+  });
+}
+
 // The native process retains the checked release and serializes operations across windows.
 async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
   const action = button.dataset.updateAction;
-  if (action === 'install' && confirmInstall && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
+  if (action === 'install' && confirmInstall && !await confirmUpdateInstall(button.dataset.updateVersion)) return;
   msg(section, { check: 'Checking for updates…', install: 'Downloading, verifying, and installing the update…', restart: 'Restarting Noctua…' }[action], true);
   try {
     const result = await api('/api/desktop/update', { action, ...(action === 'install' ? { version: button.dataset.updateVersion } : {}) });

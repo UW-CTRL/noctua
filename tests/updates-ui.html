@@ -7,7 +7,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const keyNeeded = s => !s.skipped;
 let calls = [], fail = false, confirmCalls = 0, status = 'available', notifications = [];
 function toast(message,options){notifications.push({message,options});}
-window.confirm = () => { confirmCalls++; return true; };
+window.confirm = () => { confirmCalls++; throw new Error('Native confirmation is unavailable in the desktop tab'); };
 async function api(path, body) {
   calls.push({path, body});
   if (fail) throw new Error('Network unavailable');
@@ -60,7 +60,37 @@ window.addEventListener('load', async () => {
     assert(calls.at(-1).body.action === 'restart', 'restart action missing');
     dialog.dispatchEvent(new Event('cancel', {cancelable:true}));
     assert(!document.querySelector('dialog'), 'Escape did not dismiss the prompt');
-    window.webkit.messageHandlers.result.postMessage('PASS: startup eligibility, offline/current/skip handling, modal deduplication, version summaries, escaping, focus, dismissal, install errors, retry and restart');
+    const section = document.createElement('section');
+    section.innerHTML = '<button data-update-action="install" data-update-version="0.3.0">Update to 0.3.0</button>';
+    const settingsDialog = document.createElement('dialog');
+    settingsDialog.appendChild(section);
+    document.body.appendChild(settingsDialog);
+    settingsDialog.showModal();
+    button = section.querySelector('button');
+    button.focus();
+    const beforeInstall = calls.length;
+    let operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    assert(dialog?.open, 'Settings install did not show an in-app confirmation');
+    assert(settingsDialog.open, 'confirmation closed Settings');
+    assert(await confirmUpdateInstall('0.3.0') === false && document.querySelectorAll('#app-update-confirm-dialog').length === 1, 'duplicate confirmation was opened');
+    assert(calls.length === beforeInstall, 'Settings installed before confirmation');
+    assert(document.activeElement === dialog.querySelector('[data-cancel]'), 'Cancel was not focused');
+    dialog.querySelector('[data-cancel]').click(); await operation;
+    assert(calls.length === beforeInstall && !dialog.isConnected, 'Cancel installed an update or leaked the confirmation');
+    assert(document.activeElement === button, 'confirmation did not restore Settings focus');
+    operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    dialog.dispatchEvent(new Event('cancel', {cancelable:true})); await operation;
+    assert(calls.length === beforeInstall && !dialog.isConnected, 'Escape installed an update or leaked the confirmation');
+    operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    dialog.querySelector('[data-confirm]').click(); await operation;
+    assert(calls.length === beforeInstall + 1 && calls.at(-1).body.action === 'install' && calls.at(-1).body.version === '0.3.0', 'confirmed Settings install did not request the displayed version');
+    assert(button.dataset.updateAction === 'restart', 'Settings install did not offer restart');
+    assert(confirmCalls === 0, 'update flow used native confirm');
+    settingsDialog.close(); settingsDialog.remove();
+    window.webkit.messageHandlers.result.postMessage('PASS: startup eligibility, offline/current/skip handling, modal deduplication, version summaries, escaping, focus, dismissal, install errors, retry, restart, and Settings confirmation without native dialogs');
   } catch (error) { window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+' '+error.stack); }
 });
 </script></body></html>

@@ -117,6 +117,9 @@ location you want to select.
 
 Official desktop builds check for updates at startup. You can also use
 **Settings → About & shortcuts → Check for updates**. Save work before installing.
+**Update to …** opens an in-app confirmation. Choose **Install update** to download,
+verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
+installation, use **Restart Noctua** when offered.
 Linux in-app updates require AppImage; use your package manager for other builds.
 Browser mode is updated by rebuilding or replacing the server binary.
 
