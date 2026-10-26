@@ -11,7 +11,7 @@ context.evaluateScript(#"""
 const esc = s => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const settings={version:'0.1.0'};
 let allow=true, calls=[], messages=[], fail=false, status='available';
-const confirm = () => allow;
+const confirm = () => { throw new Error('Native confirmation must not be used'); };
 async function api(path,body){calls.push({path,body});if(fail)throw new Error('Network unavailable');return {status,version:'0.2.0'};}
 const button={dataset:{updateAction:'check'},textContent:'Check for updates'};
 const section={querySelector(){return null;}};
@@ -19,6 +19,8 @@ const msg=(_,text)=>messages.push(text);
 function assert(v,why){if(!v)throw new Error(why);}
 """# + String(source[start..<end]))
 context.evaluateScript(#"""
+// DOM confirmation is exercised in updates-ui.swift; keep state tests DOM-free.
+confirmUpdateInstall = async () => allow;
 (async()=>{
   assert(!aboutSection({desktop:false}).includes('data-act="update"'),'browser app offers native updates');
   assert(aboutSection({desktop:true}).includes('Check for updates'),'desktop update button missing');

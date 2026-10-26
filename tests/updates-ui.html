@@ -7,7 +7,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const keyNeeded = s => !s.skipped;
 let calls = [], fail = false, confirmCalls = 0, status = 'available', notifications = [];
 function toast(message,options){notifications.push({message,options});}
-window.confirm = () => { confirmCalls++; return true; };
+window.confirm = () => { confirmCalls++; throw new Error('Native confirmation is unavailable in the desktop tab'); };
 async function api(path, body) {
   calls.push({path, body});
   if (fail) throw new Error('Network unavailable');
@@ -42,6 +42,36 @@ window.addEventListener('load', async () => {
     dialog.querySelector('[data-dismiss]').click();
     assert(!document.querySelector('dialog') && calls.length === before, 'Not now installed an update');
     assert(document.activeElement === previous, 'focus not restored after dismissal');
+    const history = [{version:'0.3.0', changes:[]}].concat(Array.from({length:30}, (_, i) => ({
+      version:`0.2.${29-i}`, changes:[{kind:'fixes', items:['A release highlight '.repeat(5), 'Another release highlight '.repeat(4)]}]
+    })));
+    showUpdatePrompt({current_version:'0.1.0', version:'0.3.0', releases:history});
+    dialog = document.querySelector('#app-update-dialog');
+    const summary = dialog.querySelector('.update-summary');
+    assert(summary.tabIndex === 0 && summary.getAttribute('role') === 'region' && summary.getAttribute('aria-label') === 'Release history', 'history is not keyboard accessible');
+    summary.focus();
+    assert(document.activeElement === summary, 'history cannot receive keyboard focus');
+    assert(summary.scrollHeight > summary.clientHeight && summary.clientHeight > 0, 'long history does not have a usable scroll area');
+    assert(dialog.querySelectorAll('.update-release').length === history.length, 'skipped releases were truncated');
+    const headings = [...dialog.querySelectorAll('.update-release h4')];
+    assert(headings[0].textContent.includes('0.3.0') && headings.at(-1).textContent.includes('0.2.0'), 'history order or oldest skipped release is wrong');
+    const lastNotes = headings.at(-1).querySelector('a');
+    assert(lastNotes.href.endsWith('/releases/tag/v0.2.0'), 'oldest skipped release lacks its full notes link');
+    const actions = dialog.querySelector('.setup-actions');
+    const actionsTop = actions.getBoundingClientRect().top;
+    lastNotes.scrollIntoView({block:'nearest'});
+    assert(summary.scrollTop > 0, 'cannot scroll to the oldest skipped release');
+    const notesRect = lastNotes.getBoundingClientRect(), summaryRect = summary.getBoundingClientRect();
+    assert(notesRect.top >= summaryRect.top - 1 && notesRect.bottom <= summaryRect.bottom + 1, 'oldest release notes are clipped');
+    assert(Math.abs(actions.getBoundingClientRect().top-actionsTop) < 1, 'history scrolling moved the action buttons');
+    const dialogRect = dialog.getBoundingClientRect(), actionsRect = actions.getBoundingClientRect();
+    assert(dialogRect.top >= 0 && dialogRect.bottom <= innerHeight + 1 && actionsRect.bottom <= innerHeight, 'long history pushed the dialog or buttons out of the viewport');
+    dialog.querySelector('[data-dismiss]').click();
+    // Deferring does not consume the supplied history on the next launch/offer.
+    showUpdatePrompt({current_version:'0.1.0', version:'0.3.0', releases:history});
+    dialog = document.querySelector('#app-update-dialog');
+    assert(dialog.querySelectorAll('.update-release').length === history.length, 'deferring lost release history');
+    dialog.querySelector('[data-dismiss]').click();
     status = 'skipped'; await checkStartupUpdate();
     assert(!document.querySelector('dialog'), 'native skip response showed another prompt');
     status = 'current'; await checkStartupUpdate();
@@ -60,7 +90,37 @@ window.addEventListener('load', async () => {
     assert(calls.at(-1).body.action === 'restart', 'restart action missing');
     dialog.dispatchEvent(new Event('cancel', {cancelable:true}));
     assert(!document.querySelector('dialog'), 'Escape did not dismiss the prompt');
-    window.webkit.messageHandlers.result.postMessage('PASS: startup eligibility, offline/current/skip handling, modal deduplication, version summaries, escaping, focus, dismissal, install errors, retry and restart');
+    const section = document.createElement('section');
+    section.innerHTML = '<button data-update-action="install" data-update-version="0.3.0">Update to 0.3.0</button>';
+    const settingsDialog = document.createElement('dialog');
+    settingsDialog.appendChild(section);
+    document.body.appendChild(settingsDialog);
+    settingsDialog.showModal();
+    button = section.querySelector('button');
+    button.focus();
+    const beforeInstall = calls.length;
+    let operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    assert(dialog?.open, 'Settings install did not show an in-app confirmation');
+    assert(settingsDialog.open, 'confirmation closed Settings');
+    assert(await confirmUpdateInstall('0.3.0') === false && document.querySelectorAll('#app-update-confirm-dialog').length === 1, 'duplicate confirmation was opened');
+    assert(calls.length === beforeInstall, 'Settings installed before confirmation');
+    assert(document.activeElement === dialog.querySelector('[data-cancel]'), 'Cancel was not focused');
+    dialog.querySelector('[data-cancel]').click(); await operation;
+    assert(calls.length === beforeInstall && !dialog.isConnected, 'Cancel installed an update or leaked the confirmation');
+    assert(document.activeElement === button, 'confirmation did not restore Settings focus');
+    operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    dialog.dispatchEvent(new Event('cancel', {cancelable:true})); await operation;
+    assert(calls.length === beforeInstall && !dialog.isConnected, 'Escape installed an update or leaked the confirmation');
+    operation = updateApp(button, section, () => {});
+    dialog = document.querySelector('#app-update-confirm-dialog');
+    dialog.querySelector('[data-confirm]').click(); await operation;
+    assert(calls.length === beforeInstall + 1 && calls.at(-1).body.action === 'install' && calls.at(-1).body.version === '0.3.0', 'confirmed Settings install did not request the displayed version');
+    assert(button.dataset.updateAction === 'restart', 'Settings install did not offer restart');
+    assert(confirmCalls === 0, 'update flow used native confirm');
+    settingsDialog.close(); settingsDialog.remove();
+    window.webkit.messageHandlers.result.postMessage('PASS: update states, long skipped-release history, scrolling, visible actions, full notes links, keyboard focus, deferral, and Settings confirmation');
   } catch (error) { window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+' '+error.stack); }
 });
 </script></body></html>
