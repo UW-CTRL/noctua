@@ -2403,7 +2403,7 @@ dependencies = [
 
 [[package]]
 name = "noctua"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2424,7 +2424,7 @@ dependencies = [
 
 [[package]]
 name = "noctua-app"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "noctua",
