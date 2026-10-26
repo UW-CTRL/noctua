@@ -5,7 +5,9 @@
 pub mod server;
 pub mod service;
 pub mod client;
+pub mod server_update;
 mod security;
+mod maintenance;
 mod agent;
 mod cache;
 mod chat;
@@ -531,6 +533,8 @@ async fn desktop_update(State(app): Shared, Json(body): Json<UpdateBody>) -> Api
 /// Sets up the data folder and starts the server on 127.0.0.1. Returns its
 /// URL and the future that runs it.
 pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Output = std::io::Result<()>>)> {
+    server_update::check_reservation()?;
+    let machine=server::machine_lease()?;
     let storage_lease = storage::lease()?;
     storage::exclusive_lease(&storage_lease)?;
     let data = paths::data_dir()?;
@@ -545,7 +549,8 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     };
     let port = listener.local_addr()?.port();
     let url = format!("http://127.0.0.1:{port}");
-    let owner = server::Owner::acquire(&data, &url)?;
+    let owner = server::Owner::acquire_with_machine(&data, &url,Some(machine))?;
+    server_update::restore_launch(&data, &owner.record.server_id)?;
     let migrated = if env::var_os("NOCTUA_HOME").is_some() || env::var_os("NOCTUA_PROFILE_HOME").is_some() { None } else { paths::migrate_legacy(&data)? };
     let mut settings = Settings::load(&data);
     if let Some(old) = &migrated {
@@ -612,25 +617,49 @@ fn asset_owned(html: String, mime: &'static str) -> Response { ([(header::CONTEN
 async fn page_index(State(app): Shared) -> Response { page(&app,include_str!("../web/index.html")) }
 async fn page_shell(State(app): Shared) -> Response { page(&app,include_str!("../web/shell.html")) }
 
-async fn server_identity(State(app): Shared) -> Json<Value> {
+async fn server_identity(State(app): Shared, headers: axum::http::HeaderMap) -> Json<Value> {
+    if let (Some(runtime),Some(client))=(app.runtime.as_ref(),headers.get("x-noctua-editor").and_then(|v|v.to_str().ok())) {runtime.maintenance.lock().unwrap().touch(client);}
     Json(app.runtime.as_ref().map(|r|r.identity()).unwrap_or(json!({"product":"noctua","server_id":"test","api_version":1,"ready":true})))
 }
 async fn server_stop(State(app): Shared) -> ApiResult {
     let r = app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
     let _admission=r.admission.lock().unwrap();
-    r.draining.store(true,std::sync::atomic::Ordering::SeqCst);
-    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>1 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || app.login_gate.try_lock().is_err() {
-        r.draining.store(false,std::sync::atomic::Ordering::SeqCst);
-        return Err(Status(StatusCode::CONFLICT,"Tasks or other requests are active. Wait and retry; no task was stopped.".into()).into());
+    let previous=r.draining.swap(true,std::sync::atomic::Ordering::SeqCst);
+    let pending_review=skills::pending_review(&app);
+    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || pending_review || app.login_gate.try_lock().is_err() {
+        r.draining.store(previous,std::sync::atomic::Ordering::SeqCst);
+        return Err(Status(StatusCode::CONFLICT,if pending_review{"A skill run awaits approval or output review. Apply/reject it before stopping; its results were kept."}else{"Tasks or other requests are active. Wait and retry; no task was stopped."}.into()).into());
     }
     r.shutdown.notify_one();
     Ok(Json(json!({"draining":true})))
+}
+async fn server_update_control(State(app):Shared,Json(body):Json<Value>)->ApiResult {
+    let r=app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
+    let action=body["action"].as_str().unwrap_or("");let id=body["id"].as_str().unwrap_or("");
+    if id.is_empty()||id.len()>128 {return Err(anyhow::anyhow!("Invalid update transaction").into());}
+    let pending_review=skills::pending_review(&app);
+    if action=="begin"&&pending_review {return Err(anyhow::anyhow!("A skill run is awaiting approval or output review. Apply/reject it before updating; its results were kept").into());}
+    let _admission=r.admission.lock().unwrap();
+    let notice=r.maintenance.lock().unwrap().control(action,id,body["version"].as_str().unwrap_or(""))?;
+    if action=="drain" {r.draining.store(true,std::sync::atomic::Ordering::SeqCst);}
+    if action=="cancel" {r.draining.store(false,std::sync::atomic::Ordering::SeqCst);}
+    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && app.login_gate.try_lock().is_ok();
+    let mut response=json!({"maintenance":notice,"idle":idle&&!pending_review,"pending_review":pending_review});
+    if action=="begin" {response["launch_environment"]=server_update::launch_environment(&app)?;}
+    Ok(Json(response))
+}
+async fn server_update_ack(State(app):Shared,Json(body):Json<Value>)->ApiResult {
+    let r=app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
+    r.maintenance.lock().unwrap().acknowledge(body["id"].as_str().unwrap_or(""),body["client"].as_str().unwrap_or(""),body["saved"].as_bool().unwrap_or(false))?;
+    Ok(Json(json!({"ok":true})))
 }
 fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
     let security = (hosts, app.runtime.clone());
     Router::new()
         .route("/api/server", get(server_identity))
         .route("/api/server/stop", post(server_stop))
+        .route("/api/server/update", post(server_update_control))
+        .route("/api/server/update/ack", post(server_update_ack))
         .route("/auth/login", post(||async{StatusCode::UNAUTHORIZED}))
         .route("/drafts.js", get(||async{asset(include_str!("../web/drafts.js"),"text/javascript; charset=utf-8")}))
         .route("/connection.js", get(||async{asset(include_str!("../web/connection.js"),"text/javascript; charset=utf-8")}))

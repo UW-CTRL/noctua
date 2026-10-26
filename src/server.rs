@@ -23,15 +23,20 @@ pub struct Record {
     pub data_dir: PathBuf,
     pub url: String,
     pub pid: u32,
+    #[serde(default)]
+    pub executable: PathBuf,
+    #[serde(default)]
+    pub executable_hash: String,
 }
 
 pub struct Owner {
     _lock: File,
+    _machine: Option<File>,
     pub record: Record,
     pub token: String,
     pub control: String,
 }
-fn exclusive(path: &Path) -> Result<File> {
+pub(crate) fn exclusive(path: &Path) -> Result<File> {
     let f = OpenOptions::new()
         .read(true)
         .write(true)
@@ -45,12 +50,29 @@ fn exclusive(path: &Path) -> Result<File> {
 
 impl Owner {
     pub fn acquire(data: &Path, url: &str) -> Result<Self> {
+        #[cfg(not(test))]
+        let machine = {
+            crate::server_update::check_reservation()?;
+            Some(machine_lease()?)
+        };
+        #[cfg(test)]
+        let machine = None;
+        Self::acquire_with_machine(data, url, machine)
+    }
+    pub(crate) fn acquire_with_machine(
+        data: &Path,
+        url: &str,
+        machine: Option<File>,
+    ) -> Result<Self> {
         fs::create_dir_all(data)?;
         let lock = exclusive(&data.join("server-owner.lock"))?;
         // This marker is deliberately separate from SQLite's schema and migration lease.
         let marker = data.join("server-format.json");
         let server_id = if marker.exists() {
             let value: Value = serde_json::from_slice(&fs::read(&marker)?)?;
+            if let Some(previous) = value["server_version"].as_str() {
+                anyhow::ensure!(semver::Version::parse(previous)? <= semver::Version::parse(env!("CARGO_PKG_VERSION"))?, "A newer server has opened this data. Use that release or restore a complete pre-update backup; automatic downgrade is unsafe");
+            }
             anyhow::ensure!(
                 value["data_version"] == DATA_VERSION,
                 "Incompatible data format. Use the matching server or restore a complete backup"
@@ -96,22 +118,42 @@ impl Owner {
             data_dir: fs::canonicalize(data)?,
             url: url.into(),
             pid: std::process::id(),
+            executable: fs::canonicalize(std::env::current_exe()?)?,
+            executable_hash: executable_hash(&std::env::current_exe()?)?,
         };
         let control = uuid::Uuid::new_v4().simple().to_string();
         crate::paths::write_private(&data.join("server-control"), &control)?;
         Ok(Self {
             _lock: lock,
+            _machine: machine,
             record,
             token,
             control,
         })
     }
     pub fn publish(&self) -> Result<()> {
+        #[cfg(not(test))]
+        crate::paths::write_private(
+            &crate::client::config_dir()?.join("active-server.json"),
+            &serde_json::to_string(&self.record)?,
+        )?;
         crate::paths::write_private(
             &self.record.data_dir.join("server.json"),
             &serde_json::to_string_pretty(&self.record)?,
         )
     }
+}
+pub(crate) fn machine_lease() -> Result<File> {
+    exclusive(&crate::client::config_dir()?.join("server-machine.lock")).context("Another Noctua server is already running for this OS user. Reuse it or stop it safely before selecting another data folder")
+}
+pub fn executable_hash(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    Ok(format!("{:x}", Sha256::digest(fs::read(path)?)))
+}
+pub fn describe() -> Result<Value> {
+    Ok(
+        json!({"product":"noctua","version":env!("CARGO_PKG_VERSION"),"api_version":API_VERSION,"data_version":DATA_VERSION,"executable_hash":executable_hash(&std::env::current_exe()?)?}),
+    )
 }
 
 pub fn backup(data: &Path) -> Result<()> {
@@ -202,6 +244,11 @@ pub(crate) fn preferred_port(data: &Path, requested: u16) -> u16 {
 }
 
 pub async fn probe(address: &str, secret: &str) -> Result<Value> {
+    let value = probe_any(address, secret).await?;
+    validate_identity(&value)?;
+    Ok(value)
+}
+pub(crate) async fn probe_any(address: &str, secret: &str) -> Result<Value> {
     let u = validate_url(address)?;
     let response = http()?
         .get(u.join("api/server")?)
@@ -218,7 +265,12 @@ pub async fn probe(address: &str, secret: &str) -> Result<Value> {
         .json()
         .await
         .context("Server returned an invalid identity")?;
-    validate_identity(&value)?;
+    anyhow::ensure!(
+        value["product"] == "noctua"
+            && value["api_version"] == API_VERSION
+            && value["server_id"].as_str().is_some_and(|s| !s.is_empty()),
+        "Incompatible server identity"
+    );
     Ok(value)
 }
 fn validate_identity(value: &Value) -> Result<()> {
@@ -229,7 +281,7 @@ fn validate_identity(value: &Value) -> Result<()> {
     );
     Ok(())
 }
-fn validate_local_record(record: &Record) -> Result<()> {
+pub(crate) fn validate_local_record(record: &Record) -> Result<()> {
     let url = validate_url(&record.url)?;
     anyhow::ensure!(
         url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "localhost")),
@@ -239,13 +291,18 @@ fn validate_local_record(record: &Record) -> Result<()> {
 }
 
 pub async fn status(data: &Path) -> Result<Value> {
+    let value = status_any(data).await?;
+    validate_identity(&value)?;
+    Ok(value)
+}
+pub(crate) async fn status_any(data: &Path) -> Result<Value> {
     let r = record(data)?;
     anyhow::ensure!(
         r.product == "noctua" && r.api_version == API_VERSION,
         "Incompatible server record; update the client/server before reconnecting"
     );
     validate_local_record(&r)?;
-    let v = probe(&r.url, &token(data)?).await?;
+    let v = probe_any(&r.url, &token(data)?).await?;
     anyhow::ensure!(
         v["server_id"] == r.server_id
             && v["instance_id"] == r.instance_id
@@ -254,11 +311,27 @@ pub async fn status(data: &Path) -> Result<Value> {
     );
     Ok(v)
 }
+/// Read authenticated update progress even while the owner is draining.
+pub async fn status_any_for_update(data: &Path) -> Result<Value> {
+    status_any(data).await
+}
 
 /// The control lock covers an entire ensure, stop, or restart transaction.
 /// `serve` owns the data lock instead, so a detached child can become ready
 /// while its launcher keeps concurrent client control operations serialized.
-async fn control_lock(data: &Path) -> Result<File> {
+pub(crate) async fn control_lock(data: &Path) -> Result<(File, File)> {
+    let machine = crate::client::config_dir()?.join("server-manager.lock");
+    let manager = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(machine)?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while manager.try_lock().is_err() {
+        anyhow::ensure!(tokio::time::Instant::now()<deadline,"Another server operation or update is in progress. Check Server & connection for progress");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     fs::create_dir_all(data)?;
     let file = OpenOptions::new()
         .read(true)
@@ -268,11 +341,14 @@ async fn control_lock(data: &Path) -> Result<File> {
         .open(data.join("server-start.lock"))?;
     for _ in 0..300 {
         if file.try_lock().is_ok() {
-            return Ok(file);
+            return Ok((manager, file));
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     bail!("Another client is managing the server. Retry shortly")
+}
+pub async fn control_lock_for_cli(data: &Path) -> Result<(File, File)> {
+    control_lock(data).await
 }
 
 pub async fn ensure(executable: &Path, port: u16) -> Result<Value> {
@@ -281,10 +357,15 @@ pub async fn ensure(executable: &Path, port: u16) -> Result<Value> {
     ensure_locked(executable, port, &coordination).await
 }
 
-async fn ensure_locked(executable: &Path, port: u16, coordination: &Path) -> Result<Value> {
+pub(crate) async fn ensure_locked(
+    executable: &Path,
+    port: u16,
+    coordination: &Path,
+) -> Result<Value> {
     if let Ok(v) = status(coordination).await {
         return Ok(v);
     }
+    drop(machine_lease()?);
     let lease = crate::storage::lease()?;
     crate::storage::exclusive_lease(&lease)?;
     let data = crate::paths::data_dir()?;
@@ -303,62 +384,87 @@ async fn ensure_locked(executable: &Path, port: u16, coordination: &Path) -> Res
         anyhow::ensure!(crate::service::matches_data(&data)?,"The registered login service uses a different data folder. Change or disable that service explicitly; no other server was started");
         crate::service::start()?;
     } else {
-        let log = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(data.join("server.log"))?;
-        crate::paths::restrict(&data.join("server.log"));
-        let mut cmd = Command::new(fs::canonicalize(executable)?);
-        if std::env::var_os("NOCTUA_HOME").is_some_and(|value| !value.is_empty()) {
-            cmd.env("NOCTUA_HOME", fs::canonicalize(&data)?);
-        }
-        if std::env::var_os("NOCTUA_PROFILE_HOME").is_some_and(|value| !value.is_empty()) {
-            cmd.env(
-                "NOCTUA_PROFILE_HOME",
-                fs::canonicalize(crate::paths::default_data_dir())?,
-            );
-        }
-        for variable in ["NOCTUA_NOTES", "NOCTUA_CLAUDE", "NOCTUA_CODEX"] {
-            if let Some(value) = std::env::var_os(variable) {
-                let path = PathBuf::from(value);
-                if path.is_relative()
-                    && (variable == "NOCTUA_NOTES" || path.components().count() > 1)
-                {
-                    cmd.env(variable, std::env::current_dir()?.join(path));
-                }
+        spawn_detached(executable, &data, port, &[], None)?;
+    }
+    wait_ready(&data).await
+}
+pub(crate) fn spawn_detached(
+    executable: &Path,
+    data: &Path,
+    port: u16,
+    arguments: &[&str],
+    ticket: Option<&str>,
+) -> Result<()> {
+    let log = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(data.join("server.log"))?;
+    crate::paths::restrict(&data.join("server.log"));
+    let mut cmd = Command::new(fs::canonicalize(executable)?);
+    cmd.env("NOCTUA_CLIENT_HOME", crate::client::config_dir()?);
+    if std::env::var_os("NOCTUA_HOME").is_some_and(|value| !value.is_empty()) {
+        cmd.env("NOCTUA_HOME", fs::canonicalize(&data)?);
+    }
+    if std::env::var_os("NOCTUA_PROFILE_HOME").is_some_and(|value| !value.is_empty()) {
+        cmd.env("NOCTUA_PROFILE_HOME", {
+            let profile = crate::paths::default_data_dir();
+            if profile.exists() {
+                fs::canonicalize(profile)?
+            } else if profile.is_absolute() {
+                profile
+            } else {
+                std::env::current_dir()?.join(profile)
             }
-        }
-        cmd.arg("serve")
-            .env("NOCTUA_PORT", port.to_string())
-            .current_dir(&data)
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(log.try_clone()?))
-            .stderr(Stdio::from(log));
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            unsafe {
-                cmd.pre_exec(|| {
-                    if libc::setsid() == -1 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x00000008 | 0x00000200); // DETACHED_PROCESS | NEW_PROCESS_GROUP
-        }
-        let mut child = cmd
-            .spawn()
-            .context("Cannot start the separate server executable")?;
-        // Reap the launcher child without tying server lifetime to this process.
-        std::thread::spawn(move || {
-            let _ = child.wait();
         });
     }
+    for variable in ["NOCTUA_NOTES", "NOCTUA_CLAUDE", "NOCTUA_CODEX"] {
+        if let Some(value) = std::env::var_os(variable) {
+            let path = PathBuf::from(value);
+            if path.is_relative() && (variable == "NOCTUA_NOTES" || path.components().count() > 1) {
+                cmd.env(variable, std::env::current_dir()?.join(path));
+            }
+        }
+    }
+    if let Some(ticket) = ticket {
+        cmd.env("NOCTUA_START_TICKET", ticket);
+    }
+    cmd.args(if arguments.is_empty() {
+        vec!["serve"]
+    } else {
+        arguments.to_vec()
+    })
+    .env("NOCTUA_PORT", port.to_string())
+    .current_dir(&data)
+    .stdin(Stdio::null())
+    .stdout(Stdio::from(log.try_clone()?))
+    .stderr(Stdio::from(log));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000008 | 0x00000200); // DETACHED_PROCESS | NEW_PROCESS_GROUP
+    }
+    let mut child = cmd
+        .spawn()
+        .context("Cannot start the separate server executable")?;
+    // Reap the launcher child without tying server lifetime to this process.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+pub(crate) async fn wait_ready(data: &Path) -> Result<Value> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while let Some(remaining) = deadline.checked_duration_since(tokio::time::Instant::now()) {
         if let Ok(Ok(identity)) = tokio::time::timeout(remaining, status(&data)).await {
@@ -377,6 +483,13 @@ pub async fn stop(data: &Path) -> Result<()> {
 pub async fn restart(executable: &Path, port: u16) -> Result<Value> {
     let data = crate::paths::existing_data_dir()?;
     let _control = control_lock(&data).await?;
+    let current = status_any(&data).await?;
+    let candidate = crate::server_update::candidate(executable).await?;
+    anyhow::ensure!(semver::Version::parse(current["version"].as_str().context("Server version missing")?)?<=semver::Version::parse(candidate["version"].as_str().unwrap())?,"Restart would downgrade a newer server. Update the desktop first; the running server was kept");
+    if current["executable_hash"]!=candidate["executable_hash"]||current["version"]!=candidate["version"] {
+        drop(_control);
+        return crate::server_update::ensure_current(executable,port).await;
+    }
     // Validate the service target before stopping anything.
     let service = crate::service::status();
     anyhow::ensure!(
@@ -402,9 +515,10 @@ pub async fn restart(executable: &Path, port: u16) -> Result<Value> {
     ensure_locked(executable, port, &destination).await
 }
 
-async fn stop_locked(data: &Path) -> Result<()> {
-    status(data).await?;
+pub(crate) async fn stop_locked(data: &Path) -> Result<()> {
+    status_any(data).await?;
     let r = record(data)?;
+    validate_local_record(&r)?;
     let response = http()?
         .post(format!("{}/api/server/stop", r.url))
         .bearer_auth(token(data)?)

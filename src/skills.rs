@@ -85,3 +85,8 @@ impl Drop for ProcessGroup {fn drop(&mut self){
 
 /// Detached imported-skill executions must finish before server shutdown.
 pub(crate) fn busy() -> bool { !cancellations().lock().unwrap().is_empty() }
+/// Pending decisions are session-owned too; an update must not discard them.
+pub(crate) fn pending_review(app:&App)->bool {
+    let root=json!(app.data_dir);
+    runs().lock().unwrap().values().any(|run|run["root"]==root&&matches!(run["status"].as_str(),Some("approval_required"|"review_required")))
+}

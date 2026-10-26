@@ -75,8 +75,10 @@ server binary and stage a durable copy outside the app bundle before launch.
 | `noctua serve` | Run the authenticated loopback server in the foreground, without opening a browser. |
 | `noctua ensure` | Validate/reuse the owner, otherwise start the registered enabled user service for this data folder, or detach a background process. Never install a service. This is also the default command. |
 | `noctua status` | Authenticate the recorded owner and print identity/readiness. Offline, stale and incompatible owners fail with a nonzero exit. |
-| `noctua stop` | Authenticate with a separate private local control credential. Refuse while requests, AI chats, sign-in or skill executions are active; gracefully drain accepted connections. Never kill a PID. |
+| `noctua stop` | Authenticate with a separate private local control credential. Refuse while requests, AI chats, sign-in, skill executions or unresolved skill reviews remain; gracefully drain accepted connections. Never kill a PID. |
 | `noctua restart` | Safely stop, refresh an enabled service's executable definition, and ensure again. It explicitly disconnects clients. |
+| `noctua update --server /absolute/path/to/new/noctua` | Announce maintenance, require connected editors to save, drain active tasks, snapshot stopped data, replace/verify the server and clean retired staged executables. Defaults: 30-second notice and 30-minute task wait; a timeout cancels instead of killing work. |
+| `noctua update-status` | Read local update progress/recovery information even while the data server is stopped. |
 | `noctua token` | Explicitly display the server authentication token in the terminal. Treat it as a password. Normal status and logs omit it. |
 | `noctua service enable` | Explicitly register automatic start at this user's login. |
 | `noctua service disable` | Remove/disable login registration without stopping the current server. |
@@ -189,23 +191,79 @@ clears the exact snapshot acknowledged, preserving edits made while saving.
 Explicitly reloading the server copy discards the current draft only after the
 server copy was fetched successfully. See [Notes](notes.md).
 
-Desktop updates leave a running server alone. Server executables are staged by
-version and content hash in the client config folder, so replacing the app bundle
-does not remove their path. An explicit safe Restart uses the newly bundled server;
-it refuses when work is active and refreshes an enabled login registration. Other
-clients disconnect and must reconnect; coordinate this action before updating.
-There is no automatic server update or forced task cancellation.
+After opening a new desktop release, an existing local server is upgraded by an
+independent worker. This also applies to a local server left running while the
+client uses a remote connection; remote servers are updated on their own computer.
+A remote-only client never starts a local data server. **This computer → Update
+server** retries an update or deferred cleanup. Update progress/errors appear in
+the local connection popup, including while the data server is stopped.
 
-`server-format.json` fences the data format before databases open. A binary that
-implements this protocol rejects an unknown data version. Before first conversion
-and a server version change, the ownership holder creates consistent SQLite
-`VACUUM INTO` snapshots, including nested library databases and committed WAL data,
-under `backups/<snapshot-id>/`. These are database snapshots, not complete copies
-of PDFs, notes and project assets. For a complete backup, safely stop the server,
-copy the entire data folder and retain the server version. Restore by stopping
-all servers, restoring the entire folder to a separate location, selecting it
-explicitly and starting its matching binary. Never mix database snapshots from
-different generations or open newer data with an old pre-protocol app.
+The worker stages the bundled executable outside the app bundle, checks its API,
+data format and content hash, and announces maintenance for 30 seconds. Connected
+editor shells finish current input, save drafts/files/annotations, and acknowledge
+the pause. Failed saves, conflicts, open editor dialogs or missing acknowledgments
+cancel replacement and leave the server running. Wait for a recently closed
+client's presence lease to expire before retrying. Existing AI, MCP and file work
+continues; new work is refused during draining. The worker waits up to 30 minutes
+and cancels if work is still active. It never kills a job or guesses ownership
+from a port/PID. Normal app exit cannot cancel this independent worker.
+Skill requests awaiting approval or generated output review block replacement;
+apply or reject them first. If a running skill finishes into a review state while
+draining, the update cancels and preserves that server session and its results.
+Use **Open running server · defer update** in the local popup to reopen a healthy,
+API-compatible owner and resolve its pending reviews before retrying. This is an
+explicit choice; update failure never silently changes connection mode or data.
+
+Once idle, the old owner exits and the worker copies the stopped data folder to
+`backups/update-<id>/`, excluding older backups, runtime locks and logs. A
+`snapshot-complete.json` marker confirms a finished snapshot. Enabled login
+registration is repointed and starts the replacement through its OS service
+manager, without installing a new service or enabling disabled auto-start.
+Without an enabled service, the worker starts a detached process.
+The replacement must retain the same server identity and match the
+verified executable hash/version before the previous staged binary is retired.
+The browser origin stays pinned to the previous server address during replacement.
+Referenced or still-open binaries remain queued for later cleanup; arbitrary
+user-installed/bundle executables are never deleted. Login definitions retain the
+same client profile so they share its ownership lock.
+
+Updates preserve the running server's allowed HTTPS origins, notes location,
+AI CLI paths and launch environment. Non-secret launch settings remain with the
+data folder. Environment-provided API credentials travel through a private,
+owner-only temporary file in the local client profile, outside the data snapshot;
+it is removed after the replacement is verified. Failed starts retain this
+protected handoff for retry. This handoff is never copied into update progress,
+logs or the snapshot. Explicit launch environment values take precedence.
+
+One local server may own the default OS-user client profile, even if another
+process requests a different data folder/port. Every data folder also keeps its
+own exclusive lock. Explicitly isolated development profiles use separate
+`NOCTUA_CLIENT_HOME` folders; two profiles still cannot write the same data folder.
+
+If failure occurs before the replacement starts, the old server is kept or
+restarted. Once a replacement may have opened the databases, Noctua retains the
+snapshot and old executable and refuses an automatic downgrade. Retry the new
+release, or stop all servers, copy a **complete** snapshot into a separate empty
+data folder, select that folder explicitly, and start its matching release. The
+completion manifest records the prior origin/version; preserve that port and proxy
+address to recover origin-bound drafts. Never mix files from different generations.
+A worker crash leaves recoverable status;
+its maintenance lease expires so a still-running old owner can accept work again.
+Retrying **Update server** or `noctua update --server …` also handles a stopped
+failed replacement: ownership locks prove no server is alive, then the worker
+backs up the stopped data before starting the candidate again. Completed prior
+snapshots remain available; a partial new database is never opened by an old binary.
+Incomplete snapshots have no completion marker and must not be used for recovery.
+
+`server-format.json` rejects unknown formats and older release versions before
+DB open. First conversion and version changes also keep database-only SQLite
+`VACUUM INTO` snapshots (including nested databases and committed WAL data).
+These older database-only snapshots do not replace the complete update snapshot.
+Automatic update refuses external `NOCTUA_NOTES` folders and data symlinks because
+a complete in-folder snapshot cannot protect their targets. Use a separately
+verified full backup and a coordinated manual upgrade for those configurations.
+Servers predating the maintenance protocol require a notified, explicit safe stop
+with their matching CLI; the new desktop never force-terminates them.
 
 ## Validation limits
 

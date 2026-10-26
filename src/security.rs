@@ -27,6 +27,7 @@ pub struct Runtime {
     session_cookie: String,
     pub hosts: Vec<String>,
     pub origins: Vec<String>,
+    pub maintenance: Mutex<crate::maintenance::Maintenance>,
 }
 impl Runtime {
     pub fn new(owner: Owner, hosts: Vec<String>, origins: Vec<String>) -> Self {
@@ -35,6 +36,7 @@ impl Runtime {
         let session_cookie = format!("noctua_session_{}", &digest[..16]);
         Self {
             owner,
+            maintenance: Mutex::new(Default::default()),
             session_cookie,
             hosts,
             origins,
@@ -90,7 +92,8 @@ impl Runtime {
         v["name"] =
             json!(std::env::var("NOCTUA_SERVER_NAME").unwrap_or_else(|_| "Noctua server".into()));
         v["ready"] = json!(!self.draining.load(Ordering::SeqCst));
-        v["capabilities"] = json!({"note_versions":true,"browser_sessions":true,"mcp_bearer":true,"native_management":false});
+        v["maintenance"] = self.maintenance.lock().unwrap().notice();
+        v["capabilities"] = json!({"note_versions":true,"browser_sessions":true,"mcp_bearer":true,"native_management":false,"server_updates":true});
         v
     }
 }
@@ -138,6 +141,12 @@ pub async fn guard(
     let Some(runtime) = runtime else {
         return next.run(request).await;
     };
+    {
+        let _admission = runtime.admission.lock().unwrap();
+        if runtime.maintenance.lock().unwrap().expire() {
+            runtime.draining.store(false, Ordering::SeqCst);
+        }
+    }
     let bearer = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -149,7 +158,10 @@ pub async fn guard(
     // The login page needs only these bundled cosmetic assets before authentication.
     // Host and Origin checks above still apply; no data or native controls are public.
     if request.method() == Method::GET
-        && matches!(path, "/ui.css" | "/connection.css" | "/appearance.js" | "/fonts.js")
+        && matches!(
+            path,
+            "/ui.css" | "/connection.css" | "/appearance.js" | "/fonts.js"
+        )
     {
         return next.run(request).await;
     }
@@ -220,7 +232,8 @@ pub async fn guard(
             return (StatusCode::CONFLICT,Json(json!({"error":"Server identity is required before saving. Reconnect to this server."}))).into_response();
         }
     }
-    if path == "/api/server/stop" {
+    let control = path == "/api/server/stop" || path == "/api/server/update";
+    if control {
         if !bearer {
             return (StatusCode::FORBIDDEN, "Use the local server manager").into_response();
         }
@@ -233,6 +246,17 @@ pub async fn guard(
         {
             return StatusCode::FORBIDDEN.into_response();
         }
+    }
+    // Identity, lease heartbeats and editor acknowledgments remain available during draining.
+    if control || path == "/api/server" || path == "/api/server/update/ack" {
+        let mut response = next.run(request).await;
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("referrer-policy", "no-referrer".parse().unwrap());
+        return response;
     }
     {
         let _admission = runtime.admission.lock().unwrap();

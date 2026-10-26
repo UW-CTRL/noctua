@@ -544,12 +544,15 @@ mod tests {
         assert!(crate::skills::enabled(&f.app,Some("different"),id).is_err());
         let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"scripts/run.sh","args":[],"files":[]}))?;
         let rid=run["id"].as_str().unwrap();assert_eq!(run["status"],"approval_required");
+        assert!(crate::skills::pending_review(&f.app),"shutdown must preserve an unapproved run");
         assert!(!f.root.join(".skill-runs").join(rid).exists());
         let url=format!("/api/skill-runs/{rid}");f.json(&url,Some(json!({"action":"approve"}))).await;
         let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(20)).await;}
         assert_eq!(result["status"],"review_required","{result}");assert_eq!(result["stdout"],"done");
+        assert!(crate::skills::pending_review(&f.app),"shutdown must preserve generated output awaiting review");
         assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());
         let applied=f.json(&url,Some(json!({"action":"apply"}))).await;
+        assert!(!crate::skills::pending_review(&f.app),"applied outputs must not block future updates");
         let file=applied["entries"][0]["id"].as_str().unwrap();assert_eq!(crate::workspace::read(&f.app,"L1",file)?["text"],"review me");
         let undone=crate::workspace::history(&f.app,"L1",&json!({"revision":applied["revision"],"redo":false}))?;
         assert!(undone["entries"].as_array().unwrap().iter().all(|e|e["deleted"]==true));

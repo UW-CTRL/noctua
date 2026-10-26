@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-server-test-') as tmp:
         cookie=headers['set-cookie'].split(';')[0]
         request('/api/server',headers={'Cookie':cookie})
         # Browser cookies are host-scoped, so different ports need distinct names.
-        original_home=env['NOCTUA_HOME'];original_port=port;env['NOCTUA_HOME']=str(root/'secondary')
+        original_home=env['NOCTUA_HOME'];original_client=env['NOCTUA_CLIENT_HOME'];original_port=port;env['NOCTUA_HOME']=str(root/'secondary');env['NOCTUA_CLIENT_HOME']=str(root/'secondary-client')
         try:
             secondary=json.loads(cli('ensure').stdout);port=int(secondary['url'].rsplit(':',1)[1])
             secret2=(root/'secondary/server-token').read_text()
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-server-test-') as tmp:
             assert json.loads(request('/api/server',headers=combined)[0])['server_id']==first['server_id']
             cli('stop')
         finally:
-            env['NOCTUA_HOME']=original_home;port=original_port
+            env['NOCTUA_HOME']=original_home;env['NOCTUA_CLIENT_HOME']=original_client;port=original_port
 
         request('/api/server',headers={'Cookie':cookie,'X-Noctua-Server':'a-different-data-owner'},expected=409)
         request('/api/notes','POST',{'Cookie':cookie,'Content-Type':'application/json'},'{}',expected=403)

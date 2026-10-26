@@ -151,8 +151,17 @@ pub fn stage(executable: &std::path::Path) -> Result<PathBuf> {
     if !target.exists() {
         let temp = root.join(format!(".stage-{}", uuid::Uuid::new_v4()));
         fs::copy(executable, &temp)?;
-        fs::rename(temp, &target)?;
+        if let Err(error) = fs::rename(&temp, &target) {
+            if !target.is_file() || crate::server::executable_hash(&target)? != digest {
+                return Err(error.into());
+            }
+            let _ = fs::remove_file(temp);
+        }
     }
+    anyhow::ensure!(
+        crate::server::executable_hash(&target)? == digest,
+        "The staged server executable does not match its content hash; reinstall the application"
+    );
     Ok(target)
 }
 pub fn enable(executable: &std::path::Path) -> Result<()> {
@@ -232,6 +241,36 @@ pub fn enable(executable: &std::path::Path) -> Result<()> {
         };
         format!("[Unit]\nDescription=Noctua user server\n[Service]\nType=simple\nExecStart={} serve\nWorkingDirectory={}\nEnvironment=\"{}={}\"\nStandardOutput=append:{}\nStandardError=append:{}\n[Install]\nWantedBy=default.target\n",quote(&executable),quote(&data),environment_key,service_path(&environment_value).replace('\\',"\\\\").replace('"',"\\\"").replace('%',"%%"),quote(&log),quote(&log))
     };
+    let client = crate::client::config_dir()?;
+    validate_service_path(&client)?;
+    let body = if cfg!(target_os = "macos") {
+        body.replace(
+            "</dict><key>RunAtLoad",
+            &format!(
+                "<key>NOCTUA_CLIENT_HOME</key><string>{}</string></dict><key>RunAtLoad",
+                xml(&service_path(&client))
+            ),
+        )
+    } else if cfg!(windows) {
+        body.replace(
+            "<Arguments>serve ",
+            &format!(
+                "<Arguments>serve --client-dir &quot;{}&quot; ",
+                xml(&service_path(&client))
+            ),
+        )
+    } else {
+        body.replace(
+            "StandardOutput=",
+            &format!(
+                "Environment=\"NOCTUA_CLIENT_HOME={}\"\nStandardOutput=",
+                service_path(&client)
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('%', "%%")
+            ),
+        )
+    };
     fs::create_dir_all(path.parent().unwrap())?;
     crate::paths::write_private(&path, &body)?;
     #[cfg(target_os = "macos")]
@@ -268,6 +307,12 @@ pub fn disable() -> Result<()> {
     checked(manager("schtasks.exe").args(["/Delete", "/TN", LABEL, "/F"]))?;
     if path.exists() {
         fs::remove_file(path)?;
+    }
+    let metadata = file()?.with_extension("registration.json");
+    if metadata.exists() {
+        let mut value: Value = serde_json::from_slice(&fs::read(&metadata)?)?;
+        value["disabled"] = json!(true);
+        crate::paths::write_private(&metadata, &value.to_string())?;
     }
     Ok(()) // Deliberately no bootout/stop: current work keeps running.
 }
@@ -330,6 +375,8 @@ pub fn refresh(executable: &std::path::Path, data: &std::path::Path) -> Result<(
         }
     }
     drop(owner);
+    #[cfg(target_os = "linux")]
+    checked(manager("systemctl").args(["--user", "stop", "noctua.service"]))?;
     enable(executable)
 }
 
@@ -339,6 +386,17 @@ pub fn matches_data(data: &std::path::Path) -> Result<bool> {
             .context("Service registration metadata missing; register the service again")?,
     )?;
     Ok(registration["data_dir"] == json!(fs::canonicalize(data)?))
+}
+pub fn registered_executable() -> Result<Option<PathBuf>> {
+    let metadata = file()?.with_extension("registration.json");
+    if !metadata.exists() {
+        return Ok(None);
+    }
+    let value: Value = serde_json::from_slice(&fs::read(metadata)?)?;
+    if value["disabled"] == true && !file()?.exists() {
+        return Ok(None);
+    }
+    Ok(value["executable"].as_str().map(PathBuf::from))
 }
 
 #[cfg(test)]
