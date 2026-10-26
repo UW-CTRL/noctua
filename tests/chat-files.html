@@ -14,7 +14,14 @@ window.fetch=async(url,options)=>{
  return {ok:true,json:async()=>({id:`file-${++counter}`,name:body.name,size:atob(body.data).length,mime:body.pages.length?'application/pdf':'application/octet-stream',pages:body.pages.length})};
 };
 function assert(value,message){if(!value)throw Error(message)}
-const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
+async function waitFor(check,message){
+ const deadline=Date.now()+5000;
+ while(Date.now()<deadline){
+  try{if(check())return;}catch(_){/* Upload snapshots reject while files are pending. */}
+  await new Promise(resolve=>setTimeout(resolve,10));
+ }
+ throw Error(message);
+}
 window.addEventListener('error',event=>window.webkit.messageHandlers.result.postMessage('FAIL: '+event.message));
 </script><script src="../web/chat-files.js"></script><script>
 window.addEventListener('DOMContentLoaded',async()=>{try{
@@ -26,18 +33,18 @@ window.addEventListener('DOMContentLoaded',async()=>{try{
  chat.id=null;api.render();assert(api.count()===1,'draft was not restored');
  chat.provider='codex';api.render();assert(api.count()===0,'draft leaked across providers');chat.provider='claude';
  const plain=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(plain,'clipboardData',{value:{files:[]}});form.dispatchEvent(plain);assert(!plain.defaultPrevented,'plain text paste was blocked');
- const paste=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(paste,'clipboardData',{value:{files:[new File(['image'],'shot.png',{type:'image/png'})]}});form.dispatchEvent(paste);await settle();assert(paste.defaultPrevented&&api.count()===2,'clipboard file was not queued');
+ const paste=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(paste,'clipboardData',{value:{files:[new File(['image'],'shot.png',{type:'image/png'})]}});form.dispatchEvent(paste);await waitFor(()=>api.snapshot().files.length===2,'clipboard upload did not complete');assert(paste.defaultPrevented&&api.count()===2,'clipboard file was not queued');
  const transfer={types:['Files'],files:[new File(['%PDF-1.7'],'paper.pdf',{type:'application/pdf'})]};
  const over=new Event('dragover',{bubbles:true,cancelable:true});Object.defineProperty(over,'dataTransfer',{value:transfer});form.dispatchEvent(over);assert(over.defaultPrevented&&form.classList.contains('chat-file-drag'),'drop target did not activate');
- const drop=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'dataTransfer',{value:transfer});form.dispatchEvent(drop);await settle();assert(drop.defaultPrevented&&api.count()===3&&!form.classList.contains('chat-file-drag'),'dropped PDF missing');
+ const drop=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'dataTransfer',{value:transfer});form.dispatchEvent(drop);await waitFor(()=>api.snapshot().files.length===3,'dropped PDF upload did not complete');assert(drop.defaultPrevented&&api.count()===3&&!form.classList.contains('chat-file-drag'),'dropped PDF missing');
  assert(requests.at(-1).pages.join('')==='Page 1\nPage 2\n'&&pdfDestroyed===1,'PDF index or cleanup missing');
  fail=true;await api.add([new File(['retry'],'retry.txt')]);let blocked=false;try{api.snapshot()}catch(_){blocked=true}assert(blocked&&document.querySelector('[data-retry]'),'failed upload did not block send or show retry');
- fail=false;document.querySelector('[data-retry]').click();await settle();assert(api.snapshot().files.length===4,'retry failed');
+ fail=false;document.querySelector('[data-retry]').click();await waitFor(()=>api.snapshot().files.length===4,'retried upload did not complete');assert(api.snapshot().files.length===4,'retry failed');
  const before=api.count();await api.add([{name:'too-large.bin',size:33*1024*1024,type:''}]);assert(api.count()===before&&errors.at(-1).includes('32 MB'),'size limit missing');
  await api.add([{name:'large.png',size:6*1024*1024,type:'image/png'}]);assert(api.count()===before&&errors.at(-1).includes('5 MB'),'image limit missing');
  const escaped=api.sentHTML([{id:'safe',name:'<img src=x onerror=alert(1)>',size:2}]);assert(!escaped.includes('<img')&&escaped.includes('&lt;img'),'filename HTML injection');
  const snapshot=api.snapshot();api.consume(snapshot);assert(api.count()===0,'accepted files not consumed');
- let release;hold=new Promise(resolve=>release=resolve);const pending=api.add([new File(['late'],'late.txt')]);await settle();
+ let release;hold=new Promise(resolve=>release=resolve);const pending=api.add([new File(['late'],'late.txt')]);await waitFor(()=>requests.at(-1)?.name==='late.txt','held upload did not reach the server');
  blocked=false;try{api.snapshot()}catch(_){blocked=true}assert(blocked,'pending upload allowed send');
  const oldKey=api.key();chat.id='created';api.moveDraft(oldKey);release();hold=null;await pending;
  assert(api.snapshot().files[0].name==='late.txt'&&JSON.parse(saved.get(api.key())).length===1,'in-flight upload lost after new chat received an ID');
