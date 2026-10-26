@@ -114,6 +114,9 @@ Codex CLI accepts images rather than raw PDF attachments. Noctua reuses its bund
 PDF.js renderer to return requested original pages as MCP image content to the
 provider's vision model. This follows the render-and-inspect PDF workflow without
 requiring an installed PDF skill, Python, Poppler, or enabling Codex shell execution.
+The bundled PDF.js text reader uses `getReader()` rather than stream async
+iteration to support older WebKit. The attachment regression fixture removes
+`ReadableStream` async iteration before indexing and rendering real PDFs.
 PDF page previews are capped at 5 MB, cached locally, and checked against the
 conversation's attachment grants before being returned. Cached previews remain
 readable when no renderer is active; new previews require an active chat tab.

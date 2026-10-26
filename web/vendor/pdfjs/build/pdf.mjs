@@ -16068,10 +16068,21 @@ class PDFPageProxy {
       styles: Object.create(null),
       lang: null
     };
-    for await (const value of readableStream) {
-      textContent.lang ??= value.lang;
-      Object.assign(textContent.styles, value.styles);
-      textContent.items.push(...value.items);
+    // Noctua: older WebKit supports readers but not ReadableStream async iteration.
+    const reader = readableStream.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        textContent.lang ??= value.lang;
+        Object.assign(textContent.styles, value.styles);
+        textContent.items.push(...value.items);
+      }
+    } catch (error) {
+      await reader.cancel(error).catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
     }
     return textContent;
   }

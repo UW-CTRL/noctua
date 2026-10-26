@@ -51,6 +51,9 @@ window.addEventListener('DOMContentLoaded',async()=>{try{
  const old=api.snapshot();await api.add([new File(['next'],'next.txt')]);api.consume(old);assert(api.count()===1&&api.snapshot().files[0].name==='next.txt','consuming a send removed a later attachment');
  document.querySelector('[data-remove]').click();assert(api.count()===0,'remove failed');
  let sourcePDF;
+ // Emulate the CI/older WebKit stream API even on newer local macOS versions.
+ delete ReadableStream.prototype[Symbol.asyncIterator];
+ assert(typeof ReadableStream.prototype[Symbol.asyncIterator]==='undefined','legacy stream fixture did not apply');
  const engine=await import('../web/vendor/pdfjs/build/pdf.mjs');
  if(!Promise.withResolvers)Promise.withResolvers=function(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}};
  engine.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;
