@@ -79,5 +79,5 @@ window.addEventListener('DOMContentLoaded',async()=>{try{
  let rejected=false;try{await api.preparePDFPage({file_id:'scan',page:2,chat_id:'created',request_id:'bad-page'})}catch(error){rejected=true}
  assert(rejected&&pageRequests.at(-1).type==='application/json'&&JSON.parse(pageRequests.at(-1).body).error.includes('outside'),'renderer errors did not reach the waiting assistant');
  window.webkit.messageHandlers.result.postMessage('PASS: chat file drop/paste, PDF text and scan rendering, limits, retries, draft isolation, escaping, and send lifecycle');
-}catch(error){window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack)}});
+}catch(error){window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack+'\nAttachment state: '+document.getElementById('chat-files').textContent)}});
 </script></body></html>
