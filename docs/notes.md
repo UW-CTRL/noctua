@@ -145,14 +145,20 @@ command; playback is not standard LaTeX export behavior.
 
 ## Assistant edits
 
-The assistant can read notes, inspect attached images, and propose or apply
-text-block edits. Drawing transcription uses the pad's TeX control; chat image
-tools do not read drawing strokes or videos. Whole-note management, preamble
-changes, media insertion, and layout controls remain UI actions.
+The assistant can search active notes, create block notes, and edit blocks,
+titles, preambles, and block order. Restore trashed notes before editing them.
 
-Use **Suggest** to review edits, **Plan** for read-only discussion, or **Direct**
-for immediate changes with note-edit undo. Attach a note with @ in chat or select
-rendered text and choose **Add to chat**. See [Research assistant](assistant.md).
+Use **Suggest** to review proposals in **Assistant changes** below the project
+tree, **Plan** for read-only discussion, or **Direct** to save changes immediately
+with note-edit undo. Pending proposals remain available after restarting Noctua.
+If you edit a note while the assistant works, conflicting changes are preserved
+for you to resolve. See [proposal review](assistant.md#assistant-reads-and-review).
+
+Chat can inspect saved drawings; keep a Noctua chat tab open when a preview is
+needed. The drawing pad's TeX action performs separate handwriting transcription.
+Videos, stroke editing, media uploads, whole-note deletion, and cross-project
+moves remain UI actions or unsupported tool operations. Attach a note with @ or
+select rendered text and choose **Add to chat**.
 
 For standard `.tex` papers with custom classes and a faithful PDF preview, use the
 [Paper editor](papers.md). Its settings gear selects bundled Tectonic or pdfLaTeX
@@ -180,8 +186,9 @@ In Suggest mode, the first edit to each project file asks inline in chat with
 covers further edits to that file during the current response, including renames
 and moves. Other files need separate approval. Permission expires when the
 response ends or is stopped. Direct mode edits files immediately without approval
-requests or popups. Note block suggestions, PDF annotations, and skill scripts
-keep their existing review controls.
+requests or popups. Note creation and block edits use durable proposals in **Assistant changes**; PDF
+annotations and skill scripts keep their separate review controls. Project-file
+proposals made outside an active chat also remain in **Assistant changes**.
 
 ### Mention project files in chat
 

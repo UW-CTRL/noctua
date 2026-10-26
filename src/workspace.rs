@@ -55,6 +55,29 @@ pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
 
 fn manifest_path(app:&App,target:&str)->Result<PathBuf>{Ok(dir(app,target)?.join(".workspace").join("manifest.json"))}
 fn load(app:&App,target:&str)->Result<Value>{let p=manifest_path(app,target)?;if p.exists(){Ok(serde_json::from_slice(&std::fs::read(p)?)?)}else{Ok(json!({"revision":0,"entries":[],"bibliographies":[],"skills":[]}))}}
+/// Agent reads discover legacy entries in memory, without organizing or saving them.
+pub fn snapshot(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;discover(app,target,&mut m)?;Ok(m)}
+pub fn create_note(app:&App,target:&str,b:&Value)->Result<Value>{
+ let _g=GATE.lock().unwrap();let mut m=load(app,target)?;
+ if b["revision"]!=m["revision"]{return Err(crate::Status(StatusCode::CONFLICT,"Project changed. Refresh before creating a note.".into()).into());}
+ let parent=b["parent"].as_str().unwrap_or("");
+ if !parent.is_empty()&&!m["entries"].as_array().unwrap().iter().any(|e|e["id"]==parent&&e["kind"]=="folder"&&e["deleted"]!=true){bail!("Parent folder not found");}
+ let title=b["title"].as_str().context("Title required")?;
+ if title.trim().is_empty()||title.chars().count()>200{bail!("Choose a title of 1–200 characters");}
+ let text=b["latex"].as_str().unwrap_or("");if text.len()>100_000{bail!("Initial note text exceeds 100000 bytes");}
+ discover(app,target,&mut m)?;
+ let folder=app.library.folder_id(target)?;let mut doc=app.notes.create(&folder,title)?;
+ let id=doc["id"].as_str().unwrap().to_owned();
+ let result=(||->Result<Value>{
+  if !text.is_empty(){doc["blocks"][0]["src"]=json!(text);doc["updated"]=json!(app.notes.save(&folder,&id,doc.clone())?);}
+  let before=history_content(m.clone());discover(app,target,&mut m)?;
+  let e=m["entries"].as_array_mut().unwrap().iter_mut().find(|e|e["note"]==id).context("Created note missing from workspace")?;e["parent"]=json!(parent);let entry_id=e["id"].clone();
+  validate(&m)?;m["revision"]=json!(m["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;
+  crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().record(before,history_content(m.clone()),"Create note");
+  Ok(json!({"status":"applied","note_id":id,"entry_id":entry_id,"folder_id":target,"updated":doc["updated"],"revision":m["revision"]}))
+ })();
+ if result.is_err(){let _=app.notes.delete(&folder,&id);}result
+}
 pub(crate) fn paper_manifest(app:&App,target:&str)->Result<Value>{let _gate=GATE.lock().unwrap();load(app,target)}
 fn save(app:&App,target:&str,v:&Value)->Result<()>{let p=manifest_path(app,target)?;std::fs::create_dir_all(p.parent().unwrap())?;crate::notes::write_atomic(&p,&v.to_string())}
 fn history_content(v:Value)->Value{let mut v=crate::editing::content(v);if let Some(entries)=v["entries"].as_array_mut(){entries.retain(|e|e["deleted"]!=true);}v}
@@ -75,7 +98,7 @@ fn discover(app:&App,target:&str,m:&mut Value)->Result<()> {
  let entries=m["entries"].as_array_mut().context("Invalid workspace")?;
  for n in app.notes.list(&folder)?.as_array().unwrap(){if !entries.iter().any(|e|e["note"]==n["id"]){entries.push(json!({"id":format!("note-{}",n["id"].as_str().unwrap()),"note":n["id"],"name":format!("{}-{}",n["title"].as_str().unwrap_or("Note").chars().map(|c|if "/\\:\0".contains(c){'_'}else{c}).collect::<String>().trim_start_matches('.'),n["id"].as_str().unwrap()),"kind":"note","parent":"","deleted":false}));}}
  for prefix in ["images","media"] {let Ok(files)=std::fs::read_dir(dir(app,target)?.join(prefix))else{continue};
-  for f in files.flatten(){if !f.file_type()?.is_file(){continue;}let name=f.file_name().to_string_lossy().to_string();if name.starts_with('.') {continue;}let path=format!("{prefix}/{name}");if !entries.iter().any(|e|e["legacy"]==path){entries.push(json!({"id":crate::library::id("f"),"name":format!("{prefix}-{name}"),"parent":"","kind":"file","source_name":name,"legacy":path,"size":f.metadata()?.len(),"deleted":false}));}}
+  for f in files.flatten(){if !f.file_type()?.is_file(){continue;}let name=f.file_name().to_string_lossy().to_string();if name.starts_with('.') {continue;}let path=format!("{prefix}/{name}");if !entries.iter().any(|e|e["legacy"]==path){entries.push(json!({"id":format!("f{}",&format!("{:x}",Sha256::digest(path.as_bytes()))[..32]),"name":format!("{prefix}-{name}"),"parent":"","kind":"file","source_name":name,"legacy":path,"size":f.metadata()?.len(),"deleted":false}));}}
  } Ok(())
 }
 // Organize each attachment once, preserving subsequent user moves and stable references.
@@ -113,6 +136,7 @@ fn validate(m:&Value)->Result<()> {
 pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>{
  let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let rev=m["revision"].as_u64().unwrap_or(0);
  if b["revision"].as_u64()!=Some(rev){return Err(crate::Status(StatusCode::CONFLICT,"Project files changed. Refresh and retry.".into()).into());}
+ discover(app,target,&mut m)?;
  let before=history_content(m.clone());let op=b["op"].as_str().unwrap_or("");
  match op {
   "create"|"folder"=>{let id=crate::library::id("f");let name=b["name"].as_str().context("Name required")?;let mut e=json!({"id":id,"name":name,"parent":b["parent"].as_str().unwrap_or(""),"kind":if op=="folder"{"folder"}else{"file"},"source_name":name,"deleted":false});if op=="create"{let data=upload.unwrap_or_else(||b["text"].as_str().unwrap_or("").as_bytes());e["blob"]=json!(blob(app,target,data)?);e["size"]=json!(data.len());}m["entries"].as_array_mut().unwrap().push(e);},

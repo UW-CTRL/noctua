@@ -32,9 +32,9 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 
 | Mode | Behavior |
 | --- | --- |
-| Suggest (default) | Proposes note edits, project file changes, and PDF annotations/replies for Accept/Reject |
+| Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization and downloads apply immediately. |
 | Plan | Investigates and answers without writing changes |
-| Direct | Applies supported changes immediately; note edits can be undone |
+| Direct | Saves supported changes before reporting completion; version checks protect concurrent edits and note edits can be undone |
 
 Choose the mode with the badge below the composer.
 
@@ -110,6 +110,20 @@ on temporary input copies, not inside an OS sandbox. Plan mode cannot request
 execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skills)
 for package limits, runtimes, and timeouts.
 
+## Assistant reads and review
+
+The assistant searches both remote papers and your saved Library. Long lists and
+PDF or note text are read in parts, so you can ask for a quick overview or a
+closer reading. It can also read saved AI outlines and paper relationships
+without starting new analysis or changing the current graph.
+
+Use **Assistant changes** below the project tree to review pending note and
+project file proposals made outside an active chat, including after restarting Noctua.
+During chat, project files use the per-file approval cards described above. Accept saves a proposal;
+Reject leaves the content unchanged. If the content changed since the proposal
+was made, ask for a fresh proposal. Direct edits are saved before the assistant
+reports completion, and conflicting edits require resolution.
+
 ## AI prompts
 
 Prompts live in [`src/prompts/`](../src/prompts/). Runtime context is added
@@ -121,9 +135,13 @@ Chat combines all three prompts:
 
 | Prompt | Instructions |
 | --- | --- |
-| [`chat.md`](../src/prompts/chat.md) | Research role, tools, current view, source links, and download confirmation. |
-| [`notes.md`](../src/prompts/notes.md) | Supported LaTeX, targeted block edits, and UI-only boundaries. |
+| [`chat.md`](../src/prompts/chat.md) | Research role, request scope, current view, source links, and truthful outcome reporting. |
+| [`notes.md`](../src/prompts/notes.md) | Supported note syntax, references, media, and document semantics. |
 | [`chat-formatting.md`](../src/prompts/chat-formatting.md) | Markdown, math, Mermaid, and source attachment interpretation. |
+
+Tool arguments, result formats, limits, and tool-specific mode behavior are
+delivered through the MCP catalog. The shared prompts keep common behavioral
+rules and note/chat syntax rather than repeating those contracts.
 
 ### Edit mode instructions
 
@@ -131,9 +149,9 @@ Each message adds the selected mode. Tools also enforce the mode.
 
 | Mode and prompt | Behavior |
 | --- | --- |
-| [Suggest](../src/prompts/mode-suggest.md) | Targeted edits; note edits and PDF annotations/replies await acceptance. |
-| [Plan](../src/prompts/mode-plan.md) | Read-only investigation; write tools are unavailable. |
-| [Direct](../src/prompts/mode-direct.md) | Requested changes apply immediately; note edits support undo. |
+| [Suggest](../src/prompts/mode-suggest.md) | Preference for small, targeted changes for user review. |
+| [Plan](../src/prompts/mode-plan.md) | Investigation and planning without changing user data. |
+| [Direct](../src/prompts/mode-direct.md) | Only requested direct changes, preserving unrelated content. |
 
 ### Dedicated AI features
 

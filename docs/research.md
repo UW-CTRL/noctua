@@ -109,3 +109,11 @@ explore connections among its papers. **Papers** contains just the graph paper
 list with sorting and filtering. Colors distinguish citation-connected clusters;
 shared external references reveal connections between clusters. Project graphs
 are saved and updated as the collection changes.
+
+
+## Assistant organization
+
+Chat can search saved papers, inspect their details, create or rename collections,
+and add or remove papers across several projects. Removing a paper from a project
+keeps it and its PDF in the shared Library. These requested actions apply
+immediately in Suggest and Direct; Plan is read-only.

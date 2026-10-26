@@ -57,6 +57,14 @@ Automatic highlights form a grouped edit. History is separate for each paper
 and lasts for the backend session. Revision checks prevent overwriting changes
 from another window; resolve save conflicts before undoing.
 
+
+## Assistant reads
+
+Chat can search PDF text, read passages in parts, inspect annotations, and read
+saved AI outlines without generating new analysis. Keep a Noctua chat tab open
+when it needs uncached text or page images. Outline generation and
+auto-highlighting remain Reader controls.
+
 ## Find text and user comments
 
 Press **Cmd/Ctrl+F** to search the whole PDF and user-written comments, including

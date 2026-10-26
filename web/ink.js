@@ -226,24 +226,26 @@ const Ink = (() => {
 
     return {
       // Black-on-white PNG of the strokes, cropped, for handwriting recognition.
-      toPNG() {
-        const b = bounds(block.strokes);
-        if (!b) return null;
-        const pad = 20, w = b.x1 - b.x0 + 2 * pad, h = b.y1 - b.y0 + 2 * pad;
-        const k = Math.min(1600 / w, 1600 / h, 3);
-        const c = document.createElement('canvas');
-        c.width = Math.ceil(w * k);
-        c.height = Math.ceil(h * k);
-        const x = c.getContext('2d');
-        x.fillStyle = '#fff';
-        x.fillRect(0, 0, c.width, c.height);
-        x.translate((pad - b.x0) * k, (pad - b.y0) * k);
-        for (const s of block.strokes) drawStroke(x, s, k, '#000');
-        return c.toDataURL('image/png');
-      },
+      toPNG() { return preview(block); },
       destroy() { ro.disconnect(); },
     };
   }
 
-  return { mount, tool };
+  function preview(block) {
+    const b = bounds(block.strokes);
+    if (!b) return null;
+    const pad = 20, w = b.x1 - b.x0 + 2 * pad, h = b.y1 - b.y0 + 2 * pad;
+    const k = Math.min(1600 / w, 1600 / h, 3);
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * k);
+    c.height = Math.ceil(h * k);
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff';
+    x.fillRect(0, 0, c.width, c.height);
+    x.translate((pad - b.x0) * k, (pad - b.y0) * k);
+    for (const s of block.strokes) drawStroke(x, s, k, '#000');
+    return c.toDataURL('image/png');
+  }
+
+  return { mount, tool, preview };
 })();
