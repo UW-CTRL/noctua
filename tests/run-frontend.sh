@@ -19,7 +19,7 @@ done
 
 echo "Running WebKit chat rendering checks"
 swift -module-cache-path "$SWIFT_MODULECACHE_PATH" tests/chat-rendering.swift
-for page in tests/fonts.html tests/selects.html tests/workspace.html tests/skill-picker.html tests/note-layout.html tests/paper.html tests/paper-source.html tests/document-tools.html tests/mentions.html tests/panes.html; do
+for page in tests/chat-files.html tests/fonts.html tests/selects.html tests/workspace.html tests/skill-picker.html tests/note-layout.html tests/paper.html tests/paper-source.html tests/document-tools.html tests/mentions.html tests/panes.html; do
   echo "Running WebKit checks: $page"
   swift -module-cache-path "$SWIFT_MODULECACHE_PATH" tests/reader.swift "$page"
 done

@@ -6,3 +6,6 @@ These files are bundled into Noctua; Zotero is not required at runtime.
 
 Noctua modification: CanvasGraphics.beginDrawing accepts ctx.noctuaTheme
 for per-canvas use of the bundled Zotero color renderer.
+
+Noctua modification: PDFPageProxy.getTextContent consumes text streams through
+getReader() so PDF indexing works in WebKit without ReadableStream async iteration.

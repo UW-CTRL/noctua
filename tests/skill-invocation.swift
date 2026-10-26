@@ -26,6 +26,8 @@ function setChatBusy(b){chat.busy=b;}
 function userMsgHtml(t){return t;}
 function chatContext(){return {context:'project',key:'key',noteKey:null};}
 function chatProjectTarget(){return 'L1';}
+let fileDrafts=[{id:"upload-one",name:"chart.pdf"}];
+window.NoctuaChatFiles={snapshot:()=>({files:[...fileDrafts]}),consume:()=>{fileDrafts=[];}};
 const NoctuaChatRender={enhance(){}};
 async function chatAttachments(){return 'paper attachment';}
 async function readEvents(){}
@@ -37,10 +39,12 @@ function assert(ok,message){if(!ok)throw Error(message);}
  await sendChat('/review summarize this');
  const request=requests[0];
  assert(request.skill_ids.join(',')==='s1','selected skill not enabled in request');
+ assert(request.files.join(',')==='upload-one','uploaded file lost when invoking a skill');
  assert(request.attachments.includes('paper attachment')&&request.attachments.includes('skill_id="s1"'),'skill instructions or existing attachments lost');
  assert(request.message==='/review summarize this'&&request.mode==='plan','message or mode changed');
  await sendChat('next question');
  assert(requests[1].skill_ids.length===0&&!requests[1].attachments.includes('skill_id='),'one-message skill leaked into next request');
+ assert(requests[1].files.length===0,'sent file leaked into the next request');
  assert(!chat.busy&&!chat.abort,'request did not finish');
  assert(approvalClosures===2,'file approvals were not closed after each skill turn');
  assert(saves.join(',')==='stop,file,note,stop,file,note','skill turns must save current drafts before sending');

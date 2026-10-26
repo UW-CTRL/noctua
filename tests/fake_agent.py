@@ -52,6 +52,20 @@ if (home / 'analysis-start-failure').exists():
     print('The selected model is unavailable for this account.', file=sys.stderr)
     sys.exit(1)
 prompt = sys.stdin.read()
+if 'verify-uploaded-files' in prompt:
+    assert '<uploaded_files>' in prompt and '<notes>.txt' in prompt and 'paper.pdf' in prompt and 'image/png' in prompt
+    files=json.loads(prompt.split('<uploaded_files>\n',1)[1].split('\n</uploaded_files>',1)[0].split('\n',1)[1])
+    if provider == 'claude':
+        assert '--restricted' in args and args[args.index('--tools')+1] == 'Read'
+        assert args[args.index('--permission-mode')+1] == 'dontAsk'
+        native=[Path(file['native_pdf_path']) for file in files if file['mime']=='application/pdf']
+        assert len(native)==1 and native[0].parent==Path.cwd() and native[0].read_bytes().startswith(b'%PDF-')
+        assert list(Path.cwd().iterdir())==native, 'native Read directory must contain only sent PDFs'
+    else:
+        assert 'features.shell_tool=false' in args and all('native_pdf_path' not in file for file in files)
+if 'verify-resumed-pdf' in prompt:
+    assert provider == 'claude' and '--resume' in args and '--restricted' in args
+    assert args[args.index('--tools')+1] == 'Read' and len(list(Path.cwd().glob('*.pdf'))) == 1
 if 'verify-selected-passages' in prompt:
     assert '<selected_passages>' in prompt and 'A grounded passage.' in prompt and 'note-1' in prompt
     (home / (provider+'-selected.txt')).write_text(prompt)

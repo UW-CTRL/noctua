@@ -40,6 +40,35 @@ Choose the mode with the badge below the composer.
 
 ## Chat attachments
 
+Drag files onto the chat input, paste clipboard files or screenshots with
+Ctrl+V (Cmd+V on macOS), or choose **Attach files** (paperclip). Clipboard file
+pasting depends on the browser and operating system; use drag-and-drop or the
+file picker if copied files are not available to the browser. Ordinary text
+pasting continues to insert text.
+
+Review the upload chips and image thumbnails, and remove unwanted files before sending. Wait for
+uploads to finish; failed uploads can be retried or removed. You can send files
+without typing a message, or combine attachments with a `/skill-name` command
+to use that skill on the files. Each message accepts up to 10 files totaling 32 MB;
+PNG, JPEG, GIF, and WebP images must be 5 MB or smaller. The assistant can inspect
+these images and read UTF-8 text files. PDFs are indexed locally before upload,
+with a limit of 1,000 pages and 8 MB of extracted text. Unlock password-protected
+PDFs first. The original PDF is retained: Claude Code uses its native PDF Read
+capability in a restricted directory containing only PDFs sent in that conversation
+(requires Claude Code 2.1.248 or later). Codex uses rendered PDF page images through
+its vision capability; both providers can also request those page images through
+Noctua. Keep the chat tab open while uncached pages are rendered. Charts, tables,
+handwriting, and scanned pages can be inspected visually without a separate image
+attachment or external OCR. This does not create a searchable OCR index, and small
+or unclear scans can still be misread. Other binary files can be attached and downloaded, but the assistant cannot interpret their
+contents through this feature.
+
+Uploaded files are stored in Noctua's local chat data, independently of Library
+and project files. Sending makes them available to the selected assistant through
+Noctua's tools; it does not import them into your Library. Sent file links remain
+in chat history, and queued uploads are restored per conversation and provider.
+Removing a chip removes it from the draft; uploaded local copies are retained.
+
 Select text in a PDF, note, paper details, or chat message, then choose
 **Add to chat**. You can attach multiple passages, preview their sources, and
 remove entries before sending. These attachments do not change saved annotations.

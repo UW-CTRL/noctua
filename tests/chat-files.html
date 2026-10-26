@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chat file attachments</title><link rel="stylesheet" href="../web/style.css"></head><body>
+<div id="chat-files" hidden></div><form id="chat-form"><button id="chat-attach" type="button">Attach</button><input id="chat-file-input" type="file" multiple hidden><textarea id="chat-input"></textarea></form>
+<script>
+const chat={id:null,provider:'claude',ready:true,switching:false};
+const saved=new Map(),store={get:key=>saved.get(key),set:(key,value)=>saved.set(key,value)};
+let errors=[],requests=[],pageRequests=[],fail=false,hold=null,counter=0,pdfDestroyed=0;
+function toast(message){errors.push(message)}
+async function pdfjs(){return {getDocument:()=>({promise:Promise.resolve({numPages:2,getPage:async n=>({getTextContent:async()=>({items:[{str:`Page ${n}`,hasEOL:true}]}),cleanup(){}})}),destroy:async()=>{pdfDestroyed++;}})}}
+window.fetch=async(url,options)=>{
+ if(url.includes('/pages/')){pageRequests.push({url,body:options.body,type:options.headers['Content-Type']});return {ok:true,json:async()=>({status:'cached'})};}
+ const body=JSON.parse(options.body);requests.push(body);
+ if(hold)await hold;
+ if(fail)return {ok:false,status:500,json:async()=>({error:'Upload unavailable'})};
+ return {ok:true,json:async()=>({id:`file-${++counter}`,name:body.name,size:atob(body.data).length,mime:body.pages.length?'application/pdf':'application/octet-stream',pages:body.pages.length})};
+};
+function assert(value,message){if(!value)throw Error(message)}
+async function waitFor(check,message){
+ const deadline=Date.now()+5000;
+ while(Date.now()<deadline){
+  try{if(check())return;}catch(_){/* Upload snapshots reject while files are pending. */}
+  await new Promise(resolve=>setTimeout(resolve,10));
+ }
+ throw Error(message);
+}
+window.addEventListener('error',event=>window.webkit.messageHandlers.result.postMessage('FAIL: '+event.message));
+</script><script src="../web/chat-files.js"></script><script>
+window.addEventListener('DOMContentLoaded',async()=>{try{
+ const api=NoctuaChatFiles,form=document.getElementById('chat-form');
+ const text=new File(['source'],'notes.txt',{type:'text/plain',lastModified:1});
+ await api.add([text,text]);assert(api.count()===1&&requests.length===1,'duplicate files should upload once');
+ assert(api.snapshot().files[0].name==='notes.txt','completed upload missing');
+ chat.id='other';api.render();assert(api.count()===0,'draft leaked into another conversation');
+ chat.id=null;api.render();assert(api.count()===1,'draft was not restored');
+ chat.provider='codex';api.render();assert(api.count()===0,'draft leaked across providers');chat.provider='claude';
+ const plain=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(plain,'clipboardData',{value:{files:[]}});form.dispatchEvent(plain);assert(!plain.defaultPrevented,'plain text paste was blocked');
+ const paste=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(paste,'clipboardData',{value:{files:[new File(['image'],'shot.png',{type:'image/png'})]}});form.dispatchEvent(paste);await waitFor(()=>api.snapshot().files.length===2,'clipboard upload did not complete');assert(paste.defaultPrevented&&api.count()===2,'clipboard file was not queued');
+ const transfer={types:['Files'],files:[new File(['%PDF-1.7'],'paper.pdf',{type:'application/pdf'})]};
+ const over=new Event('dragover',{bubbles:true,cancelable:true});Object.defineProperty(over,'dataTransfer',{value:transfer});form.dispatchEvent(over);assert(over.defaultPrevented&&form.classList.contains('chat-file-drag'),'drop target did not activate');
+ const drop=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'dataTransfer',{value:transfer});form.dispatchEvent(drop);await waitFor(()=>api.snapshot().files.length===3,'dropped PDF upload did not complete');assert(drop.defaultPrevented&&api.count()===3&&!form.classList.contains('chat-file-drag'),'dropped PDF missing');
+ assert(requests.at(-1).pages.join('')==='Page 1\nPage 2\n'&&pdfDestroyed===1,'PDF index or cleanup missing');
+ fail=true;await api.add([new File(['retry'],'retry.txt')]);let blocked=false;try{api.snapshot()}catch(_){blocked=true}assert(blocked&&document.querySelector('[data-retry]'),'failed upload did not block send or show retry');
+ fail=false;document.querySelector('[data-retry]').click();await waitFor(()=>api.snapshot().files.length===4,'retried upload did not complete');assert(api.snapshot().files.length===4,'retry failed');
+ const before=api.count();await api.add([{name:'too-large.bin',size:33*1024*1024,type:''}]);assert(api.count()===before&&errors.at(-1).includes('32 MB'),'size limit missing');
+ await api.add([{name:'large.png',size:6*1024*1024,type:'image/png'}]);assert(api.count()===before&&errors.at(-1).includes('5 MB'),'image limit missing');
+ const escaped=api.sentHTML([{id:'safe',name:'<img src=x onerror=alert(1)>',size:2}]);assert(!escaped.includes('<img')&&escaped.includes('&lt;img'),'filename HTML injection');
+ const snapshot=api.snapshot();api.consume(snapshot);assert(api.count()===0,'accepted files not consumed');
+ let release;hold=new Promise(resolve=>release=resolve);const pending=api.add([new File(['late'],'late.txt')]);await waitFor(()=>requests.at(-1)?.name==='late.txt','held upload did not reach the server');
+ blocked=false;try{api.snapshot()}catch(_){blocked=true}assert(blocked,'pending upload allowed send');
+ const oldKey=api.key();chat.id='created';api.moveDraft(oldKey);release();hold=null;await pending;
+ assert(api.snapshot().files[0].name==='late.txt'&&JSON.parse(saved.get(api.key())).length===1,'in-flight upload lost after new chat received an ID');
+ const old=api.snapshot();await api.add([new File(['next'],'next.txt')]);api.consume(old);assert(api.count()===1&&api.snapshot().files[0].name==='next.txt','consuming a send removed a later attachment');
+ document.querySelector('[data-remove]').click();assert(api.count()===0,'remove failed');
+ let sourcePDF;
+ // Emulate the CI/older WebKit stream API even on newer local macOS versions.
+ delete ReadableStream.prototype[Symbol.asyncIterator];
+ assert(typeof ReadableStream.prototype[Symbol.asyncIterator]==='undefined','legacy stream fixture did not apply');
+ const engine=await import('../web/vendor/pdfjs/build/pdf.mjs');
+ if(!Promise.withResolvers)Promise.withResolvers=function(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}};
+ engine.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;
+ pdfjs=async()=>({getDocument:options=>engine.getDocument({...options,...(options.url?{url:undefined,data:new TextEncoder().encode(sourcePDF)}:{}),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href})});
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+ const stream='BT /F1 24 Tf 72 700 Td (Uploaded PDF evidence) Tj ET';objects.push('<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream');let pdf='%PDF-1.7\n',offsets=[0];objects.forEach((object,i)=>{offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+object+'\nendobj\n'});const xref=pdf.length;pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ await api.add([new File([pdf],'real.pdf',{type:'application/pdf'})]);assert(api.snapshot().files.length===1&&requests.at(-1).pages[0].includes('Uploaded PDF evidence'),'bundled PDF.js did not index an actual uploaded PDF');
+ sourcePDF=pdf;
+ await api.preparePDFPage({file_id:api.snapshot().files[0].id,page:1,chat_id:'created',request_id:'text-page'});
+ assert(pageRequests.at(-1).type==='image/png'&&pageRequests.at(-1).body.size>1000,'text PDF page was not rendered for vision');
+ // Build an image-only scan with no embedded text. Its colored pixels must
+ // survive upload and rendering; a text-only implementation cannot pass this.
+ const scanStream='q 240 0 0 120 72 500 cm BI /W 2 /H 1 /CS /RGB /BPC 8 /F /AHx ID FF00000000FF> EI Q';
+ objects[4]='<< /Length '+scanStream.length+' >>\nstream\n'+scanStream+'\nendstream';
+ sourcePDF='%PDF-1.7\n';const scanOffsets=[0];objects.forEach((object,i)=>{scanOffsets.push(sourcePDF.length);sourcePDF+=(i+1)+' 0 obj\n'+object+'\nendobj\n'});const scanXref=sourcePDF.length;sourcePDF+='xref\n0 6\n0000000000 65535 f \n'+scanOffsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+scanXref+'\n%%EOF';
+ await api.add([new File([sourcePDF],'scan.pdf',{type:'application/pdf'})]);
+ assert(requests.at(-1).pages[0].trim()==='','scan fixture unexpectedly contains embedded text');
+ await api.preparePDFPage({file_id:api.snapshot().files.at(-1).id,page:1,chat_id:'created',request_id:'scan-page'});
+ const scan=pageRequests.at(-1),png=new Uint8Array(await scan.body.arrayBuffer());
+ assert(scan.type==='image/png'&&png[0]===137&&png[1]===80,'image-only scan was not sent as a PNG');
+ const img=new Image(),objectURL=URL.createObjectURL(scan.body);await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;img.src=objectURL});
+ const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(objectURL);
+ const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+ assert(pixels.some((value,i)=>i%4===0&&value>200&&pixels[i+1]<100),'scan image pixels were lost during PDF rendering');
+ assert(img.width<=1800&&img.height<=1800&&scan.url.includes('chat_id=created'),'page rendering bounds or conversation routing missing');
+ let rejected=false;try{await api.preparePDFPage({file_id:'scan',page:2,chat_id:'created',request_id:'bad-page'})}catch(error){rejected=true}
+ assert(rejected&&pageRequests.at(-1).type==='application/json'&&JSON.parse(pageRequests.at(-1).body).error.includes('outside'),'renderer errors did not reach the waiting assistant');
+ window.webkit.messageHandlers.result.postMessage('PASS: chat file drop/paste, PDF text and scan rendering, limits, retries, draft isolation, escaping, and send lifecycle');
+}catch(error){window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack+'\nAttachment state: '+document.getElementById('chat-files').textContent)}});
+</script></body></html>
