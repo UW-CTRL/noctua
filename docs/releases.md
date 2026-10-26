@@ -336,3 +336,14 @@ snapshot with the matching release. Automatic downgrade is refused after newer
 DBs have been opened. Maintenance and recovery are described in
 [Server operations](server.md#drafts-backup-and-updates); do not run an older
 pre-protocol binary against migrated data.
+
+## Paper compiler packaging
+
+Release jobs run `scripts/setup-tectonic.py` and `scripts/setup-pdflatex.py` before
+packaging. They prepare checksum-verified Tectonic 0.17.0 and TinyTeX 2026.10
+(TeX Live 2026 pdfLaTeX/BibTeX), with fixed-date JMLR/algorithm2e/SyncTeX dependencies.
+Universal macOS apps include both architectures. Compilers resolve from app
+resources at runtime: users need no separate TeX installation. The TeX distribution
+increases installer size; package files, fonts, formats, and license notices must
+ship together with the executables. Local packaging requires both setup scripts
+(`--universal` on the Tectonic script for Universal macOS builds).

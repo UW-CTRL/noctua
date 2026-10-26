@@ -24,9 +24,11 @@ function renderWorkspaceTree(){
   return `<div class="workspace-entry ${active?'active':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-menu="${esc(e.id)}" data-icon="ellipsis" data-icon-only title="Actions for ${esc(title)}" aria-label="Actions for ${esc(title)}"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
- tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-bibliographies','library','Bibliographies')}${action('data-skills','sparkles','Agent skills')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
+ tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-new-paper','file-text','New paper')}${action('data-bibliographies','library','Bibliographies')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
- $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-skills]').onclick=showSkills;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
+ $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
+ tree.querySelector('[data-latex-settings]').onclick=()=>showPaperSettings().catch(e=>toast(e.message,{error:true}));
+ tree.querySelector('[data-new-paper]').onclick=()=>newPaper();
  tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true})));
  tree.querySelectorAll('[data-file-menu]').forEach(b=>b.onclick=()=>workspaceFileMenu(b.dataset.fileMenu));
  bindWorkspaceDrag(tree);
@@ -126,7 +128,8 @@ function workspaceImport(){
 
 function workspaceFileMenu(id){
  const e=W.manifest.entries.find(e=>e.id===id);const folders=W.manifest.entries.filter(f=>f.kind==='folder'&&!f.deleted&&f.id!==id);
- const d=workspaceDialog(e.name,`${e.references?.length?`<p>Used in: ${e.references.map(n=>esc(n.title)).join(', ')}</p>`:''}<label>Name <input data-name value="${esc(e.name)}"></label><button data-rename data-icon="pencil">Rename</button><label>Folder <select data-parent><option value="">Project root</option>${folders.map(f=>`<option value="${f.id}" ${f.id===e.parent?'selected':''}>${esc(f.name)}</option>`).join('')}</select></label><button data-move data-icon="folder">Move</button><button data-delete data-icon="trash-2">Move to trash</button>${e.kind==='file'&&/\.(png|jpe?g|gif|webp|mp4|m4v|mov|webm)$/i.test(e.name)?'<button data-insert>Insert in current note</button>':''}${e.kind==='file'?`<a href="${workspaceURL()}/files/${e.id}/content" download="${esc(e.name)}">Download</a>`:''}`);
+ const d=workspaceDialog(e.name,`${e.references?.length?`<p>Used in: ${e.references.map(n=>esc(n.title)).join(', ')}</p>`:''}<label>Name <input data-name value="${esc(e.name)}"></label><button data-rename data-icon="pencil">Rename</button><label>Folder <select data-parent><option value="">Project root</option>${folders.map(f=>`<option value="${f.id}" ${f.id===e.parent?'selected':''}>${esc(f.name)}</option>`).join('')}</select></label><button data-move data-icon="folder">Move</button><button data-delete data-icon="trash-2">Move to trash</button>${e.kind==='file'&&/\.tex$/i.test(e.name)?'<button data-paper-main data-icon="file-text">Set as main document</button>':''}${e.kind==='file'&&/\.(png|jpe?g|gif|webp|mp4|m4v|mov|webm)$/i.test(e.name)?'<button data-insert>Insert in current note</button>':''}${e.kind==='file'?`<a href="${workspaceURL()}/files/${e.id}/content" download="${esc(e.name)}">Download</a>`:''}`);
+ const main=d.querySelector('[data-paper-main]');if(main)main.onclick=async()=>{try{await setPaperMain(id);d.close();}catch(err){toast(err.message,{error:true});}};
  const insert=d.querySelector('[data-insert]');if(insert)insert.onclick=async()=>{try{if(!N.doc)throw Error('Open a note first.');await saveWorkspaceFile();W.file=null;const video=/\.(mp4|m4v|mov|webm)$/i.test(e.name);const src=figureSrc(newFigure([{path:e.legacy||`files/${e.id}`,command:video?'includevideo':'includegraphics',caption:'Caption.'}]));N.doc.blocks.push({id:newId('b'),type:'text',src});markDirty();renderEditor();d.close();}catch(err){toast(err.message,{error:true});}};
  d.querySelector('[data-delete]').onclick=()=>{d.close();confirmWorkspaceTrash(id);};
  for(const op of ['rename','move'])d.querySelector(`[data-${op}]`).onclick=async()=>{try{
@@ -159,6 +162,7 @@ function confirmWorkspaceTrash(id){
 async function openWorkspaceFile(id){
  const target=W.target,e=W.manifest.entries.find(e=>e.id===id&&!e.deleted);if(!e)return;if(e.kind==='folder'){if(W.expanded.has(id))W.expanded.delete(id);else W.expanded.add(id);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();return;}
  await saveWorkspaceFile();await flushNoteEdits();if(W.target!==target)return;stopEdit();
+ if(typeof paperUnmount==='function')paperUnmount();
  if(e.kind==='note'){W.file=null;await openNote(e.note);return;}
  const r=await api(workspaceURL()+'/files/'+enc(id));if(target!==W.target)return;
  W.file=id;W.text=r.text??'';W.saved=W.text;W.dirty=false;W.manifest.revision=r.revision;W.fileRevision=r.revision;W.fileHistory=r.history||{};
@@ -167,7 +171,7 @@ async function openWorkspaceFile(id){
  $('#notes-stage').innerHTML=`<div id="workspace-editor"><header><strong title="${esc(e.name)}">${esc(e.name)}</strong><span data-file-status role="status">Saved</span>${historyButtons('file')}<button data-reload-file data-icon="refresh-cw" data-icon-only title="Reload saved file" aria-label="Reload saved file"></button><a class="workspace-download" href="${url}" download="${esc(e.name)}">Download</a></header>${preview}</div>`;
  $('#workspace-editor [data-reload-file]').onclick=()=>{if(W.dirty&&!confirm('Discard unsaved changes and reload this file?'))return;W.dirty=false;openWorkspaceFile(id).catch(e=>toast(e.message,{error:true}));};
  const ta=$('#workspace-editor textarea');if(ta){ta.value=W.text;ta.oninput=()=>{W.text=ta.value;W.dirty=true;updateWorkspaceHistory();$('#workspace-editor [data-file-status]').textContent='Unsaved';clearTimeout(W.timer);W.timer=setTimeout(()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true})),800);};ta.onblur=()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true}));}
- renderWorkspaceTree();
+ renderWorkspaceTree();if(typeof paperMount==='function')paperMount(e);
 }
 async function saveWorkspaceFile(){
  clearTimeout(W.timer);if(W.saving){await W.saving;if(W.dirty)return saveWorkspaceFile();return;}
@@ -178,27 +182,13 @@ async function saveWorkspaceFile(){
 async function workspaceUndo(redo=false,fileOnly=false){try{const target=W.target;const caret=$('#workspace-editor textarea')?.selectionStart;await saveWorkspaceFile();if(W.target!==target)return;const id=W.file;W.manifest=await api(workspaceURL()+(fileOnly&&id?'/files/'+enc(id)+'/history':'/history'),{revision:fileOnly?W.fileRevision:W.manifest.revision,redo});renderWorkspaceTree();applyBibliography();if(id&&W.manifest.entries.some(e=>e.id===id&&!e.deleted)){await openWorkspaceFile(id);if(caret!=null){const ta=$('#workspace-editor textarea');ta?.focus();ta?.setSelectionRange(Math.min(caret,ta.value.length),Math.min(caret,ta.value.length));}}else if(id){W.file=null;renderEditor();}}catch(e){toast(e.message,{error:true});}}
 function workspaceBibliographies(){
  const files=W.manifest.entries.filter(e=>!e.deleted&&e.kind==='file'&&/\.bib$/i.test(e.name));
- const d=workspaceDialog('Project bibliographies',`<p>Library citations always remain available. Enable imported .bib files to add their keys. Duplicate keys must be renamed.</p>${files.length?files.map(f=>`<label><input type="checkbox" value="${f.id}" ${(W.manifest.bibliographies||[]).includes(f.id)?'checked':''}> ${esc(f.name)}</label>`).join(''):'<p>Import or create a .bib file first.</p>'}<button data-save>Save selection</button>`);
+ const d=workspaceDialog('Project bibliographies',`<p>Library citations always remain available. Enable imported .bib files to add their keys. Suggestions list collection and bibliography sources separately, including duplicates.</p>${files.length?files.map(f=>`<label><input type="checkbox" value="${f.id}" ${(W.manifest.bibliographies||[]).includes(f.id)?'checked':''}> ${esc(f.name)}</label>`).join(''):'<p>Import or create a .bib file first.</p>'}<button data-save>Save selection</button>`);
  d.querySelector('[data-save]').onclick=async()=>{try{await workspaceChange({op:'config',bibliographies:[...d.querySelectorAll('input:checked')].map(i=>i.value)});d.close();}catch(e){toast(e.message,{error:true});}};
 }
 function showBibReference(key){const it=N.items.get(key);if(!it?.bib)return false;const safe=u=>{try{const url=new URL(u);return ['https:','http:'].includes(url.protocol)?url.href:null;}catch{return null;}};const url=safe(it.url)||(it.doi?safe('https://doi.org/'+it.doi):null);const d=workspaceDialog(it.title||key,`<p>${esc(it.creators.join('; '))} · ${esc(it.year||'n.d.')}</p><p>Key: ${esc(key)} · ${esc(it.file_name)}</p>${url?`<a href="${esc(url)}" target="_blank" rel="noopener">Open reference</a>`:''}${it.library_key?'<button data-paper>Open library paper</button>':''}<button data-bib>Edit bibliography</button>`);d.querySelector('[data-bib]').onclick=()=>{d.close();openWorkspaceFile(it.file_id).catch(e=>toast(e.message));};if(it.library_key)d.querySelector('[data-paper]').onclick=()=>{d.close();const paper=N.items.get(it.library_key);if(paper){lib.detail=paper;renderLibDetails(paper);showRightTab('paper');}};return true;}
 window.addEventListener('beforeunload',e=>{if(W.dirty){e.preventDefault();e.returnValue='';}});
 
 function chatProjectTarget(){return isNotesMode()?N.target:(G.project?.target||lib.target||N.target||null);}
-function getChatSkillOverride(){const value=store.get('noctua.chatSkills.'+chat.id);if(value==null)return null;try{return JSON.parse(value);}catch{return null;}}
-async function showSkills(){
- try{const skills=await api('/api/skills');const target=chatProjectTarget();let manifest=target?await api(`/api/workspaces/${enc(target)}`):null;const selected=getChatSkillOverride();const enabled=manifest?.skills||[];
- const d=workspaceDialog('Agent skills',`<p>Project: ${esc(target||'none')}. Skills are stored inside Noctua and shared by Claude and Codex. Importing never runs scripts. Enable instructions for this project, or override the selection for this chat.</p><button data-folder>Import folder</button><button data-zip>Import ZIP</button><button data-md>Import SKILL.md</button><label><input type="checkbox" data-override ${selected!==null?'checked':''}> Override skills for this chat</label><div data-skill-list>${skills.map(s=>`<section><label><input type="checkbox" data-skill="${s.id}" ${(selected??enabled).includes(s.id)?'checked':''}> ${esc(s.name||s.id)}</label><p>${esc(s.description)}</p><button data-inspect="${s.id}">Read instructions and files</button></section>`).join('')||'<p>No imported skills yet.</p>'}</div><button data-enable>Save selection</button>`);
- const importFiles=(kind)=>{const input=document.createElement('input');input.type='file';if(kind==='folder'){input.multiple=true;input.setAttribute('webkitdirectory','');}else input.accept=kind==='zip'?'.zip':'.md';input.onchange=async()=>{try{
-  let response;if(kind==='zip'){response=await fetch('/api/skills/import-zip',{method:'POST',body:input.files[0]});const r=await response.json();if(!response.ok)throw Error(r.error||'Import failed');}
-  else {const files=[];let total=0;for(const f of input.files){if((f.webkitRelativePath||f.name).split('/').some(p=>['.DS_Store','__MACOSX','.git'].includes(p)))continue;total+=f.size;if(total>32*1024*1024||files.length>=512)throw Error('Skill packages support at most 512 files and 32 MB.');const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));files.push({path:kind==='md'?'SKILL.md':f.webkitRelativePath||f.name,data:btoa(binary)});}await api('/api/skills',{files});}
-  d.close();await showSkills();
- }catch(e){toast(e.message,{error:true});}};input.click();};
- for(const kind of ['folder','zip','md'])d.querySelector(`[data-${kind}]`).onclick=()=>importFiles(kind);
- d.querySelectorAll('[data-inspect]').forEach(b=>b.onclick=async()=>{try{const id=b.dataset.inspect,r=await api(`/api/skills/${id}/files/SKILL.md`);const view=workspaceDialog('Skill package',`<select data-resource>${r.files.map(p=>`<option ${p==='SKILL.md'?'selected':''}>${esc(p)}</option>`).join('')}</select><pre>${esc(r.text)}</pre>`);view.querySelector('select').onchange=async(e)=>{try{const f=await api(`/api/skills/${id}/files/${e.target.value.split('/').map(enc).join('/')}`);view.querySelector('pre').textContent=f.text;}catch(err){toast(err.message,{error:true});}};}catch(e){toast(e.message,{error:true});}});
- d.querySelector('[data-enable]').onclick=async()=>{try{const ids=[...d.querySelectorAll('[data-skill]:checked')].map(e=>e.dataset.skill);if(d.querySelector('[data-override]').checked)store.set('noctua.chatSkills.'+chat.id,JSON.stringify(ids));else{store.remove('noctua.chatSkills.'+chat.id);if(!manifest)throw Error('Select a project before saving project skills.');if(W.target===target)await saveWorkspaceFile();const updated=await api(`/api/workspaces/${enc(target)}`,{revision:manifest.revision,op:'config',skills:ids});if(W.target===target){W.manifest=updated;W.fileRevision=updated.revision;renderWorkspaceTree();}}d.close();toast('Skill selection saved. It applies to the next chat turn.');}catch(e){toast(e.message,{error:true});}};
- }catch(e){toast(e.message,{error:true});}
-}
 async function showSkillRun(id){
  const d=workspaceDialog('Skill script request','<div data-run>Loading…</div>');let timer;
  const update=async()=>{if(!d.isConnected)return;try{const r=await api('/api/skill-runs/'+enc(id));const pending=r.status==='approval_required',review=r.status==='review_required';
@@ -208,8 +198,64 @@ async function showSkillRun(id){
  }catch(e){d.querySelector('[data-run]').textContent=e.message;}};
  d.addEventListener('close',()=>clearTimeout(timer));await update();
 }
+// Inline requests are keyed by file approval, never by chat-wide permission.
+const fileEditApprovals = new Map();
+function editDiffLines(before, after) {
+ const a=String(before??'').split('\n'),b=String(after??'').split('\n');
+ let first=0,last=0;
+ while(first<a.length&&first<b.length&&a[first]===b[first])first++;
+ while(last<a.length-first&&last<b.length-first&&a[a.length-1-last]===b[b.length-1-last])last++;
+ const rows=[];
+ if(first)rows.push(...a.slice(Math.max(0,first-3),first).map(text=>({kind:'context',text})));
+ const x=a.slice(first,a.length-last),y=b.slice(first,b.length-last);
+ // Bounded LCS gives useful separate hunks for ordinary edits without freezing
+ // the desktop for a rewritten 2 MB source file. Large rewrites use block diffs.
+ if(x.length+y.length<=4000&&x.length*y.length<=250000){
+  const table=Array.from({length:x.length+1},()=>new Uint32Array(y.length+1));
+  for(let i=x.length-1;i>=0;i--)for(let j=y.length-1;j>=0;j--)table[i][j]=x[i]===y[j]?table[i+1][j+1]+1:Math.max(table[i+1][j],table[i][j+1]);
+  let i=0,j=0;while(i<x.length||j<y.length){if(i<x.length&&j<y.length&&x[i]===y[j]){rows.push({kind:'context',text:x[i++]});j++;}else if(i<x.length&&(j===y.length||table[i+1][j]>=table[i][j+1]))rows.push({kind:'removed',text:x[i++]});else rows.push({kind:'added',text:y[j++]});}
+ }else{for(const text of x)rows.push({kind:'removed',text});for(const text of y)rows.push({kind:'added',text});}
+ if(last)rows.push(...a.slice(a.length-last,a.length-last+3).map(text=>({kind:'context',text})));
+ const compact=[];for(let i=0;i<rows.length;){if(rows[i].kind!=='context'){compact.push(rows[i++]);continue;}let end=i;while(end<rows.length&&rows[end].kind==='context')end++;if(end-i>6){compact.push(...rows.slice(i,i+3),{kind:'gap',text:`… ${end-i-6} unchanged lines …`},...rows.slice(end-3,end));}else compact.push(...rows.slice(i,end));i=end;}
+ return compact;
+}
+function fileEditDiffHTML(changes) {
+ return changes.map(c=>{
+  const label={create:'Create',edit:'Edit',rename:'Rename',move:'Move',folder:'New folder'}[c.op]||'Change';
+  let body;
+  if(c.op==='edit'||c.op==='create'){
+   const rows=editDiffLines(c.before,c.after),shown=rows.slice(0,500);
+   body=`<pre class="edit-diff">${shown.map(r=>`<span class="diff-${r.kind}">${r.kind==='added'?'+':r.kind==='removed'?'-':' '} ${esc(r.text.slice(0,2000))}${r.text.length>2000?' … [line shortened]':''}</span>`).join('')}</pre>${rows.length>500?'<p class="hint">Snapshot limited to 500 lines.</p>':''}`;
+  }else body=`<p>${c.op==='rename'?`→ ${esc(c.new_name)}`:c.op==='move'?`Destination: ${esc(c.parent||'Project root')}`:'Create folder'}</p>`;
+  return `<section class="edit-diff-file"><h4>${esc(label)} · ${esc(c.name||'Untitled')} <small>${esc(c.target||'')}</small></h4>${body}</section>`;
+ }).join('');
+}
+function showFileEditApproval(a, host) {
+ const key=a.approval_id;
+ if(fileEditApprovals.has(key)){const previous=fileEditApprovals.get(key);if(!previous.card.isConnected)(host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(previous.card);if(!previous.deciding&&!previous.settled)previous.card.querySelector('[data-diffs]').innerHTML=fileEditDiffHTML(a.changes);return;}
+ const d=document.createElement('section');d.className='chat-edit-approval';
+ d.innerHTML=`<p><strong>Allow edits to ${esc(a.changes[0]?.name||'this file')} for this prompt?</strong></p><details><summary>View proposed changes</summary><div class="edit-diff-scroll" data-diffs>${fileEditDiffHTML(a.changes)}</div></details><p class="workspace-error" role="alert" data-error></p><footer><button data-reject>Decline</button><button class="primary" data-approve>Allow this file</button></footer><p data-status role="status"></p>`;
+ (host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(d);
+ const state={card:d,deciding:false,settled:false};fileEditApprovals.set(key,state);
+ const decide=async approve=>{
+  if(state.deciding||state.settled)return;state.deciding=true;
+  d.querySelectorAll('button').forEach(b=>b.disabled=true);
+  try{
+   if(approve)await saveWorkspaceFile();
+   if(state.settled)return;
+   await api('/api/chat-edit-approvals/'+enc(a.turn_id),{chat_id:a.chat_id,approval_id:key,approve});
+   if(state.settled)return;
+   state.settled=true;d.querySelector('footer').hidden=true;
+   d.querySelector('[data-status]').textContent=approve?'Allowed for this prompt.':'Declined for this prompt.';
+   d.querySelector('details').open=false;
+  }catch(e){if(!state.settled)d.querySelector('[data-error]').textContent=e.message;}
+  finally{state.deciding=false;if(!state.settled)d.querySelectorAll('button').forEach(b=>b.disabled=false);}
+ };
+ d.querySelector('[data-approve]').onclick=()=>decide(true);
+ d.querySelector('[data-reject]').onclick=()=>decide(false);
+}
+function closeFileEditApprovals(){for(const s of fileEditApprovals.values()){if(!s.settled){s.card.querySelector('[data-status]').textContent='Request ended without approval.';s.card.querySelector('footer').hidden=true;}s.settled=true;s.card.querySelectorAll('button').forEach(b=>b.disabled=true);}fileEditApprovals.clear();}
 
-document.getElementById('chat-skills-btn')?.addEventListener('click',showSkills);
 
 async function refreshWorkspaceView(target){
  if(N.target!==target)return;
@@ -222,6 +268,67 @@ async function refreshWorkspaceView(target){
 }
 
 function showWorkspaceTrash(){const entries=(W.manifest?.entries||[]).filter(e=>e.deleted);const d=workspaceDialog('Project trash',`<p>Restore individual entries here, including after restarting Noctua. Restore a folder before its children to keep their original placement; otherwise entries return to the root.</p>${entries.map(e=>`<p>${esc(e.name)} <button data-restore="${e.id}" data-icon="undo-2">Restore</button></p>`).join('')||'<p>Trash is empty.</p>'}`);d.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{try{await workspaceChange({op:'restore',id:b.dataset.restore});d.close();showWorkspaceTrash();}catch(e){toast(e.message,{error:true});}});}
+
+// Slash commands select available skills for one message, without changing defaults.
+window.NoctuaSkillPicker=(()=>{
+ const input=$('#chat-input'),popup=$('#skill-picker');
+ let results=[],index=0,version=0,active=null;
+ const token=s=>'/'+(s.name||s.id).trim().replace(/\s+/g,'-');
+ function commands(skills){
+  const counts=new Map();for(const s of skills)counts.set(token(s),(counts.get(token(s))||0)+1);
+  return skills.map(s=>({...s,command:token(s)+(counts.get(token(s))>1?'-'+s.id:'')}));
+ }
+ function query(){
+  if(!input||input.selectionStart!==input.selectionEnd)return null;
+  const before=input.value.slice(0,input.selectionEnd),m=/(?:^|\s)\/([^\s/]{0,100})$/.exec(before);
+  return m?{text:before,start:before.length-m[1].length-1,q:m[1].toLowerCase()}:null;
+ }
+ function close(){version++;active=null;results=[];if(popup)popup.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}}
+ function render(message){
+  popup.innerHTML=results.length?results.map((s,i)=>`<div role="option" id="skill-option-${i}" aria-selected="${i===index}" data-skill-index="${i}" class="skill-option${i===index?' active':''}"><strong>${esc(s.command)}</strong><small>${esc([s.project_name,s.description].filter(Boolean).join(' · ')||'Skill')}</small></div>`).join(''):`<div class="skill-empty" role="status">${esc(message)}</div>`;
+  popup.hidden=false;input.setAttribute('aria-expanded','true');
+  if(results.length)input.setAttribute('aria-activedescendant','skill-option-'+index);else input.removeAttribute('aria-activedescendant');
+  popup.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});
+ }
+ async function update(){
+  const q=query();if(!q||chat.busy||chat.switching)return close();
+  const request=++version;active=q;results=[];index=0;render('Loading skills…');
+  try{
+   const skills=commands(await api('/api/skills'));
+   if(request!==version||query()?.text!==q.text||document.activeElement!==input)return;
+   results=skills.filter(s=>`${s.command} ${s.description||''} ${s.project_name||''}`.toLowerCase().includes(q.q)).sort((a,b)=>a.command.localeCompare(b.command));
+   render(skills.length?'No matching skills.':'No skills found. Install a global skill with the Skills CLI or import one in Settings → Skills.');
+  }catch(e){if(request===version)render('Could not load skills: '+e.message);}
+ }
+ function pick(i){
+  const s=results[i],q=query();if(!s||!q||q.text!==active?.text)return close();
+  const end=input.selectionEnd;input.setRangeText(s.command+' ',q.start,end,'end');close();input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));
+ }
+ function key(e){
+  if(!popup||popup.hidden||e.isComposing||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey)return false;
+  if(!['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(e.key))return false;
+  e.preventDefault();
+  if(e.key==='Escape')close();
+  else if(e.key==='Enter'||e.key==='Tab'){if(results.length)pick(index);else if(e.key==='Tab')close();}
+  else if(results.length){index=(index+(e.key==='ArrowDown'?1:results.length-1))%results.length;render();}
+  return true;
+ }
+ async function prepare(text){
+  const tokens=new Set(text.split(/\s+/));
+  if(![...tokens].some(t=>t.startsWith('/')))return {ids:[],instructions:''};
+  const selected=commands(await api('/api/skills')).filter(s=>tokens.has(s.command));
+  if(!selected.length)return {ids:[],instructions:''};
+  return {ids:selected.map(s=>s.id),instructions:'The user explicitly selected these skills for this message. Read each SKILL.md with read_skill and follow its instructions within the current mode and tool permissions:\n'+selected.map(s=>`${s.command}: skill_id=${JSON.stringify(s.id)}, path="SKILL.md"`).join('\n')};
+ }
+ if(input&&popup){
+  input.addEventListener('input',update);input.addEventListener('click',update);
+  input.addEventListener('blur',close);
+  input.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key))update();});
+  popup.addEventListener('mousedown',e=>{e.preventDefault();const item=e.target.closest('[data-skill-index]');if(item)pick(Number(item.dataset.skillIndex));});
+  document.addEventListener('pointerdown',e=>{if(e.target!==input&&!popup.contains(e.target))close();});
+ }
+ return {key,close,prepare};
+})();
 
 // Server-backed assistant edits preserve optimistic versions and local drafts.
 async function refreshAgentNote(a){

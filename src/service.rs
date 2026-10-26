@@ -162,6 +162,7 @@ pub fn stage(executable: &std::path::Path) -> Result<PathBuf> {
         crate::server::executable_hash(&target)? == digest,
         "The staged server executable does not match its content hash; reinstall the application"
     );
+    crate::server_resources::stage(executable,&target)?;
     Ok(target)
 }
 pub fn enable(executable: &std::path::Path) -> Result<()> {

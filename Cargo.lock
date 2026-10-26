@@ -2403,7 +2403,7 @@ dependencies = [
 
 [[package]]
 name = "noctua"
-version = "0.2.5"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2416,6 +2416,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tower",
@@ -2425,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "noctua-app"
-version = "0.2.5"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "noctua",

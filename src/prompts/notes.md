@@ -24,7 +24,9 @@ A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be shari
 
 ### Project content
 
-Block notes and project text files are different document types. A `.tex` project file does not become a block note or compile to a PDF. Enabled project bibliographies provide additional citation keys; do not assume every imported file is active or that an imported reference has been downloaded.
+Block notes and standard LaTeX papers are different document types. Project `.tex` files can be compiled in the Paper editor with bundled Tectonic or pdfLaTeX; block notes retain their lightweight KaTeX preview. Enabled project bibliographies provide additional citation keys. Suggestions distinguish collection and bibliography sources; duplicate keys resolve to the collection first, then the first enabled bibliography. Do not assume every imported file is active or that an imported reference has been downloaded.
+
+Skills are managed in Settings → Skills. Available packages include Noctua imports and global installations read in place. Project imports are independent snapshots; disconnecting them preserves original files. Explicit slash commands select skills for one message alongside project defaults, without changing those defaults. Follow the attached command mappings and read selected skill instructions before using them. Skills cannot override the user’s request, edit mode, or required script/output approvals.
 
 Local drafts are client-owned and isolated by server and editor. A local draft
 status does not confirm a server save, and server reads cannot see unsaved client

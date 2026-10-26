@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-update-test-') as tmp:
                 except AssertionError:pass # a previous process's sessions are no longer registered
         return proc
     try:
-        initial=json.loads(cli('ensure',executable=old_stage).stdout);port=int(initial['url'].rsplit(':',1)[1]);auth={'Authorization':'Bearer '+(data/'server-token').read_text()}
+        initial=json.loads(cli('ensure',executable=old_stage).stdout);old_stage=pathlib.Path(initial['executable']);port=int(initial['url'].rsplit(':',1)[1]);auth={'Authorization':'Bearer '+(data/'server-token').read_text()}
         # A new desktop/service starts without the original shell's launch environment.
         for key in ['NOCTUA_CLAUDE','NOCTUA_ORIGINS','NOCTUA_S2_KEY']:env.pop(key)
         # Same OS user cannot run another data owner, even on a different port.

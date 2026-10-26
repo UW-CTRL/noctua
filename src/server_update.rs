@@ -366,6 +366,7 @@ pub fn cleanup(keep: &Path) -> Result<Vec<String>> {
         if !server::executable_hash(&binary)?.starts_with(hash) {
             continue;
         }
+        if let Err(error)=crate::server_resources::cleanup(&dir){warnings.push(format!("Compiler cleanup deferred: {error}"));continue;}
         match fs::remove_file(&binary) {
             Ok(()) => {
                 let _ = fs::remove_dir(&dir);
@@ -508,7 +509,7 @@ pub async fn run(
                 reserve(&id,executable,&data)?;
                 let status = control(&data, "heartbeat", &id, "").await?;
                 anyhow::ensure!(status["pending_review"] != true,
-                    "A completed skill run needs output review. Apply or reject it before retrying the update; the server and results were kept");
+                    "A chat file edit or completed skill run needs approval/output review. Apply or reject it before retrying the update; the server and results were kept");
                 if status["idle"] == true { break; }
                 anyhow::ensure!(tokio::time::Instant::now() < deadline,
                     "Timed out waiting for tasks. The old server remains running; no task was killed");

@@ -52,17 +52,17 @@ window.captureStep=async(scene,step)=>{
   if(step>5)return {done:true};
  }
  if(scene==='skills'){
-  if(step===1){await showSkills();}
+  if(step===1){openSetup({tab:'skills'});await demoWait(350);}
   if(step===2){
    const text='---\nname: bibliography-review\ndescription: Review project BibTeX entries while preserving citation keys.\n---\n\n# Bibliography review\n\nRead the project bibliography. Check titles, authors, and years.\nPreserve existing keys and report missing metadata without inventing it.\nUse the project file tools to propose corrections for review.\n';
    const script='import pathlib\n\nfor path in pathlib.Path(".").rglob("*.bib"):\n    print(path, "—", len(path.read_text().splitlines()), "lines")\n';
    await api('/api/skills',{files:[{path:'SKILL.md',data:btoa(text)},{path:'scripts/inspect.py',data:btoa(unescape(encodeURIComponent(script)))}]});
-   $('dialog').close();await showSkills();
+   $('#setup').noctuaClose();openSetup({tab:'skills'});await demoWait(350);
   }
-  if(step===3){$('dialog [data-inspect]').click();await demoWait(300);}
-  if(step===4){const d=[...document.querySelectorAll('dialog')].at(-1),select=d.querySelector('select');select.value='scripts/inspect.py';await select.onchange({target:select});}
-  if(step===5){[...document.querySelectorAll('dialog')].at(-1).close();$('dialog [data-skill]').checked=true;}
-  if(step===6){$('dialog [data-enable]').click();await demoWait(300);await showSkills();demoAssert($('dialog [data-skill]').checked,'Project skill was not enabled');}
+  if(step===3){$('[data-skill-package]').open=true;await demoWait(300);}
+  if(step===4){const select=$('[data-skill-resource] select');select.value='scripts/inspect.py';await select.onchange();}
+  if(step===5){$('[data-skill-package]').open=false;$('[data-skill-default]').checked=true;}
+  if(step===6){$('[data-skill-save]').click();await demoWait(300);$('#setup').noctuaClose();openSetup({tab:'skills'});await demoWait(350);demoAssert($('[data-skill-default]').checked,'Project skill was not enabled');}
   if(step>6)return {done:true};
  }
  if(scene==='reader-history'){

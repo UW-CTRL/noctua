@@ -96,6 +96,9 @@ document.querySelector('iframe').onload=async()=>{try{
  localStorage.setItem(`noctua.draft.v1:server-A:L1:${doc.id}`,JSON.stringify({...doc,title:'Legacy draft'}));
  assert(NoteDrafts.candidates('L1',doc.id).length===2,'legacy draft became inaccessible');
  const noteSource=await(await fetch('../web/notes.js')).text(),N={target:'L1'};
+ const pendingUploads={NoctuaChatFiles:{snapshot(){throw Error('Finish upload first')}}};
+ const prepare=Function('window','N','stopEdit',noteSource.slice(noteSource.indexOf('window.prepareEditorSwitch ='))+';return window.prepareEditorSwitch;')(pendingUploads,{pads:new Map()},()=>{});
+ let uploadBlocked=false;try{prepare()}catch{uploadBlocked=true}assert(uploadBlocked,'pending client uploads were lost during a server switch');
  const toast=()=>{};
  eval(noteSource.slice(noteSource.indexOf('function chooseLocalDraft'),noteSource.indexOf('async function showNote')));
  const choices=NoteDrafts.candidates('L1',doc.id),choice=chooseLocalDraft(choices);

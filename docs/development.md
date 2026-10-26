@@ -62,6 +62,7 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
 | `src/server.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
+| `src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
@@ -117,6 +118,25 @@ Find the file inventory in the [prompt index](../src/prompts/AGENTS.md).
 | Tool descriptions and schemas | Delivered through MCP from [`src/mcp.rs`](../src/mcp.rs) and [`src/mcp_data.rs`](../src/mcp_data.rs) |
 | Applying prompt edits | Rebuild and restart the backend |
 | Cached results | May be reused after a prompt change; review the feature's cache policy |
+
+## Chat PDF inspection
+
+Claude chats with attached PDFs run with `--restricted --tools Read` in a
+conversation-specific directory holding copies of that conversation's sent PDFs.
+Claude Code 2.1.248 or later is required for restricted mode. No shell or editing
+tools are enabled; Noctua MCP still enforces the selected edit mode. Existing CLI
+sessions resume by ID, including sessions created before these directories existed.
+
+Codex CLI accepts images rather than raw PDF attachments. Noctua reuses its bundled
+PDF.js renderer to return requested original pages as MCP image content to the
+provider's vision model. This follows the render-and-inspect PDF workflow without
+requiring an installed PDF skill, Python, Poppler, or enabling Codex shell execution.
+The bundled PDF.js text reader uses `getReader()` rather than stream async
+iteration to support older WebKit. The attachment regression fixture removes
+`ReadableStream` async iteration before indexing and rendering real PDFs.
+PDF page previews are capped at 5 MB, cached locally, and checked against the
+conversation's attachment grants before being returned. Cached previews remain
+readable when no renderer is active; new previews require an active chat tab.
 
 ## Environment overrides
 
@@ -179,3 +199,30 @@ expires the prior desktop editor presence, quits during the automatic upgrade,
 verifies the detached worker finishes,
 then reopens the actual WebView against the replacement. Test profiles/services
 are isolated; never substitute production paths.
+
+## Managed paper compilers
+
+Before running or packaging the paper editor, run both setup scripts:
+
+```sh
+python3 scripts/setup-tectonic.py
+python3 scripts/setup-pdflatex.py
+```
+
+On macOS, pass `--universal` to the Tectonic script for Universal packaging;
+pdfLaTeX binaries already include both Mac architectures. Scripts verify pinned
+archive checksums and prepare ignored `target/tectonic` and `target/texlive`.
+They do not install system TeX or change the user's PATH. Desktop resources include
+both distributions and their license notices; release and desktop CI prepare them
+automatically. pdfLaTeX uses TinyTeX 2026.10 plus JMLR/algorithm2e/SyncTeX from the fixed
+2026-10-01 TeX Live archive. Update the setup stamp and backend compiler version
+together when upgrading, so cached output is invalidated.
+
+`python3 tests/paper-integration.py` exercises both real compilers against isolated
+projects after `cargo build --bin noctua`. Tectonic's first run downloads resources;
+pdfLaTeX uses bundled packages. Backend unit tests need neither distribution.
+Use `swift tests/reader.swift tests/paper.html` on macOS for paper UI checks.
+
+`tests/server-paper-lifecycle.py` uses isolated packaged fake compilers to verify
+build ownership during stop/update, app-bundle removal, persisted output and
+retired compiler cleanup. It runs in backend CI without installing TeX or services.

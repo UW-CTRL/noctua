@@ -50,7 +50,7 @@ restore the parent folder before its children to preserve their placement.
 
 Import or create a `.bib`, then select the **Bibliographies** icon below the tree to enable it for this
 collection. Its keys become available in the normal citation picker alongside library
-keys, using the existing author/year display. Duplicate keys must be renamed. Invalid
+keys, using the existing author/year display. Suggestions list collection and bibliography sources separately, including duplicates. Invalid
 source remains editable; a visible error marks the retained citation index as out of
 date. Clicking an imported citation shows its reference details and DOI/URL when
 available. Importing a bibliography does not download its papers.
@@ -69,11 +69,25 @@ Histories are separate by document/paper/workspace, remain available during the 
 session, and clear when it exits. New edits clear redo. Conflicting saves must be
 resolved before undoing; failed operations do not consume history.
 
-Open the **Agent skills** icon below the project tree or in the chat toolbar to import a skill directory, ZIP,
-or standalone `SKILL.md`. Packages may contain scripts and supporting resources (up to
-512 files / 32 MB). Inspect them before enabling. Packages live in Noctua's `skills/`
-directory and work with both Claude and Codex; project enablement can be overridden for
-an individual chat.
+In **Settings → Skills**, **Global Agent Skills** reads packages in place from
+**Location** (default `~/.agents/skills`). Save another existing folder or choose
+**Use default**. **Import Skills from Project** imports multiple `SKILL.md`
+packages from a project or skills folder as a named group. Click each project to
+expand or collapse its skill list. **Disconnect** removes that group's Noctua
+copies without changing the original project or other groups.
+
+Imports are snapshots. Up to 100 skills, 512 files, and 32 MB can be imported in
+one project group. **Import an individual skill** also supports a folder, ZIP,
+or standalone `SKILL.md`; these appear under **Other imported skills**.
+See [Skills settings](settings-and-data.md#skills) for location, import, and
+reconnection details. Both providers use the same available skills.
+
+Under **Chat project defaults**, choose a Noctua project, select skills, and save.
+These defaults are separate from source-project groups. Type `/` in chat to
+search all available skills and select with Up/Down and Enter/Tab or a click
+(Esc closes). An inserted `/skill-name` command activates that skill for one
+message without changing defaults. Delete it to remove that invocation; multiple
+commands can be used in one message.
 
 Every script invocation requires approval showing its source, arguments, and selected
 project files. Scripts run with your local user permissions: the temporary working
@@ -145,6 +159,54 @@ needed. The drawing pad's TeX action performs separate handwriting transcription
 Videos, stroke editing, media uploads, whole-note deletion, and cross-project
 moves remain UI actions or unsupported tool operations. Attach a note with @ or
 select rendered text and choose **Add to chat**.
+
+For standard `.tex` papers with custom classes and a faithful PDF preview, use the
+[Paper editor](papers.md). Its settings gear selects bundled Tectonic or pdfLaTeX
+per project, with no separate TeX installation. This is separate from note cells
+and their KaTeX preview.
+
+## Find and citation suggestions
+
+Press **Cmd/Ctrl+F** to search the current text file, including `.bib` and `.tex`.
+In block notes, Find searches the active cell's source while editing; otherwise it
+searches rendered note text, including text across inline formatting. Hidden math
+accessibility representations are excluded so they do not duplicate results.
+Enter/Shift+Enter or the arrow buttons navigate matches; Escape closes Find.
+
+Typing `\cite{` searches both collection papers and enabled bibliographies.
+Suggestions render title math and identify **Collection** or **Bib: filename**.
+The same paper may appear in both sources. If sources reuse an identical key,
+rendered note citations retain collection-first, then first-enabled-bibliography
+resolution; use distinct keys when you need to distinguish entries.
+
+### Chat approval for project files
+
+In Suggest mode, the first edit to each project file asks inline in chat with
+**Allow this file**, **Decline**, and an optional scrollable diff preview. Approval
+covers further edits to that file during the current response, including renames
+and moves. Other files need separate approval. Permission expires when the
+response ends or is stopped. Direct mode edits files immediately without approval
+requests or popups. Note creation and block edits use durable proposals in **Assistant changes**; PDF
+annotations and skill scripts keep their separate review controls. Project-file
+proposals made outside an active chat also remain in **Assistant changes**.
+
+### Mention project files in chat
+
+Type `@` in chat to search current-project files and folders, library papers,
+notes, or collections. Any file extension can be selected, including `.tex` and
+`.bib`. Results show their type and project path. Text files attach an excerpt
+(including the current unsaved draft when open), folders attach a descendant
+listing, and media attach file references. The agent can use the attached IDs
+to read individual files. A folder mention does not inline all of its contents.
+
+Use the thin left/right arrow rails to hide or reopen project navigation and chat.
+Collapsed panes retain their contents and previous widths; note drafts stay open.
+
+The assistant can read paper compiler logs and browse internal build files using
+`inspect_workspace`; see [Paper editor](papers.md). This is read-only in all modes.
+
+Double-click text in a compiled paper preview to jump to its source line; see
+[PDF-to-source navigation](papers.md#jump-from-pdf-to-source).
 
 ## Connection-aware note drafts
 

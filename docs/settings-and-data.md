@@ -49,6 +49,45 @@ is remembered in this browser and takes effect immediately; turning it off cance
 pending automatic summaries, while an already running request may finish. Manual
 **Summarize threads** remains available in Lineage.
 
+## Skills
+
+Open **Settings → Skills**. **Global Agent Skills** reads installed packages in
+place on the server computer. **Location** defaults to `~/.agents/skills`, the
+[Vercel Skills CLI's shared global location](https://github.com/vercel-labs/skills/blob/main/src/installer.ts).
+Enter an existing absolute folder path (or a path beginning with `~/`) and choose
+**Save location** to use another folder. **Use default** restores the default.
+This preference persists in Noctua. Changing it does not move or modify packages.
+Use **Refresh** to see local updates; `/` searches also read the current location.
+CLI link-mode package folders are supported; internal resource symlinks are not.
+
+Under **Project Skills**, choose **Import Skills from Project** and select a
+project folder or its skills folder. Noctua finds folders containing `SKILL.md`
+and imports all their supporting files together. Unrelated project files, `.git`,
+and `node_modules` are excluded. Each import appears as a named project with a
+skill count. Click its heading to expand or collapse its available skills, then
+expand a skill to inspect its instructions and resources. Project A and Project B
+keep independent lists even if their skills have identical names.
+
+Imports are snapshots copied into Noctua, not live links. A project import supports
+up to 100 skills, 512 files, and 32 MB total; each `SKILL.md` must be under 256 KB.
+**Disconnect** on a project removes all of that group's Noctua copies. It keeps
+the original project, global installations, and other imported projects unchanged.
+Stop any running scripts for that group before disconnecting. Import the project
+again to reconnect; reselect any desired chat defaults.
+
+**Import an individual skill** retains folder, ZIP, and standalone `SKILL.md`
+imports. These and older ungrouped imports appear under **Other imported skills**
+with individual Disconnect actions. Global installations have no Disconnect action.
+
+Under **Chat project defaults**, choose a Noctua project, select skills to make
+available on every chat message there, and choose **Save project defaults**.
+This is separate from the source-project import groups. An empty selection clears
+its defaults. Use `/` in chat to search all available skills and invoke additional
+skills for one message without changing these defaults. Both providers share the
+available skills. Discovery and import never enable skills or run scripts.
+Scripts require approval and separate output review; see
+[Research assistant](assistant.md#project-files-and-imported-skills).
+
 ## Save destination and notifications
 
 **Data & storage** groups its controls under **Library**, **Save destination**,
@@ -89,7 +128,8 @@ It contains your library, PDFs, annotations, notes, media, project files, import
 skills, settings, and chats. Collection manifests and immutable file versions
 live beneath the notes directory in `.workspace/manifest.json` and `.files/`;
 imported skill packages live in `skills/`. Undo history and skill run results
-last only for the backend session.
+last only for the backend session. Globally installed skills stay in
+the configured global location and are not included in Noctua backups or storage relocation.
 App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
 

@@ -36,8 +36,10 @@
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
-    "resources": [
-      "binaries/"
-    ]
+    "resources": {
+      "binaries/": "binaries/",
+      "../target/tectonic/": "tectonic/",
+      "../target/texlive/": "texlive/"
+    }
   }
 }

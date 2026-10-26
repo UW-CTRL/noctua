@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory(prefix='noctua-desktop-update-') as tmp:
     env={k:v for k,v in os.environ.items() if not k.startswith('NOCTUA_') and k!='ZOTERO_DATA_DIR'}
     env.update(NOCTUA_TEST_INSTANCE=uuid.uuid4().hex,NOCTUA_HOME=str(root/'data'),NOCTUA_CLIENT_HOME=str(client),NOCTUA_SERVICE_HOME=str(root/'services'),NOCTUA_PORT='0',NOCTUA_CLAUDE='/usr/bin/false',NOCTUA_CODEX='/usr/bin/false')
     digest=hashlib.sha256(previous.read_bytes()).hexdigest();old=client/'servers'/('previous-'+digest[:16])/'noctua';old.parent.mkdir(parents=True);shutil.copy2(previous,old)
-    initial=json.loads(subprocess.check_output([str(old),'ensure'],env=env,text=True))
+    initial=json.loads(subprocess.check_output([str(old),'ensure'],env=env,text=True));old=pathlib.Path(initial['executable'])
     # The old desktop closes during installation; its presence lease must expire
     # during the maintenance notice instead of blocking every first upgrade.
     connection=http.client.HTTPConnection('127.0.0.1',int(initial['url'].rsplit(':',1)[1]))

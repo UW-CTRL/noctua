@@ -41,6 +41,7 @@ jobs:
           python3 tests/server-lifecycle.py
           python3 tests/build-update-fixture.py
           python3 tests/server-update.py
+          python3 tests/server-paper-lifecycle.py
 
   frontend:
     name: Frontend tests
@@ -95,9 +96,37 @@ jobs:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         if: needs.release-checks.outputs.run_desktop != 'false'
+      # Use the same tarfile implementation on all runners; Ubuntu 22.04
+      # system Python rejects valid relative symlinks in the TinyTeX archive.
+      - uses: actions/setup-python@v5
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        with:
+          python-version: '3.12'
+      - name: Prepare managed paper compiler
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        shell: bash
+        run: |
+          python scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
+          python scripts/setup-pdflatex.py
       - name: Check the desktop app
         if: needs.release-checks.outputs.run_desktop != 'false'
         run: cargo check --locked -p noctua-app ${{ matrix.args }}
+      - name: Exercise real paper compilation
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        shell: bash
+        run: |
+          cargo build --locked --bin noctua
+          python -m unittest discover -s tests -p test_paper_synctex.py
+          python tests/paper-integration.py
+      - name: Preserve failed paper compilation diagnostics
+        if: failure() && needs.release-checks.outputs.run_desktop != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-diagnostics-${{ matrix.platform }}
+          path: target/paper-diagnostics/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   release-checks:
     name: Release and workflow checks

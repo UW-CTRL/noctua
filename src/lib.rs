@@ -6,11 +6,13 @@ pub mod server;
 pub mod service;
 pub mod client;
 pub mod server_update;
+mod server_resources;
 mod security;
 mod maintenance;
 mod agent;
 mod cache;
 mod chat;
+mod chat_files;
 mod history;
 mod library;
 mod reader;
@@ -23,7 +25,9 @@ mod mcp_data;
 mod mcp_edits;
 mod notes;
 mod editing;
+mod chat_approval;
 mod workspace;
+pub mod paper;
 mod bibliography;
 mod skills;
 pub mod paths;
@@ -41,7 +45,7 @@ use axum::{
     http::{header, StatusCode},
     middleware::{self},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -103,6 +107,7 @@ struct App {
     projects: Projects,
     notes: Notes,
     data_dir: PathBuf,
+    shared_skills_dir: Option<PathBuf>,
     _storage_lease: Option<std::fs::File>,
     runtime: Option<Arc<security::Runtime>>,
     settings: std::sync::Mutex<Settings>,
@@ -267,11 +272,26 @@ struct ModeQ {
     #[serde(default)]
     mode: String,
     chat_id: Option<String>,
+    turn_id: Option<String>,
 }
 
 async fn mcp_endpoint(State(app): Shared, Query(q): Query<ModeQ>, Json(req): Json<Value>) -> Response {
-    match mcp::handle(&app, &req, chat::mode_or_default(&q.mode), q.chat_id.as_deref()).await {
-        Some(resp) => Json(resp).into_response(),
+    let mut mode = chat::mode_or_default(&q.mode);
+    if mode == "suggest" && req["method"] == "tools/call" && req["params"]["name"] == "edit_project_file" {
+        if let Some(turn) = q.turn_id.as_deref() {
+            match chat_approval::authorize(&app, turn, q.chat_id.as_deref(), &req["params"]["arguments"]).await {
+                Ok(()) => mode = "direct",
+                Err(e) => return Json(json!({"jsonrpc":"2.0","id":req["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("Error: {e:#}")}]}})).into_response(),
+            }
+        }
+    }
+    match mcp::handle(&app, &req, mode, q.chat_id.as_deref()).await {
+        Some(resp) => {
+            if q.mode=="suggest" && req["params"]["name"]=="edit_project_file" {
+                if let Some(turn)=q.turn_id.as_deref() { chat_approval::created(&app,turn,q.chat_id.as_deref(),&req["params"]["arguments"],&resp); }
+            }
+            Json(resp).into_response()
+        },
         None => StatusCode::ACCEPTED.into_response(),
     }
 }
@@ -292,7 +312,7 @@ async fn chats_list(State(app): Shared, Query(q): Query<AgentQuery>) -> ApiResul
 
 async fn chats_get(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> Response {
     match app.history.get(&id, q.provider(&app)) {
-        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); Json(c).into_response() },
+        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); c["pending_file_edits"]=json!(chat_approval::pending_for_chat(&app,&id)); Json(c).into_response() },
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such chat" }))).into_response(),
         Err(e) => ApiError(e).into_response(),
     }
@@ -551,6 +571,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     let url = format!("http://127.0.0.1:{port}");
     let owner = server::Owner::acquire_with_machine(&data, &url,Some(machine))?;
     server_update::restore_launch(&data, &owner.record.server_id)?;
+    server_resources::configure()?;
     let migrated = if env::var_os("NOCTUA_HOME").is_some() || env::var_os("NOCTUA_PROFILE_HOME").is_some() { None } else { paths::migrate_legacy(&data)? };
     let mut settings = Settings::load(&data);
     if let Some(old) = &migrated {
@@ -590,6 +611,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         projects: Projects::open(&data.join("noctua-projects.sqlite"))?,
         notes: Notes::new(env::var("NOCTUA_NOTES").map(PathBuf::from).unwrap_or_else(|_| data.join("notes"))),
         data_dir: data,
+        shared_skills_dir: dirs::home_dir().map(|home| home.join(".agents").join("skills")),
         _storage_lease: storage_lease,
         settings: std::sync::Mutex::new(settings),
         desktop: None,
@@ -625,10 +647,10 @@ async fn server_stop(State(app): Shared) -> ApiResult {
     let r = app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
     let _admission=r.admission.lock().unwrap();
     let previous=r.draining.swap(true,std::sync::atomic::Ordering::SeqCst);
-    let pending_review=skills::pending_review(&app);
-    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || pending_review || app.login_gate.try_lock().is_err() {
+    let pending_review=skills::pending_review(&app)||chat_approval::pending(&app);
+    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || paper::busy() || pending_review || app.login_gate.try_lock().is_err() {
         r.draining.store(previous,std::sync::atomic::Ordering::SeqCst);
-        return Err(Status(StatusCode::CONFLICT,if pending_review{"A skill run awaits approval or output review. Apply/reject it before stopping; its results were kept."}else{"Tasks or other requests are active. Wait and retry; no task was stopped."}.into()).into());
+        return Err(Status(StatusCode::CONFLICT,if pending_review{"A chat file edit or skill run awaits approval/output review. Apply/reject it before stopping; its results were kept."}else{"Tasks or other requests are active. Wait and retry; no task was stopped."}.into()).into());
     }
     r.shutdown.notify_one();
     Ok(Json(json!({"draining":true})))
@@ -637,13 +659,13 @@ async fn server_update_control(State(app):Shared,Json(body):Json<Value>)->ApiRes
     let r=app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
     let action=body["action"].as_str().unwrap_or("");let id=body["id"].as_str().unwrap_or("");
     if id.is_empty()||id.len()>128 {return Err(anyhow::anyhow!("Invalid update transaction").into());}
-    let pending_review=skills::pending_review(&app);
-    if action=="begin"&&pending_review {return Err(anyhow::anyhow!("A skill run is awaiting approval or output review. Apply/reject it before updating; its results were kept").into());}
+    let pending_review=skills::pending_review(&app)||chat_approval::pending(&app);
+    if action=="begin"&&pending_review {return Err(anyhow::anyhow!("A chat file edit or skill run is awaiting approval/output review. Apply/reject it before updating; its results were kept").into());}
     let _admission=r.admission.lock().unwrap();
     let notice=r.maintenance.lock().unwrap().control(action,id,body["version"].as_str().unwrap_or(""))?;
     if action=="drain" {r.draining.store(true,std::sync::atomic::Ordering::SeqCst);}
     if action=="cancel" {r.draining.store(false,std::sync::atomic::Ordering::SeqCst);}
-    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && app.login_gate.try_lock().is_ok();
+    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && !paper::busy() && app.login_gate.try_lock().is_ok();
     let mut response=json!({"maintenance":notice,"idle":idle&&!pending_review,"pending_review":pending_review});
     if action=="begin" {response["launch_environment"]=server_update::launch_environment(&app)?;}
     Ok(Json(response))
@@ -678,6 +700,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
         .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
         .route("/notes.js", get(|| async { asset(include_str!("../web/notes.js"), "text/javascript; charset=utf-8") }))
+        .route("/chat-files.js", get(|| async { asset(include_str!("../web/chat-files.js"), "text/javascript; charset=utf-8") }))
         .route("/chat-selections.js", get(|| async { asset(include_str!("../web/chat-selections.js"), "text/javascript; charset=utf-8") }))
         .route("/pdf-objects.js", get(|| async { asset(include_str!("../web/pdf-objects.js"), "text/javascript; charset=utf-8") }))
         .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
@@ -687,7 +710,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
+        .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))
         .route("/workspace.js",get(||async{asset(include_str!("../web/workspace.js"),"text/javascript; charset=utf-8")}))
+        .route("/citations.js",get(||async{asset(include_str!("../web/citations.js"),"text/javascript; charset=utf-8")}))
+        .route("/find.js",get(||async{asset(include_str!("../web/find.js"),"text/javascript; charset=utf-8")}))
+        .route("/paper.js",get(||async{asset(include_str!("../web/paper.js"),"text/javascript; charset=utf-8")}))
         .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
         .route("/lineage.js", get(|| async { asset(include_str!("../web/lineage.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
@@ -708,6 +735,9 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/match", get(match_title))
         .route("/api/project", get(project_graph))
         .route("/api/threads", post(explain_threads))
+        .route("/api/chat-files", post(chat_files::upload).layer(DefaultBodyLimit::max(56 << 20)))
+        .route("/api/chat-files/{id}", get(chat_files::download))
+        .route("/api/chat-files/{id}/pages/{page}", post(chat_files::save_page).layer(DefaultBodyLimit::max(5 << 20)))
         .route("/api/chat", post(chat_endpoint))
         .route("/api/notes", get(notes_list).post(notes_create))
         .route("/api/notes/all", get(notes_all))
@@ -717,9 +747,20 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         )
         .route("/api/skills",get(skills::get).post(skills::upload).layer(DefaultBodyLimit::max(48 << 20)))
         .route("/api/skills/import-zip",post(skills::upload_zip).layer(DefaultBodyLimit::max(32 << 20)))
+        .route("/api/skills/settings",get(skills::configuration).post(skills::set_location))
+        .route("/api/skills/import-project",post(skills::upload_project).layer(DefaultBodyLimit::max(48 << 20)))
+        .route("/api/skills/projects/{id}",delete(skills::disconnect_project))
+        .route("/api/skills/{id}",delete(skills::disconnect))
         .route("/api/skills/{id}/files/{*path}",get(skills::resource))
+        .route("/api/chat-edit-approvals/{id}",post(chat_approval::decide))
         .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))
         .route("/api/workspaces/{target}",get(workspace::get).post(workspace::edit))
+        .route("/api/workspaces/{target}/bibliography-search",get(bibliography::search))
+        .route("/api/paper-compilers",get(paper::compilers))
+        .route("/api/workspaces/{target}/paper",get(paper::status).post(paper::start))
+        .route("/api/workspaces/{target}/paper/cancel",post(paper::cancel))
+        .route("/api/workspaces/{target}/paper/source",post(paper::source_location))
+        .route("/api/workspaces/{target}/paper/pdf/{fingerprint}",get(paper::pdf))
         .route("/api/workspaces/{target}/history",post(workspace::undo))
         .route("/api/workspaces/{target}/upload",post(workspace::upload).layer(DefaultBodyLimit::max(32 << 20)))
         .route("/api/workspaces/{target}/files/{id}",get(workspace::text))

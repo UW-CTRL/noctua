@@ -73,7 +73,7 @@ server binary and stage a durable copy outside the app bundle before launch.
 | Command | Behavior |
 | --- | --- |
 | `noctua serve` | Run the authenticated loopback server in the foreground, without opening a browser. |
-| `noctua ensure` | Validate/reuse the owner, otherwise start the registered enabled user service for this data folder, or detach a background process. Never install a service. This is also the default command. |
+| `noctua ensure` | Validate/reuse the owner, otherwise start the registered enabled user service for this data folder, or detach a background process from a durable staged executable/resource copy. Never install a service. This is also the default command. |
 | `noctua status` | Authenticate the recorded owner and print identity/readiness. Offline, stale and incompatible owners fail with a nonzero exit. |
 | `noctua stop` | Authenticate with a separate private local control credential. Refuse while requests, AI chats, sign-in, skill executions or unresolved skill reviews remain; gracefully drain accepted connections. Never kill a PID. |
 | `noctua restart` | Safely restart the same executable after work finishes. A changed executable uses the coordinated update transaction; it explicitly disconnects clients. |
@@ -228,6 +228,11 @@ The browser origin stays pinned to the previous server address during replacemen
 Referenced or still-open binaries remain queued for later cleanup; arbitrary
 user-installed/bundle executables are never deleted. Login definitions retain the
 same client profile so they share its ownership lock.
+Bundled paper compilers are staged beside that executable, outside the app
+bundle. Running and queued paper builds finish before replacement; retired
+compiler resources are removed only after the old server is no longer in use.
+Resolve pending chat file-edit approvals before retrying maintenance, just as
+with skill approvals and output reviews.
 
 Updates preserve the running server's allowed HTTPS origins, notes location,
 AI CLI paths and launch environment. Non-secret launch settings remain with the

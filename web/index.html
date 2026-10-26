@@ -172,7 +172,6 @@
             <button type="button" id="chat-font-larger" title="Increase chat text size" aria-label="Increase chat text size">A+</button>
           </div>
           <div class="chat-actions" role="group" aria-label="Conversations">
-            <button id="chat-skills-btn" data-label="Skills" aria-label="Imported agent skills" data-icon="sparkles" data-icon-only>Skills</button>
             <button id="chat-history-btn" data-label="History" aria-label="Saved conversations" data-icon="history" data-icon-only></button>
             <button id="chat-new" data-label="New chat" aria-label="Start a new conversation" data-icon="message-square-plus" data-icon-only></button>
           </div>
@@ -181,8 +180,12 @@
         <div id="chat-log" class="chat-log"></div>
         <div id="chat-resize" class="chat-resize" role="separator" tabindex="0" aria-label="Resize chat input" aria-orientation="horizontal" aria-controls="chat-input" aria-valuemin="60" aria-valuemax="400" aria-valuenow="60" title="Drag to resize chat input"></div>
         <div id="chat-selections" class="chat-selections" hidden></div>
+        <div id="chat-files" class="chat-file-list chat-file-drafts" aria-live="polite" hidden></div>
         <form id="chat-form" class="chat-form">
-          <textarea id="chat-input" rows="2" placeholder="Ask about these papers, or ask me to find, graph or save papers…"></textarea>
+          <input id="chat-file-input" type="file" multiple hidden>
+          <button id="chat-attach" type="button" data-icon="paperclip" data-icon-only aria-label="Attach files" title="Attach files"></button>
+          <div id="skill-picker" class="skill-picker" role="listbox" aria-label="Available skills" hidden></div>
+          <textarea id="chat-input" role="combobox" aria-autocomplete="list" aria-controls="skill-picker" aria-expanded="false" rows="2" placeholder="Ask a question… Type @ to attach papers, notes, files, or folders."></textarea>
           <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
         </form>
         <div class="chat-foot">
@@ -204,11 +207,16 @@
   <script src="/vendor/highlight/latex.min.js"></script>
   <script src="/chat-render.js"></script>
   <script src="/chat-selections.js"></script>
+  <script src="/chat-files.js"></script>
   <script src="/app.js"></script>
+  <script src="/panes.js"></script>
   <script src="/lineage.js"></script>
   <script src="/edit-history.js"></script>
   <script src="/workspace.js"></script>
+  <script src="/paper.js"></script>
   <script src="/notes.js"></script>
+  <script src="/citations.js"></script>
+  <script src="/find.js"></script>
   <script src="/mentions.js"></script>
   <script src="/figures.js"></script>
   <script src="/library.js"></script>

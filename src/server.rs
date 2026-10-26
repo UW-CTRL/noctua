@@ -384,7 +384,8 @@ pub(crate) async fn ensure_locked(
         anyhow::ensure!(crate::service::matches_data(&data)?,"The registered login service uses a different data folder. Change or disable that service explicitly; no other server was started");
         crate::service::start()?;
     } else {
-        spawn_detached(executable, &data, port, &[], None)?;
+        let staged=crate::service::stage(executable)?;
+        spawn_detached(&staged, &data, port, &[], None)?;
     }
     wait_ready(&data).await
 }

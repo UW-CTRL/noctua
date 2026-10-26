@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body class="notes-mode">
-<div id="notes-side">        <div class="workspace-tools" aria-label="Project files">
+<div id="chat-log"></div><div id="notes-side">        <div class="workspace-tools" aria-label="Project files">
           <select id="notes-target" title="Project files collection" aria-label="Project files collection"><option value="L1">Research</option></select>
           <div role="group" aria-label="Create and import files">
             <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
@@ -7,7 +7,7 @@
             <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
           </div>
         </div>
-<ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
+<ul id="note-list"></ul></div><div id="notes-stage"></div>
 <script>
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -15,7 +15,8 @@ const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',tit
 const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){},remove(){}};
 let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
 const clone=v=>JSON.parse(JSON.stringify(v));
-async function api(path,body){if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
+const approvals=[];
+async function api(path,body){if(path.startsWith('/api/chat-edit-approvals/')){approvals.push({path,...body});return {approved:body.approve};}if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
 async function createNote(title){const doc={id:'new-note',title};N.doc=doc;N.list.push(doc);W.file=null;server.entries.push({id:'new-note-entry',kind:'note',note:doc.id,name:title,parent:'',deleted:false});await loadWorkspace('L1');return doc;}
 function typeset(){} function renderEditor(){$('#notes-stage').textContent='No document open';} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
 window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used');};
@@ -28,7 +29,7 @@ function assert(ok,message){if(!ok)throw Error(message)}
 <script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
- await loadWorkspace('L1');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
+ await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'paper actions and durable assistant proposals remain available together');assert($('#note-list').hidden,'original list replaced');assert(!$('[data-skills]'),'skill management moved out of the project tree');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
  assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
@@ -124,6 +125,23 @@ function assert(ok,message){if(!ok)throw Error(message)}
  await showAgentEdits();assert($('dialog [data-proposal]'),'pending proposal list missing');$('dialog').close();await settle();api=oldApi;
  const drawing={strokes:[{p:[[20,30,1],[80,60,0.7]],w:2,c:'#000000'}]},unchanged=JSON.stringify(drawing);
  assert(Ink.preview(drawing).startsWith('data:image/png;base64,'),'standalone drawing preview is not PNG');assert(JSON.stringify(drawing)===unchanged,'drawing preview changed strokes');
- window.webkit.messageHandlers.result.postMessage('PASS: workspace edits, proposal review, HTML safety, duplicate notifications, local-draft protection and drawing previews');
+
+ const proposal={turn_id:'turn-one',approval_id:'file-one',chat_id:'chat',changes:[{op:'edit',name:'main.tex',target:'L1',before:'Keep\nOld\nEnd',after:'Keep\nNew <tag>\nEnd'}]};
+ showFileEditApproval(proposal);showFileEditApproval(proposal);
+ assert(document.querySelectorAll('.chat-edit-approval').length===1&&!$('dialog'),'same file has one inline request and no modal');
+ const restoredCard=$('.chat-edit-approval');restoredCard.remove();showFileEditApproval(proposal);
+ assert($('.chat-edit-approval')===restoredCard,'reopening a running chat lost its pending approval card');
+ assert($('.diff-added').textContent.includes('New <tag>')&&!$('.edit-diff tag'),'diff source escaped');
+ assert($('.diff-removed').textContent.includes('Old'),'removed source visible');
+ showFileEditApproval({...proposal,approval_id:'file-two',changes:[{op:'create',name:'extra.bib',after:'new'}]});
+ assert(document.querySelectorAll('.chat-edit-approval').length===2,'different file has separate inline request');
+ $('.chat-edit-approval [data-approve]').click();await settle();assert(approvals.length===1&&approvals[0].approve&&approvals[0].approval_id==='file-one','file-specific approval submitted');
+ showFileEditApproval(proposal);assert(document.querySelectorAll('.chat-edit-approval').length===2,'late duplicate cannot add another request');
+ assert($('.chat-edit-approval [data-status]').textContent==='Allowed for this prompt.','decision stays visible in chat');
+ document.querySelectorAll('.chat-edit-approval')[1].querySelector('[data-reject]').click();await settle();assert(approvals.length===2&&!approvals[1].approve,'other file can be declined independently');
+ closeFileEditApprovals();showFileEditApproval({...proposal,turn_id:'turn-stop',approval_id:'file-stop'});closeFileEditApprovals();await settle();assert(approvals.length===2&&!$('dialog'),'Stop never grants permission or opens a modal');
+ assert([...document.querySelectorAll('.chat-edit-approval button')].every(b=>b.disabled),'expired requests cannot be approved');
+ assert(editDiffLines('a\n'+('same\n'.repeat(20))+'z','b\n'+('same\n'.repeat(20))+'y').some(r=>r.kind==='gap'),'long unchanged sections collapsed');
+ window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, and drag-to-trash');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>
