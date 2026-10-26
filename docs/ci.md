@@ -18,7 +18,7 @@ automatically after every platform build and installer verification succeeds.
 | Check | Runner | Coverage |
 | --- | --- | --- |
 | Backend tests | Ubuntu | `cargo test --locked -p noctua` compiles and tests the backend, including chats, MCP permissions and responses, assistant edits and review, library/PDF/media handling, model discovery, and storage relocation/failure recovery. |
-| Frontend tests | macOS | `bash tests/run-frontend.sh` runs JavaScriptCore and WebKit checks for syntax, settings, Research views, chat rendering, file attachment upload, draft lifecycle, and PDF page rendering, notes/media, project files, assistant proposal review and edit conflicts, targeted PDF behavior, and responsive layout. |
+| Frontend tests | macOS | `bash tests/run-frontend.sh` runs JavaScriptCore and WebKit checks for syntax, settings, Research views, chat rendering, file attachment upload, draft lifecycle, and PDF page rendering, notes/media, project files, assistant proposal review and edit conflicts, targeted PDF behavior, and responsive layout, Settings skill groups/global locations, and slash skill invocation. |
 | Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for both Apple Silicon and Intel targets. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
@@ -133,3 +133,49 @@ modify repository protection settings.
 If a runner or download fails transiently, use **Re-run failed jobs** in Actions.
 If a test or workflow fails consistently, inspect its log and correct the cause
 rather than bypassing the check.
+
+## Paper rendering
+
+Desktop CI and release builds select Python 3.12 before preparing the compilers.
+This avoids the Ubuntu 22.04 system Python tar extraction failure on TinyTeX's
+relative symlinks while retaining the archive data filter and checksum validation.
+Use Python 3.12 when reproducing compiler setup locally.
+
+Desktop CI prepares the pinned managed compiler, builds the browser backend, and
+runs `python3 tests/paper-integration.py` on macOS, Windows, and Linux. This uses
+isolated temporary storage and tests real custom-class/BibTeX/image builds,
+subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
+artifact retention. It requires network for uncached TeX resources.
+
+The frontend suite includes `tests/paper.html` for editor/preview behavior, save
+conflicts, debounced builds, cancellation, and stale PDF-load protection.
+
+`tests/document-tools.html` covers citation source labels and duplicate results,
+rendered title math, stale suggestion requests, line-comment shortcuts, and Find
+scopes for file source, active cells, rendered notes, PDF text, and user comments.
+
+`tests/mentions.html` checks project file/folder mentions, typed labels, duplicate
+titles, unsaved excerpts, scoped listings, binary references, and project-switch races.
+
+`tests/panes.html` verifies collapsed rails across graph, notes, and reader modes,
+restored widths, retained drafts, and focus. Paper checks also cover collapsing
+source/preview and restoring the layout across editor remounts.
+
+Paper integration checks prepare both bundled compilers, then exercise Tectonic
+and pdfLaTeX/BibTeX, project settings, engine switching, bibliography spacing,
+cache invalidation, cancellation, and last-successful PDF retention.
+
+SyncTeX integration queries use the exact source names recorded by the compiler,
+including Windows paths, and report the command and output if no location is found.
+
+The real-compiler fixture places SyncTeX sidecars beyond 260 characters to cover
+Windows path limits. Forward queries and the application's inverse queries copy the immutable map
+to a separate temporary directory and use a short output basename. The query copy
+is removed afterward; the actual PDF and saved mapping remain in the artifact
+directories. Merely changing cwd inside the long mapping path was insufficient
+on Windows; diagnostic probes confirmed both engines work from a short directory.
+
+On integration failure, CI uploads `paper-diagnostics-<platform>` for seven days.
+These artifacts contain only synthetic fixture build files, the traceback, and
+SyncTeX probes comparing compressed/plain mappings in short temporary directories.
+Both engines run even if one fails; the job still fails if either engine fails.

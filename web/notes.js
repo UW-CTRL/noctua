@@ -249,6 +249,7 @@ function citeHtml(keys, { textual, note }) {
 // ---------------------------------------------------------------- editor
 
 function renderEditor() {
+  if(typeof paperUnmount==='function')paperUnmount();
   for (const p of N.pads.values()) p.destroy();
   N.pads.clear();
   const stage = $('#notes-stage');
@@ -326,10 +327,13 @@ E = mc^2 \label{eq:energy}
 \end{equation}
 See Equation \eqref{eq:energy}.`)}</section>
       <section><h3>Assistant changes</h3><p>The assistant can create notes and edit blocks, titles, preambles, and block order. It reads the saved updated version first. Direct edits save on the server before completion. Suggest changes appear in a review dialog; use Assistant changes below the project tree to revisit pending proposals. Accept applies the complete proposal as one undoable change. Concurrent edits require a fresh proposal. Chat can inspect saved handwriting; uncached previews need an active chat. Tree display names and note titles are separate.</p></section>
+      <section><h3>Pane controls</h3><p>The thin left/right arrow rails hide or reopen navigation and chat. Pane widths and visibility are remembered without discarding drafts. The paper editor also has arrows to hide either source or PDF while leaving the other visible.</p></section>
+      <section><h3>Find</h3><p>Cmd/Ctrl+F searches the selected cell source while editing, or the rendered note when no cell is being edited. In project text files, it searches the source editor only. Enter/Shift+Enter move between matches; Escape closes Find. Citation suggestions show formatted titles and label Collection or Bib filename, retaining both sources.</p></section>
+      <section><h3>Paper editor</h3><p>Use Paper in Project files to create a standard LaTeX document beside a live compiled PDF. Import .cls, .sty, .bst, .bib, and images, and use their project-relative paths. Set an imported .tex as the main document from its actions menu. The project settings gear selects bundled Tectonic or pdfLaTeX, with BibTeX, per collection; note cells keep their existing lightweight preview. Double-click compiled PDF text to open and center the matching source line. The paper toolbar has a dedicated guide. You can also ask chat to inspect the LaTeX build log; agents have read-only access to internal workspace diagnostics.</p></section>
       <section><h3>Undo and redo</h3><p>The collection and save status align with the left end of the divider below the title. The title has extra space above it, follows the divider’s width where space permits, and wraps onto additional lines as you type. Only the Undo/Redo icons at the far left and Note guide and preamble icons at the far right stay pinned to the top while you scroll. The title scrolls with the document. The center between the edge controls stays transparent and does not block note text or editing. Use Undo/Redo or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
-      <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note or Text file, a name, and a destination folder. New folder opens a compact folder form. New files use the exact filename with no automatic extension. Project root appears only while dragging project entries. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, rename or move entries using their menu, and preview media. Notes retain their block editor. Import a .bib file, then select the Bibliographies icon below the tree to enable its citation keys alongside library papers. Duplicate keys must be renamed. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
-      <section><h3>Agent skills</h3><p>Use the Agent skills icon below the project tree or in the chat toolbar to import a folder, ZIP, or SKILL.md, inspect its files, and enable it for this project or override this chat. Both backends use the same skill selection. Every script run requires approval; it executes local code, not an OS sandbox. Scripts receive temporary copies of selected files. Review and accept their output before it changes project files. Plan mode cannot run scripts. No dependencies are installed automatically.</p></section>
-      <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach a paper or note to your question.</p></section>
+      <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note or Text file, a name, and a destination folder. New folder opens a compact folder form. New files use the exact filename with no automatic extension. Project root appears only while dragging project entries. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, rename or move entries using their menu, and preview media. In Suggest mode, project-file edits ask inline in chat once per file per prompt; Direct mode applies edits without approval popups. Notes retain their block editor. Import a .bib file, then select the Bibliographies icon below the tree to enable its citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
+      <section><h3>Agent skills</h3><p>Settings → Skills separates Global Agent Skills from Project Skills. Global Location defaults to ~/.agents/skills; save another existing folder or use Use default. Global installations are read in place. Import Skills from Project copies multiple SKILL.md packages into a named group. Expand or collapse each project to browse its skills. Disconnect removes that group's Noctua copies and leaves original files and other groups unchanged; import again to reconnect. Individual skill imports remain available. Chat project defaults select skills for a Noctua project and are separate from source-project groups. In chat, type / to search all available skills and choose with Up/Down and Enter/Tab or a click (Esc closes). These commands add skills for one message without changing defaults. Every script run needs approval and separate output review. Scripts run local code, not in an OS sandbox. Plan mode cannot run scripts; dependencies are not installed automatically.</p></section>
+      <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
       <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode saves requested edits on the server before reporting completion; use Undo to revert them. Suggest changes are reviewed as whole proposals in Assistant changes below the project tree.</p></section>`;
     dialog.addEventListener('click', event => {
       if (event.target !== dialog) return;
@@ -613,7 +617,7 @@ function startEdit(id) {
   });
   ta.addEventListener('click', () => updatePicker(ta));
   ta.addEventListener('blur', () => setTimeout(() => {
-    if (N.editing === id && document.activeElement !== ta && !picker.hovering) stopEdit();
+    if (N.editing === id && document.activeElement !== ta && !document.activeElement.closest('#document-find') && !picker.hovering) stopEdit();
   }, 120));
   typeset();
   restoreVideos(el, media);
@@ -700,89 +704,6 @@ function texKeys(e, ta) {
 }
 
 // ---------------------------------------------------------------- \cite picker
-
-const picker = { open: false, hovering: false, matches: [], index: 0, start: 0 };
-
-// Pixel position of the caret in a textarea (mirror-div technique).
-function caretXY(ta) {
-  const cs = getComputedStyle(ta);
-  const div = document.createElement('div');
-  for (const p of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderLeftWidth', 'boxSizing', 'tabSize']) div.style[p] = cs[p];
-  Object.assign(div.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', width: ta.offsetWidth + 'px', top: '0', left: '-9999px' });
-  div.textContent = ta.value.slice(0, ta.selectionEnd);
-  const span = document.createElement('span');
-  span.textContent = '\u200b';
-  div.appendChild(span);
-  document.body.appendChild(div);
-  const r = ta.getBoundingClientRect();
-  const xy = { x: r.left + span.offsetLeft - ta.scrollLeft, y: r.top + span.offsetTop + span.offsetHeight - ta.scrollTop };
-  div.remove();
-  return xy;
-}
-
-function updatePicker(ta) {
-  const before = ta.value.slice(0, ta.selectionEnd);
-  const m = /\\cite[a-z]*(?:\[[^\]]*\])?\{([^}]*)$/.exec(before);
-  if (!m) return closePicker();
-  const token = m[1].split(',').pop();
-  const q = token.trim().toLowerCase();
-  picker.start = ta.selectionEnd - token.length;
-  const items = [...new Map([...N.items.values()].map((it) => [it.key, it])).values()];
-  picker.matches = items
-    .filter((it) => !q || [it.title, (it.creators || []).join(' '), it.year, it.key].join(' ').toLowerCase().includes(q))
-    .slice(0, 8);
-  picker.index = 0;
-  const el = $('#cite-picker');
-  if (!picker.matches.length) {
-    el.innerHTML = `<div class="cp-empty">${items.length ? 'No matching paper in this folder' : 'This folder has no papers'}</div>`;
-  } else {
-    el.innerHTML = picker.matches.map((it, i) => `
-      <div class="cp-item${i === 0 ? ' active' : ''}" data-i="${i}">
-        <div class="cp-title">${esc(it.title || '(untitled)')}</div>
-        <div class="cp-meta">${esc((it.creators || []).slice(0, 3).join(', '))}${it.year ? ' · ' + it.year : ''}</div>
-      </div>`).join('');
-  }
-  const { x, y } = caretXY(ta);
-  el.style.left = Math.min(x, window.innerWidth - 400) + 'px';
-  el.style.top = Math.min(y + 4, window.innerHeight - 260) + 'px';
-  el.classList.remove('hidden');
-  el._ta = ta;
-  picker.open = true;
-}
-
-function closePicker() {
-  picker.open = false;
-  picker.hovering = false;
-  $('#cite-picker').classList.add('hidden');
-}
-
-function pickerKey(e, ta) {
-  const n = picker.matches.length;
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    if (!n) return false;
-    e.preventDefault();
-    picker.index = (picker.index + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
-    document.querySelectorAll('#cite-picker .cp-item').forEach((d, i) => d.classList.toggle('active', i === picker.index));
-    return true;
-  }
-  if ((e.key === 'Enter' || e.key === 'Tab') && n) { e.preventDefault(); pickCite(ta, picker.matches[picker.index]); return true; }
-  if (e.key === 'Escape') { e.preventDefault(); closePicker(); return true; }
-  return false;
-}
-
-function pickCite(ta, it) {
-  const end = ta.selectionEnd;
-  const after = ta.value.slice(end);
-  const closes = /^[^{}\n]*\}/.test(after);
-  const rest = closes ? after.replace(/^[^,}]*/, '') : '}' + after;  // drop the rest of the typed token
-  ta.value = ta.value.slice(0, picker.start) + it.key + rest;
-  const pos = picker.start + it.key.length + (closes ? 0 : 1);
-  ta.setSelectionRange(pos, pos);
-  closePicker();
-  ta.dispatchEvent(new Event('input'));
-  closePicker();
-  ta.focus();
-}
 
 // ---------------------------------------------------------------- chat context
 
@@ -881,14 +802,6 @@ $('#notes-stage').addEventListener('click', (e) => {
 $('#details').addEventListener('click', (e) => {
   if ((isNotesMode() || document.body.classList.contains('pdf-mode')) && e.target.closest('#act-lib-graph')) setMode('graph');
 }, true);
-const cp = $('#cite-picker');
-cp.addEventListener('mouseenter', () => { picker.hovering = true; });
-cp.addEventListener('mouseleave', () => { picker.hovering = false; });
-cp.addEventListener('mousedown', (e) => {
-  e.preventDefault();  // keep focus in the textarea
-  const d = e.target.closest('.cp-item');
-  if (d && cp._ta) pickCite(cp._ta, picker.matches[Number(d.dataset.i)]);
-});
 document.addEventListener('keydown', (e) => {
   if (!isNotesMode() || !(e.metaKey || e.ctrlKey)) return;
   if (e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); }

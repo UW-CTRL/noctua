@@ -28,6 +28,7 @@ const SYSTEM: &str = concat!(include_str!("prompts/chat.md"), "\n\n", include_st
 pub struct ChatBody {
     message: String,
     project_target: Option<String>,
+    /// Skills explicitly invoked for this message, added to project defaults.
     skill_ids: Option<Vec<String>>,
     provider: Option<Provider>,
     #[serde(default)]
@@ -35,7 +36,7 @@ pub struct ChatBody {
     chat_id: Option<String>,
     #[serde(default)]
     mode: String,
-    /// Papers and notes the user @-mentioned, as text.
+    /// Papers, notes, project files/folders and collections @-mentioned, as text.
     #[serde(default)]
     attachments: String,
     #[serde(default)]
@@ -145,8 +146,9 @@ pub fn stream(app: Arc<App>, body: ChatBody) -> Result<Body, crate::ApiError> {
 }
 
 async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: &mpsc::Sender<Value>, turn: &mut Turn) -> Result<()> {
+    let approval = crate::chat_approval::Turn::begin(app, chat_id);
     let mut url = reqwest::Url::parse(&format!("{}/mcp", app.base_url))?;
-    url.query_pairs_mut().append_pair("mode", mode_or_default(&body.mode)).append_pair("chat_id", chat_id);
+    url.query_pairs_mut().append_pair("mode", mode_or_default(&body.mode)).append_pair("chat_id", chat_id).append_pair("turn_id", &approval.0);
     let mcp = json!({
         "mcpServers": { "noctua": { "type": "http", "url": url.as_str() } }
     })
@@ -154,7 +156,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
     std::fs::create_dir_all(&app.chat_dir)?;
 
     let enabled=crate::skills::set_context(app,chat_id,body.project_target.as_deref(),body.skill_ids.as_ref())?;
-    let instructions=format!("{SYSTEM}\nEnabled imported skills for this chat: {enabled}");
+    let instructions=format!("{SYSTEM}\nEnabled skills for this chat: {enabled}");
     let session = app.history.session(chat_id, provider);
     let native_pdf_dir = if provider == Provider::Claude {
         // Copies from earlier turns remain available when a session resumes.

@@ -18,7 +18,9 @@ mod mcp_data;
 mod mcp_edits;
 mod notes;
 mod editing;
+mod chat_approval;
 mod workspace;
+pub mod paper;
 mod bibliography;
 mod skills;
 pub mod paths;
@@ -36,7 +38,7 @@ use axum::{
     http::{header, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -98,6 +100,7 @@ struct App {
     projects: Projects,
     notes: Notes,
     data_dir: PathBuf,
+    shared_skills_dir: Option<PathBuf>,
     _storage_lease: Option<std::fs::File>,
     settings: std::sync::Mutex<Settings>,
     desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
@@ -260,11 +263,26 @@ struct ModeQ {
     #[serde(default)]
     mode: String,
     chat_id: Option<String>,
+    turn_id: Option<String>,
 }
 
 async fn mcp_endpoint(State(app): Shared, Query(q): Query<ModeQ>, Json(req): Json<Value>) -> Response {
-    match mcp::handle(&app, &req, chat::mode_or_default(&q.mode), q.chat_id.as_deref()).await {
-        Some(resp) => Json(resp).into_response(),
+    let mut mode = chat::mode_or_default(&q.mode);
+    if mode == "suggest" && req["method"] == "tools/call" && req["params"]["name"] == "edit_project_file" {
+        if let Some(turn) = q.turn_id.as_deref() {
+            match chat_approval::authorize(&app, turn, q.chat_id.as_deref(), &req["params"]["arguments"]).await {
+                Ok(()) => mode = "direct",
+                Err(e) => return Json(json!({"jsonrpc":"2.0","id":req["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("Error: {e:#}")}]}})).into_response(),
+            }
+        }
+    }
+    match mcp::handle(&app, &req, mode, q.chat_id.as_deref()).await {
+        Some(resp) => {
+            if q.mode=="suggest" && req["params"]["name"]=="edit_project_file" {
+                if let Some(turn)=q.turn_id.as_deref() { chat_approval::created(&app,turn,q.chat_id.as_deref(),&req["params"]["arguments"],&resp); }
+            }
+            Json(resp).into_response()
+        },
         None => StatusCode::ACCEPTED.into_response(),
     }
 }
@@ -577,6 +595,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         projects: Projects::open(&data.join("noctua-projects.sqlite"))?,
         notes: Notes::new(env::var("NOCTUA_NOTES").map(PathBuf::from).unwrap_or_else(|_| data.join("notes"))),
         data_dir: data,
+        shared_skills_dir: dirs::home_dir().map(|home| home.join(".agents").join("skills")),
         _storage_lease: storage_lease,
         settings: std::sync::Mutex::new(settings),
         desktop: opts.desktop,
@@ -614,7 +633,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
+        .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))
         .route("/workspace.js",get(||async{asset(include_str!("../web/workspace.js"),"text/javascript; charset=utf-8")}))
+        .route("/citations.js",get(||async{asset(include_str!("../web/citations.js"),"text/javascript; charset=utf-8")}))
+        .route("/find.js",get(||async{asset(include_str!("../web/find.js"),"text/javascript; charset=utf-8")}))
+        .route("/paper.js",get(||async{asset(include_str!("../web/paper.js"),"text/javascript; charset=utf-8")}))
         .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
         .route("/lineage.js", get(|| async { asset(include_str!("../web/lineage.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
@@ -647,9 +670,20 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         )
         .route("/api/skills",get(skills::get).post(skills::upload).layer(DefaultBodyLimit::max(48 << 20)))
         .route("/api/skills/import-zip",post(skills::upload_zip).layer(DefaultBodyLimit::max(32 << 20)))
+        .route("/api/skills/settings",get(skills::configuration).post(skills::set_location))
+        .route("/api/skills/import-project",post(skills::upload_project).layer(DefaultBodyLimit::max(48 << 20)))
+        .route("/api/skills/projects/{id}",delete(skills::disconnect_project))
+        .route("/api/skills/{id}",delete(skills::disconnect))
         .route("/api/skills/{id}/files/{*path}",get(skills::resource))
+        .route("/api/chat-edit-approvals/{id}",post(chat_approval::decide))
         .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))
         .route("/api/workspaces/{target}",get(workspace::get).post(workspace::edit))
+        .route("/api/workspaces/{target}/bibliography-search",get(bibliography::search))
+        .route("/api/paper-compilers",get(paper::compilers))
+        .route("/api/workspaces/{target}/paper",get(paper::status).post(paper::start))
+        .route("/api/workspaces/{target}/paper/cancel",post(paper::cancel))
+        .route("/api/workspaces/{target}/paper/source",post(paper::source_location))
+        .route("/api/workspaces/{target}/paper/pdf/{fingerprint}",get(paper::pdf))
         .route("/api/workspaces/{target}/history",post(workspace::undo))
         .route("/api/workspaces/{target}/upload",post(workspace::upload).layer(DefaultBodyLimit::max(32 << 20)))
         .route("/api/workspaces/{target}/files/{id}",get(workspace::text))

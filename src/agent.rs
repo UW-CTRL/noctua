@@ -328,7 +328,7 @@ mod tests {
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
-                notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, settings: std::sync::Mutex::new(settings),
+                notes: Notes::new(root.join("notes")), data_dir: root.clone(), shared_skills_dir: Some(root.join(".agents/skills")), _storage_lease: None, settings: std::sync::Mutex::new(settings),
                 desktop, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
@@ -428,6 +428,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn inspect_workspace_reads_logs_in_all_modes_and_rejects_escape() -> Result<()> {
+        let f=Fixture::new()?;
+        let root=crate::workspace::dir(&f.app,"L1")?.join(".workspace");
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({}))?["exists"],false);
+        std::fs::create_dir_all(root.join("paper/out"))?;
+        let log=format!("{}\n! Undefined control sequence.\n", "a".repeat(70_000));
+        std::fs::write(root.join("paper/build.log"),&log)?;
+        std::fs::write(root.join("paper/out/.noctua-paper.log"),"Compiler details")?;
+        std::fs::write(root.join("paper/output.pdf"),b"%PDF-1.7")?;
+        for mode in ["plan","suggest","direct"] {
+            let endpoint=format!("/mcp?mode={mode}");
+            let listed=f.json(&endpoint,Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))).await;
+            assert!(listed["result"]["tools"].as_array().unwrap().iter().any(|t|t["name"]=="inspect_workspace"));
+            let result=f.json(&endpoint,Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"inspect_workspace","arguments":{"folder_id":"L1","path":"paper/build.log","tail":true}}}))).await;
+            assert_ne!(result["result"]["isError"],true,"{result}");
+            let content:Value=serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())?;
+            assert!(content["text"].as_str().unwrap().ends_with("! Undefined control sequence.\n"));
+            assert_eq!(content["truncated"],true);assert_eq!(content["text"].as_str().unwrap().len(),65536);
+        }
+        let first=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/build.log"}))?;
+        assert_eq!(first["next_offset"],65536);
+        let next=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/build.log","offset":first["next_offset"]}))?;
+        assert_eq!(format!("{}{}",first["text"].as_str().unwrap(),next["text"].as_str().unwrap()),log);
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":".workspace/paper/out/.noctua-paper.log"}))?["text"],"Compiler details");
+        assert_eq!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/output.pdf"}))?["binary"],true);
+        for path in ["../settings.json","paper/../../outside","/etc/passwd","C:\\secret","paper/missing.log"] {
+            assert!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":path})).is_err(),"{path}");
+        }
+        std::os::unix::fs::symlink(&f.root,root.join("escape"))?;
+        assert!(crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"escape"})).is_err());
+        for n in 0..205 {std::fs::write(root.join("paper/out").join(format!("{n:03}.aux")),"aux")?;}
+        let list=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/out"}))?;
+        assert_eq!(list["entries"].as_array().unwrap().len(),200);assert_eq!(list["next_offset"],200);
+        let rest=crate::workspace::inspect_internal(&f.app,"L1",&json!({"path":"paper/out","offset":200}))?;
+        assert_eq!(rest["entries"].as_array().unwrap().len(),6);
+        assert_eq!(std::fs::read_to_string(root.join("paper/build.log"))?,log);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn project_files_bibliographies_and_history() -> Result<()> {
         let f=Fixture::new()?;
         let note=f.app.notes.create("L1","A: note")?;
@@ -446,6 +486,20 @@ mod tests {
         assert_eq!(stale.status(),StatusCode::CONFLICT);
         let bad=f.request("/api/workspaces/L1",Some(json!({"revision":restored["revision"],"op":"create","name":"../outside","text":"bad"})),None).await;
         assert!(!bad.status().is_success());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"][0]["file_name"],"references.bib");
+        let extra=f.json("/api/workspaces/L1",Some(json!({"revision":restored["revision"],"op":"create","name":"also.bib","text":"@article{Lovelace1843,title={A separate source}}"}))).await;
+        let extra_id=extra["entries"].as_array().unwrap().last().unwrap()["id"].clone();
+        let both=f.json("/api/workspaces/L1",Some(json!({"revision":extra["revision"],"op":"config","bibliographies":[id,extra_id]}))).await;
+        assert_eq!(both["bib_index"].as_array().unwrap().len(),2,"separate bibliography sources must remain searchable");
+        assert!(both["bib_error"].is_null());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"].as_array().unwrap().len(),2);
+        let broken=f.json("/api/workspaces/L1",Some(json!({"revision":both["revision"],"op":"edit","id":extra_id,"text":"@article{broken"}))).await;
+        assert!(broken["bib_error"].is_string());
+        let search=f.json("/api/workspaces/L1/bibliography-search",None).await;
+        assert_eq!(search["entries"].as_array().unwrap().len(),1);
+        assert_eq!(search["errors"].as_array().unwrap().len(),1,"one invalid bib must not hide valid citations");
         let nid=note["id"].as_str().unwrap();let mut changed=note.clone();changed["title"]=json!("Renamed");
         let mut second=changed.clone();second["blocks"]=json!([]);
         second["_history"]=json!([{"doc":changed,"label":"Rename"},{"doc":crate::editing::content(second.clone()),"label":"Delete block"}]);
@@ -499,6 +553,7 @@ mod tests {
         let a=f.app.library.annotate(&key,&json!({"kind":"comment","page":1,"comment":"before"}),"user",false)?;
         let id=a["id"].as_str().unwrap();
         let updated=f.app.library.update_annotation(&key,id,&json!({"revision":a["revision"],"comment":"after"}))?;
+        assert_eq!(updated["comment_author"],"user");
         f.app.library.delete_annotation(&key,id,updated["revision"].as_i64().unwrap())?;
         f.app.library.annotation_history(&key,Some(&json!({"redo":false,"expected":[]})))?;
         let list=f.app.library.annotations(&key)?;assert_eq!(list[0]["id"],id);assert_eq!(list[0]["comment"],"after");assert!(list[0]["revision"].as_i64().unwrap()>updated["revision"].as_i64().unwrap());
@@ -529,6 +584,272 @@ mod tests {
         let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
         assert_eq!(result["status"],"failed");assert!(result["error"].as_str().unwrap().contains("Skill contents changed"));
         assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());Ok(())
+    }
+
+    #[tokio::test]
+    async fn global_skill_location_is_configurable_persistent_and_scoped() -> Result<()> {
+        let f=Fixture::new()?;
+        let default=f.app.shared_skills_dir.as_ref().unwrap();
+        let custom=f.root.join("custom-skills");
+        for (dir,title) in [(default,"Default"),(&custom,"Custom")] {
+            std::fs::create_dir_all(dir.join("review"))?;
+            std::fs::write(dir.join("review/SKILL.md"),format!("# {title}"))?;
+        }
+        let original=f.json("/api/skills",None).await;
+        let original_id=original[0]["id"].as_str().unwrap().to_owned();
+        let result=f.json("/api/skills/settings",Some(json!({"location":custom}))).await;
+        assert_eq!(result["location"],json!(custom.canonicalize()?));
+        assert_eq!(result["default_location"],json!(default));
+        let changed=f.json("/api/skills",None).await;
+        assert_eq!(changed[0]["name"],"Custom");
+        assert_ne!(changed[0]["id"],original_id);
+        assert!(crate::skills::read(&f.app,&original_id,"SKILL.md").is_err());
+        assert_eq!(Settings::load(&f.root).skills_location,Some(custom.canonicalize()?.to_string_lossy().into_owned()));
+        for location in [json!("relative/path"),json!(f.root.join("missing")),json!(17)] {
+            let response=f.request("/api/skills/settings",Some(json!({"location":location})),None).await;
+            assert!(!response.status().is_success());
+            assert_eq!(f.json("/api/skills",None).await[0]["name"],"Custom");
+        }
+        f.json("/api/skills/settings",Some(json!({"location":null}))).await;
+        assert_eq!(f.json("/api/skills",None).await[0]["id"],original_id);
+        assert!(Settings::load(&f.root).skills_location.is_none());
+        std::fs::create_dir(f.root.join("settings.tmp"))?;
+        assert!(!f.request("/api/skills/settings",Some(json!({"location":custom})),None).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await[0]["name"],"Default");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn project_skill_batches_persist_grouping_and_disconnect_atomically() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let package=|name:&str|json!({"files":[{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode(format!("# {name}"))}]});
+        let a=f.json("/api/skills/import-project",Some(json!({"name":"Project A","packages":[package("Review"),package("Writing")]}))).await;
+        let b=f.json("/api/skills/import-project",Some(json!({"name":"Project B","packages":[package("Review")]}))).await;
+        assert_eq!(a["skill_ids"].as_array().unwrap().len(),2);
+        assert_eq!(Settings::load(&f.root).skill_projects.len(),2);
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().iter().filter(|s|s["project_id"]==a["id"]).count(),2);
+        assert!(listed.as_array().unwrap().iter().any(|s|s["project_name"]=="Project B"));
+        // A malformed second package must roll back the successful first import.
+        let bad=json!({"files":[{"path":"SKILL.md","data":""}]});
+        let response=f.request("/api/skills/import-project",Some(json!({"name":"Broken","packages":[package("Valid"),bad]})),None).await;
+        assert!(!response.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),3);
+        assert_eq!(f.json("/api/skills/settings",None).await["projects"].as_array().unwrap().len(),2);
+        let original=f.root.join("original-project");std::fs::create_dir(&original)?;
+        std::fs::write(original.join("SKILL.md"),"Original project is untouched")?;
+        let ids:Vec<String>=a["skill_ids"].as_array().unwrap().iter().map(|id|id.as_str().unwrap().into()).collect();
+        crate::skills::set_context(&f.app,"chat",None,Some(&ids))?;
+        let url=format!("/api/skills/projects/{}",a["id"].as_str().unwrap());
+        // Saving group metadata fails: restore all copies and preserve both groups.
+        std::fs::create_dir(f.root.join("settings.tmp"))?;
+        assert!(!f.request(&url,None,Some("DELETE")).await.status().is_success());
+        for id in &ids{crate::skills::read(&f.app,id,"SKILL.md")?;}
+        assert_eq!(f.json("/api/skills/settings",None).await["projects"].as_array().unwrap().len(),2);
+        assert!(!f.request("/api/skills/import-project",Some(json!({"name":"Unsaved","packages":[package("Valid")]})),None).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),3);
+        std::fs::remove_dir(f.root.join("settings.tmp"))?;
+        assert!(f.request(&url,None,Some("DELETE")).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),1);
+        for id in &ids{assert!(crate::skills::enabled(&f.app,Some("chat"),id).is_err());}
+        let groups=f.json("/api/skills/settings",None).await;
+        assert_eq!(groups["projects"][0]["id"],b["id"]);
+        assert_eq!(Settings::load(&f.root).skill_projects.len(),1);
+        assert_eq!(std::fs::read_to_string(original.join("SKILL.md"))?,"Original project is untouched");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnecting_an_import_keeps_original_and_global_skills() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let original=f.root.join("original-project/.agents/skills/review");
+        std::fs::create_dir_all(&original)?;
+        std::fs::write(original.join("SKILL.md"),"# Review")?;
+        let global=f.app.shared_skills_dir.as_ref().unwrap().join("global-review");
+        std::fs::create_dir_all(&global)?;
+        std::fs::write(global.join("SKILL.md"),"# Global review")?;
+        let files=json!([{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode(std::fs::read(original.join("SKILL.md"))?)},{"path":"run.sh","data":base64::engine::general_purpose::STANDARD.encode("echo output > result.txt")}]);
+        let imported=f.json("/api/skills",Some(json!({"files":files}))).await;
+        let id=imported["id"].as_str().unwrap();
+        let m=f.json("/api/workspaces/L1",None).await;
+        f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","skills":[id]}))).await;
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"run.sh","args":[],"files":[]}))?;
+        let response=f.request(&format!("/api/skills/{id}"),None,Some("DELETE")).await;
+        assert!(response.status().is_success());
+        assert!(!f.root.join("skills").join(id).exists());
+        assert_eq!(std::fs::read_to_string(original.join("SKILL.md"))?,"# Review");
+        assert_eq!(std::fs::read_to_string(global.join("SKILL.md"))?,"# Global review");
+        assert!(crate::skills::enabled(&f.app,Some("chat"),id).is_err());
+        assert!(crate::skills::read(&f.app,id,"SKILL.md").is_err());
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().len(),1);
+        let global_id=listed[0]["id"].as_str().unwrap();
+        let response=f.request(&format!("/api/skills/{global_id}"),None,Some("DELETE")).await;
+        assert!(!response.status().is_success());
+        assert!(global.join("SKILL.md").is_file());
+        let response=f.request("/api/skills/unknown",None,Some("DELETE")).await;
+        assert!(!response.status().is_success());
+        // Disconnecting also prevents a previously requested script from starting.
+        let url=format!("/api/skill-runs/{}",run["id"].as_str().unwrap());
+        f.json(&url,Some(json!({"action":"approve"}))).await;
+        for _ in 0..100 {if f.json(&url,None).await["status"]=="failed"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
+        assert_eq!(f.json(&url,None).await["status"],"failed");
+        let reimported=f.json("/api/skills",Some(json!({"files":files}))).await;
+        assert_ne!(reimported["id"],id);
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),2);
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),reimported["id"].as_str().unwrap()).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shared_global_skills_are_live_read_only_and_approval_checked() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let shared=f.app.shared_skills_dir.as_ref().unwrap();
+        std::fs::create_dir_all(shared)?;
+        let source=f.root.join("linked-source");
+        std::fs::create_dir_all(source.join("rules"))?;
+        std::fs::write(source.join("SKILL.md"),"---\nname: Review\ndescription: Installed by the Skills CLI\n---\n# Review")?;
+        std::fs::write(source.join("rules/check.md"),"Check the evidence.")?;
+        std::fs::write(source.join("run.sh"),"printf original > result.txt")?;
+        // The canonical package may itself be a symlink in CLI link mode.
+        let install=shared.join("a-long.skill-name-that-exceeds-noctua-import-id-length-limits");
+        symlink(&source,&install)?;
+        let imported=f.json("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode("# Review")}]}))).await;
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().len(),2);
+        let local=listed.as_array().unwrap().iter().find(|s|s["source"]=="local").unwrap();
+        let id=local["id"].as_str().unwrap().to_owned();
+        assert_ne!(local["id"],imported["id"]);
+        assert_eq!(local["name"],"Review");
+        assert!(!f.root.join("skills").join(&id).exists());
+        let read=f.json(&format!("/api/skills/{id}/files/rules/check.md"),None).await;
+        assert_eq!(read["text"],"Check the evidence.");
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&id).is_err());
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![id.clone()]))?;
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"run.sh","args":[],"files":[]}))?;
+        assert_eq!(run["status"],"approval_required");
+        // A package update after approval was requested must invalidate the run.
+        std::fs::write(source.join("run.sh"),"printf updated > result.txt")?;
+        let url=format!("/api/skill-runs/{}",run["id"].as_str().unwrap());
+        f.json(&url,Some(json!({"action":"approve"}))).await;
+        for _ in 0..100 {let r=f.json(&url,None).await;if r["status"]=="failed"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
+        let failed=f.json(&url,None).await;
+        assert_eq!(failed["status"],"failed");
+        assert!(failed["error"].as_str().unwrap().contains("Skill contents changed"));
+        std::fs::write(source.join("SKILL.md"),"name: Updated\ndescription: New version")?;
+        let refreshed=f.json("/api/skills",None).await;
+        assert!(refreshed.as_array().unwrap().iter().any(|s|s["id"]==id&&s["name"]=="Updated"));
+        // Resource symlinks are still rejected, including links outside the package.
+        symlink(f.root.join("claude"),source.join("outside"))?;
+        assert!(crate::skills::read(&f.app,&id,"SKILL.md").is_err());
+        std::fs::remove_file(source.join("outside"))?;
+        std::fs::remove_file(&install)?;
+        assert!(crate::skills::read(&f.app,&id,"SKILL.md").is_err());
+        let refreshed=f.json("/api/skills",None).await;
+        assert_eq!(refreshed.as_array().unwrap().len(),1);
+        assert!(source.join("SKILL.md").exists());
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![id.clone()]))?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&id).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn skill_invocations_add_to_project_defaults_for_one_turn() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let mut ids=Vec::new();
+        for name in ["Default", "Invoked"] {
+            let data=base64::engine::general_purpose::STANDARD.encode(format!("# {name}"));
+            let imported=f.json("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":data}]}))).await;
+            ids.push(imported["id"].as_str().unwrap().to_owned());
+        }
+        let m=f.json("/api/workspaces/L1",None).await;
+        f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","skills":[ids[0]]}))).await;
+        let extra=vec![ids[1].clone(),ids[0].clone()];
+        let enabled=crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&extra))?;
+        assert_eq!(enabled.as_array().unwrap().len(),2);
+        for id in &ids { crate::skills::enabled(&f.app,Some("chat"),id)?; }
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![]))?;
+        crate::skills::enabled(&f.app,Some("chat"),&ids[0])?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&ids[1]).is_err());
+        let m=f.json("/api/workspaces/L1",None).await;
+        assert_eq!(m["skills"],json!([ids[0]]));
+        let enabled=crate::skills::set_context(&f.app,"standalone",None,Some(&vec![ids[1].clone()]))?;
+        assert_eq!(enabled[0]["id"],ids[1]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn file_edit_approval_is_scoped_to_file_and_prompt() -> Result<()> {
+        let f=Fixture::new()?;
+        let target=f.app.library.create_collection("L1","Approval test")?;
+        let manifest=crate::workspace::list(&f.app,&target)?;
+        let turn=crate::chat_approval::Turn::begin(&f.app,"chat-a");
+        let mut events=f.app.actions.subscribe();
+        let args=json!({"folder_id":target,"revision":manifest["revision"],"op":"create","name":"main.tex","text":"First"});
+        let app=f.app.clone();let id=turn.0.clone();let first=args.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&first).await});
+        let event=events.recv().await?;
+        assert_eq!(event["action"],"file_edit_approval");
+        assert_eq!(event["changes"][0]["after"],"First");
+        assert!(!pending.is_finished());
+        assert!(crate::workspace::list(&f.app,&target)?["entries"].as_array().unwrap().is_empty());
+        let app=f.app.clone();let id=turn.0.clone();let parallel_args=args.clone();
+        let parallel=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&parallel_args).await});
+        assert_eq!(events.recv().await?["changes"].as_array().unwrap().len(),2);
+        let approval=event["approval_id"].clone();
+        let url=format!("/api/chat-edit-approvals/{}",turn.0);
+        let wrong=f.request(&url,Some(json!({"chat_id":"chat-b","approval_id":approval,"approve":true})),None).await;
+        assert!(!wrong.status().is_success());
+        f.json(&url,Some(json!({"chat_id":"chat-a","approval_id":approval,"approve":true}))).await;
+        pending.await??;parallel.await??;
+        // Once granted, later calls in this turn need no further UI event.
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&args).await?;
+        assert!(events.try_recv().is_err());
+        let result=f.json(&format!("/mcp?mode=suggest&chat_id=chat-a&turn_id={}",turn.0),Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"edit_project_file","arguments":args}}))).await;
+        assert_ne!(result["result"]["isError"],true);
+        let applied:Value=serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap())?;
+        assert!(crate::workspace::change(&f.app,&target,&args,None).is_err(),"Approval never bypasses revision checks");
+        assert_eq!(events.recv().await?["action"],"workspace_changed");
+        assert_eq!(applied["status"],"applied","Inline approval must persist the edit before returning");
+        assert_eq!(applied["entries"].as_array().unwrap().len(),1,"Approved edits return only changed entries");
+        let file=applied["entries"].as_array().unwrap().iter().find(|e|e["name"]=="main.tex").unwrap();
+        assert!(file.get("blob").is_none(),"Approval binding must work with the bounded MCP result");
+        let edit=json!({"folder_id":target,"revision":applied["revision"],"op":"edit","id":file["id"],"text":"Second"});
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&edit).await?;
+        assert!(events.try_recv().is_err(),"Creating then editing the same file must not ask twice");
+        let mut different=args.clone();different["revision"]=applied["revision"].clone();different["name"]=json!("other.tex");
+        let app=f.app.clone();let id=turn.0.clone();let other=different.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&other).await});
+        let other_event=events.recv().await?;
+        assert_ne!(other_event["approval_id"],approval,"Different files require distinct permission");
+        f.json(&url,Some(json!({"chat_id":"chat-a","approval_id":other_event["approval_id"],"approve":false}))).await;
+        assert!(pending.await?.is_err());
+        assert!(crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&different).await.is_err());
+        crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&edit).await?;
+        let planned=f.json(&format!("/mcp?mode=plan&chat_id=chat-a&turn_id={}",turn.0),Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit_project_file","arguments":args}}))).await;
+        assert_eq!(planned["result"]["isError"],true,"Permission cannot override Plan mode");
+        let expired=turn.0.clone();drop(turn);
+        assert!(crate::chat_approval::authorize(&f.app,&expired,Some("chat-a"),&args).await.is_err());
+        let next=crate::chat_approval::Turn::begin(&f.app,"chat-a");
+        let next_args=edit.clone();
+        let app=f.app.clone();let id=next.0.clone();
+        let pending=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&next_args).await});
+        let event=events.recv().await?;assert_eq!(event["turn_id"],next.0);assert!(!pending.is_finished());
+        f.json(&format!("/api/chat-edit-approvals/{}",next.0),Some(json!({"chat_id":"chat-a","approval_id":event["approval_id"],"approve":false}))).await;
+        assert!(pending.await?.is_err());
+        assert!(crate::chat_approval::authorize(&f.app,&next.0,Some("chat-a"),&edit).await.is_err());
+        let direct=f.json(&format!("/mcp?mode=direct&chat_id=chat-a&turn_id={}",next.0),Some(json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"edit_project_file","arguments":edit}}))).await;
+        assert_ne!(direct["result"]["isError"],true,"Direct edits require no approval, even after a Suggest denial");
+        assert_eq!(events.recv().await?["action"],"workspace_changed");
+        assert!(events.try_recv().is_err(),"Direct mode emits no approval request");
+        Ok(())
     }
 
     #[tokio::test]

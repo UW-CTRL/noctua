@@ -133,3 +133,26 @@ readable when no renderer is active; new previews require an active chat tab.
 
 For an assistant CLI not found automatically, you can also set `claude_path` or
 `codex_path` in `settings.json`.
+
+## Managed paper compilers
+
+Before running or packaging the paper editor, run both setup scripts:
+
+```sh
+python3 scripts/setup-tectonic.py
+python3 scripts/setup-pdflatex.py
+```
+
+On macOS, pass `--universal` to the Tectonic script for Universal packaging;
+pdfLaTeX binaries already include both Mac architectures. Scripts verify pinned
+archive checksums and prepare ignored `target/tectonic` and `target/texlive`.
+They do not install system TeX or change the user's PATH. Desktop resources include
+both distributions and their license notices; release and desktop CI prepare them
+automatically. pdfLaTeX uses TinyTeX 2026.10 plus JMLR/algorithm2e/SyncTeX from the fixed
+2026-10-01 TeX Live archive. Update the setup stamp and backend compiler version
+together when upgrading, so cached output is invalidated.
+
+`python3 tests/paper-integration.py` exercises both real compilers against isolated
+projects after `cargo build --bin noctua`. Tectonic's first run downloads resources;
+pdfLaTeX uses bundled packages. Backend unit tests need neither distribution.
+Use `swift tests/reader.swift tests/paper.html` on macOS for paper UI checks.

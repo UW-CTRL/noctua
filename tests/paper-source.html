@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<div id="workspace-editor"><div id="paper-split" data-hidden-pane="source"><div class="paper-source" hidden><textarea style="width:500px;height:240px;font:16px/24px monospace;padding:12px;box-sizing:border-box;white-space:pre-wrap"></textarea></div><button data-paper-pane="source">Show source</button></div></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent;
+const W={target:'project',file:'main',dirty:false,manifest:{entries:[{id:'included',blob:'source-hash'}]}};
+const store={get(){return null},set(){}};let calls=[],notices=[];
+function toast(message){notices.push(message);}
+const text=Array.from({length:200},(_,i)=>'Source line '+(i+1)+(i===1?' wrapped text'.repeat(60):'')).join('\n');
+async function openWorkspaceFile(id){W.file=id;$('#workspace-editor textarea').value=text;}
+async function api(url,body){calls.push({url,body});return {file_id:'included',blob:'source-hash',line:101};}
+$('[data-paper-pane="source"]').onclick=()=>{$('.paper-source').hidden=false;$('#paper-split').dataset.hiddenPane='';};
+function assert(ok,message){if(!ok)throw Error(message);}
+</script><script src="../web/paper.js"></script><script>
+(async()=>{
+ Paper.target=W.target;Paper.displayed={fingerprint:'build-id'};
+ const page={pageNumber:2,userUnit:1,view:[0,0,400,500]},viewport={width:800,height:1000,convertToPdfPoint:(x,y)=>[x/2,500-y/2]},node={getBoundingClientRect:()=>({left:10,top:20,width:800,height:1000})};
+ await paperSourceAt({clientX:210,clientY:270},page,viewport,node,Paper.generation);
+ assert(calls[0].body.page===2&&calls[0].body.x===100&&calls[0].body.y===125,'Zoom-independent PDF coordinates');
+ assert(W.file==='included'&&!$('.paper-source').hidden,'Included file opens and source pane expands');
+ const ta=$('#workspace-editor textarea');assert(ta.value.slice(ta.selectionStart,ta.selectionEnd)==='Source line 101','Source line selected');
+ assert(ta.scrollTop>2300,'Source centered accounting for wrapped lines');
+ W.dirty=true;await paperSourceAt({},page,viewport,node,Paper.generation);assert(calls.length===1&&notices.length===1,'Unsaved source is preserved');
+ W.dirty=false;const oldApi=api;api=async()=>{W.target='elsewhere';return {file_id:'included',blob:'source-hash',line:2};};
+ await paperSourceAt({clientX:210,clientY:270},page,viewport,node,Paper.generation);
+ assert(ta.value.slice(ta.selectionStart,ta.selectionEnd)==='Source line 101','Late lookup does not navigate another project');api=oldApi;
+ window.webkit.messageHandlers.result.postMessage('PASS: PDF-to-source coordinates, included files, collapsed source, wrapped-line centering, unsaved drafts and stale responses');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+' '+e.stack));
+</script></body></html>
