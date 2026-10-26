@@ -24,4 +24,4 @@ A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be shari
 
 ### Project content
 
-Block notes and project text files are different document types. A `.tex` project file does not become a block note or compile to a PDF. Enabled project bibliographies provide additional citation keys; do not assume every imported file is active or that an imported reference has been downloaded.
+Block notes and standard LaTeX papers are different document types. Project `.tex` files can be compiled in the Paper editor with bundled Tectonic or pdfLaTeX; block notes retain their lightweight KaTeX preview. Enabled project bibliographies provide additional citation keys. Suggestions distinguish collection and bibliography sources; duplicate keys resolve to the collection first, then the first enabled bibliography. Do not assume every imported file is active or that an imported reference has been downloaded.

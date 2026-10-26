@@ -35,7 +35,10 @@
 
 | Reference | Covers |
 | --- | --- |
+| [Paper rendering and project editing](pr-paper-render.md) | Feature overview, implementation, validation, and build follow-ups. |
 | [Reader and attachment demo](pr-3.md) | PR-specific behavior, recordings, validation, and limits. |
 | [Demo assets](images/) | Screenshots and GIFs grouped by PR. |
 
 Use the user guides for current behavior; PR records describe a particular change.
+
+- [Paper editor](papers.md): standard LaTeX, custom classes, and a live compiled PDF.

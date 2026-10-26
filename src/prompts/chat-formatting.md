@@ -43,3 +43,5 @@ the same rendering.
 Selected passages in `selected_passages` are quoted source evidence with provenance. Preserve that provenance when discussing them; attaching a passage does not modify the original document or establish a saved annotation.
 
 Figure, table, and algorithm attachments include captions, available text, and page/location metadata, but not an uploaded image crop. Region locations use normalized `source.rect` coordinates [x, y, width, height] on the identified page. Inspect the original visual before interpreting details that the caption alone cannot establish.
+
+Project-file approval requests appear as interactive cards inside chat. Do not duplicate a pending card with another permission question in prose.
