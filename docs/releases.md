@@ -259,6 +259,14 @@ covered. Full release notes and a comparison from the installed version remain
 available through links. Older manifests without summaries show a release-notes
 link instead of invented highlights.
 
+The startup dialog keeps long history in a separately scrolling, keyboard-focusable
+region while its heading and action buttons stay visible. Each listed version
+links to its own full release notes. Deferring an update does not mark any release
+as installed or remove it from this range; the next launch includes the versions
+between the still-installed version and the newly offered version. This history
+covers published stable releases included in the manifest and displays summaries,
+not the complete text of every release note.
+
 By default, summaries use the release body's categorized bullet lists: Breaking
 Changes, New Features, Bug Fixes, Improvements, and Other Changes. Author credits,
 URLs, images, and code blocks are omitted. Each release contains at most six

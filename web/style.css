@@ -706,9 +706,15 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 #app-update-dialog, #app-update-confirm-dialog { box-sizing: border-box; color: var(--ink); width: min(560px, calc(100vw - 32px)); }
 #app-update-dialog::backdrop, #app-update-confirm-dialog::backdrop { background: #0006; backdrop-filter: blur(3px); }
 #app-update-dialog h2, #app-update-confirm-dialog h2 { margin-top: 0; font-size: calc(19px * var(--ui-font-scale)); }
+#app-update-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); overflow: hidden; }
+#app-update-dialog > :not(.update-summary) { flex-shrink: 0; }
+#app-update-dialog > .update-summary { min-height: 0; flex: 0 1 auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+#app-update-dialog > .update-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .update-summary { max-height: 45vh; overflow: auto; overflow-wrap: anywhere; margin: 12px 0; }
+.update-history-hint { font-size: calc(12px * var(--ui-font-scale)); }
 .update-version { font-weight: 600; color: var(--ink) !important; }
 .update-release h4 { margin: 12px 0 5px; font-size: calc(13px * var(--ui-font-scale)); }
+.update-release h4 a { margin-left: 8px; font-size: calc(12px * var(--ui-font-scale)); font-weight: 400; }
 .update-release ul { padding-left: 20px; margin: 4px 0 10px; font-size: calc(13px * var(--ui-font-scale)); line-height: 1.6; }
 .update-release + .update-release { border-top: 1px solid var(--line); padding-top: 4px; }
 .setup-foot { font-size: calc(12px * var(--ui-font-scale)); margin-top: 18px !important; word-break: break-all; }

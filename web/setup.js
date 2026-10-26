@@ -416,11 +416,12 @@ function updateSummary(result) {
   const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
   const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
   return `<p class="update-version">${esc(result.current_version || settings?.version || 'Current version')} → ${esc(result.version)}</p>` +
+    '<p class="update-history-hint">Release highlights, newest first. Open each version’s release notes for full details.</p>' +
     releases.map(release => {
       const changes = Array.isArray(release.changes) ? release.changes : [];
       const items = changes.filter(group => group && typeof group === 'object').flatMap(group => (Array.isArray(group.items) ? group.items : []).slice(0, 2)
         .map(item => `<li><strong>${Object.hasOwn(labels, group.kind) ? labels[group.kind] : 'Other'}:</strong> ${esc(String(item))}</li>`)).slice(0, 6);
-      return `<section class="update-release"><h4>Version ${esc(release.version)}</h4>` +
+      return `<section class="update-release"><h4>Version ${esc(release.version)} <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(release.version)}" target="_blank" rel="noopener" aria-label="Full release notes for version ${esc(release.version)}">Release notes</a></h4>` +
         (items.length ? `<ul>${items.join('')}</ul>` : '<p>See the full release notes for details.</p>') + '</section>';
     }).join('') + `<p><a href="https://github.com/UW-CTRL/noctua/compare/v${encodeURIComponent(result.current_version || settings?.version || '')}...v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">All changes since your version</a> · <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Full release notes</a></p>`;
 }
@@ -507,7 +508,7 @@ function showUpdatePrompt(result) {
   dialog.className = 'setup-card';
   dialog.setAttribute('aria-labelledby', 'app-update-title');
   dialog.innerHTML = `<h2 id="app-update-title">A new Noctua version is available</h2>
-    <div class="update-summary">${updateSummary(result)}</div>
+    <div class="update-summary" tabindex="0" role="region" aria-label="Release history">${updateSummary(result)}</div>
     <p>Save your work before updating. Installation may close and restart Noctua.</p>
     <p class="setup-msg ok" role="status" aria-live="polite"></p>
     <div class="setup-actions end"><button data-dismiss>Not now</button>

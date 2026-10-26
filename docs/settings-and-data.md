@@ -120,6 +120,12 @@ Official desktop builds check for updates at startup. You can also use
 **Update to …** opens an in-app confirmation. Choose **Install update** to download,
 verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
 installation, use **Restart Noctua** when offered.
+The startup popup lists release highlights from your installed version through
+the offered update, newest first, including versions you skipped. Scroll the
+history with a mouse or trackpad, or focus it with Tab and use the arrow keys.
+The update and dismissal buttons stay visible. Each version has a **Release notes**
+link for its full details; the popup shows summaries, not every changelog item.
+Older update manifests without history provide a link to the offered release.
 Linux in-app updates require AppImage; use your package manager for other builds.
 Browser mode is updated by rebuilding or replacing the server binary.
 

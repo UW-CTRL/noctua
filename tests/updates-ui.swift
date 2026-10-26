@@ -17,7 +17,10 @@ let source = try String(contentsOf: root.appendingPathComponent("web/setup.js"),
 let start = source.range(of: "function updateSummary")!.lowerBound
 let end = source.range(of: "// First run stays short")!.lowerBound
 config.userContentController.addUserScript(WKUserScript(source: String(source[start..<end]), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 800), configuration: config)
+// CI covers the minimum desktop window; optional dimensions exercise other sizes.
+let width = Double(CommandLine.arguments.dropFirst().first ?? "") ?? 820
+let height = Double(CommandLine.arguments.dropFirst(2).first ?? "") ?? 520
+let web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height), configuration: config)
 web.loadFileURL(root.appendingPathComponent("tests/updates-ui.html"), allowingReadAccessTo: root)
 let deadline = Date().addingTimeInterval(40)
 while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
