@@ -61,7 +61,7 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
-| `src/server.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, server authentication, local user services and device-local configuration/OS credentials. |
+| `src/server.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
@@ -139,7 +139,9 @@ For an assistant CLI not found automatically, you can also set `claude_path` or
 
 ## Connection and shutdown transactions
 
-The server control lock spans ensure, stop and restart, including an enabled
+A per-client-profile machine owner lock permits one local server across data
+folders; the separate data owner lock still protects each folder. The global
+manager lock spans ensure, stop, restart and updates, including an enabled
 service's executable refresh. Migration also locks the source data owner before
 copying. Response bodies retain the admitted request count until consumed or
 abandoned; safe shutdown refuses an active stream or detached AI/write job.
@@ -155,3 +157,22 @@ slot and multiple editor versions remain available for explicit recovery. An
 HTTP success without a valid saved revision does not acknowledge a draft. Test
 quota failures together with disconnection, edits during saves/reloads, and
 multiple tabs before changing this contract.
+
+## Server update regression
+
+Build the normal server, then `python3 tests/build-update-fixture.py` to build a
+fictional next patch version offline under ignored `target/` sources. Run
+`python3 tests/server-update.py` with temporary data/client profiles only. The
+fixture exercises a real version change, active work, client acknowledgments,
+concurrent ensure, complete snapshots, executable cleanup, launch-environment
+preservation, service-start/refresh failures, cold retry and downgrade fencing.
+No updater download or resident-service installation is used.
+The detached `update` CLI accepts `--grace-seconds` and `--timeout-seconds`; use
+short durations only in isolated tests. `--force` tests an identical binary
+replacement without bypassing editor acknowledgments or active-work draining.
+On macOS, also build `python3 tests/build-update-fixture.py --previous` and run
+`python3 tests/desktop-update.py`. It launches a uniquely identified test app,
+expires the prior desktop editor presence, quits during the automatic upgrade,
+verifies the detached worker finishes,
+then reopens the actual WebView against the replacement. Test profiles/services
+are isolated; never substitute production paths.

@@ -326,9 +326,13 @@ A successful compile or generated service definition is not sufficient. Signed
 installer/update replacement, live Tailscale Serve and two-computer use remain
 release smoke tests. The development tests never register a real service.
 
-Server upgrade is an explicit safe Restart after active jobs finish. It refreshes
-an enabled login service definition to the new staged executable. Back up the
-complete data folder with the server stopped and retain the matching binary.
-Database-only snapshots and the data-format fence are described in
+On first opening the new desktop release, a separate update worker verifies the
+bundled server, announces maintenance, waits for editor saves and active tasks,
+and creates a complete stopped snapshot before replacement. It refreshes enabled
+login registration and removes retired staged binaries only after readiness and
+identity/hash checks. Test interrupted workers, failed replacement startup,
+service-refresh failure, deferred Windows cleanup and rollback from a completed
+snapshot with the matching release. Automatic downgrade is refused after newer
+DBs have been opened. Maintenance and recovery are described in
 [Server operations](server.md#drafts-backup-and-updates); do not run an older
 pre-protocol binary against migrated data.

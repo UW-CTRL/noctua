@@ -111,11 +111,16 @@ See [Development](development.md#environment-overrides) for environment override
 
 ## Independent server updates
 
-Desktop updates do not stop or replace a running server. The server executable
-is staged outside the app bundle by version/content hash. Use an explicit safe
-Restart in the local connection manager after tasks finish to use the newly
-bundled server and refresh an enabled service definition. Coordinate with other
-clients before restarting. Unknown data-format versions are rejected before DB
-open; first conversion and server version changes snapshot the SQLite databases.
+After the updated desktop opens, an existing local server is upgraded separately.
+Clients receive a maintenance notice and save open edits; active tasks finish
+before the server is stopped, backed up and replaced. Failed saves or a task wait
+timeout keep the old owner running. An enabled login service follows the verified
+replacement; auto-start is never installed implicitly. Previous staged executables
+are cleaned only after the new identity/version is verified and their references
+are released. Use **This computer → Update server** to retry and inspect progress.
+A default OS-user client profile permits one local server across data folders.
+If pending skill reviews block an update, use **Open running server · defer
+update** to resolve them on the compatible current server, then retry. Failed
+replacement startup can be retried from the same popup while the server is down.
 See [server backup and updates](server.md#drafts-backup-and-updates) for complete
 backup/restore and validation limits.

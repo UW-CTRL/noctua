@@ -39,6 +39,8 @@ jobs:
         run: |
           cargo build --locked -p noctua
           python3 tests/server-lifecycle.py
+          python3 tests/build-update-fixture.py
+          python3 tests/server-update.py
 
   frontend:
     name: Frontend tests

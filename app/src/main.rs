@@ -16,9 +16,9 @@ use tauri::{
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
+mod appearance;
 mod icons;
 mod updater;
-mod appearance;
 
 /// A fixed port keeps the pages' origin (and so their saved tabs and layout)
 /// the same between launches; another free port is used if it's taken.
@@ -102,6 +102,27 @@ fn main() {
             });
             app.set_menu(menu(app.handle())?)?;
             open_window(app.handle(), None);
+            // Replace an already-running local owner after an app release update,
+            // even when this client currently connects remotely. Never start a local
+            // data server merely because a remote client opened the desktop app.
+            let update_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Local startup already waits for the same update in connect_server.
+                if noctua::client::load().is_ok_and(|connection| connection.mode == "local") {
+                    return;
+                }
+                if let Ok(data) = noctua::paths::existing_data_dir() {
+                    if noctua::server::status_any_for_update(&data).await.is_ok() {
+                        if let Ok(binary) = server_executable(&update_app) {
+                            if let Err(error) =
+                                noctua::server_update::ensure_current(&binary, PORT).await
+                            {
+                                eprintln!("Local server update: {error:#}");
+                            }
+                        }
+                    }
+                }
+            });
             let path = noctua::client::config_dir()?.join("app-icon.json");
             if let Ok(body) = std::fs::read_to_string(path) {
                 if let Ok(icon) = serde_json::from_str(&body) {
@@ -307,7 +328,11 @@ fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
 #[tauri::command]
 fn dismiss_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     local_only(&window)?;
-    if let Some(content) = app.webview_windows().into_values().find(|w| w.label().starts_with("content")) {
+    if let Some(content) = app
+        .webview_windows()
+        .into_values()
+        .find(|w| w.label().starts_with("content"))
+    {
         let _ = content.show();
         let _ = content.set_focus();
         let _ = window.hide();
@@ -349,7 +374,7 @@ async fn client_state(app: AppHandle, window: WebviewWindow) -> Result<Value, St
         json!({"reachable":false})
     };
     Ok(
-        json!({"connection":connection,"local":local.as_ref().ok(),"local_error":local.as_ref().err(),"current":current,"service":noctua::service::status(),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"connection":connection,"local":local.as_ref().ok(),"local_error":local.as_ref().err(),"current":current,"service":noctua::service::status(),"server_update":noctua::server_update::progress(),"version":env!("CARGO_PKG_VERSION")}),
     )
 }
 struct ProvisionalWindow {
@@ -453,6 +478,7 @@ async fn connect_server(
     new_window: Option<bool>,
     open_path: Option<String>,
     expected_server_id: Option<String>,
+    defer_server_update: Option<bool>,
 ) -> Result<Value, String> {
     local_only(&window)?;
     let shell = app.state::<Shell>();
@@ -463,7 +489,7 @@ async fn connect_server(
     let result: anyhow::Result<Value>=async {
         anyhow::ensure!(mode=="local"||mode=="remote","Choose this computer or a remote server");
         let (address,secret)=if mode=="local" {
-            let v=noctua::server::ensure(&server_executable(&app)?,PORT).await?;
+            let v=if defer_server_update.unwrap_or(false) {noctua::server::status(&noctua::paths::existing_data_dir()?).await?}else{noctua::server_update::ensure_current(&server_executable(&app)?,PORT).await?};
             (v["url"].as_str().ok_or_else(||anyhow::anyhow!("Invalid local identity"))?.to_owned(),noctua::server::token(&noctua::paths::existing_data_dir()?)?)
         }else{let address=noctua::server::validate_url(&address)?.origin().ascii_serialization();
             let secret=if secret.is_empty(){noctua::client::read_secret(&address)?}else{secret};(address,secret)};
@@ -568,11 +594,18 @@ async fn local_server(
         .map_err(|_| "Another connection or server operation is in progress".to_string())?;
     let result:anyhow::Result<Value>=async{
         match action.as_str(){
-            "start"=>{return noctua::server::ensure(&server_executable(&app)?,PORT).await},
+            "start"=>{return noctua::server_update::ensure_current(&server_executable(&app)?,PORT).await},
             "stop"=>{noctua::server::stop(&noctua::paths::existing_data_dir()?).await?;},
             "restart"=>{return noctua::server::restart(&server_executable(&app)?,PORT).await},
-            "enable"=>noctua::service::enable(&server_executable(&app)?)?,
-            "disable"=>noctua::service::disable()?,
+            "update"=>{
+                let data=noctua::paths::existing_data_dir()?;
+                let old=serde_json::to_value(noctua::server::record(&data)?)?;
+                let reconnect=app.state::<Shell>().connected.lock().unwrap().as_ref().is_some_and(|(address,id,_)|Some(address.as_str())==old["url"].as_str()&&Some(id.as_str())==old["server_id"].as_str());
+                let ready=noctua::server_update::retry_current(&server_executable(&app)?,PORT).await?;
+                return Ok(json!({"server":ready,"reconnect_local":reconnect}));
+            },
+            "enable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::enable(&server_executable(&app)?)?;},
+            "disable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::disable()?;},
             "logs"=>{let path=noctua::paths::existing_data_dir()?.join("server.log");let text=std::fs::read_to_string(path)?;return Ok(json!({"log":text.chars().rev().take(20000).collect::<String>().chars().rev().collect::<String>()}))},
             _=>anyhow::bail!("Unknown local server action"),
         }Ok(noctua::service::status())
@@ -608,6 +641,29 @@ async fn desktop_action(
     }
     let action =
         serde_json::from_value(json!(action)).map_err(|_| "Unknown desktop action".to_string())?;
+    let replacing = matches!(
+        action,
+        noctua::UpdateAction::Install | noctua::UpdateAction::Restart
+    );
+    let shell = app.state::<Shell>();
+    let _gate = if replacing {
+        Some(
+            shell
+                .connection_gate
+                .try_lock()
+                .map_err(|_| "Another connection or server operation is in progress".to_string())?,
+        )
+    } else {
+        None
+    };
+    let _guard = if replacing {
+        Some(SwitchGuard(app.clone()))
+    } else {
+        None
+    };
+    if replacing {
+        flush_clients(&app, "").await?;
+    }
     updater::run(&app, action, version)
         .await
         .map_err(|e| e.to_string())

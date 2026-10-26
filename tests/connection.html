@@ -5,8 +5,8 @@
 const assert=(v,m)=>{if(!v)throw Error(m)};
 document.querySelector('iframe').onload=async()=>{try{
  const frame=document.querySelector('iframe'),w=frame.contentWindow,d=frame.contentDocument,calls=[];
- let failSave=false;
- w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
+ let failSave=false,localReady=false;
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:localReady?{server_id:'server-A'}:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
  await w.eval('refresh()');
  assert(d.querySelector('#connection-dialog').open&&d.querySelector('#dialog-title').textContent.includes('Server'),'serverless connection popup missing');
  const visibleSteps=()=>Array.from(d.querySelectorAll('[data-step]')).filter(node=>!node.hidden);
@@ -51,6 +51,11 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(!d.querySelector('#connection-dialog').open,'Close did not dismiss the popup');
  d.querySelector('#open-connection').click();
  assert(d.querySelector('#connection-dialog').open&&visibleSteps()[0].dataset.step==='1','local launcher cannot reopen the interrupted setup');
+ localReady=true;await w.eval('refresh()');
+ assert(!d.querySelector('#open-running-server').hidden,'running-server recovery action is unavailable');
+ await d.querySelector('#open-running-server').onclick();
+ const deferred=calls.filter(c=>c.command==='connect_server').at(-1);
+ assert(deferred.args.deferServerUpdate===true&&deferred.args.mode==='local','explicit update deferral did not select only the existing local server');
  // A failed server save must reject connection switching before closing any frame.
  const shellSource=await (await fetch('../web/shell.js')).text();
  eval(shellSource.slice(shellSource.indexOf('function safeTabPath'),shellSource.indexOf('function addTab')));

@@ -70,6 +70,10 @@ that the shell saves appearance locally for the disconnected manager.
 The connection fixture checks one-step-at-a-time popup navigation, Back preserving
 the address and transient credential, test-before-save, failed saves retaining the
 review step, and invalidating a test when the connection changes.
+The maintenance WebKit fixture verifies editor flushing, draft preservation,
+pause acknowledgments and conflict/cancellation recovery. Backend CI also builds
+an offline next-version fixture and runs the isolated server update regression;
+OS managers are mocked, never installed as resident services.
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,

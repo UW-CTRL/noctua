@@ -148,6 +148,11 @@ select rendered text and choose **Add to chat**.
 
 ## Connection-aware note drafts
 
+Server updates announce a maintenance pause and save open editors before restart.
+Resolve open dialogs or save conflicts if an update is waiting. A failed save
+keeps the current server running; drafts stay on this device. After restart,
+desktop clients reconnect, while browser clients may need to reload and sign in.
+
 Open notes save local drafts separately for each server, note, and editor tab.
 After a refresh or relaunch, reopen the note to recover them. If several editors
 have different drafts, choose one in **Recover a local draft**. Opening the server

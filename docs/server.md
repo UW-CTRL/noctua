@@ -76,7 +76,7 @@ server binary and stage a durable copy outside the app bundle before launch.
 | `noctua ensure` | Validate/reuse the owner, otherwise start the registered enabled user service for this data folder, or detach a background process. Never install a service. This is also the default command. |
 | `noctua status` | Authenticate the recorded owner and print identity/readiness. Offline, stale and incompatible owners fail with a nonzero exit. |
 | `noctua stop` | Authenticate with a separate private local control credential. Refuse while requests, AI chats, sign-in, skill executions or unresolved skill reviews remain; gracefully drain accepted connections. Never kill a PID. |
-| `noctua restart` | Safely stop, refresh an enabled service's executable definition, and ensure again. It explicitly disconnects clients. |
+| `noctua restart` | Safely restart the same executable after work finishes. A changed executable uses the coordinated update transaction; it explicitly disconnects clients. |
 | `noctua update --server /absolute/path/to/new/noctua` | Announce maintenance, require connected editors to save, drain active tasks, snapshot stopped data, replace/verify the server and clean retired staged executables. Defaults: 30-second notice and 30-minute task wait; a timeout cancels instead of killing work. |
 | `noctua update-status` | Read local update progress/recovery information even while the data server is stopped. |
 | `noctua token` | Explicitly display the server authentication token in the terminal. Treat it as a password. Normal status and logs omit it. |

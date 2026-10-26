@@ -31,3 +31,5 @@ status does not confirm a server save, and server reads cannot see unsaved clien
 input. Preserve the user's work when a server version conflicts; let the user
 resolve it instead of automatically overwriting another device's edits. Closing
 a client does not cancel jobs on its connected server.
+Respect maintenance pauses and preserve unresolved edits; an update notice is
+not proof that a local draft has been saved to the server.

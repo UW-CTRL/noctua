@@ -140,6 +140,12 @@ These use separate task prompts rather than the combined chat instructions.
 
 ## Local drafts and server edits
 
+During a server update, open editors save and pause while existing AI tasks finish.
+An unresolved save/conflict blocks replacement; local drafts are preserved. An
+update notice alone does not confirm that unsaved client input reached the server.
+Skill approvals and output reviews must be resolved before a server update;
+replacement is canceled rather than discarding those session-owned results.
+
 The assistant reads saved server content, not unsaved local input. Multiple editor
 drafts remain separate, and another device's edits require conflict resolution.
 See [note draft recovery](notes.md#connection-aware-note-drafts) before discarding

@@ -77,15 +77,28 @@ async function refresh({restoreSelection=false}={}){
   $('#service').dataset.state=state.service.error?'error':'';
   $('#local-status').textContent=state.local?'This computer’s server is ready.':(state.local_error||'This computer’s server is not running.');
   $('#local-status').dataset.state=state.local?'ready':state.local_error?'error':'';
+  $('#open-running-server').hidden=!state.local;
   $('#connection-status').textContent=state.current?.reachable?'Current server is reachable.':(state.current?.error?'Current server unavailable: '+state.current.error:'No active connection.');
   $('#connection-status').dataset.state=state.current?.reachable?'ready':state.current?.error?'error':'';
   $('#current-identity').textContent=state.current?.identity?JSON.stringify(state.current.identity,null,2):'';
+  const update=state.server_update;
+  if(update?.phase){
+    const descriptions={announcing:'Notifying connected clients and saving edits…',draining:'Waiting for active AI, file and MCP tasks to finish…',backing_up:'Backing up stopped server data…',service:'Updating the registered login service…',starting:'Starting and verifying the replacement server…',cleanup:'Removing unused previous executables…',complete:'Server update completed.',failed:'Server update failed: '+(update.error||'Check server logs.')};
+    $('#server-update-status').textContent=update.phase==='interrupted'?update.error:descriptions[update.phase]||update.phase;
+    if(update.phase==='complete'&&update.cleanup_pending?.length)$('#server-update-status').textContent+=' Some update cleanup remains; retry Update server when the reported files are no longer in use.';
+    $('#server-update-status').dataset.state=['failed','interrupted'].includes(update.phase)?'error':update.phase==='complete'?'ready':'';
+    if(busy&&['announcing','draining','backing_up','service','starting','cleanup'].includes(update.phase))status('This computer’s server: '+$('#server-update-status').textContent);
+  }
   return state;
 }
-$('#local-actions').onclick=e=>{const action=e.target.dataset.action;if(action)operation(async()=>{const r=await invoke('local_server',{action});if(action==='logs')$('#logs').textContent=r.log;else{status(action+' completed','ready');await refresh();}});};
+$('#local-actions').onclick=e=>{const action=e.target.dataset.action;if(action)operation(async()=>{const r=await invoke('local_server',{action});if(action==='logs')$('#logs').textContent=r.log;else{if(r.reconnect_local){await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:r.server.server_id});dialog.close();}status(action+' completed','ready');await refresh();}});};
 $('#autostart').onchange=()=>operation(async()=>{try{await invoke('local_server',{action:$('#autostart').checked?'enable':'disable'});}finally{await refresh();}});
 let offered;
+$('#open-running-server').onclick=()=>operation(async()=>{
+  await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:null,deferServerUpdate:true});
+  dialog.close();
+});
 document.querySelectorAll('[data-desktop]').forEach(b=>b.onclick=()=>operation(async()=>{const r=await invoke('desktop_action',{action:b.dataset.desktop,version:offered||null});if(r.version)offered=r.version;$('#update').textContent=JSON.stringify(r,null,2);}));
 mode();render();openDialog();
 operation(async()=>{const s=await refresh({restoreSelection:true});if(s.connection.mode){showStep(1);await connect();}});
-setInterval(()=>{if(!busy)refresh().catch(error=>{status(String(error),'error');});},10000);
+setInterval(()=>{refresh().catch(error=>{if(!busy)status(String(error),'error');});},2000);
