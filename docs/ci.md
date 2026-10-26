@@ -183,6 +183,8 @@ ensure runs, proving the restart transaction is serialized. It tests relative
 home paths, registration without starting, and profile relocation with the login
 definition updated to the destination. `NOCTUA_PROFILE_HOME` keeps these tests
 inside a temporary profile while exercising the real migration lease.
+The refresh barrier waits for executable verification and reports an early
+restart error directly; slower debug ELF preflight must not look like a lock failure.
 
 `tests/note-drafts.html` verifies newer edits during save, malformed successful
 responses, a full local store plus network failure, failed deletion, and input

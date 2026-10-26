@@ -127,9 +127,15 @@ sys.exit(0)
             (root/'delay-refresh').touch()
             restarting=subprocess.Popen([str(binary),'restart'],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             try:
-                deadline=time.monotonic()+15
-                while not (root/'refresh-blocked').exists() and time.monotonic()<deadline:time.sleep(.02)
-                assert (root/'refresh-blocked').exists(),'restart did not reach the serialized service refresh'
+                # Restart now verifies the executable before stopping anything.
+                # Unoptimized ELF images on CI are much larger than macOS builds;
+                # allow preflight/readiness time before waiting at the barrier.
+                deadline=time.monotonic()+60
+                while not (root/'refresh-blocked').exists() and restarting.poll() is None and time.monotonic()<deadline:time.sleep(.02)
+                if restarting.poll() is not None:
+                    output,error=restarting.communicate()
+                    raise AssertionError(('restart exited before service refresh',restarting.returncode,output,error))
+                assert (root/'refresh-blocked').exists(),'restart did not reach the serialized service refresh within 60 seconds'
                 ensuring=subprocess.Popen([str(binary),'ensure'],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 time.sleep(.15);assert ensuring.poll() is None,'ensure bypassed the restart control lock'
                 (root/'release-refresh').touch()
