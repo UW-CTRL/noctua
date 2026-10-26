@@ -1,5 +1,5 @@
 //! Noctua: a local research app for exploring Semantic Scholar citation
-//! graphs, Zotero folders and LaTeX notes. `start` runs the local web server;
+//! graphs, native Library collections and LaTeX notes. `start` runs the local web server;
 //! the browser binary (`src/main.rs`) and the desktop app (`app/`) both use it.
 
 mod agent;
@@ -13,6 +13,8 @@ mod pdf_agent;
 mod pdf_autohighlight;
 mod media;
 mod mcp;
+mod mcp_data;
+mod mcp_edits;
 mod notes;
 mod editing;
 mod chat_approval;
@@ -202,7 +204,7 @@ async fn status(State(app): Shared) -> Json<Value> {
     Json(json!({ "pending": pending, "sent": sent }))
 }
 
-async fn zotero_collections(State(app): Shared) -> ApiResult {
+async fn library_collections(State(app): Shared) -> ApiResult {
     Ok(Json(app.library_collections()?))
 }
 
@@ -220,7 +222,7 @@ async fn match_title(State(app): Shared, Query(q): Query<TitleQ>) -> ApiResult {
     Ok(Json(app.s2.match_title(&q.title).await?))
 }
 
-async fn zotero_items(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
+async fn library_items(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
     Ok(Json(json!(app.library_items(&q.target)?)))
 }
 
@@ -228,7 +230,7 @@ async fn project_graph(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResul
     Ok(Json(project::graph(&app, &q.target).await?))
 }
 
-async fn zotero_check(State(app): Shared, Json(b): Json<CheckBody>) -> ApiResult {
+async fn library_check(State(app): Shared, Json(b): Json<CheckBody>) -> ApiResult {
     Ok(Json(json!(app.library.check(&b.papers)?)))
 }
 
@@ -238,7 +240,7 @@ struct RenameBody {
     name: String,
 }
 
-async fn zotero_rename(State(app): Shared, Json(b): Json<RenameBody>) -> ApiResult {
+async fn library_rename(State(app): Shared, Json(b): Json<RenameBody>) -> ApiResult {
     app.library.rename(&b.target, &b.name)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -249,7 +251,7 @@ struct NewFolderBody {
     name: String,
 }
 
-async fn zotero_new_folder(State(app): Shared, Json(b): Json<NewFolderBody>) -> ApiResult {
+async fn library_new_folder(State(app): Shared, Json(b): Json<NewFolderBody>) -> ApiResult {
     let id = app.library.create_collection(&b.parent, &b.name)?;
     Ok(Json(json!({ "id": id })))
 }
@@ -337,7 +339,10 @@ struct InkBody {
 
 async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
     let folder = app.library.folder_id(&q.target)?;
-    Ok(Json(app.notes.list(&folder)?))
+    let mut list=app.notes.list(&folder)?;
+    let workspace=workspace::snapshot(&app,&q.target)?;
+    list.as_array_mut().unwrap().retain(|n|!workspace["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true));
+    Ok(Json(list))
 }
 
 /// All notes across folders, for @-mentions and note links.
@@ -345,7 +350,9 @@ async fn notes_all(State(app): Shared) -> ApiResult {
     let mut out = Vec::new();
     for (folder, list) in app.notes.list_all()? {
         let target = app.library.folder_target(&folder);
+        let workspace=target.as_deref().map(|t|workspace::snapshot(&app,t)).transpose()?;
         for mut n in list.as_array().cloned().unwrap_or_default() {
+            if workspace.as_ref().is_some_and(|m|m["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true)){continue;}
             n["folder"] = json!(folder);
             n["target"] = json!(target);
             out.push(n);
@@ -427,7 +434,7 @@ async fn explain_threads(State(app): Shared, Json(b): Json<ThreadsBody>) -> ApiR
     Ok(Json(threads::explain(&app, provider, b.req, b.force, b.cache_only).await?))
 }
 
-async fn zotero_add(State(app): Shared, Json(b): Json<AddBody>) -> ApiResult {
+async fn library_add(State(app): Shared, Json(b): Json<AddBody>) -> ApiResult {
     let key = app.library.save(&b.paper, b.target.as_deref().unwrap_or("L1"))?;
     let warning = if b.attach_pdf { app.library.download(&key).await.err().map(|e| format!("{e:#}")) } else { None };
     Ok(Json(json!({ "ok": true, "key": key, "paper": app.library.paper(&key)?, "warning": warning })))
@@ -638,21 +645,15 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/similar", get(similar))
         .route("/api/links", post(links))
         .route("/api/status", get(status))
-        .route("/api/library/collections", get(zotero_collections))
-        .route("/api/library/items", get(zotero_items))
-        .route("/api/library/check", post(zotero_check))
-        .route("/api/library/add", post(zotero_add))
-        .route("/api/library/rename", post(zotero_rename))
-        .route("/api/library/folder", post(zotero_new_folder))
-        .route("/api/zotero/collections", get(zotero_collections))
+        .route("/api/library/collections", get(library_collections))
+        .route("/api/library/items", get(library_items))
+        .route("/api/library/check", post(library_check))
+        .route("/api/library/add", post(library_add))
+        .route("/api/library/rename", post(library_rename))
+        .route("/api/library/folder", post(library_new_folder))
         .route("/api/match", get(match_title))
-        .route("/api/zotero/items", get(zotero_items))
-        .route("/api/zotero/check", post(zotero_check))
         .route("/api/project", get(project_graph))
         .route("/api/threads", post(explain_threads))
-        .route("/api/zotero/add", post(zotero_add))
-        .route("/api/zotero/rename", post(zotero_rename))
-        .route("/api/zotero/folder", post(zotero_new_folder))
         .route("/api/chat", post(chat_endpoint))
         .route("/api/notes", get(notes_list).post(notes_create))
         .route("/api/notes/all", get(notes_all))
@@ -685,6 +686,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/ink-latex", post(ink_latex).layer(DefaultBodyLimit::max(16 << 20)))
         .route("/api/chats", get(chats_list))
         .route("/api/chats/{id}", get(chats_get).delete(chats_delete))
+        .route("/api/agent-edits", get(mcp_edits::list))
+        .route("/api/agent-edits/{id}", get(mcp_edits::get).post(mcp_edits::decide))
         .route("/mcp", post(mcp_endpoint))
         .route("/app-icons/dark.svg", get(|| async { asset(include_str!("../app/icons/icon-dark.svg"), "image/svg+xml") }))
         .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))

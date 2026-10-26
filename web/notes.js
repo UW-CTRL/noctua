@@ -14,7 +14,6 @@ const N = {
   saveTimer: null,
   typesetTimer: null,
   focusBlock: null,    // block new blocks are inserted after (⌘⇧D)
-  suggestions: [],     // the assistant's pending edits: { id, op, block_id, latex, reason, summary }
   imgSel: null,        // selected image: { block, k } (figures.js)
 };
 
@@ -136,7 +135,7 @@ async function openNote(id) {
 }
 
 function showNote(doc) {
-  if (N.doc?.id !== doc.id) { N.suggestions = []; N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
+  if (N.doc?.id !== doc.id) { N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
   W.file=null;
   resetNoteHistory();
@@ -270,8 +269,7 @@ function renderEditor() {
     </div><div class="note-page">
       <textarea class="note-title" rows="1" placeholder="Untitled note" aria-label="Note title" spellcheck="false">${esc(N.doc.title)}</textarea>
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
-      <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span>${N.suggestions.length > 1
-        ? ` · ${N.suggestions.length} suggestions: <a href="#" id="sg-accept-all">accept all</a> / <a href="#" id="sg-reject-all">reject all</a>` : ''}</div>
+      <div class="note-meta"><span class="note-folder">${esc(folder)}</span><span id="note-status" class="note-save-status" role="status">Saved</span></div>
       ${N.preambleOpen ? `<div class="note-preamble">
         <textarea class="nb-src" spellcheck="false" placeholder="% Preamble: applies to the whole note and takes no space on the page
 \\usepackage[margin=1in]{geometry}
@@ -286,16 +284,8 @@ function renderEditor() {
   wrap.appendChild(inserter(0));
   N.doc.blocks.forEach((b, i) => {
     wrap.appendChild(blockEl(b));
-    for (const sg of N.suggestions.filter((x) => x.block_id === b.id || (!x.block_id && i === 0))) {
-      const card = suggestionEl(sg);
-      // Inserts at the top go before the first block; everything else after its block.
-      if (!sg.block_id) wrap.insertBefore(card, wrap.firstChild.nextSibling);
-      else wrap.appendChild(card);
-    }
     wrap.appendChild(inserter(i + 1));
   });
-  // Drop suggestions whose block no longer exists.
-  N.suggestions = N.suggestions.filter((x) => !x.block_id || blockIndex(x.block_id) >= 0);
   typeset();
   restoreVideos(stage, media);
   updateHistoryButtons();
@@ -336,6 +326,7 @@ See Section \ref{sec:intro}.
 E = mc^2 \label{eq:energy}
 \end{equation}
 See Equation \eqref{eq:energy}.`)}</section>
+      <section><h3>Assistant changes</h3><p>The assistant can create notes and edit blocks, titles, preambles, and block order. It reads the saved updated version first. Direct edits save on the server before completion. Suggest changes appear in a review dialog; use Assistant changes below the project tree to revisit pending proposals. Accept applies the complete proposal as one undoable change. Concurrent edits require a fresh proposal. Chat can inspect saved handwriting; uncached previews need an active chat. Tree display names and note titles are separate.</p></section>
       <section><h3>Pane controls</h3><p>The thin left/right arrow rails hide or reopen navigation and chat. Pane widths and visibility are remembered without discarding drafts. The paper editor also has arrows to hide either source or PDF while leaving the other visible.</p></section>
       <section><h3>Find</h3><p>Cmd/Ctrl+F searches the selected cell source while editing, or the rendered note when no cell is being edited. In project text files, it searches the source editor only. Enter/Shift+Enter move between matches; Escape closes Find. Citation suggestions show formatted titles and label Collection or Bib filename, retaining both sources.</p></section>
       <section><h3>Paper editor</h3><p>Use Paper in Project files to create a standard LaTeX document beside a live compiled PDF. Import .cls, .sty, .bst, .bib, and images, and use their project-relative paths. Set an imported .tex as the main document from its actions menu. The project settings gear selects bundled Tectonic or pdfLaTeX, with BibTeX, per collection; note cells keep their existing lightweight preview. Double-click compiled PDF text to open and center the matching source line. The paper toolbar has a dedicated guide. You can also ask chat to inspect the LaTeX build log; agents have read-only access to internal workspace diagnostics.</p></section>
@@ -343,7 +334,7 @@ See Equation \eqref{eq:energy}.`)}</section>
       <section><h3>Project files and bibliographies</h3><p>Each collection has a Project files tree. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note or Text file, a name, and a destination folder. New folder opens a compact folder form. New files use the exact filename with no automatic extension. Project root appears only while dragging project entries. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, rename or move entries using their menu, and preview media. In Suggest mode, project-file edits ask inline in chat once per file per prompt; Direct mode applies edits without approval popups. Notes retain their block editor. Import a .bib file, then select the Bibliographies icon below the tree to enable its citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Use Image / Video for larger note videos.</p></section>
       <section><h3>Agent skills</h3><p>Use the Agent skills icon below the project tree or in the chat toolbar to import a folder, ZIP, or SKILL.md, inspect its files, and enable it for this project or override this chat. Both backends use the same skill selection. Every script run requires approval; it executes local code, not an OS sandbox. Scripts receive temporary copies of selected files. Review and accept their output before it changes project files. Plan mode cannot run scripts. No dependencies are installed automatically.</p></section>
       <section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
-      <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode applies requested edits immediately; use Undo to revert them.</p></section>`;
+      <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode saves requested edits on the server before reporting completion; use Undo to revert them. Suggest changes are reviewed as whole proposals in Assistant changes below the project tree.</p></section>`;
     dialog.addEventListener('click', event => {
       if (event.target !== dialog) return;
       const rect = dialog.getBoundingClientRect();
@@ -463,94 +454,6 @@ function wirePreamble(stage) {
       renderEditor();
     }
   });
-}
-
-// ---------------------------------------------------------------- the assistant's edits
-
-function suggestionEl(sg) {
-  const d = document.createElement('div');
-  d.className = `nb-suggest op-${sg.op}`;
-  d.dataset.sid = sg.id;
-  const what = { replace: 'Assistant suggests rewriting the block above', insert_after: 'Assistant suggests adding', delete: 'Assistant suggests deleting the block above' }[sg.op];
-  const why = sg.reason || sg.summary;
-  const body = sg.op === 'delete' ? ''
-    : `<div class="sg-body tex-view">${NoctuaLatex.renderDoc([sg.latex], { cite: citeHtml, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble })[0]}</div>
-       <details class="sg-src"><summary>LaTeX</summary><pre>${esc(sg.latex)}</pre></details>`;
-  d.innerHTML = `<div class="sg-head">${what}${why ? `: <span class="sg-why">${esc(why)}</span>` : ''}</div>${body}
-    <div class="sg-actions"><button data-act="accept" class="primary" data-icon="check">Accept</button><button data-act="reject" data-icon="x">Reject</button></div>`;
-  d.querySelector('.sg-actions').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) resolveSuggestion(sg.id, b.dataset.act === 'accept');
-  });
-  return d;
-}
-
-// Applies one edit to the open note. Returns false if its block is gone.
-function applyEdit(e) {
-  const i = e.block_id ? blockIndex(e.block_id) : -1;
-  if (e.op === 'replace' || e.op === 'delete') {
-    if (i < 0) return false;
-    if (e.op === 'delete') {
-      N.doc.blocks.splice(i, 1);
-      if (!N.doc.blocks.length) N.doc.blocks.push({ id: newId('b'), type: 'text', src: '' });
-    } else if (N.doc.blocks[i].type === 'text') {
-      N.doc.blocks[i].src = e.latex;
-    } else {
-      // A drawing can't hold text: keep it and add the text after it.
-      N.doc.blocks.splice(i + 1, 0, { id: newId('b'), type: 'text', src: e.latex });
-    }
-    return true;
-  }
-  if (e.op === 'insert_after') {
-    if (e.block_id && i < 0) return false;
-    const nb = { id: newId('b'), type: 'text', src: e.latex };
-    N.doc.blocks.splice(e.block_id ? i + 1 : 0, 0, nb);
-    e.newId = nb.id;
-    return true;
-  }
-  return false;
-}
-
-function resolveSuggestion(id, accept) {
-  const sg = N.suggestions.find((x) => x.id === id);
-  if (!sg) return;
-  N.suggestions = N.suggestions.filter((x) => x !== sg);
-  if (accept) {
-    stopEdit();
-    if (!applyEdit(sg)) toast('That block no longer exists; suggestion dropped.', { error: true });
-    markDirty();
-  }
-  renderEditor();
-}
-
-// Called for the chat's `note_edit` action (the edit_note tool).
-async function noteEditFromChat(a) {
-  await saveWorkspaceFile();
-  if(W.file){W.file=null;renderEditor();}
-  if (!isNotesMode()) setMode('notes');
-  if (N.target !== a.folder) { await loadNoteFolder(a.folder); }
-  if (N.doc?.id !== a.note_id) await openNote(a.note_id);
-  if (N.doc?.id !== a.note_id) return toast("Couldn't open the note the assistant wanted to edit.", { error: true });
-  stopEdit();
-  const edits = (a.edits || []).map((e) => ({ ...e, id: newId('s'), summary: a.summary }));
-  if (a.mode === 'direct') {
-
-    const touched = [];
-    let skipped = 0;
-    for (const e of edits) {
-      if (applyEdit(e)) touched.push(e.newId || e.block_id);
-      else skipped++;
-    }
-    markDirty();
-    renderEditor();
-    for (const id of touched) document.querySelector(`.nb[data-id="${id}"]`)?.classList.add('nb-flash');
-    toast(`The assistant edited the note${skipped ? ` (${skipped} edit(s) skipped: block not found)` : ''}.`);
-    document.querySelector('.nb-flash')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  } else {
-    N.suggestions.push(...edits);
-    renderEditor();
-    document.querySelector(`.nb-suggest[data-sid="${edits[0]?.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
 }
 
 function inserter(index) {
@@ -819,8 +722,8 @@ function notesContext(sentKey) {
   if(W.file){lines.push(`Open project file ID: ${W.file}. Use project file tools to inspect it.`);return {lines,key:`file:${W.target}:${W.file}:${W.fileRevision}`};}
   if (!N.doc) return { lines: [...lines, 'No note open.'], key: null };
   const text = noteText(N.doc);
-  const key = `${N.doc.id}:${text.length}:${text.slice(0, 50)}:${text.slice(-200)}`;
-  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}). \\cite keys resolve to library papers and enabled project bibliographies.`);
+  const key = `${N.target}:${N.doc.id}:${N.doc.updated}`;
+  lines.push(`Open note: "${N.doc.title}" (note id ${N.doc.id}, updated ${N.doc.updated}). \\cite keys resolve to library papers and enabled project bibliographies.`);
   const sel = N.imgSel && N.doc.blocks.find((b) => b.id === N.imgSel.block);
   const at = sel && imageOffsets(sel.src)[N.imgSel.k];
   if (at != null) lines.push(`Selected media (the user clicked it): ${texArgs(sel.src, at + mediaCommandLength(sel.src, at)).arg} in block ${sel.id}.`);
@@ -883,8 +786,6 @@ $('#notes-stage').addEventListener('click', (e) => {
     followNoteReference(reference.dataset.texRef);
     return;
   }
-  const act = e.target.closest('#sg-accept-all, #sg-reject-all');
-  if(act){e.preventDefault();const accept=act.id==='sg-accept-all';NoteUndo.batch++;try{for(const sg of [...N.suggestions])resolveSuggestion(sg.id,accept);}finally{NoteUndo.batch--;recordNoteChange();}return;}
   const a = e.target.closest('a.cite');
   if (!a) return;
   if(showBibReference(a.dataset.key)){e.preventDefault();return;}

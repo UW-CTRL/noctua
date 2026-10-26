@@ -221,6 +221,12 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
         }
     }
 
+    // A fast final CLI event must not overtake a queued tool/UI action.
+    while let Ok(mut action)=actions.try_recv(){
+        if action["chat_id"].as_str()!=Some(chat_id){continue;}
+        action["type"]=json!("action");
+        if tx.send(action).await.is_err(){break;}
+    }
     let status = child.wait().await?;
     let err = stderr.await.unwrap_or_default();
     if !finished || !status.success() {

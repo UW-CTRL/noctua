@@ -1,11 +1,11 @@
-//! Project graphs: how the papers of one Zotero collection cite each other.
+//! Project graphs: how the papers of one Noctua collection cite each other.
 //!
 //! Papers are directly connected when one cites the other; clusters are the
 //! connected components of that graph. Clusters are linked by the outside
 //! papers they both cite (shared references).
 //!
 //! Each item's Semantic Scholar record (with its reference list) is saved
-//! with the collection, keyed by Zotero item key. Reopening a project costs no
+//! with the collection, keyed by native paper key. Reopening a project costs no
 //! requests; when the collection changes only new or edited items are fetched,
 //! with one batch request per 500 papers.
 

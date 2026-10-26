@@ -1,6 +1,7 @@
-//! Notes attached to Zotero folders: one JSON file per note under
+//! Notes attached to Noctua collections: one JSON file per note under
 //! `notes/<folder id>/<note id>.json`, where a note is a list of typed-LaTeX
-//! and handwriting blocks. Deleted notes move to `notes/.trash/`.
+//! and handwriting blocks. Workspace trash is tracked in the project manifest;
+//! legacy note deletion moves files to `notes/.trash/`.
 //! Also turns handwriting (a PNG) into LaTeX with the selected CLI backend.
 
 use std::{

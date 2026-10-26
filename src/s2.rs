@@ -251,6 +251,11 @@ impl S2 {
         Ok(out)
     }
 
+    pub async fn relations(&self,id:&str,kind:&str)->Result<Vec<Value>> {
+        if !["references","citations"].contains(&kind){bail!("Unknown citation relation");}
+        self.edges(id,kind).await
+    }
+
     /// Center paper plus its most-cited references and citations.
     pub async fn graph(&self, id: &str, limit: usize) -> Result<Value> {
         let center = self.paper(id).await?;

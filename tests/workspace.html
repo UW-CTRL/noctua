@@ -9,6 +9,7 @@
         </div>
 <ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
 <script>
+window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
 const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){}};
@@ -24,10 +25,11 @@ window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used')
 async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
+<script src="../web/ink.js"></script>
 <script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
- await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]'),'paper actions remain available alongside the compact workspace controls');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
+ await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'paper actions and durable assistant proposals remain available together');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
  assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
@@ -100,6 +102,29 @@ function assert(ok,message){if(!ok)throw Error(message)}
  upload.querySelector('form').requestSubmit();await settle();assert(upload.open&&upload.querySelector('[data-error]').textContent==='Upload failed','upload failure not shown inline');
  assert(upload.querySelectorAll('li').length===1&&upload.querySelector('li').textContent.includes('second.txt'),'successful files stay queued after partial failure');
  failUpload=false;upload.querySelector('form').requestSubmit();await settle();assert(!$('dialog')&&uploads.join(',')==='first.txt,second.txt,second.txt','retry reuploaded successful files');window.fetch=realFetch;
+ // Assistant proposals use server persistence; local drafts survive background updates.
+ const oldApi=api, saved={id:'agent-note',title:'Saved',updated:1,blocks:[{id:'b',type:'text',src:'source'}]};
+ let accepted=0,proposalRejected=0,proposalState='proposed';
+ window.showNote=doc=>{N.doc=doc;};window.showConflict=()=>{};
+ N.target='L1';N.doc=clone(saved);N.dirty=false;N.saving=false;N.conflict=false;W.dirty=false;W.file=null;
+ api=async(path,body)=>{
+  if(path==='/api/agent-edits')return [{proposal_id:'proposal',tool:'edit_note',folder_id:'L1',status:proposalState}];
+  if(path==='/api/agent-edits/proposal'){
+   if(body){if(body.action==='accept'){accepted++;saved.updated=2;saved.title='Applied';proposalState='applied';}else{proposalRejected++;proposalState='rejected';}return {status:proposalState};}
+   return {tool:'edit_note',status:proposalState,args:{folder_id:'L1',note_id:'agent-note',title:'<img src=x onerror=alert(1)>',summary:'Review source'},before:clone(saved)};
+  }
+  if(path==='/api/notes/L1/agent-note')return clone(saved);
+  return oldApi(path,body);
+ };
+ await showAgentEdit('proposal');assert($('dialog [data-accept]'),'proposal review missing');assert(!$('dialog img'),'proposal source injected HTML');
+ $('dialog [data-accept]').click();await settle();assert(accepted===1&&N.doc.title==='Applied'&&!$('dialog'),'accepted proposal not loaded');
+ await refreshAgentNote({target:'L1',note_id:'agent-note'});assert(!N.conflict,'duplicate completion caused false conflict');
+ N.dirty=true;N.doc.title='Local draft';saved.updated=3;saved.title='Background';
+ await refreshAgentNote({target:'L1',note_id:'agent-note'});assert(N.doc.title==='Local draft'&&N.conflict,'background edit lost a local draft');
+ proposalState='proposed';await showAgentEdit('proposal');$('dialog [data-reject]').click();await settle();assert(proposalRejected===1&&!$('dialog'),'dirty/conflicted note prevented rejection');
+ await showAgentEdits();assert($('dialog [data-proposal]'),'pending proposal list missing');$('dialog').close();await settle();api=oldApi;
+ const drawing={strokes:[{p:[[20,30,1],[80,60,0.7]],w:2,c:'#000000'}]},unchanged=JSON.stringify(drawing);
+ assert(Ink.preview(drawing).startsWith('data:image/png;base64,'),'standalone drawing preview is not PNG');assert(JSON.stringify(drawing)===unchanged,'drawing preview changed strokes');
 
  const proposal={turn_id:'turn-one',approval_id:'file-one',chat_id:'chat',changes:[{op:'edit',name:'main.tex',target:'L1',before:'Keep\nOld\nEnd',after:'Keep\nNew <tag>\nEnd'}]};
  showFileEditApproval(proposal);showFileEditApproval(proposal);

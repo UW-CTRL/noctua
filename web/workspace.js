@@ -24,9 +24,9 @@ function renderWorkspaceTree(){
   return `<div class="workspace-entry ${active?'active':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-menu="${esc(e.id)}" data-icon="ellipsis" data-icon-only title="Actions for ${esc(title)}" aria-label="Actions for ${esc(title)}"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
- tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-new-paper','file-text','New paper')}${action('data-bibliographies','library','Bibliographies')}${action('data-skills','sparkles','Agent skills')}${action('data-trash','trash-2','Project trash')}</div>${historyButtons('workspace')}</div>`;
+ tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-new-paper','file-text','New paper')}${action('data-bibliographies','library','Bibliographies')}${action('data-skills','sparkles','Agent skills')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
- $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-skills]').onclick=showSkills;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;
+ $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-bibliographies]').onclick=workspaceBibliographies;tree.querySelector('[data-skills]').onclick=showSkills;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
  tree.querySelector('[data-latex-settings]').onclick=()=>showPaperSettings().catch(e=>toast(e.message,{error:true}));
  tree.querySelector('[data-new-paper]').onclick=()=>newPaper();
  tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true})));
@@ -270,14 +270,90 @@ function showFileEditApproval(a, host) {
 }
 function closeFileEditApprovals(){for(const s of fileEditApprovals.values()){if(!s.settled){s.card.querySelector('[data-status]').textContent='Request ended without approval.';s.card.querySelector('footer').hidden=true;}s.settled=true;s.card.querySelectorAll('button').forEach(b=>b.disabled=true);}fileEditApprovals.clear();}
 
-function showWorkspaceProposal(a){const d=workspaceDialog('Proposed project file change',`<pre>${esc(JSON.stringify(a.change,null,2))}</pre><button data-accept>Accept</button><button data-reject>Reject</button>`);d.querySelector('[data-reject]').onclick=()=>d.close();d.querySelector('[data-accept]').onclick=async()=>{try{await saveWorkspaceFile();const m=await api(`/api/workspaces/${enc(a.target)}`,a.change);if(W.target===a.target){W.manifest=m;await refreshWorkspaceView(a.target);}d.close();}catch(e){toast(e.message,{error:true});}};}
 
 document.getElementById('chat-skills-btn')?.addEventListener('click',showSkills);
 
 async function refreshWorkspaceView(target){
+ if(N.target!==target)return;
+ const notes=await api(`/api/notes?target=${enc(target)}`);
+ if(N.target!==target)return;
+ N.list=notes;if(typeof REF!=='undefined')REF.at=0;
  const file=W.target===target?W.file:null;
  await loadWorkspace(target);
  if(file&&W.file===file&&!W.dirty){if(W.manifest?.entries.some(e=>e.id===file&&!e.deleted))await openWorkspaceFile(file);else{W.file=null;renderEditor();}}
 }
 
 function showWorkspaceTrash(){const entries=(W.manifest?.entries||[]).filter(e=>e.deleted);const d=workspaceDialog('Project trash',`<p>Restore individual entries here, including after restarting Noctua. Restore a folder before its children to keep their original placement; otherwise entries return to the root.</p>${entries.map(e=>`<p>${esc(e.name)} <button data-restore="${e.id}" data-icon="undo-2">Restore</button></p>`).join('')||'<p>Trash is empty.</p>'}`);d.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{try{await workspaceChange({op:'restore',id:b.dataset.restore});d.close();showWorkspaceTrash();}catch(e){toast(e.message,{error:true});}});}
+
+// Server-backed assistant edits preserve optimistic versions and local drafts.
+async function refreshAgentNote(a){
+ if(typeof REF!=='undefined')REF.at=0;
+ if(N.target!==a.target)return;
+ const target=N.target,id=a.note_id;
+ const doc=await api(`/api/notes/${enc(target)}/${enc(id)}`);
+ if(N.target!==target)return;
+ const active=!W.file&&N.doc?.id===id;
+ if(active&&(N.dirty||N.saving)){
+  if(doc.updated>N.doc.updated){N.conflict=true;showConflict();}
+  return;
+ }
+ const entry=N.list.find(n=>n.id===id);if(entry){entry.title=doc.title;entry.updated=doc.updated;}
+ if(W.target===target)renderWorkspaceTree();
+ if(!active||doc.updated<=N.doc.updated)return;
+ showNote(doc);
+}
+async function showAgentEdits(){
+ const list=await api('/api/agent-edits');
+ const d=workspaceDialog('Assistant changes',list.length?list.map(p=>`<p><button data-proposal="${esc(p.proposal_id)}">${esc(agentEditLabel(p.tool))} · ${esc(agentProjectName(p.folder_id))}</button></p>`).join(''):'<p>No pending assistant changes.</p>');
+ d.querySelectorAll('[data-proposal]').forEach(b=>b.onclick=()=>{d.close();showAgentEdit(b.dataset.proposal).catch(e=>toast(e.message,{error:true}));});
+}
+function agentEditLabel(tool){return {edit_note:'Edit note',create_note:'Create note',edit_project_file:'Edit project files'}[tool]||'Assistant change';}
+function agentProjectName(target){return typeof collections!=='undefined'?(collections.targets.find(t=>t.id===target)?.name||'Project'):'Project';}
+function agentEditPreview(p){
+ const a=p.args,source=(label,text)=>`<details open><summary>${esc(label)}</summary><pre>${esc(text||'')}</pre></details>`;
+ if(p.tool==='edit_note'){
+  let html='';
+  if(Object.hasOwn(a,'title'))html+=source('Title',`${p.before?.title||''} → ${a.title}`);
+  if(Object.hasOwn(a,'preamble'))html+=source('Current preamble',p.before?.preamble)+source('Proposed preamble',a.preamble);
+  for(const e of a.edits||[]){const i=p.before?.blocks.findIndex(b=>b.id===e.block_id)??-1,b=p.before?.blocks[i];
+   const label=i>=0?`Block ${i+1}`:'Beginning of note';
+   if(e.op==='replace')html+=source(`${label}: current ${b?.type==='ink'?'drawing (preserved)':'text'}`,b?.type==='ink'?'Drawing':b?.src)+source('Proposed text',e.latex);
+   else if(e.op==='delete')html+=source(`${label}: remove`,b?.type==='ink'?'Drawing':b?.src);
+   else if(e.op==='move'){const after=p.before?.blocks.findIndex(b=>b.id===e.after_block_id)??-1;html+=`<p>Move ${esc(label.toLowerCase())} ${after<0?'to the beginning':`after block ${after+1}`}.</p>`;}
+   else html+=source(`Insert text after ${label.toLowerCase()}`,e.latex);
+  }
+  return html;
+ }
+ if(p.tool==='create_note')return source('New note title',a.title)+source('Destination',p.destination_name||'Project root')+source('Initial text',a.latex);
+ const op={create:'Create text file',edit:'Edit text file',rename:'Rename entry',move:'Move entry',folder:'Create folder'}[a.op]||'Update entry';
+ let html=`<p>${esc(op)}${p.before_entry?.name?`: ${esc(p.before_entry.name)}`:''}${a.name?` → ${esc(a.name)}`:''}</p>`;
+ if(Object.hasOwn(a,'parent')){const parent=W.target===a.folder_id?W.manifest?.entries.find(e=>e.id===a.parent):null;html+=`<p>Destination: ${esc(p.destination_name||(a.parent?(parent?.name||'Selected folder'):'Project root'))}</p>`;}
+ if(a.op==='edit')html+=source('Current source',p.before_text);
+ if(Object.hasOwn(a,'text'))html+=source('Proposed source',a.text);
+ return html;
+}
+async function showAgentEdit(id){
+ const p=await api('/api/agent-edits/'+enc(id));
+ const d=workspaceDialog('Review assistant changes',`<p>${esc(agentEditLabel(p.tool))} · ${esc(agentProjectName(p.args.folder_id))} · ${esc(p.status)}</p>${p.args.summary?`<p>${esc(p.args.summary)}</p>`:''}${agentEditPreview(p)}<p role="alert" data-error></p>${p.status==='proposed'?'<button data-accept>Accept all changes</button><button data-reject>Reject</button>':''}`);
+ for(const action of ['accept','reject']){const button=d.querySelector('[data-'+action+']');if(!button)continue;button.onclick=async()=>{
+  d.querySelectorAll('[data-accept],[data-reject]').forEach(b=>b.disabled=true);
+  try{
+   if(action==='accept'){stopEdit();await saveWorkspaceFile();await flushNoteEdits();}
+   const r=await api('/api/agent-edits/'+enc(id),{action});
+   if(r.status==='applied'){
+    if(p.tool==='edit_note')await refreshAgentNote({target:p.args.folder_id,note_id:p.args.note_id});
+    else if(W.target===p.args.folder_id)await refreshWorkspaceView(p.args.folder_id);
+   }
+   d.close();
+  }catch(e){d.querySelector('[data-error]').textContent=e.message;d.querySelectorAll('[data-accept],[data-reject]').forEach(b=>b.disabled=false);}
+ };}
+}
+async function prepareNoteDrawing(a){
+ const doc=await api(`/api/notes/${enc(a.folder_id)}/${enc(a.note_id)}`);
+ if(doc.updated!==a.updated)throw Error('Drawing changed. Read the note again.');
+ const block=doc.blocks.find(b=>b.id===a.block_id&&b.type==='ink');if(!block)throw Error('Drawing block not found.');
+ const png=Ink.preview(block);if(!png)throw Error('Drawing is empty.');
+ const bytes=await (await fetch(png)).blob();
+ const r=await fetch(`/api/note-drawings/${enc(a.folder_id)}/${enc(a.note_id)}/${enc(a.block_id)}/${a.updated}`,{method:'POST',headers:{'Content-Type':'image/png'},body:bytes});
+ if(!r.ok)throw Error('Could not cache the drawing preview.');
+}
