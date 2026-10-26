@@ -1477,6 +1477,25 @@ body.library-view #folder-divider { display: none; }
 
 .paper-primary-actions>button:not([data-icon-only])::after { content: none; }
 
+.skill-picker { position:absolute; bottom:100%; left:12px; right:12px; z-index:30; max-height:260px; overflow:auto; padding:5px; border:1px solid var(--line); border-radius:10px; background:var(--bg); box-shadow:0 8px 24px #0002; }
+.skill-picker[hidden] { display:none; }
+.skill-option { padding:8px 10px; border-radius:6px; cursor:pointer; overflow-wrap:anywhere; }
+.skill-option.active,.skill-option:hover { background:var(--panel); }
+.skill-option strong,.skill-option small { display:block; }
+.skill-option small,.skill-empty { color:var(--muted); font-size:12px; }
+.skill-empty { padding:10px; }
+
+.settings-skill { margin:10px 0; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+.settings-skill summary { cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
+.settings-skill pre { max-height:300px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px; background:var(--bg); }
+.settings-skill select { max-width:100%; }
+.skill-default { display:flex; align-items:center; gap:8px; margin:10px 0; overflow-wrap:anywhere; }
+
+.settings-skill-project { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; }
+.settings-skill-project > summary { cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
+.settings-skill-project > summary small { color:var(--muted); font-weight:400; }
+.skill-individual-import { margin-top:14px; }
+
 /* Real TeX paper editor: source and PDF share the available document pane. */
 .paper-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); font-size:12px; }
 .paper-toolbar [data-paper-main] { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

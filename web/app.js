@@ -1398,6 +1398,8 @@ function setChatBusy(busy) {
 async function sendChat(text) {
   try { stopEdit(); await saveWorkspaceFile(); await flushNoteEdits(); } catch (e) { toast(e.message, {error:true}); return; }
   const provider = chat.provider;
+  const projectTarget=chatProjectTarget();
+  window.NoctuaSkillPicker?.close();
   const selectedPassages=window.NoctuaChatSelections?.snapshot()||{items:[]};
   const ctrl = new AbortController();
   chat.abort = ctrl;
@@ -1427,12 +1429,13 @@ async function sendChat(text) {
   };
 
   try {
-    const attachments = await chatAttachments(text);
+    const skillSelection=await window.NoctuaSkillPicker.prepare(text);
+    const attachments = [await chatAttachments(text),skillSelection.instructions].filter(Boolean).join("\n\n");
     if (ctrl.signal.aborted) return;
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, project_target: chatProjectTarget(), skill_ids: getChatSkillOverride(), chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
+      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
@@ -2063,6 +2066,7 @@ document.addEventListener('noctua-chat-text-change', syncChatFontSize);
 syncChatFontSize();
 $('#chat-mode').addEventListener('click', cycleChatMode);
 $('#chat-input').addEventListener('keydown', (e) => {
+  if (window.NoctuaSkillPicker?.key(e)) return;
   if (mentionKey(e)) return;  // @-mention popup open
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();

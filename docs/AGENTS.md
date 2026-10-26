@@ -23,7 +23,7 @@ For cross-feature requirements, follow
 | [papers.md](papers.md) | Standard LaTeX paper editing, compilation, templates, and PDF preview. |
 | [notes.md](notes.md) | Note syntax, handwriting, media, and edits. |
 | [assistant.md](assistant.md) | Chat, attachments, modes, capabilities, and prompt explanations. |
-| [settings-and-data.md](settings-and-data.md) | Settings, storage, backups, and updates. |
+| [settings-and-data.md](settings-and-data.md) | Settings, skill management, storage, backups, and updates. |
 | [development.md](development.md) | Builds, project structure, prompt delivery, and feature synchronization. |
 | [ci.md](ci.md) | Automated checks and local validation. |
 | [releases.md](releases.md) | Packaging, publication, signing, and recovery. |

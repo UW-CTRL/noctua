@@ -328,7 +328,7 @@ mod tests {
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
-                notes: Notes::new(root.join("notes")), data_dir: root.clone(), _storage_lease: None, settings: std::sync::Mutex::new(settings),
+                notes: Notes::new(root.join("notes")), data_dir: root.clone(), shared_skills_dir: Some(root.join(".agents/skills")), _storage_lease: None, settings: std::sync::Mutex::new(settings),
                 desktop, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
@@ -584,6 +584,205 @@ mod tests {
         let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
         assert_eq!(result["status"],"failed");assert!(result["error"].as_str().unwrap().contains("Skill contents changed"));
         assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());Ok(())
+    }
+
+    #[tokio::test]
+    async fn global_skill_location_is_configurable_persistent_and_scoped() -> Result<()> {
+        let f=Fixture::new()?;
+        let default=f.app.shared_skills_dir.as_ref().unwrap();
+        let custom=f.root.join("custom-skills");
+        for (dir,title) in [(default,"Default"),(&custom,"Custom")] {
+            std::fs::create_dir_all(dir.join("review"))?;
+            std::fs::write(dir.join("review/SKILL.md"),format!("# {title}"))?;
+        }
+        let original=f.json("/api/skills",None).await;
+        let original_id=original[0]["id"].as_str().unwrap().to_owned();
+        let result=f.json("/api/skills/settings",Some(json!({"location":custom}))).await;
+        assert_eq!(result["location"],json!(custom.canonicalize()?));
+        assert_eq!(result["default_location"],json!(default));
+        let changed=f.json("/api/skills",None).await;
+        assert_eq!(changed[0]["name"],"Custom");
+        assert_ne!(changed[0]["id"],original_id);
+        assert!(crate::skills::read(&f.app,&original_id,"SKILL.md").is_err());
+        assert_eq!(Settings::load(&f.root).skills_location,Some(custom.canonicalize()?.to_string_lossy().into_owned()));
+        for location in [json!("relative/path"),json!(f.root.join("missing")),json!(17)] {
+            let response=f.request("/api/skills/settings",Some(json!({"location":location})),None).await;
+            assert!(!response.status().is_success());
+            assert_eq!(f.json("/api/skills",None).await[0]["name"],"Custom");
+        }
+        f.json("/api/skills/settings",Some(json!({"location":null}))).await;
+        assert_eq!(f.json("/api/skills",None).await[0]["id"],original_id);
+        assert!(Settings::load(&f.root).skills_location.is_none());
+        std::fs::create_dir(f.root.join("settings.tmp"))?;
+        assert!(!f.request("/api/skills/settings",Some(json!({"location":custom})),None).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await[0]["name"],"Default");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn project_skill_batches_persist_grouping_and_disconnect_atomically() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let package=|name:&str|json!({"files":[{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode(format!("# {name}"))}]});
+        let a=f.json("/api/skills/import-project",Some(json!({"name":"Project A","packages":[package("Review"),package("Writing")]}))).await;
+        let b=f.json("/api/skills/import-project",Some(json!({"name":"Project B","packages":[package("Review")]}))).await;
+        assert_eq!(a["skill_ids"].as_array().unwrap().len(),2);
+        assert_eq!(Settings::load(&f.root).skill_projects.len(),2);
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().iter().filter(|s|s["project_id"]==a["id"]).count(),2);
+        assert!(listed.as_array().unwrap().iter().any(|s|s["project_name"]=="Project B"));
+        // A malformed second package must roll back the successful first import.
+        let bad=json!({"files":[{"path":"SKILL.md","data":""}]});
+        let response=f.request("/api/skills/import-project",Some(json!({"name":"Broken","packages":[package("Valid"),bad]})),None).await;
+        assert!(!response.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),3);
+        assert_eq!(f.json("/api/skills/settings",None).await["projects"].as_array().unwrap().len(),2);
+        let original=f.root.join("original-project");std::fs::create_dir(&original)?;
+        std::fs::write(original.join("SKILL.md"),"Original project is untouched")?;
+        let ids:Vec<String>=a["skill_ids"].as_array().unwrap().iter().map(|id|id.as_str().unwrap().into()).collect();
+        crate::skills::set_context(&f.app,"chat",None,Some(&ids))?;
+        let url=format!("/api/skills/projects/{}",a["id"].as_str().unwrap());
+        // Saving group metadata fails: restore all copies and preserve both groups.
+        std::fs::create_dir(f.root.join("settings.tmp"))?;
+        assert!(!f.request(&url,None,Some("DELETE")).await.status().is_success());
+        for id in &ids{crate::skills::read(&f.app,id,"SKILL.md")?;}
+        assert_eq!(f.json("/api/skills/settings",None).await["projects"].as_array().unwrap().len(),2);
+        assert!(!f.request("/api/skills/import-project",Some(json!({"name":"Unsaved","packages":[package("Valid")]})),None).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),3);
+        std::fs::remove_dir(f.root.join("settings.tmp"))?;
+        assert!(f.request(&url,None,Some("DELETE")).await.status().is_success());
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),1);
+        for id in &ids{assert!(crate::skills::enabled(&f.app,Some("chat"),id).is_err());}
+        let groups=f.json("/api/skills/settings",None).await;
+        assert_eq!(groups["projects"][0]["id"],b["id"]);
+        assert_eq!(Settings::load(&f.root).skill_projects.len(),1);
+        assert_eq!(std::fs::read_to_string(original.join("SKILL.md"))?,"Original project is untouched");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnecting_an_import_keeps_original_and_global_skills() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let original=f.root.join("original-project/.agents/skills/review");
+        std::fs::create_dir_all(&original)?;
+        std::fs::write(original.join("SKILL.md"),"# Review")?;
+        let global=f.app.shared_skills_dir.as_ref().unwrap().join("global-review");
+        std::fs::create_dir_all(&global)?;
+        std::fs::write(global.join("SKILL.md"),"# Global review")?;
+        let files=json!([{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode(std::fs::read(original.join("SKILL.md"))?)},{"path":"run.sh","data":base64::engine::general_purpose::STANDARD.encode("echo output > result.txt")}]);
+        let imported=f.json("/api/skills",Some(json!({"files":files}))).await;
+        let id=imported["id"].as_str().unwrap();
+        let m=f.json("/api/workspaces/L1",None).await;
+        f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","skills":[id]}))).await;
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"run.sh","args":[],"files":[]}))?;
+        let response=f.request(&format!("/api/skills/{id}"),None,Some("DELETE")).await;
+        assert!(response.status().is_success());
+        assert!(!f.root.join("skills").join(id).exists());
+        assert_eq!(std::fs::read_to_string(original.join("SKILL.md"))?,"# Review");
+        assert_eq!(std::fs::read_to_string(global.join("SKILL.md"))?,"# Global review");
+        assert!(crate::skills::enabled(&f.app,Some("chat"),id).is_err());
+        assert!(crate::skills::read(&f.app,id,"SKILL.md").is_err());
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().len(),1);
+        let global_id=listed[0]["id"].as_str().unwrap();
+        let response=f.request(&format!("/api/skills/{global_id}"),None,Some("DELETE")).await;
+        assert!(!response.status().is_success());
+        assert!(global.join("SKILL.md").is_file());
+        let response=f.request("/api/skills/unknown",None,Some("DELETE")).await;
+        assert!(!response.status().is_success());
+        // Disconnecting also prevents a previously requested script from starting.
+        let url=format!("/api/skill-runs/{}",run["id"].as_str().unwrap());
+        f.json(&url,Some(json!({"action":"approve"}))).await;
+        for _ in 0..100 {if f.json(&url,None).await["status"]=="failed"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
+        assert_eq!(f.json(&url,None).await["status"],"failed");
+        let reimported=f.json("/api/skills",Some(json!({"files":files}))).await;
+        assert_ne!(reimported["id"],id);
+        assert_eq!(f.json("/api/skills",None).await.as_array().unwrap().len(),2);
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),reimported["id"].as_str().unwrap()).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shared_global_skills_are_live_read_only_and_approval_checked() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let shared=f.app.shared_skills_dir.as_ref().unwrap();
+        std::fs::create_dir_all(shared)?;
+        let source=f.root.join("linked-source");
+        std::fs::create_dir_all(source.join("rules"))?;
+        std::fs::write(source.join("SKILL.md"),"---\nname: Review\ndescription: Installed by the Skills CLI\n---\n# Review")?;
+        std::fs::write(source.join("rules/check.md"),"Check the evidence.")?;
+        std::fs::write(source.join("run.sh"),"printf original > result.txt")?;
+        // The canonical package may itself be a symlink in CLI link mode.
+        let install=shared.join("a-long.skill-name-that-exceeds-noctua-import-id-length-limits");
+        symlink(&source,&install)?;
+        let imported=f.json("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":base64::engine::general_purpose::STANDARD.encode("# Review")}]}))).await;
+        let listed=f.json("/api/skills",None).await;
+        assert_eq!(listed.as_array().unwrap().len(),2);
+        let local=listed.as_array().unwrap().iter().find(|s|s["source"]=="local").unwrap();
+        let id=local["id"].as_str().unwrap().to_owned();
+        assert_ne!(local["id"],imported["id"]);
+        assert_eq!(local["name"],"Review");
+        assert!(!f.root.join("skills").join(&id).exists());
+        let read=f.json(&format!("/api/skills/{id}/files/rules/check.md"),None).await;
+        assert_eq!(read["text"],"Check the evidence.");
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&id).is_err());
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![id.clone()]))?;
+        let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"run.sh","args":[],"files":[]}))?;
+        assert_eq!(run["status"],"approval_required");
+        // A package update after approval was requested must invalidate the run.
+        std::fs::write(source.join("run.sh"),"printf updated > result.txt")?;
+        let url=format!("/api/skill-runs/{}",run["id"].as_str().unwrap());
+        f.json(&url,Some(json!({"action":"approve"}))).await;
+        for _ in 0..100 {let r=f.json(&url,None).await;if r["status"]=="failed"{break;}tokio::time::sleep(Duration::from_millis(10)).await;}
+        let failed=f.json(&url,None).await;
+        assert_eq!(failed["status"],"failed");
+        assert!(failed["error"].as_str().unwrap().contains("Skill contents changed"));
+        std::fs::write(source.join("SKILL.md"),"name: Updated\ndescription: New version")?;
+        let refreshed=f.json("/api/skills",None).await;
+        assert!(refreshed.as_array().unwrap().iter().any(|s|s["id"]==id&&s["name"]=="Updated"));
+        // Resource symlinks are still rejected, including links outside the package.
+        symlink(f.root.join("claude"),source.join("outside"))?;
+        assert!(crate::skills::read(&f.app,&id,"SKILL.md").is_err());
+        std::fs::remove_file(source.join("outside"))?;
+        std::fs::remove_file(&install)?;
+        assert!(crate::skills::read(&f.app,&id,"SKILL.md").is_err());
+        let refreshed=f.json("/api/skills",None).await;
+        assert_eq!(refreshed.as_array().unwrap().len(),1);
+        assert!(source.join("SKILL.md").exists());
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![id.clone()]))?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&id).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn skill_invocations_add_to_project_defaults_for_one_turn() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;
+        let mut ids=Vec::new();
+        for name in ["Default", "Invoked"] {
+            let data=base64::engine::general_purpose::STANDARD.encode(format!("# {name}"));
+            let imported=f.json("/api/skills",Some(json!({"files":[{"path":"SKILL.md","data":data}]}))).await;
+            ids.push(imported["id"].as_str().unwrap().to_owned());
+        }
+        let m=f.json("/api/workspaces/L1",None).await;
+        f.json("/api/workspaces/L1",Some(json!({"revision":m["revision"],"op":"config","skills":[ids[0]]}))).await;
+        let extra=vec![ids[1].clone(),ids[0].clone()];
+        let enabled=crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&extra))?;
+        assert_eq!(enabled.as_array().unwrap().len(),2);
+        for id in &ids { crate::skills::enabled(&f.app,Some("chat"),id)?; }
+        crate::skills::set_context(&f.app,"chat",Some("L1"),Some(&vec![]))?;
+        crate::skills::enabled(&f.app,Some("chat"),&ids[0])?;
+        assert!(crate::skills::enabled(&f.app,Some("chat"),&ids[1]).is_err());
+        let m=f.json("/api/workspaces/L1",None).await;
+        assert_eq!(m["skills"],json!([ids[0]]));
+        let enabled=crate::skills::set_context(&f.app,"standalone",None,Some(&vec![ids[1].clone()]))?;
+        assert_eq!(enabled[0]["id"],ids[1]);
+        Ok(())
     }
 
     #[tokio::test]

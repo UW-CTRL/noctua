@@ -170,7 +170,6 @@
             <button type="button" id="chat-font-larger" title="Increase chat text size" aria-label="Increase chat text size">A+</button>
           </div>
           <div class="chat-actions" role="group" aria-label="Conversations">
-            <button id="chat-skills-btn" data-label="Skills" aria-label="Imported agent skills" data-icon="sparkles" data-icon-only>Skills</button>
             <button id="chat-history-btn" data-label="History" aria-label="Saved conversations" data-icon="history" data-icon-only></button>
             <button id="chat-new" data-label="New chat" aria-label="Start a new conversation" data-icon="message-square-plus" data-icon-only></button>
           </div>
@@ -180,7 +179,8 @@
         <div id="chat-resize" class="chat-resize" role="separator" tabindex="0" aria-label="Resize chat input" aria-orientation="horizontal" aria-controls="chat-input" aria-valuemin="60" aria-valuemax="400" aria-valuenow="60" title="Drag to resize chat input"></div>
         <div id="chat-selections" class="chat-selections" hidden></div>
         <form id="chat-form" class="chat-form">
-          <textarea id="chat-input" rows="2" placeholder="Ask a question… Type @ to attach papers, notes, files, or folders."></textarea>
+          <div id="skill-picker" class="skill-picker" role="listbox" aria-label="Available skills" hidden></div>
+          <textarea id="chat-input" role="combobox" aria-autocomplete="list" aria-controls="skill-picker" aria-expanded="false" rows="2" placeholder="Ask a question… Type @ to attach papers, notes, files, or folders."></textarea>
           <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
         </form>
         <div class="chat-foot">

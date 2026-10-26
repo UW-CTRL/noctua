@@ -11,7 +11,7 @@
 | [PDF reader](reader.md) | Navigation, previews, annotations, and AI analysis. |
 | [Notes](notes.md) | Project files, bibliographies, LaTeX, media, and undo/redo. |
 | [Research assistant](assistant.md) | Chat, attachments, imported skills, edit modes, and capabilities. |
-| [Settings and data](settings-and-data.md) | Appearance, connections, storage, backups, and updates. |
+| [Settings and data](settings-and-data.md) | Appearance, connections, skill management, storage, backups, and updates. |
 
 ## AI prompts
 

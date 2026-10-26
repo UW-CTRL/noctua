@@ -19,6 +19,10 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 pub struct Settings {
     #[serde(default)]
     pub library: LibrarySettings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_location: Option<String>,
+    #[serde(default)]
+    pub skill_projects: Vec<crate::skills::SkillProject>,
     #[serde(default)]
     pub app_icon: AppIcon,
     #[serde(default)]
@@ -385,7 +389,7 @@ pub async fn set_storage(State(app): State<Arc<App>>, Json(b): Json<StorageBody>
     Ok(Json(json!({ "ok": true, "storage_pending": pending })))
 }
 
-fn update(app: &App, f: impl FnOnce(&mut Settings)) -> Result<()> {
+pub(crate) fn update(app: &App, f: impl FnOnce(&mut Settings)) -> Result<()> {
     let mut s = app.settings.lock().unwrap();
     let mut next = s.clone();
     f(&mut next);

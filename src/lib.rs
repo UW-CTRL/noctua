@@ -37,7 +37,7 @@ use axum::{
     http::{header, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -99,6 +99,7 @@ struct App {
     projects: Projects,
     notes: Notes,
     data_dir: PathBuf,
+    shared_skills_dir: Option<PathBuf>,
     _storage_lease: Option<std::fs::File>,
     settings: std::sync::Mutex<Settings>,
     desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
@@ -593,6 +594,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         projects: Projects::open(&data.join("noctua-projects.sqlite"))?,
         notes: Notes::new(env::var("NOCTUA_NOTES").map(PathBuf::from).unwrap_or_else(|_| data.join("notes"))),
         data_dir: data,
+        shared_skills_dir: dirs::home_dir().map(|home| home.join(".agents").join("skills")),
         _storage_lease: storage_lease,
         settings: std::sync::Mutex::new(settings),
         desktop: opts.desktop,
@@ -663,6 +665,10 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         )
         .route("/api/skills",get(skills::get).post(skills::upload).layer(DefaultBodyLimit::max(48 << 20)))
         .route("/api/skills/import-zip",post(skills::upload_zip).layer(DefaultBodyLimit::max(32 << 20)))
+        .route("/api/skills/settings",get(skills::configuration).post(skills::set_location))
+        .route("/api/skills/import-project",post(skills::upload_project).layer(DefaultBodyLimit::max(48 << 20)))
+        .route("/api/skills/projects/{id}",delete(skills::disconnect_project))
+        .route("/api/skills/{id}",delete(skills::disconnect))
         .route("/api/skills/{id}/files/{*path}",get(skills::resource))
         .route("/api/chat-edit-approvals/{id}",post(chat_approval::decide))
         .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))

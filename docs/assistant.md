@@ -11,7 +11,7 @@ mode may cost extra. Providers keep separate conversations and drafts.
 
 Open **Chat** to discuss the current paper, graph, or notes. Use @ to attach a
 paper, note, project file, folder, or collection, and **History** to return to earlier conversations. Pause the pointer
-over the Skills, History, or New chat icon to reveal its label below. Keyboard
+over the History or New chat icon to reveal its label below. Keyboard
 focus shows the same labels immediately; reduced-motion preferences disable the animation. The assistant
 can search papers, explore your library, save papers, read PDFs, annotate
 passages, and edit note text through Noctua's tools.
@@ -86,9 +86,23 @@ immediately, without approval requests or popups.** Plan is read-only. Note/PDF
 suggestions and skill-script execution retain their existing review rules. File deletion
 and bibliography activation remain UI actions. See [Notes](notes.md#project-files-bibliographies-and-skills).
 
-Open the **Agent skills** icon below the project tree or the skills icon in the chat toolbar to import a skill folder, ZIP,
-or `SKILL.md`. Packages are stored inside Noctua, shared by Claude and Codex, and
-enabled per project with optional per-chat overrides. The assistant can read
+Open **Settings → Skills**. **Global Agent Skills → Location** defaults to
+`~/.agents/skills`; save another existing folder or choose **Use default**.
+Global packages are read in place. **Import Skills from Project** imports multiple
+`SKILL.md` packages from a project or skills folder as one named group. Expand
+Project A or Project B to browse its skills; **Disconnect** removes only that
+group's Noctua copies and leaves originals and other groups unchanged. Imports
+are snapshots. Individual folder, ZIP, and `SKILL.md` imports remain available.
+See [Skills settings](settings-and-data.md#skills) for limits and reconnection.
+Both providers share the available skills. Under **Chat project defaults**,
+choose a project, select its skills, and save. These defaults apply to every
+message in that project. In the chat input, type `/`
+to list available skills, then type to filter by name or description. Use Up/Down
+and Enter/Tab, or click a result, to insert its `/skill-name` command; Esc closes
+the list. Include a question after the command, or send it alone to invoke the
+skill. Commands add those skills for that message alongside the project
+defaults, without saving new defaults. Delete a command to remove that invocation.
+The assistant can read
 enabled instructions and supporting resources. Every bundled script invocation
 requires approval of its script, arguments, and inputs, followed by separate
 review before applying output changes. Scripts run with local user permissions

@@ -7,7 +7,7 @@
             <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
           </div>
         </div>
-<ul id="note-list"></ul></div><div id="notes-stage"></div><button id="chat-skills-btn">Skills</button>
+<ul id="note-list"></ul></div><div id="notes-stage"></div>
 <script>
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -29,7 +29,7 @@ function assert(ok,message){if(!ok)throw Error(message)}
 <script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
- await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'paper actions and durable assistant proposals remain available together');assert($('#note-list').hidden,'original list replaced');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
+ await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'paper actions and durable assistant proposals remain available together');assert($('#note-list').hidden,'original list replaced');assert(!$('[data-skills]'),'skill management moved out of the project tree');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
  assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
