@@ -24,4 +24,5 @@ For cross-feature requirements, follow
 | [development.md](development.md) | Builds, project structure, prompt delivery, and feature synchronization. |
 | [ci.md](ci.md) | Automated checks and local validation. |
 | [releases.md](releases.md) | Packaging, publication, signing, and recovery. |
+| [pr-paper-render.md](pr-paper-render.md) | Paper-render feature record, validation, and build follow-ups. |
 | [pr-3.md](pr-3.md), [images/](images/) | Historical change record and demo assets. |

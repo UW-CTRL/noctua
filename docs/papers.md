@@ -142,3 +142,8 @@ bibliographies and text from compiler packages may have no editable project sour
 The mapping for the last successful PDF survives a failed build. Mapping data lives
 under `.workspace/paper/sync` and retains the latest two successful build mappings.
 This applies to paper previews, not imported library PDFs without LaTeX sources.
+
+For lookup, Noctua makes a temporary copy of the mapping in the system temporary
+directory and removes it afterward. This avoids Windows SyncTeX path-length
+failures in deeply nested project storage; the saved PDF and mapping stay in
+`.workspace/paper`.

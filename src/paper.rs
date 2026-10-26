@@ -276,6 +276,28 @@ pub(crate) async fn pdf(State(app):Shared,Path((target,fingerprint)):Path<(Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn sync_query_copies_each_format_and_cleans_up_without_changing_original() {
+        for suffix in ["synctex.gz", "synctex"] {
+            let root = tempfile::tempdir().unwrap();
+            let folder = root.path().join("nested".repeat(20)).join("f".repeat(64));
+            std::fs::create_dir_all(&folder).unwrap();
+            let original = folder.join(format!("{}.{}", "a".repeat(64), suffix));
+            let bytes = b"immutable mapping bytes";
+            std::fs::write(&original, bytes).unwrap();
+            let staged;
+            {
+                let first = stage_sync_query(&folder, &"a".repeat(64)).unwrap();
+                let second = stage_sync_query(&folder, &"a".repeat(64)).unwrap();
+                assert_ne!(first.path(), second.path());
+                staged = first.path().to_owned();
+                assert_eq!(std::fs::read(staged.join(format!("map.{suffix}"))).unwrap(), bytes);
+                assert!(!staged.starts_with(&folder));
+            }
+            assert!(!staged.exists());
+            assert_eq!(std::fs::read(original).unwrap(), bytes);
+            assert!(stage_sync_query(&folder, "missing").is_err());
+        }
+    }
     #[test] fn project_settings_merge_without_resetting_other_choices(){
         let entries=vec![json!({"id":"main","kind":"file","name":"main.tex"})];
         let original=json!({"main_file":"main","compiler":"pdflatex","auto_compile":false});
@@ -308,6 +330,25 @@ fn publish_sync(root:&FsPath,last:&mut Value,s:&Snapshot)->Result<()> {
     last["synctex"]=json!(true);Ok(())
 }
 
+// Windows SyncTeX cannot read our deeply nested sidecars even when passed a
+// basename with cwd set to their directory. CI probes confirmed the same bytes
+// work from a short temporary directory for both engines and both map formats.
+// Copy only the immutable map, not the PDF or project sources. SyncTeX needs the
+// output stem to locate its sidecar, but does not open the PDF for a query.
+// TempDir provides unique directories for concurrent requests and scoped cleanup
+// on success/error. Keep the guard alive until the subprocess has finished.
+fn stage_sync_query(folder: &FsPath, artifact: &str) -> Result<tempfile::TempDir> {
+    let temp = tempfile::Builder::new().prefix("ns-").tempdir()?;
+    for suffix in ["synctex.gz", "synctex"] {
+        let source = folder.join(format!("{artifact}.{suffix}"));
+        if source.is_file() {
+            std::fs::copy(source, temp.path().join(format!("map.{suffix}")))?;
+            return Ok(temp);
+        }
+    }
+    bail!("Source mapping is missing; recompile this paper")
+}
+
 pub(crate) async fn source_location(State(app):Shared,Path(target):Path<String>,Json(body):Json<Value>)->ApiResult {
     Ok(Json(query_source(&app,&target,&body).await?))
 }
@@ -324,8 +365,9 @@ async fn query_source(app:&App,target:&str,body:&Value)->Result<Value>{
     let mut command=tokio::process::Command::new(tex_program("synctex")?);
     // Never pass -x or inherit an editor command: this subprocess only reports
     // locations. No source-provided path is ever opened by this endpoint.
-    command.args(["edit","-o"]).arg(format!("{page}:{x}:{y}:{}",root.join(format!("{artifact}.pdf")).display()))
-        .arg("-d").arg(&folder).env_remove("SYNCTEX_EDITOR").current_dir(&root).kill_on_drop(true);
+    let query = stage_sync_query(&folder, artifact)?;
+    command.args(["edit","-o"]).arg(format!("{page}:{x}:{y}:map.pdf"))
+        .env_remove("SYNCTEX_EDITOR").current_dir(query.path()).kill_on_drop(true);
     #[cfg(windows)] command.creation_flags(0x08000000);
     let output=tokio::time::timeout(Duration::from_secs(5),command.output()).await.context("Source lookup timed out")??;
     anyhow::ensure!(output.status.success(),"No source location found here; try nearby PDF text");

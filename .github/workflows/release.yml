@@ -85,11 +85,16 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
 
+      # Use the same tarfile implementation on all runners; Ubuntu 22.04
+      # system Python rejects valid relative symlinks in the TinyTeX archive.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Prepare managed paper compiler
         shell: bash
         run: |
-          python3 scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
-          python3 scripts/setup-pdflatex.py
+          python scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
+          python scripts/setup-pdflatex.py
 
       - name: Configure update verification key
         if: needs.prepare.outputs.updater == 'true'
