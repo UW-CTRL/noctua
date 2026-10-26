@@ -1,7 +1,7 @@
 # Noctua 🦉
 
 <p align="center">
-  <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-macOS-universal.dmg"><img src="https://img.shields.io/badge/Download-macOS-222222?style=for-the-badge" alt="Download for macOS"></a>
+  <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-macOS-aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS-222222?style=for-the-badge" alt="Download for macOS (Apple Silicon)"></a>
   <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-Windows-x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge" alt="Download for Windows"></a>
   <a href="https://github.com/UW-CTRL/noctua/releases/latest/download/Noctua-Linux-amd64.AppImage"><img src="https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge" alt="Download for Linux"></a>
 </p>
@@ -10,7 +10,7 @@ Explore research, read papers, and develop ideas in one local workspace.
 Noctua brings together citation graphs, a PDF reader, LaTeX and handwritten
 notes, and an optional assistant powered by Codex or Claude Code.
 
-Available for **macOS, Windows, and Linux**, or in your browser.
+Available for **macOS (Apple Silicon), Windows, and Linux**, or in your browser.
 Your library, PDFs, notes, and chats are stored locally. Online search uses
 Semantic Scholar; AI features use your assistant CLI and account.
 

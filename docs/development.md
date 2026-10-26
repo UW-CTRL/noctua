@@ -146,8 +146,9 @@ python3 scripts/setup-tectonic.py
 python3 scripts/setup-pdflatex.py
 ```
 
-On macOS, pass `--universal` to the Tectonic script for Universal packaging;
-pdfLaTeX binaries already include both Mac architectures. Scripts verify pinned
+Current macOS releases target Apple Silicon, so the default Tectonic setup is
+sufficient on an Apple Silicon Mac. pdfLaTeX retains its upstream Universal binaries.
+Scripts verify pinned
 archive checksums and prepare ignored `target/tectonic` and `target/texlive`.
 They do not install system TeX or change the user's PATH. Desktop resources include
 both distributions and their license notices; release and desktop CI prepare them

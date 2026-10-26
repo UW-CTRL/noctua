@@ -19,7 +19,7 @@ automatically after every platform build and installer verification succeeds.
 | --- | --- | --- |
 | Backend tests | Ubuntu | `cargo test --locked -p noctua` compiles and tests the backend, including chats, MCP permissions and responses, assistant edits and review, library/PDF/media handling, model discovery, and storage relocation/failure recovery. |
 | Frontend tests | macOS | `bash tests/run-frontend.sh` runs JavaScriptCore and WebKit checks for syntax, settings, Research views, chat rendering, file attachment upload, draft lifecycle, and PDF page rendering, notes/media, project files, assistant proposal review and edit conflicts, targeted PDF behavior, and responsive layout, Settings skill groups/global locations, and slash skill invocation. |
-| Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for both Apple Silicon and Intel targets. |
+| Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for the Apple Silicon target. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
 | Release and workflow checks | Ubuntu | Python and Node release-script tests, workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
@@ -27,8 +27,8 @@ automatically after every platform build and installer verification succeeds.
 
 Desktop checks type-check the desktop package and compile its build scripts and
 required dependencies. They do not link the final application, package installers,
-launch the app, or test installation. The macOS check covers both architectures
-used in the Universal release; the release workflow still performs the final
+launch the app, or test installation. The macOS check covers the Apple Silicon architecture
+used in the release; the release workflow still performs the final
 linking and packaging.
 
 For pull requests only, desktop checks are skipped when every changed path is
@@ -140,6 +140,12 @@ Desktop CI and release builds select Python 3.12 before preparing the compilers.
 This avoids the Ubuntu 22.04 system Python tar extraction failure on TinyTeX's
 relative symlinks while retaining the archive data filter and checksum validation.
 Use Python 3.12 when reproducing compiler setup locally.
+
+Desktop jobs share prepared compiler caches with release builds. Pushes to main
+also warm the pinned Tauri CLI cache for future version tags; pull requests do not
+install that CLI. The desktop timeout is 30 minutes to allow the first uncached
+CLI installation. See [release caching](releases.md#paper-compiler-packaging) for
+cache keys, invalidation, and cold-run behavior.
 
 Desktop CI prepares the pinned managed compiler, builds the browser backend, and
 runs `python3 tests/paper-integration.py` on macOS, Windows, and Linux. This uses

@@ -1,8 +1,8 @@
 // Keep README download URLs stable while retaining versioned installers for updates.
-module.exports = async function uploadDownloadAliases({ github, context, release, assets }) {
+module.exports = async function uploadDownloadAliases({ github, context, release, assets, macosArch = 'aarch64' }) {
   const version = release.tag_name.slice(1);
   const aliases = [
-    [`Noctua_${version}_universal.dmg`, 'Noctua-macOS-universal.dmg', 'application/x-apple-diskimage'],
+    [`Noctua_${version}_${macosArch}.dmg`, `Noctua-macOS-${macosArch}.dmg`, 'application/x-apple-diskimage'],
     [`Noctua_${version}_x64-setup.exe`, 'Noctua-Windows-x64-setup.exe', 'application/vnd.microsoft.portable-executable'],
     [`Noctua_${version}_amd64.AppImage`, 'Noctua-Linux-amd64.AppImage', 'application/octet-stream'],
   ].map(([source, name, type]) => {
