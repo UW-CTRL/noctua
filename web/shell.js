@@ -171,8 +171,10 @@ async function flushFrame(t) {
   w.preserveChatDraft?.();
   await w.saveWorkspaceFile?.(); await w.flushNoteEdits(); await w.flushPDF?.();
 }
+const switchOwners = new Set();
 window.noctuaShell = {
-  beginSwitch() {
+  beginSwitch(owner = 'connection') {
+    switchOwners.add(owner);
     switching = true;
     document.body.inert = true;
     for (const tab of tabs) {
@@ -182,7 +184,9 @@ window.noctuaShell = {
       if (w.document?.body) w.document.body.inert = true;
     }
   },
-  endSwitch() {
+  endSwitch(owner = 'connection') {
+    switchOwners.delete(owner);
+    if (switchOwners.size) return;
     for (const tab of tabs) {
       const w = tab.frame.contentWindow;
       if (w.document?.body) w.document.body.inert = false;

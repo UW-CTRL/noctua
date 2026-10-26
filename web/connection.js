@@ -34,13 +34,13 @@ window.addEventListener('DOMContentLoaded', () => {
   banner.className='connection-banner';banner.setAttribute('role','status');
   banner.hidden=true;document.body.appendChild(banner);
   let paused=false,acknowledged=null,checking=false;
-  const resume=()=>{if(paused){if(window.noctuaShell)window.noctuaShell.endSwitch();else document.body.inert=false;paused=false;}acknowledged=null;};
+  const resume=()=>{if(paused){if(window.noctuaShell)window.noctuaShell.endSwitch('maintenance');else document.body.inert=false;paused=false;}acknowledged=null;};
   const saveForUpdate=async notice=>{
     if(!noctuaEditor||acknowledged===notice.id)return;
     let saved=false;
     try{
       paused=true;
-      if(window.noctuaShell){window.noctuaShell.beginSwitch();await window.noctuaShell.flush();}
+      if(window.noctuaShell){window.noctuaShell.beginSwitch('maintenance');await window.noctuaShell.flush();}
       else{
         if(document.querySelector('dialog[open]'))throw Error('Resolve the open editor dialog first');
         window.prepareEditorSwitch?.();document.body.inert=true;

@@ -1,8 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="noctua-server-id" content="server-one"><title>Server maintenance regression</title>
 <script>
 window.noctuaServerId='server-one';
-let notice=null,failSave=false,calls=[],acks=[];
+let notice=null,failSave=false,offline=false,calls=[],acks=[];
 window.fetch=async(input,options={})=>{
+ if(offline)throw Error('Disconnected');
  const path=new URL(input,location.href).pathname;
  if(path==='/api/server/update/ack'){acks.push(JSON.parse(options.body));return{ok:true};}
  return{ok:true,json:async()=>({server_id:'server-one',api_version:1,ready:notice?.phase!=='draining',maintenance:notice})};
@@ -30,6 +31,15 @@ window.addEventListener('load',async()=>{try{
  window.dispatchEvent(new Event('online'));await wait(()=>acks.length===2);
  assert(!acks[1].saved&&!document.body.inert,'failed save acknowledged success or left editing frozen');
  assert(!document.querySelector('.connection-banner').hidden,'failed update save has no visible recovery message');
- const result='PASS: maintenance notice, draft preservation, editor flushing, freeze acknowledgment, no repeated save, cancellation and conflict recovery';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+ // Simulate a native switch already freezing the shell while maintenance starts.
+ const owners=new Set(['connection']);document.body.inert=true;
+ window.noctuaShell={beginSwitch(owner){owners.add(owner);document.body.inert=true;},endSwitch(owner){owners.delete(owner);document.body.inert=!!owners.size;},async flush(){}};
+ notice={id:'update-three',phase:'announcing'};
+ window.dispatchEvent(new Event('online'));await wait(()=>acks.length===3);
+ assert(acks[2].saved&&owners.has('maintenance'),'maintenance did not own its shell pause');
+ offline=true;window.dispatchEvent(new Event('offline'));await wait(()=>!owners.has('maintenance'));
+ assert(owners.has('connection')&&document.body.inert,'disconnect released the native connection freeze');
+ window.noctuaShell.endSwitch('connection');assert(!document.body.inert,'native switch could not resume after disconnection');
+ const result='PASS: maintenance notice, draft preservation, editor flushing, freeze acknowledgment, no repeated save, cancellation, conflict recovery and independent pause owners';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
 }catch(error){const result='FAIL: '+error.message+' '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}});
 </script></body></html>

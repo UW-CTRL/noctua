@@ -68,6 +68,14 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'editors were not frozen before flushing');
  let blocked=false;try{await window.noctuaShell.flush()}catch{blocked=true}
  assert(blocked&&!saved.includes('pdf'),'failed save did not block switching');fail=false;saved=[];await window.noctuaShell.flush();assert(saved.join(',')==='chat,file,note,pdf','switch failed to preserve every editor');window.noctuaShell.endSwitch();assert(!switching&&!tabs[0].frame.contentWindow.document.body.inert,'failed switch did not restore editing');
+ // Maintenance/disconnection must not release a simultaneous native connection freeze.
+ window.noctuaShell.beginSwitch();window.noctuaShell.beginSwitch('maintenance');
+ window.noctuaShell.endSwitch('maintenance');
+ assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'maintenance resumed editors during a native connection switch');
+ window.noctuaShell.endSwitch();assert(!switching,'native pause did not release after maintenance');
+ window.noctuaShell.beginSwitch('maintenance');window.noctuaShell.beginSwitch();window.noctuaShell.endSwitch();
+ assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'native completion resumed maintenance-paused editors');
+ window.noctuaShell.endSwitch('maintenance');assert(!switching&&!tabs[0].frame.contentWindow.document.body.inert,'overlapping pauses stranded editing');
  // Real browser storage: reload the draft module without clearing storage, as a page restart does.
  const doc={id:'same-note',updated:10,title:'Kept offline',blocks:[{id:'b',type:'text',src:'typed while disconnected'}]};
  const sent=NoteDrafts.put('L1',doc);assert(NoteDrafts.get('L1',doc.id).title==='Kept offline','draft not durable');

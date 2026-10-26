@@ -151,6 +151,9 @@ window and callback are discarded on any error; the old connection is saved only
 after the new WebView authenticates and every old editor freezes and flushes.
 Failure resumes the old editors. Device preferences use exact shared keys, while
 server state and its removal operations share the same namespace.
+Shell pauses have separate connection and maintenance owners. Releasing either
+must leave editors inert while the other owner remains; regress both completion
+orders and maintenance disconnection during a native connection change.
 
 Note drafts use an editor-owned slot within each server/note namespace. A legacy
 slot and multiple editor versions remain available for explicit recovery. An

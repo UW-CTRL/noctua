@@ -207,6 +207,8 @@ client's presence lease to expire before retrying. Existing AI, MCP and file wor
 continues; new work is refused during draining. The worker waits up to 30 minutes
 and cancels if work is still active. It never kills a job or guesses ownership
 from a port/PID. Normal app exit cannot cancel this independent worker.
+If a desktop connection change overlaps maintenance, editors stay paused until
+both operations finish; a maintenance disconnect cannot unlock a pending switch.
 Skill requests awaiting approval or generated output review block replacement;
 apply or reject them first. If a running skill finishes into a review state while
 draining, the update cancels and preserves that server session and its results.
