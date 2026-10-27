@@ -96,6 +96,7 @@ See [Research assistant](assistant.md) for capabilities, edit modes, and prompts
 
 Set the Zotero data folder on the **server computer** in **Settings → Integrations**, then choose
 **Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
+Enter the folder path and select **Save Zotero location** beside it.
 The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and PDF
 annotations. Collections and basic paper information are always copied. Cancel
 closes the dialog without importing anything.
@@ -117,15 +118,15 @@ choose Overwrite to adopt the source values for reported conflicts.
 
 For PDFs, **Link original** is the default: Noctua reads the PDF at its Zotero
 path without copying it into Noctua storage. Choose **Copy to Noctua** to keep an
-independent file instead. Set the default with **Settings → Integrations → Default
-PDF storage → Save default**; the import dialog can override it for that import.
+independent file instead. Choose the PDF storage mode in the import dialog; a
+successful PDF import remembers the choice for next time.
 The source folder is the Zotero data folder containing `zotero.sqlite`, as configured
 in Integrations (or `ZOTERO_DATA_DIR`). Setting a folder does not start an import.
 
 Keep linked originals available. After moving the Zotero folder, update its path
 in Integrations and import again to reconnect the same PDFs. A missing file produces
 an error; a changed PDF is rejected to keep its cached text and annotations attached
-to the original content. Changing the default affects future imports. Re-importing
+to the original content. Changing the choice affects future imports. Re-importing
 can switch the same PDF between link and copy; existing managed copies are not
 automatically deleted when switching to links.
 

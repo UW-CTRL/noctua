@@ -88,6 +88,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(!$('#library-management'),'redundant management toolbar should be removed');
  assert(!$('#library-sidebar-actions')&&$('#lib-tree').lastElementChild.hasAttribute('data-library-trash'),'Trash must be the last tree row, without a separate sidebar icon');
  assert(dataSection({data_dir:'/data'}).includes('data-act="check-library-duplicates"'),'duplicate check belongs in Data settings');
+ assert(dataSection({data_dir:'/data'}).includes('data-act="check-library-duplicates" data-icon="search"'),'duplicate check uses a defined search icon');
 
  $('#lib-tree [data-library-trash]').click();await settle();assert(lib.trash&&$('#library-title').textContent==='Trash'&&$('#library-trash-view')&&!document.querySelector('dialog[open]'),'Trash should open as a folder in the main area');$('#lib-tree [data-id="L1"]').click();await settle();assert(!lib.trash&&!document.body.classList.contains('library-trash-view'),'selecting a collection should leave Trash');
  const tagSearch=$('#library-tags [data-search-tags]');tagSearch.value='CONTROL';tagSearch.dispatchEvent(new Event('input',{bubbles:true}));
