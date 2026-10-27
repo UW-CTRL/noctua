@@ -62,6 +62,7 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
 | `src/server.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
+| `src/research.rs`, `web/research.js` | Revisioned collection goals, progress, and personal target dates; durable hidden `.workspace/research/` storage and its editor. |
 | `src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
@@ -231,3 +232,5 @@ Use `swift tests/reader.swift tests/paper.html` on macOS for paper UI checks.
 `tests/server-paper-lifecycle.py` uses isolated packaged fake compilers to verify
 build ownership during stop/update, app-bundle removal, persisted output and
 retired compiler cleanup. It runs in backend CI without installing TeX or services.
+
+`src/library_management.rs` implements revision-checked Library bulk operations, recoverable paper/folder trash and undo, collection ordering, and safe duplicate merging. Trash keeps original database rows and immutable file storage; active queries exclude its IDs.

@@ -276,3 +276,23 @@ This tool does not trigger compilation or edit generated files.
 The paper preview supports double-click PDF-to-source navigation via SyncTeX.
 It opens the corresponding project source and centers the line; this is a UI
 control, separate from the assistant’s read-only build-log inspection.
+
+## Collection research details
+
+Library collections can store a goal, progress, and personal target dates through
+**Research details** in the collection tree. This is currently a UI-only editor;
+the assistant's general file tools do not read or edit its hidden
+`.workspace/research/` data. Research metadata does not change paper membership,
+Notes files, or graph scope. See [Research](research.md#collection-research-details).
+
+The Library creation dialog offers Folder or Research project. The briefcase icon identifies projects. Users can change Folder type in Research details without losing research data. Assistant collection creation defaults to an ordinary folder; project selection and conversion are currently UI controls.
+
+Files copied from a file manager can be pasted into the Library collection list with Command+V or Ctrl+V. PDFs become Library papers; other formats are preserved in that collection’s Notes Project files (up to 32 MB each). Binary formats may only support download rather than editing. The browser must expose clipboard files.
+
+Project files use image icons for image formats and video icons for video formats; folders and ordinary documents retain their own icons. Icons identify file types and do not imply preview support.
+
+Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+
+Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. Library paper trash preserves annotations and memberships; bulk management and duplicate review are available in the Library UI. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
+
+Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved.

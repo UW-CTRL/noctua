@@ -157,13 +157,13 @@ function openServerConnectionSettings() {
 
 function browserLocalTokenSection() {
   if (isDesktopConnectionClient() || !['localhost','127.0.0.1'].includes(location.hostname) || location.protocol !== 'http:') return '';
-  return '<div class="settings-group"><h3>Current server token</h3><label class="setting-field">Authentication token<input class="setup-input" id="browser-local-token" type="password" readonly autocomplete="off" placeholder="Hidden until requested"></label><div class="setup-actions"><button data-act="show-browser-token" aria-controls="browser-local-token" aria-pressed="false">Show token</button><button data-act="copy-browser-token">Copy token</button></div><p class="hint">Anyone with this token can access this server. Copying replaces your clipboard.</p><p id="browser-token-status" role="status"></p></div>';
+  return '<div class="settings-group"><h3>Current server token</h3><div class="setting-field token-setting"><label for="browser-local-token">Authentication token</label><span class="token-field"><input class="setup-input" id="browser-local-token" type="password" readonly autocomplete="off" spellcheck="false" placeholder="Hidden until requested"><span class="token-field-actions"><button type="button" class="token-icon" data-act="show-browser-token" aria-label="Show token" title="Show token" aria-controls="browser-local-token" aria-pressed="false"><svg data-eye-open viewBox="0 0 24 24" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><svg data-eye-closed viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20M9.88 9.88a3 3 0 0 0 4.24 4.24M10.73 5.08A10.75 10.75 0 0 1 21.94 12a10.75 10.75 0 0 1-3.2 4.25M6.61 6.61A10.75 10.75 0 0 0 2.06 12a10.75 10.75 0 0 0 14.1 6.3"/></svg></button><button type="button" class="token-icon" data-act="copy-browser-token" aria-label="Copy token" title="Copy token"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></span></span></div><p class="hint">Anyone with this token can access this server. Copying replaces your clipboard.</p><p id="browser-token-status" role="status"></p></div>';
 }
 function clearBrowserLocalToken(root) {
   const input=root.querySelector('#browser-local-token');
   if(input){input.value='';input.type='password';}
   const button=root.querySelector('[data-act="show-browser-token"]');
-  if(button){button.textContent='Show token';button.setAttribute('aria-pressed','false');}
+  if(button){button.setAttribute('aria-label','Show token');button.title='Show token';button.setAttribute('aria-pressed','false');}
   const status=root.querySelector('#browser-token-status');if(status)status.textContent='';
 }
 async function useBrowserLocalToken(section, copy=false) {
@@ -181,7 +181,7 @@ async function useBrowserLocalToken(section, copy=false) {
     section.querySelector('#browser-token-status').textContent='Token copied.';
   }else{
     input.value=result.token;input.type='text';
-    const button=section.querySelector('[data-act="show-browser-token"]');button.textContent='Hide token';button.setAttribute('aria-pressed','true');
+    const button=section.querySelector('[data-act="show-browser-token"]');button.setAttribute('aria-label','Hide token');button.title='Hide token';button.setAttribute('aria-pressed','true');
   }
 }
 
@@ -738,6 +738,8 @@ function dataSection(s) {
     <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
       <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
+    <div class="setup-actions"><button type="button" data-act="check-library-duplicates" data-icon="copy">Check for duplicate papers</button></div>
+    <p class="hint">Review possible duplicates by DOI, arXiv ID, PDF content, or title before choosing whether to merge.</p>
     </div>
     <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save Destination</h3>
     <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
@@ -1094,6 +1096,9 @@ function openSetup({ firstRun = false, tab } = {}) {
           }
           break;
         }
+        case 'check-library-duplicates':
+          await openLibraryDuplicates();
+          break;
         case 'import-zotero':
           await importZoteroLibrary();
           break;

@@ -310,3 +310,7 @@ update** to resolve them on the compatible current server, then retry. Failed
 replacement startup can be retried from the same popup while the server is down.
 See [server backup and updates](server.md#drafts-backup-and-updates) for complete
 backup/restore and validation limits.
+
+Under **Data & Storage → Library**, choose **Check for duplicate papers** to review DOI, arXiv, PDF-content, or title matches. Select which paper to retain and confirm each merge; different PDF contents cannot be merged. Library trash is available from the Trash folder at the bottom of the Library tree.
+
+Authentication token fields have inline eye and copy icons for showing/hiding and copying. Server tokens are 15 random case-sensitive characters. Older long credentials are replaced on upgrade; use the new credential when reconnecting other computers.

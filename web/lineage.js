@@ -1019,6 +1019,7 @@ async function requestThreads({ force = false, cacheOnly = false, auto = false }
 
 function setLayout(mode, { user = false } = {}) {
   const previous = G.layout;
+  if(mode!=='library'){lib.trash=false;document.body.classList.remove('library-trash-view');}
   G.layout = ['library', 'network', 'lineage'].includes(mode) ? mode : 'library';
   document.body.classList.toggle('library-view', G.layout === 'library');
   store.set('noctua.layout', G.layout);

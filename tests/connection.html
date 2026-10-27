@@ -45,6 +45,7 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(!d.querySelector('#next').disabled,'retry unavailable');
  d.querySelector('#tab-local').click();
  assert(!d.querySelector('#panel-local').hidden&&d.querySelector('#panel-connection').hidden&&d.querySelector('#panel-desktop').hidden,'management tabs show multiple cards');
+ assert(d.querySelector('.token-field #show-local-token svg')&&d.querySelector('.token-field #copy-local-token svg'),'desktop token icons must sit inside the token field');
  assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'local token must start empty and masked');
  await w.eval('localTokenAction()');
  assert(d.querySelector('#local-token').type==='text'&&d.querySelector('#local-token').value==='test-local-token','show must request this computer token');
@@ -83,6 +84,11 @@ document.querySelector('iframe').onload=async()=>{try{
  let saved=[],fail=true,switching=false;
  const tabs=[{frame:{contentWindow:{document:{body:{inert:false},querySelector:()=>null},prepareEditorSwitch(){saved.push('finalize')},preserveChatDraft(){saved.push('chat')},async saveWorkspaceFile(){saved.push('file')},async flushNoteEdits(){saved.push('note');if(fail)throw Error('Save failed')},async flushPDF(){saved.push('pdf')}}}}];
  eval(shellSource.slice(start,end));
+ tabs[0].frame.contentWindow.flushCollectionResearch=()=>{throw Error('Save research details first')};
+ let researchBlocked=false;try{await window.noctuaShell.flush()}catch{researchBlocked=true;}
+ assert(researchBlocked&&saved.length===0,'unsaved research failed to block tab flush');
+ delete tabs[0].frame.contentWindow.flushCollectionResearch;
+
  window.noctuaShell.beginSwitch();
  assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'editors were not frozen before flushing');
  let blocked=false;try{await window.noctuaShell.flush()}catch{blocked=true}

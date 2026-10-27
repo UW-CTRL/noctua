@@ -168,6 +168,7 @@ function save() {
 async function flushFrame(t) {
   const w=t.frame.contentWindow;
   if (!w?.flushNoteEdits) throw Error('A tab has not finished loading. Retry shortly.');
+  w.flushCollectionResearch?.();
   w.preserveChatDraft?.();
   await w.saveWorkspaceFile?.(); await w.flushNoteEdits(); await w.flushPDF?.();
 }

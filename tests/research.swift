@@ -9,7 +9,7 @@ var html=try String(contentsOf:root.appendingPathComponent("web/index.html"),enc
 let scripts=try NSRegularExpression(pattern:#"<script src="/([^"]+)"></script>"#)
 for match in scripts.matches(in:html,range:NSRange(html.startIndex...,in:html)).reversed(){
  let file=String(html[Range(match.range(at:1),in:html)!])
- let keep=["fonts.js","app.js","lineage.js","library.js","select.js"].contains(file)
+ let keep=["fonts.js","app.js","lineage.js","library.js","research.js","select.js"].contains(file)
  html.replaceSubrange(Range(match.range,in:html)!,with:keep ? "<script src=\"../../web/\(file)\"></script>" : "")
 }
 html=html.replacingOccurrences(of:"href=\"/",with:"href=\"../../web/")
@@ -22,16 +22,19 @@ localStorage.clear();localStorage.setItem('noctua.threadsAuto','0');
 const settings={};let openedPDF=[];
 function openPaperView(key,where){openedPDF.push([key,where]);}
 const fixtureItems=[
- {key:'a',title:'Zebra networks',creators:['Ada Lovelace'],year:2024,venue:'Journal A',has_pdf:true,abstractNote:'Local abstract',s2:'s1'},
+ {key:'a',tags:['control','<method>'],title:'Zebra networks',creators:['Ada Lovelace'],year:2024,venue:'Journal A',has_pdf:true,abstractNote:'Local abstract',s2:'s1'},
  {key:'b',title:'Alpha lineage',creators:['Grace Hopper'],year:2020,venue:'Journal B',has_pdf:false,abstractNote:'Unmatched local paper'}
 ];
 const fixturePaper={paperId:'s1',title:'Zebra networks',authors:[{name:'Ada Lovelace'}],year:2024,citationCount:5,abstract:'Abstract'};
 window.requests=[];window.pendingPDF=null;window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;
 window.fetch=async(path,opts)=>{
  requests.push(path);let data={};
+ if(path==='/api/library/manage')return {ok:true,json:async()=>({revision:1,trash:[],undo:null})};
+ if(path.endsWith('/membership')&&!opts?.body)return {ok:true,json:async()=>({targets:[{id:'L1',name:'My Library'},{id:'C3',name:'Subfolder',parent:'C1'}]})};
+ if(path.match(/^\/api\/collections\/[^/]+\/research$/))return {ok:true,json:async()=>({version:1,revision:0,goal:'',progress:0,dates:[]})};
  if(path==='/api/settings/library'){if(scopeFailure)return {ok:false,status:500,json:async()=>({error:'Save failed'})};return {ok:true,json:async()=>({include_subfolders:JSON.parse(opts.body).include_subfolders})};}
  if(path==='/api/library/add'){window.savedSearchPaper=JSON.parse(opts.body).paper;if(pendingPDF)return await pendingPDF;data={key:'keyboard-paper',paper:{has_pdf:true}};}
- else if(path==='/api/library/collections')data={live:true,targets:[{id:'L1',name:'My Library',count:2,parent:null},{id:'C1',name:'Networks',count:1,level:1,parent:'L1'},{id:'C3',name:'Subfolder',count:0,level:2,parent:'C1'},{id:'C4',name:'Nested',count:0,level:3,parent:'C3'},{id:'C2',name:'Empty',count:0,level:1,parent:'L1'}]};
+ else if(path==='/api/library/collections')data={live:true,targets:[{id:'L1',name:'My Library',count:2,parent:null},{id:'C1',name:'Networks',is_project:true,count:1,level:1,parent:'L1'},{id:'C3',name:'Subfolder',count:0,level:2,parent:'C1'},{id:'C4',name:'Nested',count:0,level:3,parent:'C3'},{id:'C2',name:'Empty',count:0,level:1,parent:'L1'}]};
  else if(path.includes('/api/library/items')){
   if(path.endsWith('C1')&&pendingFolder)return await pendingFolder;
   data=path.endsWith('L1')?fixtureItems:path.endsWith('C1')?[fixtureItems[0]]:[];
@@ -80,12 +83,77 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(G.layout==='library'&&visible($('#library-view')),'Library is default');
  assert($('#library-rows').children.length===2&&$('#library-rows').textContent.includes('Alpha lineage'),'unmatched local papers included');
  assert($('#library-title').textContent==='My Library','library heading');
+ assert($('#library-tags').parentElement.id==='left'&&visible($('#library-tags')),'Tags must sit in the Library sidebar');
+ assert(!$('#library-management [data-tag-filter]'),'tag filter should move out of the paper toolbar');
+ assert(!$('#library-management'),'redundant management toolbar should be removed');
+ assert(!$('#library-sidebar-actions')&&$('#lib-tree').lastElementChild.hasAttribute('data-library-trash'),'Trash must be the last tree row, without a separate sidebar icon');
+ assert(dataSection({data_dir:'/data'}).includes('data-act="check-library-duplicates"'),'duplicate check belongs in Data settings');
+
+ $('#lib-tree [data-library-trash]').click();await settle();assert(lib.trash&&$('#library-title').textContent==='Trash'&&$('#library-trash-view')&&!document.querySelector('dialog[open]'),'Trash should open as a folder in the main area');$('#lib-tree [data-id="L1"]').click();await settle();assert(!lib.trash&&!document.body.classList.contains('library-trash-view'),'selecting a collection should leave Trash');
+ const tagSearch=$('#library-tags [data-search-tags]');tagSearch.value='CONTROL';tagSearch.dispatchEvent(new Event('input',{bubbles:true}));
+ assert($('#library-tags [data-library-tag-list]').querySelectorAll('button').length===1&&$('#library-rows').children.length===2,'tag name search must not filter papers');
+ $('#library-tags [data-library-tag="control"]').click();assert(lib.tag==='control'&&$('#library-rows').children.length===1,'sidebar tag click did not filter papers');
+ $('#library-tags [data-clear-tag]').click();assert(!lib.tag&&$('#library-rows').children.length===2,'clear tag filter did not restore papers');
+ tagSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!tagSearch.value&&$('#library-tags [data-library-tag-list]').querySelectorAll('button').length===2,'Escape must clear tag search');
+ assert(libraryTagCounts([{tags:['a','a']},{tags:['a','b']}]).get('a')===2,'tag counts must count papers, not repeated values');
+ document.body.classList.add('notes-mode');assert(!visible($('#library-tags')),'Library tags must hide in Notes');document.body.classList.remove('notes-mode');
+
+ const modeClicks=[];const trackMode=e=>modeClicks.push(e.currentTarget.dataset.mode);
+ document.querySelectorAll('.mode-switch button').forEach(button=>button.addEventListener('click',trackMode));
+ for(const [code,key]of [['Digit1','¡'],['Digit2','™'],['Digit3','£']])document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,code,key,bubbles:true,cancelable:true}));
+ assert(modeClicks.join(',')==='graph,notes','Option digits should switch Library/Notes and skip disabled Reader');
+ $('#reader-mode').disabled=false;document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,code:'Digit3',key:'£',bubbles:true,cancelable:true}));assert(modeClicks.at(-1)==='pdf','Alt+3 should switch enabled Reader');$('#reader-mode').disabled=true;
+ const modeCount=modeClicks.length;document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,ctrlKey:true,code:'Digit2',bubbles:true}));assert(modeClicks.length===modeCount,'AltGr must not switch modes');
+ document.querySelectorAll('.mode-switch button').forEach(button=>button.removeEventListener('click',trackMode));
+
+ showLibItem(lib.items.find(item=>item.key==='a'));
+ await settle();assert($('#details .paper-assigned-collections').textContent.includes('Networks / Subfolder'),'Paper info should show directly assigned collection paths');
+ assert($('#details .paper-info-libraries summary').textContent.includes('Libraries and Collections')&&$('#details .paper-info-library-row').textContent.includes('My Library'),'library membership section missing');
+ assert($('#details .paper-info-tags summary').textContent.includes('2 Tags')&&$('#details .paper-info-tags li svg'),'counted tag rows need icons');
+ assert($('#details .paper-info-libraries').compareDocumentPosition($('#details .paper-info-tags'))&Node.DOCUMENT_POSITION_FOLLOWING,'libraries should appear before tags');
+ assert($('#details .paper-info-tags').textContent.includes('control')&&$('#details .paper-info-tags').textContent.includes('<method>')&&!$('#details .paper-info-tags method'),'Paper tags missing or not safely rendered');
+ const infoDelete=$('#details [aria-label="Delete paper"]');
+ assert(infoDelete&&infoDelete.dataset.icon==='trash-2','Paper info delete action missing');
+ infoDelete.click();await settle();
+ assert(document.querySelector('.library-delete-dialog')?.open,'Paper info delete did not open confirmation');
+ document.querySelector('.library-delete-dialog [data-cancel]').click();await new Promise(resolve=>setTimeout(resolve,0));
+ const deletionRow=$('#library-rows [data-key="a"]');deletionRow.click();deletionRow.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true}));
+ assert(document.querySelector('.library-delete-dialog')?.open,'Delete on a paper row did not open confirmation');
+ document.querySelector('.library-delete-dialog [data-cancel]').click();await settle();
+ assert(!document.querySelector('.library-delete-dialog')?.open,'Cancel did not dismiss paper deletion');
+
+ assert($('#lib-tree [data-id="C1"] .tree-symbol').getAttribute('title')==='Research project'&&$('#lib-tree [data-id="C2"] .tree-symbol').getAttribute('title')==='Folder','project and folder icons not distinguished');
+ $('#lib-tree [data-id="C1"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:10,clientY:10}));assert(document.querySelector('.library-folder-menu')?.querySelectorAll('[role="menuitem"]').length===3&&!document.querySelector('dialog[open]'),'collection right-click should open a three-item menu');closeLibraryFolderMenu();
+ $('#lib-tree [data-id="C1"]').click();await settle();assert($('#details #paper-collection-target').value==='C1'&&!$('#details .paper-remove-action').disabled,'Paper info should follow the current folder');$('#lib-tree [data-id="L1"]').click();await settle();assert($('#details #paper-collection-target').value==='L1'&&$('#details .paper-remove-action').disabled,'Library root removal must be disabled');
+ const researchButton=$('#lib-tree [data-id="C1"] .t-research');
+ assert(researchButton&&researchButton.getAttribute('aria-label')==='Research details','collection research action missing');
+ assert(researchButton.dataset.icon==='pencil','collection editor should use a pencil icon');
+ const editStyle=getComputedStyle(researchButton),newStyle=getComputedStyle($('#lib-tree [data-id="C1"] .t-new'));
+ assert(editStyle.width===newStyle.width&&editStyle.height===newStyle.height&&editStyle.borderTopWidth==='0px'&&editStyle.borderRadius==='0px','folder actions must share size without circular borders');
+
+ assert(!$('#lib-tree [data-id="C1"] .t-rename:not(.t-new)'),'separate rename action should be merged into details');
+ researchButton.click();await settle();
+ assert(document.querySelector('.collection-research')?.open&&document.querySelector('.collection-research strong').textContent.includes('Networks'),'research action did not open collection editor');
+ assert(lib.target==='L1','research action unexpectedly switched collection');
+ document.querySelector('.collection-research [data-cancel]').click();await settle();
+ $('#lib-tree [data-id="C1"]').click();await settle();
+ const selectedProject=$('#lib-tree [data-id="C1"]');
+ assert(document.activeElement===selectedProject,'click keeps project row focused for keyboard actions');
+ selectedProject.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+ const renameInput=$('#lib-tree [data-id="C1"] .t-input');
+ assert(renameInput&&renameInput.value==='Networks'&&document.activeElement===renameInput,'Enter opens selected project rename');
+ renameInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ assert(!$('#lib-tree .t-input')&&$('#lib-tree [data-id="C1"] .t-name').textContent==='Networks','Escape cancels project rename');
+ lib.target='L1';renderLibTree();await loadLibItems();
+
+
  const scopeMarkup=document.createElement('div');scopeMarkup.innerHTML=dataSection({data_dir:'/data'});assert(scopeMarkup.querySelector('#setup-include-subfolders').checked,'include subfolders defaults on in Settings');
  scopeMarkup.innerHTML=dataSection({data_dir:'/data',include_subfolders:false});assert(!scopeMarkup.querySelector('#setup-include-subfolders').checked,'Settings renders saved off state');
  await setIncludeSubfolders(false);await settle();assert(settings.include_subfolders===false,'subfolder scope saves and refreshes');
  scopeFailure=true;let rejected=false;try{await setIncludeSubfolders(true)}catch{rejected=true}scopeFailure=false;assert(rejected&&settings.include_subfolders===false,'failed scope save preserves previous state');
  await setIncludeSubfolders(true);await settle();
 
+ assert(!$('#import-pdf'),'folder PDF import button should be replaced by clipboard paste');
  assert(!$('#queue')&&!$('#collection')&&!$('#refresh-collections'),'header queue/save-folder/refresh controls removed');
  assert(defaultSaveTarget()==='L1','default save folder is library root');
  setDefaultSaveTarget('C1');assert(defaultSaveTarget()==='C1','save folder preference updated');
@@ -117,7 +185,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  renderLibTree();assert(!$('#lib-tree [data-id="C3"]'),'refresh preserves collapsed branch');
  $('#lib-tree [data-id="C1"] .t-toggle').click();assert($('#lib-tree [data-id="C3"]')&&!$('#lib-tree [data-id="C4"]'),'reopening preserves nested collapsed state');
  $('#lib-tree [data-id="C3"] .t-toggle').click();assert($('#lib-tree [data-id="C4"]'),'nested child expands again');
- $('#lib-tree [data-id="L1"] .t-toggle').click();assert($('#lib-tree').children.length===1,'library root can collapse');
+ $('#lib-tree [data-id="L1"] .t-toggle').click();assert($('#lib-tree').children.length===2&&$('#lib-tree [data-library-trash]'),'library root collapses while Trash stays available');
  $('#lib-tree [data-id="L1"] .t-toggle').click();
 
  const row=$('#library-rows tr');row.querySelector('[data-select-paper]').click();

@@ -30,6 +30,9 @@ function assert(ok,message){if(!ok)throw Error(message)}
 <script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
+ for(const name of ['photo.PNG','figure.svg','scan.tiff','photo.heic'])assert(workspaceFileIcon({name})==='image','image icon missing for '+name);
+ assert(workspaceFileIcon({name:'Renamed',source_name:'original.webp'})==='image','original media extension ignored');
+ assert(workspaceFileIcon({name:'clip.mov'})==='video'&&workspaceFileIcon({name:'notes.txt'})==='file-text','video and document icons not distinct');
  await loadWorkspace('L1');assert(!$('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'LaTeX creation is unified while settings and assistant changes remain');assert($('#note-list').hidden,'original list replaced');assert(!$('[data-skills]'),'skill management moved out of the project tree');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
  assert(!$('[data-bibliographies]'),'bibliographies are automatic without a toolbar button');assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');

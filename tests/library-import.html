@@ -3,11 +3,45 @@
 const calls=[],messages=[];let failure=false,gate=null,settings={};
 function assert(value,message){if(!value)throw Error(message);}
 function toast(message){messages.push(message);}
-async function api(path,body){calls.push({path,body});if(gate)await gate;if(failure)throw Error('Zotero database unavailable');return {papers:2,pdfs:0,notes:1,annotations:0,warnings:[]};}
+async function api(path,body){calls.push({path,body});if(path.startsWith('/api/workspaces/'))return {revision:7};if(gate)await gate;if(failure)throw Error('Zotero database unavailable');return {papers:2,pdfs:0,notes:1,annotations:0,warnings:[]};}
 async function loadCollections(){}async function loadLibItems(){}
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 </script><script src="../web/library.js"></script><script>
 (async()=>{
+ const list=document.createElement('div');list.id='lib-tree';list.tabIndex=0;document.body.append(list);
+ window.lib={target:'C1'};window.enc=encodeURIComponent;
+ const uploads=[];window.notifyProgress=()=>{};
+ window.fetch=async(path,opts)=>{uploads.push({path,body:opts.body});return {ok:true,json:async()=>({key:'pasted'})};};
+ let readerOpens=0;openPaperView=async()=>{readerOpens++;};
+ const pdf=new File(['%PDF-test'],'Copied.pdf',{type:'application/pdf'});
+ const pasteAt=(element,files)=>{const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{files}});element.dispatchEvent(event);return event;};
+ assert(pasteAt(list,[pdf]).defaultPrevented,'PDF paste did not claim collection clipboard');await tick();
+ assert(uploads.length===1&&uploads[0].path.includes('target=C1')&&uploads[0].body===pdf,'clipboard PDF lost selected target or file');
+ assert(readerOpens===0,'PDF paste must keep the current list instead of opening Reader');
+ const input=document.createElement('input');list.append(input);
+ assert(!pasteAt(input,[pdf]).defaultPrevented,'clipboard import hijacked text editing');
+ const textFile=new File(['text'],'notes.txt',{type:'text/plain'});
+ assert(pasteAt(list,[textFile]).defaultPrevented,'general file paste not handled');await tick();await tick();
+ assert(uploads.length===2&&uploads[1].path.includes('/api/workspaces/C1/upload?name=notes.txt&revision=7')&&uploads[1].body===textFile,'general file not stored in selected workspace');
+ assert(messages.some(message=>message.includes('Notes → Project files')),'general file destination not explained');
+ pasteAt(list,[new File(['zip'],'archive.zip'),pdf]);await tick();await tick();await tick();
+ assert(uploads.length===4&&uploads[2].path.includes('archive.zip')&&uploads[3].path.includes('import-pdf'),'mixed file routing failed');
+ assert(!pasteAt(list,[]).defaultPrevented,'text clipboard should remain native');
+ assert(readerOpens===0,'mixed clipboard import must not open Reader');
+ list.remove();calls.length=0;
+ window.G={libKey:null};window.esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+ window.renderDetails=()=>{};lib.detail={key:'delete-me'};
+ await confirmDeleteLibraryPaper({key:'delete-me',title:'Delete <this>',revision:4});
+ let deletion=document.querySelector('.library-delete-dialog');
+ assert(document.activeElement===deletion.querySelector('[type="submit"]'),'Delete must be focused for Enter confirmation');
+ deletion.querySelector('[data-cancel]').click();await tick();
+ assert(!document.querySelector('.library-delete-dialog'),'cancel did not close deletion');
+ await confirmDeleteLibraryPaper({key:'delete-me',title:'Delete <this>',revision:4});
+ deletion=document.querySelector('.library-delete-dialog');
+ await deletion.querySelector('form').onsubmit({preventDefault(){}});await tick();
+ assert(uploads.at(-1).path==='/api/library/papers/delete-me'&&JSON.parse(uploads.at(-1).body).revision===4,'delete request lost paper or revision');
+ assert(!document.querySelector('.library-delete-dialog')&&lib.detail===null,'delete did not clear removed detail');
+
  await importZoteroLibrary();let dialog=document.querySelector('dialog'),form=dialog.querySelector('form');
  assert(dialog.open&&calls.length===0,'opening dialog must not import');
  assert(dialog.getAttribute('aria-labelledby')==='zotero-import-title','dialog title is not accessible');

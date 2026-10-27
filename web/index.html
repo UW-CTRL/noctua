@@ -17,9 +17,9 @@
   <header>
     <div class="brand">🦉 <span>Noctua</span></div>
     <div class="mode-switch" role="tablist">
-      <button data-mode="graph" class="active" data-icon="library">Library</button>
-      <button data-mode="notes" data-icon="notebook-pen">Notes</button>
-      <button data-mode="pdf" id="reader-mode" disabled data-icon="book-open">Reader</button>
+      <button data-mode="graph" aria-keyshortcuts="Alt+1" title="Library (Option+1 / Alt+1)" class="active" data-icon="library">Library</button>
+      <button data-mode="notes" aria-keyshortcuts="Alt+2" title="Notes (Option+2 / Alt+2)" data-icon="notebook-pen">Notes</button>
+      <button data-mode="pdf" aria-keyshortcuts="Alt+3" title="Reader (Option+3 / Alt+3)" id="reader-mode" disabled data-icon="book-open">Reader</button>
     </div>
     <div id="research-search">
       <form id="search-form" autocomplete="off" role="search">
@@ -98,6 +98,11 @@
         <div id="thread-list" class="threads"></div>
       </section>
       </div>
+      <section id="library-tags" aria-labelledby="library-tags-title">
+        <header><strong id="library-tags-title">Tags</strong><span data-tag-count></span><button type="button" data-clear-tag data-icon="x" data-icon-only title="Clear tag filter" aria-label="Clear tag filter" disabled></button></header>
+        <div data-library-tag-list aria-label="Collection tags"></div>
+        <footer><input type="search" data-search-tags placeholder="Filter tags…" aria-label="Filter tags"></footer>
+      </section>
     </aside>
 
     <section id="stage">
@@ -226,6 +231,7 @@
   <script src="/mentions.js"></script>
   <script src="/figures.js"></script>
   <script src="/library.js"></script>
+  <script src="/research.js"></script>
   <script src="/pdf-objects.js"></script>
   <script src="/pdf.js"></script>
   <script src="/update-dialogs.js"></script>

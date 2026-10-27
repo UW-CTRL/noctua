@@ -321,6 +321,14 @@ mod tests {
     use axum::{body::Body, routing::post, Router};
     use tower::ServiceExt;
     #[tokio::test]
+    async fn migrated_token_rejects_the_old_bearer(){
+        let root=tempfile::tempdir().unwrap();let old="b".repeat(64);crate::paths::write_private(&root.path().join("server-token"),&old).unwrap();
+        let owner=Owner::acquire(root.path(),"http://127.0.0.1:1").unwrap();let current=owner.token.clone();
+        let runtime=Arc::new(Runtime::new(owner,vec!["localhost:1".into()],vec!["http://localhost:1".into()]));
+        let router=Router::new().route("/auth/login",post(||async{StatusCode::OK})).layer(axum::middleware::from_fn_with_state((Arc::new(vec![]),Some(runtime)),guard));
+        for(value,expected)in [(old,StatusCode::UNAUTHORIZED),(current,StatusCode::OK)]{let request=Request::builder().uri("/auth/login").method("POST").header("host","localhost:1").header("origin","http://localhost:1").header("authorization",format!("Bearer {value}")).body(Body::empty()).unwrap();assert_eq!(router.clone().oneshot(request).await.unwrap().status(),expected);}
+    }
+    #[tokio::test]
     async fn token_reveal_requires_local_cookie_origin_and_csrf_headers() {
         let root=tempfile::tempdir().unwrap();
         let owner=Owner::acquire(root.path(),"http://127.0.0.1:1").unwrap();

@@ -367,6 +367,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn library_management_http_preserves_trash_and_restores_ids() -> Result<()> {
+        let f=Fixture::new()?;
+        let key=f.app.library.save(&json!({"title":"HTTP management paper"}),"L1")?;
+        let paper=f.app.library.paper(&key)?;
+        let folder=f.app.library.create_collection("L1","Assigned")?;
+        f.app.library.add_membership(&key,&folder)?;
+        let assigned=f.json(&format!("/api/library/papers/{key}/membership"),None).await;
+        assert!(assigned["targets"].as_array().unwrap().iter().any(|t|t["id"]==folder));
+
+        let response=f.request(&format!("/api/library/papers/{key}"),Some(json!({"revision":paper["revision"]})),Some("DELETE")).await;
+        assert_eq!(response.status(),StatusCode::OK);
+        assert_eq!(f.request(&format!("/api/library/papers/{key}"),None,None).await.status(),StatusCode::NOT_FOUND);
+        let state=f.json("/api/library/manage",None).await;
+        assert_eq!(state["trash"][0]["id"],key);
+        f.json("/api/library/manage",Some(json!({"op":"restore","revision":state["revision"],"kind":"paper","ids":[key]}))).await;
+        assert_eq!(f.json(&format!("/api/library/papers/{key}"),None).await["key"],key);
+        assert_eq!(f.request("/api/library/manage",Some(json!({"op":"trash","revision":-1,"papers":[{"key":key,"revision":paper["revision"]}]})),None).await.status(),StatusCode::CONFLICT);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn collection_creation_and_project_kind_round_trip() -> Result<()> {
+        let f = Fixture::new()?;
+        let folder = f.json("/api/library/folder", Some(json!({"parent":"L1","name":"Folder"}))).await;
+        let project = f.json("/api/library/folder", Some(json!({"parent":"L1","name":"Project","is_project":true}))).await;
+        let list = f.json("/api/library/collections", None).await;
+        for (created, expected) in [(&folder, false), (&project, true)] {
+            let id = created["id"].as_str().unwrap();
+            assert_eq!(list["targets"].as_array().unwrap().iter().find(|t|t["id"]==id).unwrap()["is_project"], expected);
+        }
+        let id = project["id"].as_str().unwrap();
+        let url = format!("/api/collections/{id}/research");
+        let mut research = f.json(&url, None).await;
+        assert_eq!(research["is_project"], true);
+        research.as_object_mut().unwrap().remove("version");
+        research["is_project"] = json!(false);
+        research["goal"] = json!("Keep this goal when changing type");
+        f.json(&url, Some(research)).await;
+        let state = f.json(&url, None).await;
+        assert_eq!(state["is_project"], false);
+        assert_eq!(state["goal"], "Keep this goal when changing type");
+        let legacy = f.app.notes.root.join(f.app.library.folder_id(id)?).join(".workspace/research/state.json");
+        assert!(!legacy.exists(), "Ordinary folder has no active research file");
+        assert!(legacy.with_file_name("inactive.json").is_file());
+        let mut old = state; old["is_project"] = json!(false);
+        std::fs::write(legacy, old.to_string())?;
+        assert_eq!(f.json(&url, None).await["is_project"], true, "File presence activates a project even with an old false flag");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn collection_research_preserves_workspace_and_collection_identity() -> Result<()> {
+        let f = Fixture::new()?;
+        let target = f.app.library.create_collection("L1", "Research")?;
+        let other = f.app.library.create_collection("L1", "Other")?;
+        let url = format!("/api/collections/{target}/research");
+        let note = f.app.notes.create(&f.app.library.folder_id(&target)?, "Existing note")?;
+        let before = crate::workspace::snapshot(&f.app, &target)?;
+        let fields = json!({"revision":0,"goal":"Compare models","progress":40,"dates":[{"title":"Draft","date":"2028-02-29"}]});
+        assert_eq!(f.json(&url, None).await["revision"], 0);
+        let saved = f.json(&url, Some(fields.clone())).await;
+        assert_eq!(saved["revision"], 1);
+        assert_eq!(f.request(&url, Some(fields), None).await.status(), StatusCode::CONFLICT);
+        assert_eq!(f.json(&url, None).await, saved);
+        assert_eq!(f.json(&format!("/api/collections/{other}/research"), None).await["goal"], "");
+        assert_eq!(crate::workspace::snapshot(&f.app, &target)?, before);
+        let notes = f.json(&format!("/api/notes?target={target}"), None).await;
+        assert_eq!(notes.as_array().unwrap().len(), 1);
+        assert_eq!(notes[0]["id"], note["id"]);
+        let internal = crate::workspace::inspect_internal(&f.app, &target, &json!({}))?;
+        assert!(!internal["entries"].as_array().unwrap().iter().any(|entry|entry["name"]=="research"));
+        assert!(crate::workspace::inspect_internal(&f.app, &target, &json!({"path":"research/state.json"})).is_err());
+        f.json("/api/library/rename", Some(json!({"target":target,"name":"Renamed"}))).await;
+        assert_eq!(f.json(&url, None).await, saved);
+        assert_eq!(f.request("/api/collections/missing/research", None, None).await.status(), StatusCode::NOT_FOUND);
+        let stored = f.app.notes.root.join(f.app.library.folder_id(&target)?).join(".workspace/research/state.json");
+        let persisted = serde_json::from_slice::<Value>(&std::fs::read(stored)?)?;
+        assert!(persisted.get("is_project").is_none());
+        let mut expected = saved;
+        expected.as_object_mut().unwrap().remove("is_project");
+        assert_eq!(persisted, expected);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn app_icon_preferences_persist_and_reject_unknown_choices() -> Result<()> {
         let f = Fixture::new()?;
         assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");
