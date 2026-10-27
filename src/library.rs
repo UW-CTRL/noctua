@@ -32,6 +32,7 @@ impl Library {
             CREATE TABLE IF NOT EXISTS papers (key TEXT PRIMARY KEY, s2 TEXT NOT NULL DEFAULT '', doi TEXT NOT NULL DEFAULT '', arxiv TEXT NOT NULL DEFAULT '', title_norm TEXT NOT NULL, data TEXT NOT NULL, pdf_hash TEXT, revision INTEGER NOT NULL DEFAULT 1);
             CREATE INDEX IF NOT EXISTS papers_s2 ON papers(s2); CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
             CREATE INDEX IF NOT EXISTS papers_hash ON papers(pdf_hash);
+            CREATE TABLE IF NOT EXISTS pdf_links (paper TEXT PRIMARY KEY REFERENCES papers(key) ON DELETE CASCADE, path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS memberships (collection TEXT REFERENCES collections(id), paper TEXT REFERENCES papers(key), PRIMARY KEY(collection,paper));
             CREATE TABLE IF NOT EXISTS pdf_index (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS pdf_outlines (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -184,20 +185,53 @@ impl Library {
         if current["pdf_hash"].as_str().is_some_and(|h|h!=hash) {return Err(conflict("This paper already has a different PDF. Import the new version as a separate paper to preserve annotations."));}
         let path=self.root.join("pdfs").join(format!("{hash}.pdf"));
         if !path.exists() {let tmp=self.root.join("pdfs").join(id("upload-"));std::fs::write(&tmp,bytes)?;std::fs::rename(tmp,path)?;}
-        let changed=self.conn.lock().unwrap().execute("UPDATE papers SET pdf_hash=?1,revision=revision+1 WHERE key=?2 AND (pdf_hash IS NULL OR pdf_hash=?1)",params![hash,key])?;if changed==0{return Err(conflict("A different PDF was attached in another tab"));}Ok(())
+        let mut conn=self.conn.lock().unwrap();let tx=conn.transaction()?;
+        let changed=tx.execute("UPDATE papers SET pdf_hash=?1,revision=revision+1 WHERE key=?2 AND (pdf_hash IS NULL OR pdf_hash=?1)",params![hash,key])?;if changed==0{return Err(conflict("A different PDF was attached in another tab"));}
+        tx.execute("DELETE FROM pdf_links WHERE paper=?1",[key])?;tx.commit()?;Ok(())
+    }
+
+    /// Read a Zotero PDF in place; never write to or remove the source file.
+    fn link_pdf(&self,key:&str,path:&Path)->Result<bool> {
+        let path=std::fs::canonicalize(path).context("Linked Zotero PDF is unavailable")?;
+        if std::fs::metadata(&path)?.len()>PDF_LIMIT as u64 {return Err(bad("PDFs must be smaller than 128 MB"));}
+        let bytes=std::fs::read(&path)?;
+        if !bytes.iter().take(1024).copied().collect::<Vec<_>>().windows(5).any(|w|w==b"%PDF-") {return Err(bad("The Zotero file is not a PDF"));}
+        let hash=format!("{:x}",Sha256::digest(&bytes));let shown=path.to_string_lossy().into_owned();
+        let mut conn=self.conn.lock().unwrap();let tx=conn.transaction()?;
+        let previous:Option<String>=tx.query_row("SELECT path FROM pdf_links WHERE paper=?1",[key],|r|r.get(0)).optional()?;
+        let changed=tx.execute("UPDATE papers SET pdf_hash=?1,revision=revision+1 WHERE key=?2 AND (pdf_hash IS NULL OR pdf_hash=?1)",params![hash,key])?;
+        if changed==0 {return Err(conflict("The Zotero PDF differs from the attached PDF. Import it as a separate paper to preserve annotations."));}
+        tx.execute("INSERT OR REPLACE INTO pdf_links(paper,path) VALUES(?1,?2)",params![key,shown])?;
+        tx.commit()?;Ok(previous.as_deref()!=Some(&shown))
+    }
+
+    fn linked_pdf(&self,key:&str)->Result<Option<PathBuf>> {
+        Ok(self.conn.lock().unwrap().query_row("SELECT path FROM pdf_links WHERE paper=?1",[key],|r|r.get::<_,String>(0)).optional()?.map(PathBuf::from))
     }
     pub fn upload(&self,target:&str,name:&str,bytes:&[u8])->Result<String> {
         self.folder_id(target)?;
         let hash=format!("{:x}",Sha256::digest(bytes));
         let known:Option<String>=self.conn.lock().unwrap().query_row("SELECT key FROM papers WHERE pdf_hash=?1",[hash],|r|r.get(0)).optional()?;
-        if let Some(key)=known { self.conn.lock().unwrap().execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?;return Ok(key); }
+        if let Some(key)=known { self.attach_pdf(&key,bytes)?;self.conn.lock().unwrap().execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?;return Ok(key); }
         // Validate before saving metadata so a rejected upload leaves no empty paper.
         if bytes.len()>PDF_LIMIT || !bytes.iter().take(1024).copied().collect::<Vec<_>>().windows(5).any(|w|w==b"%PDF-") {return Err(bad("Choose a PDF smaller than 128 MB"));}
         let title=Path::new(name).file_stem().and_then(|s|s.to_str()).filter(|s|!s.is_empty()).unwrap_or("Untitled paper");
         let key=self.save(&json!({"title":title,"_new_pdf":true}),target)?;self.attach_pdf(&key,bytes)?;Ok(key)
     }
-    fn hash(&self,key:&str)->Result<String> {self.paper(key)?["pdf_hash"].as_str().map(String::from).context("No PDF attached to this paper")}
-    pub fn pdf_path(&self,key:&str)->Result<PathBuf> {Ok(self.root.join("pdfs").join(format!("{}.pdf",self.hash(key)?)))}
+    fn hash(&self,key:&str)->Result<String> {
+        let hash=self.paper(key)?["pdf_hash"].as_str().map(String::from).context("No PDF attached to this paper")?;
+        if let Some(path)=self.linked_pdf(key)? {
+            let message="Linked Zotero PDF is unavailable. Check the source folder in Settings → Connections and import again.";
+            let size=std::fs::metadata(&path).context(message)?.len();if size>PDF_LIMIT as u64 {bail!("Linked Zotero PDF exceeds 128 MB");}
+            let bytes=std::fs::read(path).context(message)?;
+            if format!("{:x}",Sha256::digest(bytes))!=hash {return Err(conflict("Linked Zotero PDF has changed. Its cached text and annotations belong to the original file. Restore that file or import the new version as a separate paper."));}
+        }
+        Ok(hash)
+    }
+    pub fn pdf_path(&self,key:&str)->Result<PathBuf> {
+        let hash=self.hash(key)?;
+        Ok(self.linked_pdf(key)?.unwrap_or_else(||self.root.join("pdfs").join(format!("{hash}.pdf"))))
+    }
     pub async fn download(&self,key:&str)->Result<()> {self.download_from(key,None).await}
     pub async fn download_from(&self,key:&str,source:Option<&str>)->Result<()> {
         let p=self.paper(key)?;if p["has_pdf"]==true {return Ok(());}
@@ -446,7 +480,7 @@ impl Library {
             self.conn.lock().unwrap().execute("INSERT OR IGNORE INTO collections(id,name,parent,notes_folder) VALUES(?1,?2,?3,?4)",params![target,text(&t,"name"),parent,notes])?;
             stack.truncate(level);stack.push(target.to_string());
         }
-        let mut imported=0;let mut pdfs=0;let mut note_count=0;let mut annotation_count=0;let mut warnings=Vec::new();
+        let mut imported=0;let mut pdfs=0;let mut linked_pdfs=0;let mut note_count=0;let mut annotation_count=0;let mut warnings=Vec::new();
         let selected=|mut item:Value| {
             if !options.tags {item.as_object_mut().unwrap().remove("tags");}
             if !options.bibliography {for &field in crate::zotero::BIBLIOGRAPHIC_FIELDS {item.as_object_mut().unwrap().remove(field);}}
@@ -461,8 +495,15 @@ impl Library {
                             if options.copy_annotations && zotero.has_annotations(&root,text(&item,"key"))? {bail!("No local PDF available for annotations");}return Ok(());
                         };
                         if std::fs::metadata(&path)?.len()>PDF_LIMIT as u64 {bail!("PDF exceeds 128 MB");}
-                        let bytes=std::fs::read(path)?;
-                        if options.copy_pdfs && self.paper(&key)?["has_pdf"]!=true {self.attach_pdf(&key,&bytes)?;pdfs+=1;}
+                        let bytes=std::fs::read(&path)?;
+                        if options.copy_pdfs {
+                            match options.pdf_mode.unwrap_or_default() {
+                                crate::zotero::PdfMode::Link=>{if self.link_pdf(&key,&path)? {linked_pdfs+=1;}},
+                                crate::zotero::PdfMode::Copy=>{
+                                    if self.paper(&key)?["has_pdf"]!=true || self.linked_pdf(&key)?.is_some() {self.attach_pdf(&key,&bytes)?;pdfs+=1;}
+                                },
+                            }
+                        }
                         if options.copy_annotations {
                             let annotations=zotero.annotations(&root,&attachment)?;
                             if !annotations.is_empty() && self.hash(&key)?!=format!("{:x}",Sha256::digest(&bytes)) {bail!("Annotations skipped: attached PDF differs from Zotero PDF");}
@@ -488,7 +529,7 @@ impl Library {
         }
         // Use each collection's own items to preserve multi-collection membership.
         for t in zotero.import_collections()? {let target=text(&t,"id");if target.starts_with('C'){for item in zotero.items(target)?{self.save(&selected(item),target)?;}}}
-        Ok(json!({"papers":imported,"pdfs":pdfs,"notes":note_count,"annotations":annotation_count,"warnings":warnings}))
+        Ok(json!({"papers":imported,"pdfs":pdfs,"linked_pdfs":linked_pdfs,"notes":note_count,"annotations":annotation_count,"warnings":warnings}))
     }
 
     fn import_zotero_annotation(&self,key:&str,source:&Value)->Result<bool> {
@@ -636,14 +677,14 @@ mod tests {
         // Re-import into an older paper fills absent/empty details, preserving local values.
         lib.save(&json!({"key":"PAPER","title":"Short","publisher":"Local Press","volume":""}),"L1")?;
         let notes=crate::notes::Notes::new(temp.0.join("notes"));
-        let options=crate::zotero::ImportOptions{copy_pdfs:true,..Default::default()};
+        let options=crate::zotero::ImportOptions{copy_pdfs:true,pdf_mode:Some(crate::zotero::PdfMode::Copy),..Default::default()};
         let result=lib.import_zotero(&zotero,&notes,&options)?;assert_eq!(result["pdfs"],1);
         lib.import_zotero(&zotero,&notes,&options)?;
         assert_eq!(lib.items("L1")?.len(),1);assert_eq!(lib.items("C10")?.len(),1);assert_eq!(lib.items("C11")?.len(),1);
         assert_eq!(lib.folder_id("C11")?,"1-QUANTUM");assert_eq!(lib.paper("PAPER")?["has_pdf"],true);
         assert_eq!(lib.paper("PAPER")?["tags"],json!(["quantum","자동 태그"]));
         assert_eq!(notes.list("L1")?,json!([]));assert!(lib.annotations("PAPER")?.is_empty());
-        let full=crate::zotero::ImportOptions{copy_pdfs:true,copy_notes:true,copy_annotations:true,..Default::default()};
+        let full=crate::zotero::ImportOptions{copy_pdfs:true,copy_notes:true,copy_annotations:true,pdf_mode:Some(crate::zotero::PdfMode::Copy),..Default::default()};
         let result=lib.import_zotero(&zotero,&notes,&full)?;
         assert_eq!(result["notes"],3);assert_eq!(result["annotations"],6);assert_eq!(result["warnings"].as_array().unwrap().len(),1);
         assert_eq!(notes.list("L1")?.as_array().unwrap().len(),1);
@@ -687,6 +728,20 @@ mod tests {
         assert_eq!(result["annotations"],0);assert!(selective.annotations("PAPER")?.is_empty());
         assert!(result["warnings"][0].as_str().unwrap().contains("differs"));
         assert_eq!(std::fs::read(selective.pdf_path("PAPER")?)?,b"%PDF-1.7\na different document");
+        let linked=Library::open(temp.0.join("linked-library"))?;
+        let link_options=crate::zotero::ImportOptions{copy_pdfs:true,copy_annotations:true,..Default::default()};
+        let linked_result=linked.import_zotero(&zotero,&notes,&link_options)?;
+        assert_eq!(linked_result["linked_pdfs"],1);assert_eq!(linked_result["pdfs"],0);assert_eq!(linked_result["annotations"],6);
+        assert_eq!(linked.pdf_path("PAPER")?,std::fs::canonicalize(source.join("storage/ATTACH/paper.pdf"))?);
+        assert_eq!(std::fs::read_dir(temp.0.join("linked-library/pdfs"))?.count(),0);
+        assert_eq!(linked.import_zotero(&zotero,&notes,&link_options)?["linked_pdfs"],0);
+        let relocated=temp.0.join("relocated-zotero");std::fs::rename(&source,&relocated)?;
+        assert!(linked.pdf_path("PAPER").is_err());
+        zotero.set_data_dir(Some(relocated.clone()));
+        assert_eq!(linked.import_zotero(&zotero,&notes,&link_options)?["linked_pdfs"],1);
+        assert_eq!(linked.pdf_path("PAPER")?,std::fs::canonicalize(relocated.join("storage/ATTACH/paper.pdf"))?);
+        assert_eq!(linked.annotations("PAPER")?.len(),6);
+        std::fs::rename(&relocated,&source)?;zotero.set_data_dir(Some(source.clone()));
         assert!(zotero.has_annotations("L1","PAPER")?);assert!(!zotero.has_annotations("L1","NO_ANNOTATIONS")?);
         std::fs::rename(source.join("storage/ATTACH/paper.pdf"),source.join("storage/ATTACH/hidden.pdf"))?;
         let missing=lib.import_zotero(&zotero,&notes,&full)?;
@@ -694,6 +749,31 @@ mod tests {
         assert!(missing["warnings"][0].as_str().unwrap().contains("No local PDF"));
         assert_eq!(std::fs::read(source.join("zotero.sqlite"))?,original);
         std::fs::remove_dir_all(&source)?;assert_eq!(std::fs::read(lib.pdf_path("PAPER")?)?,b"%PDF-1.7\nimported");
+        Ok(())
+    }
+    #[test]
+    fn linked_pdfs_preserve_sources_validate_content_and_convert_to_copies()->Result<()> {
+        let (temp,lib)=fixture();let source=temp.0.join("original.pdf");let bytes=b"%PDF-1.7\noriginal";
+        std::fs::write(&source,bytes)?;
+        let key=lib.save(&json!({"title":"Linked paper","key":"LINKED"}),"L1")?;
+        assert!(lib.link_pdf(&key,&source)?);
+        assert_eq!(std::fs::read_dir(temp.0.join("pdfs"))?.count(),0);
+        let hash=lib.paper(&key)?["pdf_hash"].clone();
+        lib.save_index(&key,&json!({"version":2,"hash":hash,"pages":[{"page":1,"text":"Original text","words":[]}]}))?;
+        let annotation=lib.annotate(&key,&json!({"kind":"comment","page":1,"comment":"Local note"}),"user",false)?;
+        drop(lib);let lib=Library::open(temp.0.clone())?;
+        assert_eq!(lib.pdf_path(&key)?,std::fs::canonicalize(&source)?);assert!(lib.index(&key)?.is_some());
+        std::fs::write(&source,b"%PDF-1.7\nmodified")?;
+        assert!(lib.pdf_path(&key).unwrap_err().to_string().contains("has changed"));
+        assert!(lib.index(&key).is_err());assert!(lib.link_pdf(&key,&source).is_err());
+        std::fs::write(&source,bytes)?;
+        lib.attach_pdf(&key,bytes)?;assert!(lib.linked_pdf(&key)?.is_none());
+        assert_eq!(std::fs::read(&source)?,bytes);assert_ne!(lib.pdf_path(&key)?,source);
+        assert_eq!(lib.annotations(&key)?[0]["id"],annotation["id"]);
+        lib.link_pdf(&key,&source)?;std::fs::remove_file(&source)?;
+        assert!(lib.pdf_path(&key).unwrap_err().to_string().contains("Settings"));
+        // Explicitly attaching the same PDF restores an independent managed copy.
+        lib.attach_pdf(&key,bytes)?;assert_eq!(std::fs::read(lib.pdf_path(&key)?)?,bytes);
         Ok(())
     }
     #[test]

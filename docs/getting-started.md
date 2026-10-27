@@ -52,8 +52,22 @@ The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and P
 annotations. Collections and basic paper information are always copied. Cancel
 closes the dialog without importing anything.
 
-Noctua copies nested collections, metadata, tags (manual and automatic), citation
-keys, and available local PDFs without changing Zotero. Import again to add missing
+For PDFs, **Link original** is the default: Noctua reads the PDF at its Zotero
+path without copying it into Noctua storage. Choose **Copy to Noctua** to keep an
+independent file instead. Set the default with **Settings → Connections → Default
+PDF storage → Save default**; the import dialog can override it for that import.
+The source folder is the Zotero data folder containing `zotero.sqlite`, as configured
+in Connections (or `ZOTERO_DATA_DIR`). Setting a folder does not start an import.
+
+Keep linked originals available. After moving the Zotero folder, update its path
+in Connections and import again to reconnect the same PDFs. A missing file produces
+an error; a changed PDF is rejected to keep its cached text and annotations attached
+to the original content. Changing the default affects future imports. Re-importing
+can switch the same PDF between link and copy; existing managed copies are not
+automatically deleted when switching to links.
+
+Noctua copies nested collections, metadata, tags (manual and automatic), and citation
+keys without changing Zotero. Import again to add missing
 tags to existing papers; existing tags are kept and duplicates are skipped.
 Bibliographic details include the full publication date, journal/book/proceedings
 titles, volume, issue, pages, publisher, place, edition, series, ISBN/ISSN, language,
@@ -71,7 +85,7 @@ area/text annotations, and multi-stroke drawings. Positions, colors, quoted text
 and comments are retained. Area annotations show their rectangle rather than an
 image thumbnail. Annotations follow the first available local PDF per paper;
 additional attachments are not imported. Selecting annotations also selects PDFs.
-Missing local PDFs or PDFs that differ from Noctua's attached copy produce a
+Missing local PDFs or PDFs that differ from Noctua's attached PDF produce a
 warning. Download cloud-only PDFs in Zotero before importing. Zotero can stay
 closed afterward.
 

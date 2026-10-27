@@ -83,6 +83,9 @@ Zotero import coverage includes selectable content and retry/cancel behavior in
 `tests/library-import.html`, PDF coordinate conversion in
 `tests/zotero-annotations.swift`, and SQLite fixtures for notes, annotations,
 re-imports, and PDF mismatches in the backend library tests.
+Linked-PDF coverage includes source-folder relocation, missing/changed originals,
+conversion to managed copies, annotation preservation, and persisted storage defaults;
+`tests/zotero-settings.swift` exercises Settings controls and save failures.
 
 From the repository root:
 

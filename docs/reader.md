@@ -13,6 +13,10 @@ The matching local PDF is required. Imported highlights, comments, area/text
 annotations, and drawings appear in the Reader; underlines display as highlights.
 Re-importing preserves existing imported annotations and local edits. See
 [Zotero import](getting-started.md#import-from-zotero-optional) for attachment limits.
+Zotero PDFs link to their originals by default; **Copy to Noctua** keeps an
+independent file. Linked PDFs need their source folder available. If a file moves,
+update the Zotero folder in Settings → Connections and import again. Noctua keeps
+notes and annotations locally and does not modify the original PDF.
 
 Hover linked citations to preview bibliography titles, including grouped numbered
 and author-year citations. Other internal links preview the destination passage,

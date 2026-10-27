@@ -1,4 +1,24 @@
 // Included in agent::tests to share the isolated app/router fixture.
+#[tokio::test]
+async fn zotero_pdf_storage_preference_defaults_to_link_and_persists()->Result<()> {
+    let f=Fixture::new()?;
+    assert_eq!(f.json("/api/settings",None).await["zotero_pdf_mode"],"link");
+    let saved=f.json("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"copy"}))).await;
+    assert_eq!(saved["zotero_pdf_mode"],"copy");
+    assert_eq!(crate::settings::Settings::load(&f.root).zotero_pdf_mode,crate::zotero::PdfMode::Copy);
+    assert_eq!(f.request("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"invalid"})),None).await.status(),StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(f.json("/api/settings",None).await["zotero_pdf_mode"],"copy");
+    let source=f.root.join("configured-zotero");std::fs::create_dir_all(&source)?;
+    let db=rusqlite::Connection::open(source.join("zotero.sqlite"))?;
+    db.execute_batch("CREATE TABLE collections(collectionID INTEGER); INSERT INTO collections VALUES(1);")?;drop(db);
+    f.json("/api/settings/zotero",Some(json!({"dir":source}))).await;
+    let settings=f.json("/api/settings",None).await;
+    assert_eq!(settings["zotero_dir"],source.to_string_lossy().as_ref());assert_eq!(settings["zotero_pdf_mode"],"copy");
+    f.json("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"link"}))).await;
+    assert_eq!(crate::settings::Settings::load(&f.root).zotero_pdf_mode,crate::zotero::PdfMode::Link);
+    Ok(())
+}
+
 async fn mcp_value(f: &Fixture, name: &str, args: Value, mode: &str) -> Value {
     let r=crate::mcp::handle(&f.app,&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}}),mode,None).await.unwrap();
     let mut v: Value =

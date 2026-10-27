@@ -18,6 +18,14 @@ Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
 **Connections** holds the Semantic Scholar key and optional Zotero source;
+choose the Zotero data folder containing `zotero.sqlite`. **Default PDF storage**
+defaults to **Link original**, which reads PDFs from their source paths without
+copying them. Choose **Copy to Noctua** and **Save default** for independent copies.
+The import dialog uses this preference and allows a per-import override, including
+when the source folder is set by `ZOTERO_DATA_DIR`. Save the source folder, then
+choose **Import from Zotero** to select and import content. After moving the source,
+update the folder and re-import to reconnect unchanged PDFs.
+
 **Research assistant** holds provider and model settings. Its **Lineage** group
 contains **Summarize threads automatically** (enabled by default). This preference
 is remembered in this browser and takes effect immediately; turning it off cancels
@@ -107,6 +115,9 @@ last only for the backend session. Globally installed skills stay in
 the configured global location and are not included in Noctua backups or storage relocation.
 App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
+Linked Zotero PDFs remain outside Noctua storage and are not copied by backups or
+storage relocation. Their notes, annotations, and cached analysis stay in Noctua;
+keep the Zotero source available separately. Originals are read without modification.
 
 To move storage, choose an empty folder in **Settings → Data & storage**, save,
 then quit all Noctua apps and servers and restart. Noctua copies the data and

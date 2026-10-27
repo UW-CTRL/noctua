@@ -31,10 +31,12 @@ function keySection(s, firstRun) {
 
 function zoteroSection(s, firstRun) {
   const intro = '<h2>Import from Zotero</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const pdfPreference=`<label for="setup-zotero-pdf">Default PDF storage</label><div class="setup-row"><select id="setup-zotero-pdf"><option value="link"${s.zotero_pdf_mode!=='copy'?' selected':''}>Link original</option><option value="copy"${s.zotero_pdf_mode==='copy'?' selected':''}>Copy to Noctua</option></select><button type="button" data-act="save-zotero-pdf" data-icon="save">Save default</button></div><p>Link original reads PDFs from this Zotero folder without copying them. Change the folder and import again to reconnect moved files. You can override the storage mode for each import.</p>`;
   const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
       <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p>
+      ${pdfPreference}
       <p class="setup-msg" role="status"></p><div class="setup-actions">${importAction}</div></section>`;
   }
   const value = s.zotero_dir || s.zotero_suggested || '';
@@ -45,6 +47,7 @@ function zoteroSection(s, firstRun) {
       <input class="setup-input" id="setup-zotero" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}">
       ${s.desktop ? '<button data-act="browse" data-icon="folder-open">Browse…</button>' : ''}
     </div>
+    ${pdfPreference}
     <p class="setup-msg"></p>
     <div class="setup-actions">
       <button class="primary" data-act="save-zotero" data-icon="${firstRun ? 'folder-open' : 'save'}">${firstRun ? 'Use this folder' : 'Save folder'}</button>
@@ -668,7 +671,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     e.preventDefault();
     const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
-    const busy = (on) => section?.querySelectorAll('button, input').forEach((b) => { b.disabled = on; });
+    const busy = (on) => section?.querySelectorAll('button, input, select').forEach((b) => { b.disabled = on; });
     try {
       busy(true);
       switch (t.dataset.act) {
@@ -714,10 +717,11 @@ function openSetup({ firstRun = false, tab } = {}) {
           break;
         }
         case 'import-zotero':
-          msg(section, 'Importing Zotero collections and available PDFs…', true);
           await importZoteroLibrary();
-          msg(section, 'Import complete.', true);
           break;
+        case 'save-zotero-pdf':
+          await api('/api/settings/zotero-pdf',{pdf_mode:$('#setup-zotero-pdf').value});
+          toast('Zotero PDF default saved.');await next('zotero');break;
         case 'save-zotero': {
           const dir = $('#setup-zotero').value.trim();
           if (!dir) { msg(section, 'Enter the folder, or choose “I don’t use Zotero”.'); break; }

@@ -715,6 +715,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/settings/key", post(settings::set_key).delete(settings::delete_key))
         .route("/api/settings/skip", post(settings::skip_key))
         .route("/api/settings/zotero", post(settings::set_zotero))
+        .route("/api/settings/zotero-pdf", post(settings::set_zotero_pdf))
         .route("/api/desktop/window", post(desktop_window))
         .route("/api/desktop/open", post(desktop_open))
         .route("/api/desktop/pick-folder", post(desktop_pick_folder))

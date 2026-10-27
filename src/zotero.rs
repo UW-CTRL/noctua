@@ -10,6 +10,10 @@ use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum PdfMode { #[default] Link, Copy }
+
 #[derive(serde::Deserialize)]
 #[serde(default)]
 pub struct ImportOptions {
@@ -18,9 +22,10 @@ pub struct ImportOptions {
     pub copy_pdfs: bool,
     pub copy_notes: bool,
     pub copy_annotations: bool,
+    pub pdf_mode: Option<PdfMode>,
 }
 impl Default for ImportOptions {
-    fn default() -> Self { Self { tags: true, bibliography: true, copy_pdfs: false, copy_notes: false, copy_annotations: false } }
+    fn default() -> Self { Self { tags: true, bibliography: true, copy_pdfs: false, copy_notes: false, copy_annotations: false, pdf_mode: None } }
 }
 
 /// Bibliographic details retained alongside Noctua's common paper fields.
