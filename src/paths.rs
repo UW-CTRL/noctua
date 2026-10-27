@@ -13,6 +13,7 @@ use anyhow::Result;
 /// The platform's per-user data folder:
 /// ~/Library/Application Support/Noctua, %APPDATA%\Noctua, ~/.local/share/noctua.
 pub fn default_data_dir() -> PathBuf {
+    if let Some(path)=env::var_os("NOCTUA_PROFILE_HOME").filter(|path|!path.is_empty()) {return path.into();}
     let name = if cfg!(target_os = "linux") { "noctua" } else { "Noctua" };
     dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(name)
 }
@@ -23,6 +24,12 @@ pub fn data_dir() -> Result<PathBuf> {
         return Ok(h.into());
     }
     crate::storage::resolve(&default_data_dir())
+}
+
+/// Inspect local state without applying a pending server storage migration.
+pub fn existing_data_dir() -> Result<PathBuf> {
+    if let Some(h) = env::var_os("NOCTUA_HOME").filter(|h|!h.is_empty()) { return Ok(h.into()) }
+    crate::storage::current(&default_data_dir())
 }
 
 const LEGACY_DBS: [&str; 3] = ["noctua-cache.sqlite", "noctua-chats.sqlite", "noctua-projects.sqlite"];

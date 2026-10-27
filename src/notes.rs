@@ -106,6 +106,44 @@ impl Notes {
         Ok(doc)
     }
 
+    /// Stable source IDs and baselines support explicit sync or overwrite on re-import.
+    pub fn import_zotero(&self, folder: &str, note: &Value,mode:crate::zotero::ImportMode) -> Result<(bool,Vec<String>)> {
+        use std::io::Write;
+        use sha2::{Digest,Sha256};
+        let source=note["source"].as_str().context("Missing Zotero note source")?;
+        // Copies in different collections must keep globally distinct note-reference IDs.
+        let digest=format!("{:x}",Sha256::digest(format!("{folder}:{source}").as_bytes()));
+        let id=format!("z{}",&digest[..32]);
+        let path=self.path(folder,&id)?;
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        let t=now_ms();
+        let title=note["title"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or("Zotero note");
+        let mut doc=json!({"version":1,"id":id,"title":title,"created":t,"updated":t,
+            "zotero_source":note["source"],"zotero_html":note["html"],
+            "blocks":[{"id":"imported","type":"text","src":crate::zotero::note_text(note["html"].as_str().unwrap_or(""))}]});
+        let incoming=json!({"title":doc["title"],"blocks":doc["blocks"]});
+        doc["zotero_base"]=incoming.clone();
+        if let Some(mut existing)=self.get(folder,&id)? {
+            let current=json!({"title":existing["title"],"blocks":existing["blocks"]});
+            let legacy=json!({"blocks":[{"id":"imported","type":"text","src":crate::zotero::note_text(existing["zotero_html"].as_str().unwrap_or(""))}]});
+            let baseline=existing.get("zotero_base").filter(|v|v.is_object()).unwrap_or(&legacy);
+            let (merged,base,conflicts)=crate::zotero::reconcile(&current,&incoming,Some(baseline),mode);
+            let changed=merged!=current;
+            let save=changed||existing["zotero_base"]!=base||existing["zotero_html"]!=note["html"];
+            existing["title"]=merged["title"].clone();existing["blocks"]=merged["blocks"].clone();
+            existing["zotero_base"]=base;existing["zotero_html"]=note["html"].clone();
+            if save {self.save(folder,&id,existing)?;}
+            return Ok((changed,conflicts));
+        }
+        let mut temp=tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
+        temp.write_all(doc.to_string().as_bytes())?;
+        match temp.persist_noclobber(path) {
+            Ok(_)=>Ok((true,Vec::new())),
+            Err(e) if e.error.kind()==std::io::ErrorKind::AlreadyExists=>Ok((false,vec!["note created concurrently; retry import".into()])),
+            Err(e)=>Err(e.error.into()),
+        }
+    }
+
     /// Replaces the note's contents. Returns the new `updated` time. If the
     /// doc carries the `updated` time it was based on and the file has been
     /// saved since (another tab or window), nothing is written: 409.

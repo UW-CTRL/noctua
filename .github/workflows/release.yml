@@ -27,6 +27,7 @@ jobs:
       release_id: ${{ steps.release.outputs.release_id }}
       commit: ${{ steps.commit.outputs.sha }}
       updater: ${{ steps.updater.outputs.enabled }}
+      macos_arch: ${{ steps.macos.outputs.arch }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +41,12 @@ jobs:
       - name: Resolve tagged commit
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Preserve manual rebuilds of older Universal tags without moving their source.
+      - name: Resolve macOS release architecture
+        id: macos
+        run: |
+          python3 -c "from pathlib import Path; lines = Path('.github/workflows/release.yml').read_text().splitlines(); print('arch=' + ('universal' if any(line.strip() == 'args: --target universal-apple-darwin' for line in lines) else 'aarch64'))" >> "$GITHUB_OUTPUT"
 
       - name: Validate update signing configuration
         id: updater
@@ -74,12 +81,14 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: --target universal-apple-darwin
+            args: --target ${{ needs.prepare.outputs.macos_arch == 'universal' && 'universal-apple-darwin' || 'aarch64-apple-darwin' }}
           - platform: windows-latest
             args: ""
           - platform: ubuntu-22.04
             args: ""
     runs-on: ${{ matrix.platform }}
+    env:
+      TAURI_CLI_VERSION: '2.10.1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,10 +99,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Restore managed paper compilers
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/tectonic
+            target/texlive
+          key: paper-compilers-v2-${{ runner.os }}-${{ runner.arch }}-${{ runner.os == 'macOS' && needs.prepare.outputs.macos_arch == 'universal' && 'universal' || 'native' }}-${{ hashFiles('scripts/setup-tectonic.py', 'scripts/setup-pdflatex.py', 'third-party/tectonic/**', 'third-party/texlive/**') }}
       - name: Prepare managed paper compiler
         shell: bash
         run: |
-          python scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
+          python scripts/setup-tectonic.py ${{ runner.os == 'macOS' && needs.prepare.outputs.macos_arch == 'universal' && '--universal' || '' }}
           python scripts/setup-pdflatex.py
 
       - name: Configure update verification key
@@ -122,12 +138,24 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && (needs.prepare.outputs.macos_arch == 'universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'aarch64-apple-darwin') || '' }}
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Restore Tauri CLI
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/noctua-tauri-cli
+          key: tauri-cli-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TAURI_CLI_VERSION }}
+
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "${{ env.TAURI_CLI_VERSION }}" --locked --root "${{ runner.temp }}/noctua-tauri-cli"
+
+      - name: Add Tauri CLI to PATH
+        shell: bash
+        run: echo "${{ runner.temp }}/noctua-tauri-cli/bin" >> "$GITHUB_PATH"
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -160,8 +188,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
           UPDATER_ENABLED: ${{ needs.prepare.outputs.updater }}
+          MACOS_ARCH: ${{ needs.prepare.outputs.macos_arch }}
         with:
           script: |
             const publish = require('./.github/scripts/publish-release.cjs');
             await publish({ github, context, core, tag: process.env.RELEASE_TAG, releaseId: process.env.RELEASE_ID,
-              updaterEnabled: process.env.UPDATER_ENABLED === 'true' });
+              updaterEnabled: process.env.UPDATER_ENABLED === 'true', macosArch: process.env.MACOS_ARCH });

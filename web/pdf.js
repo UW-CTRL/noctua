@@ -650,7 +650,7 @@ function bindPDFPreviewResize(popup){
   };
   grip.onpointerup=finish;grip.onpointercancel=finish;grip.onlostpointercapture=finish;
   const reset=()=>{
-    localStorage.removeItem(pdfPreviewSizeKey(popup));popup.dataset.previewManual='false';
+    store.remove(pdfPreviewSizeKey(popup));popup.dataset.previewManual='false';
     if(popup.pdfPreviewCrop){const size=pdfReferencePreviewSize(popup.pdfPreviewCrop,innerWidth,innerHeight);popup.dataset.previewAuto=JSON.stringify(size);applyPDFPreviewSize(popup,size);}
     else{popup.classList.remove('pdf-preview-sized');popup.style.width='';popup.style.height='';}
     const rect=popup.getBoundingClientRect();positionPDFPreview(popup,rect.left-12,rect.top-16);popup.noctuaRenderPreview?.();
@@ -941,7 +941,7 @@ function pdfLinkCitationNumbers(index,link){
   }
   const named=typeof link.dest==='string'&&link.dest.match(/^(?:cite|citation)[.:](\d+)$/i);return named?[Number(named[1])]:[];
 }
-function inkSVG(a){return `<polyline points="${a.points.map(p=>p[0]+','+p[1]).join(' ')}" fill="none" stroke="${esc(a.color)}" stroke-width="${a.width}" stroke-linecap="round" stroke-linejoin="round"/>`;}
+function inkSVG(a){return (a.paths||[a.points||[]]).map(points=>`<polyline points="${points.map(p=>p[0]+','+p[1]).join(' ')}" fill="none" stroke="${esc(a.color)}" stroke-width="${a.width}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');}
 function clearPDFAnnotationSelection(){
   if(!PDF.selected)return;PDF.selected=null;syncPDFAnnotationSelection();paintPDFAnnotations();updateChatContext();
 }
@@ -1067,7 +1067,7 @@ async function savePDFComment(edit,retries=0){
   clearTimeout(edit.timer);edit.timer=null;
   if(edit.running){await edit.running;return savePDFComment(edit);}
   if(edit.deleted||edit.conflict||edit.value===edit.base){
-    if(!edit.conflict&&edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}
+    if(!edit.conflict&&edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){store.remove('pdf-draft:'+edit.id);store.remove('pdf-draft-base:'+edit.id);}
     showPDFCommentState(edit);return;
   }
   const value=edit.value,base=edit.base;
@@ -1091,7 +1091,7 @@ async function savePDFComment(edit,retries=0){
       edit.revision=saved.revision;edit.base=value;edit.error='';
       if(PDF.key===edit.key){const annotation=PDF.annotations.find(a=>a.id===edit.id);if(annotation&&!(annotation.revision>saved.revision))Object.assign(annotation,saved);}
     }catch(error){edit.error=error.message;throw error;}
-    finally{if(edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}else if(!edit.conflict)store.set('pdf-draft-base:'+edit.id,edit.base);}
+    finally{if(edit.value===edit.base&&store.get('pdf-draft:'+edit.id)===edit.value){store.remove('pdf-draft:'+edit.id);store.remove('pdf-draft-base:'+edit.id);}else if(!edit.conflict)store.set('pdf-draft-base:'+edit.id,edit.base);}
   })();
   edit.running=pdfSave(work);showPDFCommentState(edit);
   try{await edit.running;}finally{edit.running=null;showPDFCommentState(edit);}
@@ -1104,12 +1104,24 @@ async function changePDFAnnotation(edit,method,body){
   if(edit.conflict)throw new Error(edit.error);
   const url=paperURL(edit.key)+'/annotations/'+enc(edit.id);
   const result=await libraryRequest(url+(method==='DELETE'?'?revision='+edit.revision:''),method,body?{revision:edit.revision,...body}:undefined);
-  if(method==='DELETE'){edit.deleted=true;localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);pdfCommentEdits.delete(edit.key+':'+edit.id);}
+  if(method==='DELETE'){edit.deleted=true;store.remove('pdf-draft:'+edit.id);store.remove('pdf-draft-base:'+edit.id);pdfCommentEdits.delete(edit.key+':'+edit.id);}
   else {edit.revision=result.revision;}
   return result;
 }
 window.addEventListener('pagehide',()=>{for(const edit of pdfCommentEdits.values())savePDFComment(edit).catch(()=>{});});
-async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar();const key=PDF.key;if(!key)return;const list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;
+// Zotero stores PDF coordinates. PDF.js accounts for crop boxes and page rotation.
+function projectZoteroAnnotation(annotation,viewport){
+  const position=annotation.zotero_position;if(!position)return annotation;
+  const point=(x,y)=>{const p=viewport.convertToViewportPoint(x,y);return [Math.max(0,Math.min(1,p[0]/viewport.width)),Math.max(0,Math.min(1,p[1]/viewport.height))];};
+  const rects=(position.rects||[]).map(([x1,y1,x2,y2])=>{const a=point(x1,y1),b=point(x2,y2);return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1])];});
+  const paths=(position.paths||[]).map(path=>{const points=[];for(let i=0;i+1<path.length;i+=2)points.push(point(path[i],path[i+1]));return points;});
+  return {...annotation,rects,paths,points:paths[0]||[],width:Math.max(.0002,Math.min(.03,(position.width||2)/Math.min(viewport.width,viewport.height)))};
+}
+async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar();const key=PDF.key,doc=PDF.doc;if(!key)return;let list=await api(paperURL(key)+'/annotations');if(key!==PDF.key)return;
+  const viewports=new Map();
+  for(const a of list)if(a.zotero_position&&a.page<=doc.numPages&&!viewports.has(a.page))viewports.set(a.page,(await doc.getPage(a.page)).getViewport({scale:1}));
+  if(key!==PDF.key||doc!==PDF.doc)return;
+  list=list.map(a=>a.zotero_position&&viewports.has(a.page)?projectZoteroAnnotation(a,viewports.get(a.page)):a);
   for(const a of list)showPDFCommentState(pdfCommentEdit(key,a));
   PDF.annotations=list;paintPDFAnnotations();syncPDFAnnotationSelection();updatePDFAutoHighlightUI();applyPDFAnnotationFilter();if($('#pdf-sidebar').contains(document.activeElement)&&document.activeElement.matches('textarea'))return;
   const side=$('#pdf-annotation-list');side.innerHTML=list.map(a=>{const edit=pdfCommentEdit(key,a);return `<article data-id="${a.id}" class="pdf-annotation ${a.status}${a.id===PDF.selected?' selected':''}" aria-current="${a.id===PDF.selected}"><div class="pdf-annotation-header"><button data-jump>Page ${a.page} · ${esc(a.author)}${a.status==='pending'?' · suggestion':''}</button><button data-delete data-icon="trash-2" data-icon-only aria-label="${a.status==='pending'?'Reject suggestion':'Delete annotation'}" title="${a.status==='pending'?'Reject suggestion':'Delete annotation'}"></button></div>${pdfCategoryBadge(a)}<blockquote>${esc(a.quote || (a.kind==='ink'?'Drawing':''))}</blockquote><textarea rows="1" aria-label="Comment with LaTeX" placeholder="Comment…">${esc(edit.value)}</textarea><div class="pdf-preview tex-view">${edit.value.includes('$')?pdfMath(edit.value):''}</div><small data-comment-status role="status"></small><div data-comment-conflict hidden><button data-use-saved>Use saved comment</button><button data-keep-draft>Keep my draft</button></div>${a.status==='pending'?'<button data-accept data-icon="check">Accept</button>':''}${(a.replies || []).map(r=>`<div class="pdf-comment-history" data-reply-id="${esc(r.id)}"><small>${esc(r.author)}${r.status==='pending'?' · suggestion':''}</small><div class="tex-view">${pdfMath(r.comment)}</div>${r.status==='pending'?`<button data-reply-id="${r.id}" data-resolve="true" data-icon="check">Accept</button><button data-reply-id="${r.id}" data-resolve="false" data-icon="x">Reject</button>`:''}</div>`).join('')}</article>`;}).join('');
@@ -1124,7 +1136,7 @@ async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar()
     for(const [selector,keep] of [['[data-use-saved]',false],['[data-keep-draft]',true]])bind(selector,async()=>{
       const latest=(await api(paperURL(key)+'/annotations')).find(item=>item.id===edit.id);if(!latest)throw new Error('This annotation was deleted. Your draft is kept.');
       edit.revision=latest.revision;edit.base=latest.comment||'';edit.conflict=false;edit.error='';
-      if(keep)await savePDFComment(edit);else {edit.value=edit.base;input.value=edit.value;localStorage.removeItem('pdf-draft:'+edit.id);localStorage.removeItem('pdf-draft-base:'+edit.id);}
+      if(keep)await savePDFComment(edit);else {edit.value=edit.base;input.value=edit.value;store.remove('pdf-draft:'+edit.id);store.remove('pdf-draft-base:'+edit.id);}
     });
     el.querySelectorAll('[data-resolve]').forEach(b=>b.onclick=async()=>{try{await savePDFComment(edit);await pdfSave(api(url+'/resolve-reply',{reply_id:b.dataset.replyId,accept:b.dataset.resolve==='true'}));await refreshPDFAnnotations();}catch(e){toast(e.message);}});
     showPDFCommentState(edit);

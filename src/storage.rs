@@ -12,7 +12,8 @@ static COPY_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None
 
 pub fn migration_error() -> Option<String> { COPY_ERROR.lock().unwrap().clone() }
 
-/// Running instances share a lease; migration requires every other instance to quit.
+/// Coordinate storage resolution with old apps. The data server upgrades this
+/// lease to exclusive and retains it; clients probe the owner before taking it.
 pub fn lease() -> Result<Option<fs::File>> {
     if std::env::var_os("NOCTUA_HOME").is_some_and(|s| !s.is_empty()) { return Ok(None); }
     let default = paths::default_data_dir();
@@ -27,11 +28,8 @@ pub fn lease() -> Result<Option<fs::File>> {
     Ok(Some(file))
 }
 
-pub fn share_lease(file: &Option<fs::File>) -> Result<()> {
-    if let Some(file) = file {
-        file.unlock()?;
-        file.try_lock_shared().context("Another Noctua process is copying storage")?;
-    }
+pub fn exclusive_lease(file: &Option<fs::File>) -> Result<()> {
+    if let Some(file) = file { file.try_lock().context("Another app or server is using this storage. Quit older Noctua apps before switching to the independent server")?; }
     Ok(())
 }
 
@@ -54,6 +52,8 @@ fn save(default: &Path, location: &Location) -> Result<()> {
     fs::create_dir_all(default)?;
     paths::write_private(&default.join(CONFIG), &serde_json::to_string_pretty(location)?)
 }
+
+pub fn current(default: &Path) -> Result<PathBuf> { Ok(load(default)?.current.unwrap_or_else(||default.to_path_buf())) }
 
 pub fn pending() -> Result<Option<PathBuf>> {
     Ok(load(&paths::default_data_dir())?.pending)
@@ -117,6 +117,8 @@ pub fn resolve(default: &Path) -> Result<PathBuf> {
 
 fn relocate(default: &Path, location: &mut Location, source: &Path, destination: &Path) -> Result<PathBuf> {
     let source = fs::canonicalize(source)?;
+    let owner = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(source.join("server-owner.lock"))?;
+    owner.try_lock().context("The source data folder is still owned by a server. Stop that server before copying storage")?;
     let destination = fs::canonicalize(destination)
         .context("The selected storage folder is unavailable")?;
     validate_destination(&source, &destination)?;
@@ -143,7 +145,7 @@ fn copy_data(source: &Path, destination: &Path) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name();
         let shown = name.to_string_lossy();
-        if shown == CONFIG || shown == "storage-location.lock" || shown.ends_with(".sqlite-wal") || shown.ends_with(".sqlite-shm") { continue; }
+        if shown == CONFIG || shown == "storage-location.lock" || matches!(shown.as_ref(), "server-owner.lock" | "server-start.lock" | "server-control") || shown == "server.json" || shown == "server.log" || shown.ends_with(".sqlite-wal") || shown.ends_with(".sqlite-shm") { continue; }
         let from = entry.path();
         let to = destination.join(&name);
         let kind = entry.file_type()?;
@@ -232,4 +234,18 @@ mod tests {
         assert!(load(&source)?.pending.is_none());
         Ok(())
     }
+    #[test]
+    fn relocation_keeps_pending_selection_without_copying_a_live_owner() -> Result<()> {
+        let root=Folder::new();let source=root.0.join("source");let destination=root.0.join("destination");
+        fs::create_dir_all(&source)?;
+        let _owner=crate::server::Owner::acquire(&source,"http://127.0.0.1:1")?;
+        fs::write(source.join("research.txt"),"Keep this work")?;
+        schedule(&source,&source,Some(&destination))?;
+        assert_eq!(resolve(&source)?,fs::canonicalize(&source)?);
+        assert!(fs::read_dir(&destination)?.next().is_none());
+        assert!(load(&source)?.pending.is_some());
+        assert_eq!(fs::read_to_string(source.join("research.txt"))?,"Keep this work");
+        Ok(())
+    }
+
 }

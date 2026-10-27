@@ -41,7 +41,8 @@ Choose the mode with the badge below the composer.
 ## Chat attachments
 
 Drag files onto the chat input, paste clipboard files or screenshots with
-Ctrl+V (Cmd+V on macOS), or choose **Attach files** (paperclip). Clipboard file
+Ctrl+V (Cmd+V on macOS), or choose **Attach files** (paperclip) at the right of the toolbar below the
+input. The input uses the full composer width. Clipboard file
 pasting depends on the browser and operating system; use drag-and-drop or the
 file picker if copied files are not available to the browser. Ordinary text
 pasting continues to insert text.
@@ -87,6 +88,13 @@ uncached PDF text or page images. Scanned PDFs do not gain OCR.
 Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while
 chat tools annotate individual passages. See [Notes](notes.md#assistant-edits)
 for note-editing boundaries.
+
+Zotero import is a Library dialog control. Imported notes are ordinary editable
+text notes; imported PDF annotations can be read and edited through the existing
+annotation tools. Re-importing with Sync preserves local edits and reports conflicting
+source changes; Overwrite replaces imported fields with Zotero values. HTML note
+formatting and embedded images are not reproduced. A download request for a broken
+linked PDF reports failure and requires reconnecting or attaching the original.
 
 Project root is a drag target shown only while dragging project entries. The project sidebar combines its collection selector and creation controls in one row. Hover or keyboard-focus a creation icon to reveal its label below. The collection menu uses fixed indentation for nested folders and highlights the selection without checkmarks. New note or file offers Note, LaTeX (.tex), and File in one compact form. Rows reveal Rename and Trash on hover or keyboard focus. Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag entries onto folders or onto a destination revealed by hovering over the project selector to move them. Import files opens a review queue for chosen or dropped files before uploading; these remain UI actions.
 
@@ -158,6 +166,19 @@ reports completion, and conflicting edits require resolution.
 Prompts live in [`src/prompts/`](../src/prompts/). Runtime context is added
 separately. Prompt instructions work alongside tool permissions and validation.
 
+### Scholar Inbox Screening
+
+**Settings → Connections → Google Scholar Inbox → Edit prompt** configures a
+separate, collection-specific Scholar worker. Replace `<Research Interest>` before
+first use. It reads accessible PDF text and uses your selected Research Assistant
+provider and model to recommend saving or excluding each paper. It has no tools;
+only validated decisions can add matching papers to the destination collection.
+The default prompt is in [`scholar-default.md`](../src/prompts/scholar-default.md),
+with fixed evidence and document-handling rules in
+[`scholar-agent.md`](../src/prompts/scholar-agent.md). See
+[Google Scholar Inbox](settings-and-data.md#google-scholar-inbox) for activation,
+background polling, retries, and supported documents.
+
 ### Shared chat instructions
 
 Chat combines all three prompts:
@@ -201,6 +222,35 @@ These use separate task prompts rather than the combined chat instructions.
 | Execution | Reader analysis and handwriting run separately from chat; Reader workers have no tools. |
 | Editing | Source files only; no Settings prompt editor. `AGENTS.md` governs repository work. |
 | Applying changes | Rebuild and restart; cached analysis may be reused. See [Development](development.md#ai-prompts). |
+
+## Local drafts and server edits
+
+Finish pending client file uploads, or resolve/remove failed uploads, before
+switching servers or installing an update. Attachment drafts stay with their
+original server and chat.
+
+During a server update, open editors save and pause while existing AI tasks finish.
+An unresolved save/conflict blocks replacement; local drafts are preserved. An
+update notice alone does not confirm that unsaved client input reached the server.
+Skill approvals and output reviews must be resolved before a server update;
+replacement is canceled rather than discarding those session-owned results.
+
+The assistant reads saved server content, not unsaved local input. Multiple editor
+drafts remain separate, and another device's edits require conflict resolution.
+See [note draft recovery](notes.md#connection-aware-note-drafts) before discarding
+a draft or explicitly keeping a local version.
+
+## Server job lifetime
+
+Closing a desktop window, losing the connection or switching servers leaves an
+AI reply running on its original server. Reopen that server's chat history to
+see its busy state and eventual persisted result. Use **Stop server reply** in
+a restored running chat, or the Stop control for the current stream, to request
+explicit cancellation. Stopping retains the partial reply. A client disconnect
+is not a stop request. Provider changes/new chat retain their explicit stop
+behavior for the currently attached stream.
+Reopening a running chat restores its pending file-edit approval cards. They
+still require an explicit decision; reconnecting never grants edit permission.
 
 ## Paper files
 

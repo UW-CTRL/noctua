@@ -8,7 +8,7 @@ use crate::{App, Shared, ApiResult, workspace};
 
 pub const VERSION: &str = "0.17.0";
 static RESOURCES: OnceLock<PathBuf> = OnceLock::new();
-/// Called by the desktop shell before starting its server.
+/// Configured inside the independent server before handling compilation requests.
 pub fn set_resources(path: PathBuf) { let _ = RESOURCES.set(path); }
 fn tectonic_compiler() -> Result<PathBuf> {
     let arch = if cfg!(target_arch="aarch64") { "aarch64" } else { "x86_64" };
@@ -109,6 +109,7 @@ struct Job { status: Value, pending: Option<Snapshot>, running: bool, cancel: Ar
 impl Default for Job { fn default()->Self {Self{status:json!({"state":"idle"}),pending:None,running:false,cancel:Arc::new(AtomicBool::new(false)),last:None}} }
 static JOBS:OnceLock<Mutex<HashMap<PathBuf,Job>>>=OnceLock::new();
 fn jobs()-> &'static Mutex<HashMap<PathBuf,Job>> {JOBS.get_or_init(||Mutex::new(HashMap::new()))}
+pub(crate) fn busy()->bool{jobs().lock().unwrap().values().any(|job|job.running||job.pending.is_some())}
 fn cache(app:&App,target:&str)->Result<PathBuf>{Ok(workspace::dir(app,target)?.join(".workspace/paper"))}
 fn load_last(root:&FsPath)->Option<Value>{let v:Value=serde_json::from_slice(&std::fs::read(root.join("last.json")).ok()?).ok()?;let f=v["artifact"].as_str().or_else(||v["fingerprint"].as_str())?;if f.len()!=64||!f.bytes().all(|b|b.is_ascii_hexdigit())||!root.join(format!("{f}.pdf")).is_file(){return None;}Some(v)}
 fn view(job:&Job)->Value{let mut v=job.status.clone();v["last_success"]=job.last.clone().unwrap_or(Value::Null);v}

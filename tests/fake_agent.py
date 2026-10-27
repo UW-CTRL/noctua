@@ -84,6 +84,13 @@ if any("You are Noctua's Auto-highlight agent" in arg for arg in args):
     text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':paper['pages'][0]['text'][:60],'comment':'Principal contribution.'}]})
     if (home / 'auto-highlight-invalid').exists():
         text = json.dumps({'highlights':[{'category':'novelty','page':1,'quote':'An invented source passage.'}]})
+if any("You are Noctua's Scholar agent" in arg for arg in args):
+    paper = json.loads(prompt)
+    assert len(paper['text']) > 100 and paper['source'], 'Scholar must receive full paper text'
+    assert '--tools' not in args or args[args.index('--tools')+1] == '', 'Scholar must not have tools'
+    (home / 'scholar-input.json').write_text(prompt)
+    text = json.dumps({'save': not (home / 'scholar-exclude').exists(), 'reason':'Matches the configured research interests.', 'evidence':paper['text'].strip()[:80]})
+    if (home / 'scholar-invalid').exists(): text = json.dumps({'save':True,'reason':'Invalid evidence','evidence':'This quoted evidence does not exist in the supplied paper.'})
 if 'Name each research thread' in prompt:
     text = 'Here are the threads:\n```json\n' + json.dumps({'common':'Both use attention.','threads':[{'id':'t1','name':provider+' thread','problem':'Long-range dependencies.','summary':'Recurrence gave way to attention.','key':['a','b'],'steps':[{'from':'a','to':'b','relation':'extends','note':'adds attention'}]}]}) + '\n```'
 session = provider+'-session'

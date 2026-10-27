@@ -8,6 +8,22 @@ Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
 of the app's appearance.
 
+To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
+The matching local PDF is required. Imported highlights, comments, area/text
+annotations, and drawings appear in the Reader; underlines display as highlights.
+On re-import, **Sync changes** preserves local edits and reports conflicts;
+**Overwrite from Zotero** replaces imported fields while retaining local replies. See
+[Zotero import](getting-started.md#import-from-zotero-optional) for attachment limits.
+Zotero PDFs link to their originals by default; **Copy to Noctua** keeps an
+independent file. Linked PDFs need their source folder available. If a file moves,
+update the Zotero folder in Settings → Connections and import again. Noctua keeps
+notes and annotations locally and does not modify the original PDF.
+Downloading an already linked PDF checks that its source still exists and matches
+the imported content. An unavailable or changed source returns an error rather than
+a successful download. File verification is reused while size, timestamps, and
+file identity remain unchanged, so cached text and outlines do not reread the whole
+PDF on every request. A restart or detected file change requires validation again.
+
 Hover linked citations to preview bibliography titles, including grouped numbered
 and author-year citations. Other internal links preview the destination passage,
 equation, figure, table, or algorithm. Previews adapt to the content and can be
@@ -44,6 +60,17 @@ or analyze figure images. Both are Reader UI actions, separate from chat tools.
 To discuss a passage, select it and choose **Add to chat**. You can also click a
 detected figure, table, or algorithm to attach its source region. See
 [Chat attachments](assistant.md#chat-attachments).
+
+Detected boxes include the object and its caption while keeping neighboring
+columns, running headers, author notes, and body paragraphs separate. Figures
+can float beside prose or have captions beside their drawings; stacked panels
+stay together. Tables can span columns and include rotated headings, outlined
+lettering, or rows below an internal divider without a bottom border. References
+inside table cells stay within their table. Ruled algorithm boxes stop at the
+listing's closing border. Fully transparent drawing objects are excluded.
+
+Detection requires selectable caption text and PDF drawing information; scanned
+captions and unusual layouts may still need a text selection instead.
 
 See [AI prompts](assistant.md#dedicated-ai-features) for how the outline and
 auto-highlight tasks are instructed, with links to their source prompts.

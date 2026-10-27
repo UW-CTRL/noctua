@@ -12,7 +12,7 @@
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
-const chat={id:'chat',mode:'direct'},store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
+const chat={id:'chat',mode:'direct'},store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;},remove(k){delete this.data[k];}};
 let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const approvals=[];
@@ -169,6 +169,8 @@ function assert(ok,message){if(!ok)throw Error(message)}
  const proposal={turn_id:'turn-one',approval_id:'file-one',chat_id:'chat',changes:[{op:'edit',name:'main.tex',target:'L1',before:'Keep\nOld\nEnd',after:'Keep\nNew <tag>\nEnd'}]};
  showFileEditApproval(proposal);showFileEditApproval(proposal);
  assert(document.querySelectorAll('.chat-edit-approval').length===1&&!$('dialog'),'same file has one inline request and no modal');
+ const restoredCard=$('.chat-edit-approval');restoredCard.remove();showFileEditApproval(proposal);
+ assert($('.chat-edit-approval')===restoredCard,'reopening a running chat lost its pending approval card');
  assert($('.diff-added').textContent.includes('New <tag>')&&!$('.edit-diff tag'),'diff source escaped');
  assert($('.diff-removed').textContent.includes('Old'),'removed source visible');
  showFileEditApproval({...proposal,approval_id:'file-two',changes:[{op:'create',name:'extra.bib',after:'new'}]});

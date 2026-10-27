@@ -132,6 +132,9 @@ bundled Tectonic upgrade passes the original alias-spacing regression test.
 **Compile** explicitly rebuilds, including unchanged sources. **Stop** cancels both
 the current build and queued changes. Multiple windows share one compilation queue
 per project. Only the newest pending build runs after the active build finishes.
+Compilation runs on the server computer and continues after closing a client.
+Server maintenance waits for active and queued builds; bundled compilers remain
+available outside the desktop bundle while an application update is installed.
 
 The last successful PDF stays visible while compiling and if an edit contains an
 error. The status identifies outdated output. Expand **Compiler log** to read

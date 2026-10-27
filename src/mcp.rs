@@ -101,7 +101,7 @@ fn tools(mode: &str) -> Value {
     let key = json!({"type":"string","description":"Native paper_key from list_folder_items"});
     let page = json!({"type":"integer","minimum":1});
     let extra=vec![
-        tool("download_pdf","Download a PDF into Noctua. Supply paper_key for a saved paper OR paper_id to save a discovered paper first. Uses its open-access URL; optionally provide a direct HTTP(S) PDF URL. Existing PDFs are reused. Does not bypass access restrictions. Return includes the saved paper key for read_pdf/show_pdf.",json!({"paper_key":key,"paper_id":paper_id,"folder_id":folder_id,"url":{"type":"string","description":"Optional direct HTTP(S) PDF URL"}}), &[]),
+        tool("download_pdf","Download a PDF into Noctua. Supply paper_key for a saved paper OR paper_id to save a discovered paper first. Uses its open-access URL; optionally provide a direct HTTP(S) PDF URL. Existing readable PDFs are reused; missing or changed linked originals report a download failure. Does not bypass access restrictions. Return includes the saved paper key for read_pdf/show_pdf.",json!({"paper_key":key,"paper_id":paper_id,"folder_id":folder_id,"url":{"type":"string","description":"Optional direct HTTP(S) PDF URL"}}), &[]),
         tool("read_pdf","Read locally saved PDF text, up to 20 pages. Empty text may indicate a scanned page.",json!({"paper_key":key,"start_page":page,"end_page":page}), &["paper_key"]),
         tool("search_pdf","Find text in a saved PDF. Returns matching lines and page numbers.",json!({"paper_key":key,"query":{"type":"string"}}), &["paper_key","query"]),
         tool("view_pdf_page","View a PDF page as an image to interpret figures, equations, or scans.",json!({"paper_key":key,"page":page}), &["paper_key","page"]),

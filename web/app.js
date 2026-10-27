@@ -3,9 +3,12 @@
 const $ = (s) => document.querySelector(s);
 const enc = encodeURIComponent;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clientPreference = k => ['noctua.theme','noctua.notesTheme','noctua.readerTheme','noctua.pdfPageTheme','noctua.folderHeight','noctua.chatInputHeight'].includes(k) || /^(noctua\.font\.|noctua\.pane\.|noctua\.pdfPreviewSize\.)/.test(k);
+const serverStoreKey = k => window.noctuaServerId && !clientPreference(k) ? `noctua.server.${window.noctuaServerId}.${k}` : k;
 const store = {
-  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+  get(k) { try { return localStorage.getItem(serverStoreKey(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(serverStoreKey(k), v); } catch { /* storage unavailable */ } },
+  remove(k) { try { localStorage.removeItem(serverStoreKey(k)); } catch { /* storage unavailable */ } },
 };
 
 // ---------------------------------------------------------------- API
@@ -962,6 +965,8 @@ async function readEvents(response, handle) {
 // Wait until the server has saved even a stopped turn before restoring a
 // conversation. Session ids and the current conversation are provider-specific.
 async function stopChat() {
+  if (!chat.abort) return; // reading a detached job must not cancel it
+  if (chat.id) await api(`/api/chats/${enc(chat.id)}/stop`, {});
   chat.abort?.abort();
   await chat.running;
   if (!chat.id) return;
@@ -1340,6 +1345,13 @@ async function openChat(id) {
   $('#chat-log').innerHTML = '';
   if (!c.messages.length) chatWelcome();
   c.messages.forEach(renderStoredMsg);
+  if (c.busy) {
+    const notice=appendMsg('assistant','<p class="tool">This server is still replying. The task continues when this interface closes.</p><button class="stop-server-reply">Stop server reply</button>');
+    notice.querySelector('button').onclick=async()=>{try{await api(`/api/chats/${enc(id)}/stop`,{});}catch(e){toast(e.message,{error:true});}};
+    for (const request of c.pending_file_edits||[]) runChatAction(request,notice);
+    const provider=chat.provider;
+    setTimeout(()=>{if(chat.id===id&&chat.provider===provider&&!chat.busy)openChat(id);},1500);
+  }
 }
 
 async function toggleChatHistory(show = $('#chat-history').classList.contains('hidden')) {
@@ -2200,3 +2212,6 @@ folderDivider.addEventListener('dblclick', () => setFolderHeight(defaultFolderHe
 new ResizeObserver(() => {
   if (G.layout !== 'library') setFolderHeight(Number(store.get('noctua.folderHeight')) || defaultFolderHeight, false);
 }).observe($('#research-sidebar'));
+
+window.preserveChatDraft = () => { localStorage.setItem(serverStoreKey('noctua.chatDraft.' + chat.provider), $('#chat-input').value); };
+$('#chat-input').addEventListener('input', () => { try { window.preserveChatDraft(); } catch { toast('Chat draft storage unavailable; keep this window open.', {error:true}); } });

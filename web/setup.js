@@ -7,7 +7,7 @@ let settings = null;
 const keyNeeded = (s) => !s.key_source && !s.skipped;
 
 function keySection(s, firstRun) {
-  const intro = '<h2>Semantic Scholar API key</h2><p>An optional API key for paper searches and citation lookups.</p>';
+  const intro = '<h2>Server Semantic Scholar API Key</h2><p>An optional API key for paper searches and citation lookups.</p>';
   if (s.key_source === 'env') {
     return `<section data-step="key">${intro}
       <p class="setup-current"><code>${esc(s.key_hint || '')}</code> · <code>NOCTUA_S2_KEY</code></p></section>`;
@@ -30,11 +30,13 @@ function keySection(s, firstRun) {
 }
 
 function zoteroSection(s, firstRun) {
-  const intro = '<h2>Import from Zotero</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const intro = '<h2>Import from Zotero on the server computer</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const pdfPreference=`<label for="setup-zotero-pdf">Default PDF storage</label><div class="setup-row"><select id="setup-zotero-pdf"><option value="link"${s.zotero_pdf_mode!=='copy'?' selected':''}>Link original</option><option value="copy"${s.zotero_pdf_mode==='copy'?' selected':''}>Copy to Noctua</option></select><button type="button" data-act="save-zotero-pdf" data-icon="save">Save default</button></div><p>Link original reads PDFs from this Zotero folder without copying them. Change the folder and import again to reconnect moved files. You can override the storage mode for each import.</p>`;
   const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
       <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p>
+      ${pdfPreference}
       <p class="setup-msg" role="status"></p><div class="setup-actions">${importAction}</div></section>`;
   }
   const value = s.zotero_dir || s.zotero_suggested || '';
@@ -45,6 +47,7 @@ function zoteroSection(s, firstRun) {
       <input class="setup-input" id="setup-zotero" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}">
       ${s.desktop ? '<button data-act="browse" data-icon="folder-open">Browse…</button>' : ''}
     </div>
+    ${pdfPreference}
     <p class="setup-msg"></p>
     <div class="setup-actions">
       <button class="primary" data-act="save-zotero" data-icon="${firstRun ? 'folder-open' : 'save'}">${firstRun ? 'Use this folder' : 'Save folder'}</button>
@@ -114,14 +117,14 @@ function assistantOptions(s, provider) {
 
 function agentSection(s) {
   const provider = chat.provider;
-  return `<section data-step="agent"><h2>Research assistant</h2>
+  return `<section data-step="agent"><h2>Research Assistant</h2>
     <div class="settings-group" role="group" aria-labelledby="settings-provider-title">
     <div class="setting-field"><h3 id="settings-provider-title">Provider</h3>
     <select id="setup-agent" aria-labelledby="settings-provider-title" ${chat.switching ? 'disabled' : ''}>
       <option value="claude" ${provider === 'claude' ? 'selected' : ''}>Claude Code</option>
       <option value="codex" ${provider === 'codex' ? 'selected' : ''}>Codex</option>
     </select></div></div>
-    <div class="settings-group" role="group" aria-labelledby="settings-model-title"><h3 id="settings-model-title">Model settings</h3>
+    <div class="settings-group" role="group" aria-labelledby="settings-model-title"><h3 id="settings-model-title">Model Settings</h3>
     <div id="assistant-options">${assistantOptions(s, provider)}</div>
     </div>
     ${threadSummarySettings()}
@@ -138,14 +141,66 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
-  ['appearance', 'Appearance'], ['agent', 'Research assistant'], ['skills', 'Skills'],
-  ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
+  ['appearance', 'Appearance'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
+  ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
+
+function isDesktopConnectionClient() {
+  try { return !!(window.noctuaDesktopClient || window.top?.noctuaDesktopClient); }
+  catch { return false; }
+}
+function openServerConnectionSettings() {
+  if (!isDesktopConnectionClient()) return false;
+  window.top.location.href = 'https://noctua.invalid/settings';
+  return true;
+}
+
+function browserLocalTokenSection() {
+  if (isDesktopConnectionClient() || !['localhost','127.0.0.1'].includes(location.hostname) || location.protocol !== 'http:') return '';
+  return '<div class="settings-group"><h3>Current server token</h3><label class="setting-field">Authentication token<input class="setup-input" id="browser-local-token" type="password" readonly autocomplete="off" placeholder="Hidden until requested"></label><div class="setup-actions"><button data-act="show-browser-token" aria-controls="browser-local-token" aria-pressed="false">Show token</button><button data-act="copy-browser-token">Copy token</button></div><p class="hint">Anyone with this token can access this server. Copying replaces your clipboard.</p><p id="browser-token-status" role="status"></p></div>';
+}
+function clearBrowserLocalToken(root) {
+  const input=root.querySelector('#browser-local-token');
+  if(input){input.value='';input.type='password';}
+  const button=root.querySelector('[data-act="show-browser-token"]');
+  if(button){button.textContent='Show token';button.setAttribute('aria-pressed','false');}
+  const status=root.querySelector('#browser-token-status');if(status)status.textContent='';
+}
+async function useBrowserLocalToken(section, copy=false) {
+  const input=section.querySelector('#browser-local-token');
+  if(!copy&&input.type==='text'){clearBrowserLocalToken(section);return;}
+  const result=await api('/api/server/token',{});
+  if(!section.isConnected)return;
+  if(copy){
+    try { await navigator.clipboard.writeText(result.token); }
+    catch {
+      const field=document.createElement('textarea');field.value=result.token;field.style.position='fixed';field.style.opacity='0';section.appendChild(field);
+      try { field.select();if(!document.execCommand('copy'))throw Error('Copy was blocked. Show the token and copy it manually.'); }
+      finally { field.value='';field.remove(); }
+    }
+    section.querySelector('#browser-token-status').textContent='Token copied.';
+  }else{
+    input.value=result.token;input.type='text';
+    const button=section.querySelector('[data-act="show-browser-token"]');button.textContent='Hide token';button.setAttribute('aria-pressed','true');
+  }
+}
+
+function browserServerStartHelp() {
+  if(isDesktopConnectionClient())return '';
+  return `<details class="settings-group" id="browser-server-start-help"><summary>How to start a server</summary><p>On the computer that will host your library, open a terminal with the Noctua server executable installed. Run these commands (or use the full path to the executable):</p><pre><code>noctua ensure
+noctua token</code></pre><p><code>ensure</code> starts a background server or reuses one already running, and prints its address. <code>token</code> shows the authentication token. Enter that address and token above. Keep the token private.</p><p>A localhost address works only on the computer running the server. To connect from another computer, configure an HTTPS proxy and add its exact origin to the server’s <code>server-config.json</code>.</p><p>Check the running address with <code>noctua status</code>. To stop the server after saving your work, run <code>noctua stop</code>. Closing the browser leaves the server running.</p><p>The browser cannot start a stopped server. If this page will not load, start the server from its computer’s terminal or the desktop app’s connection settings.</p></details>`;
+}
+
+function serverSection() {
+  const id=window.noctuaServerId || 'Unavailable';
+  const desktop=isDesktopConnectionClient();
+  return `<section><h2>Server &amp; Connection</h2>${desktop ? '<p>Change servers, manage this computer’s server, or view and copy its authentication token in the connection settings window.</p><button class="primary" data-act="open-server-connection" data-icon="plug">Open connection settings</button>' : '<p>Connect this browser to another Noctua server. Allow the connection pop-up; your open edits are saved before switching.</p><label class="setting-field">Server address<input class="setup-input" id="browser-server-address" type="url" placeholder="https://computer.example.com" autocomplete="url"></label><label class="setting-field">Authentication token<input class="setup-input" id="browser-server-token" type="password" autocomplete="off" spellcheck="false"></label><button class="primary" data-act="browser-connect" data-icon="plug">Save &amp; connect</button><p class="hint">Use HTTPS for remote servers or HTTP for localhost. The target server must support browser connections. Tokens are sent only to the address you enter and are not saved in browser storage. Local process controls remain in the desktop app.</p>'}${browserServerStartHelp()}${browserLocalTokenSection()}<p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File uploads choose files on this client. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
+}
 
 function skillSettingsSection() {
   return `<section data-step="skills"><h2>Skills</h2><p>Use / in chat to select an available skill for one message.</p>
     <div class="settings-group"><h3>Global Agent Skills</h3>
-      <p>Read global installations in place. The default location is ~/.agents/skills.</p>
+      <p>Read global installations on this server computer. The default location is ~/.agents/skills.</p>
       <label class="setting-field">Location<input class="setup-input" data-skill-location placeholder="~/.agents/skills" spellcheck="false"></label>
       <div class="setup-actions"><button type="button" data-skill-location-save data-icon="save">Save location</button><button type="button" data-skill-location-reset>Use default</button><button type="button" data-skill-reload data-icon="refresh-cw">Refresh</button></div>
       <div data-global-skill-list></div>
@@ -154,11 +209,11 @@ function skillSettingsSection() {
       <p>Import multiple skills from a project folder or its skills folder. Expand each project to see its available skills. Disconnect removes only Noctua copies; the original project stays unchanged.</p>
       <div class="setup-actions"><button type="button" data-skill-import="project" data-icon="folder-open">Import Skills from Project</button></div>
       <div data-skill-list></div>
-      <details class="skill-individual-import"><summary>Import an individual skill</summary><div class="setup-actions">
+      <details class="skill-individual-import"><summary>Import An Individual Skill</summary><div class="setup-actions">
         <button type="button" data-skill-import="folder" data-icon="folder-open">Import folder</button><button type="button" data-skill-import="zip" data-icon="file-up">Import ZIP</button><button type="button" data-skill-import="md" data-icon="file-up">Import SKILL.md</button>
       </div></details>
     </div>
-    <div class="settings-group"><h3>Chat project defaults</h3>
+    <div class="settings-group"><h3>Chat Project Defaults</h3>
       <p>Choose skills to make available on every message in a Noctua project. Slash commands add skills for one message.</p>
       <label class="setting-field">Project<select data-skill-project><option value="">Choose a project</option></select></label>
       <div data-skill-defaults></div><button type="button" data-skill-save data-icon="save" disabled>Save project defaults</button>
@@ -197,7 +252,7 @@ function mountSkillSettings(host) {
       const groups=config.projects||[],grouped=new Set(groups.flatMap(g=>g.skill_ids));
       const projects=groups.map(group=>{const entries=skills.filter(s=>group.skill_ids.includes(s.id));return `<details class="settings-skill-project" data-skill-group="${esc(group.id)}"><summary>${esc(group.name)} <small>(${entries.length} ${entries.length===1?'skill':'skills'})</small></summary><div class="setup-actions"><button type="button" data-skill-project-disconnect="${esc(group.id)}" data-icon="x" aria-label="Disconnect ${esc(group.name)} from Noctua">Disconnect</button></div>${entries.map(s=>packageHTML(s)).join('')||'<p>No available skills in this project.</p>'}</details>`;}).join('');
       const individual=skills.filter(s=>s.source!=='local'&&!grouped.has(s.id));
-      host.querySelector('[data-skill-list]').innerHTML=projects+(individual.length?`<details class="settings-skill-project" data-skill-group="individual"><summary>Other imported skills (${individual.length})</summary>${individual.map(s=>packageHTML(s,true)).join('')}</details>`:'')||'<p>No project skills imported yet.</p>';
+      host.querySelector('[data-skill-list]').innerHTML=projects+(individual.length?`<details class="settings-skill-project" data-skill-group="individual"><summary>Other Imported Skills (${individual.length})</summary>${individual.map(s=>packageHTML(s,true)).join('')}</details>`:'')||'<p>No project skills imported yet.</p>';
       host.querySelectorAll('[data-skill-package]').forEach(details=>details.addEventListener('toggle',()=>{if(details.open&&!details.querySelector('pre'))inspect(details);}));
       host.querySelectorAll('[data-skill-disconnect],[data-skill-project-disconnect]').forEach(button=>button.onclick=async()=>{
         if(importing||loading||saving)return;importing=true;controls();status.textContent='Disconnecting skill…';
@@ -315,7 +370,7 @@ function highlightColorOptions(selected,category){
   return pdfColors.map((color,index)=>`<button type="button" data-highlight-color="${category}" value="${color}" style="--swatch:${color}" aria-label="${pdfCategories[category].label}: color ${index+1}" aria-pressed="${color===selected}"></button>`).join('');
 }
 function highlightColorSettings(){
-  return `<div class="settings-group highlight-settings" role="group" aria-labelledby="settings-highlight-colors-title"><h3 id="settings-highlight-colors-title">Highlight colors</h3><div class="settings-highlight-rows">
+  return `<div class="settings-group highlight-settings" role="group" aria-labelledby="settings-highlight-colors-title"><h3 id="settings-highlight-colors-title">Highlight Colors</h3><div class="settings-highlight-rows">
     <div class="settings-highlight-palette" role="group" aria-label="Reader highlight palette">${pdfColors.map((color,index)=>`<input type="color" id="setup-palette-${index}" data-highlight-palette="${index}" value="${color}" aria-label="Highlight color ${index+1}">`).join('')}</div>
     <div class="settings-ai-highlights" role="group" aria-label="AI highlight colors">${Object.entries(pdfCategories).map(([key,category])=>`<div class="settings-ai-highlight"><span id="setup-highlight-label-${key}">${category.label}</span><details class="settings-ai-color-picker"><summary data-category-swatch="${key}" style="--swatch:${category.color}" aria-label="Choose ${category.label} highlight color" title="Choose ${category.label} highlight color"></summary><div class="settings-ai-color-options" id="setup-highlight-${key}" role="group" aria-labelledby="setup-highlight-label-${key}">${highlightColorOptions(category.color,key)}</div></details></div>`).join('')}</div>
   </div></div>`;
@@ -342,9 +397,10 @@ async function saveHighlightPalette(colors){
   if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
 }
 function appIconSettings() {
+  if (!settings?.desktop) return ''; // Native artwork is managed by the local connection screen.
   const selected = settings?.app_icon || 'light';
   const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
-  return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App icon</h3>
+  return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App Icon</h3>
     <p class="hint">${note}</p>
     <div class="settings-app-icons">${['light','dark'].map(icon => `<label class="settings-app-icon"><input type="radio" name="app-icon" value="${icon}" ${icon === selected ? 'checked' : ''}><img src="/app-icons/${icon}.svg" width="80" height="80" alt=""><span>${icon === 'dark' ? 'Dark' : 'Light'}</span></label>`).join('')}</div>
     </div>`;
@@ -383,15 +439,250 @@ function threadSummarySettings() {
     </div>`;
 }
 
+function scholarSection() {
+  return `<section data-step="scholar"><h2 class="settings-section-heading">Google Scholar Inbox<button type="button" data-scholar-help data-icon="circle-help" data-icon-only aria-label="How to Set Up Google Scholar Inbox" title="Setup guide"></button></h2>
+    <p class="hint">Read accessible Scholar papers and save those matching your research interests. Emails stay unchanged.</p>
+    <label class="setting-field"><span>Poll automatically</span><input type="checkbox" data-scholar-enabled></label>
+    <label class="setting-field"><span>Destination collection</span><select data-scholar-collection aria-label="Destination collection"><option value="scholar_inbox">scholar_inbox (create when saved)</option></select></label>
+    <p class="hint">Choose a current folder, or scholar_inbox to create it when you save.</p>
+    <label class="setting-field"><span>Polling interval (minutes)</span><input class="setup-input" data-scholar-interval type="number" min="15" max="1440" value="15"></label>
+    <div class="setting-field"><span>Scholar Agent</span><span class="setup-actions"><button type="button" data-scholar-prompt data-icon="pencil">Edit prompt</button><button type="button" data-scholar-log data-icon="history">Log</button></span></div>
+    <p class="hint" data-scholar-prompt-status>Set your Research Interest before collecting papers.</p>
+    <details data-scholar-credentials><summary>Google Connection</summary>
+    <p class="hint">Use a Google Desktop OAuth client with Gmail API enabled. <a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noopener">Setup guide</a>. Sign in on this computer; credentials stay on the server.</p>
+    <label class="setting-field"><span>Google OAuth client ID</span><input class="setup-input" data-scholar-client autocomplete="off" spellcheck="false"></label>
+    <label class="setting-field"><span>Client secret</span><input class="setup-input" data-scholar-secret type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret"></label>
+    </details>
+    <div class="setup-actions"><button class="primary" data-scholar-action="save" data-icon="save">Save changes</button><button data-scholar-action="check" data-icon="refresh-cw" hidden>Check now</button><button data-scholar-action="disconnect" data-icon="x" data-icon-only aria-label="Disconnect Gmail" title="Disconnect Gmail" hidden>Disconnect</button></div>
+    <p data-scholar-login></p><p data-scholar-status role="status" aria-live="polite">Loading plugin…</p>
+    <div data-scholar-outcomes></div></section>`;
+}
+function showScholarSetupHelp() {
+  if (document.querySelector('#scholar-setup-help')) return;
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'scholar-setup-help';
+  dialog.className = 'workspace-dialog scholar-setup-help';
+  dialog.setAttribute('aria-labelledby', 'scholar-help-title');
+  dialog.innerHTML = `<header><strong id="scholar-help-title">Set Up Google Scholar Inbox</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close setup guide" title="Close"></button></header>
+    <ol class="scholar-setup-steps">
+      <li><strong>Get Scholar Alerts</strong><p>In <a href="https://scholar.google.com/" target="_blank" rel="noopener">Google Scholar</a>, search a topic → Create alert → enter your Gmail address.</p></li>
+      <li><strong>Set Up Google Cloud</strong><p>Create a project in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, then configure:</p>
+        <dl><dt>API Library</dt><dd>Enable Gmail API.</dd><dt>Auth Platform</dt><dd>Complete branding and audience; add your Gmail as a test user in Testing.</dd><dt>Data Access</dt><dd>Add the <code>gmail.readonly</code> scope.</dd></dl></li>
+      <li><strong>Create OAuth Credentials</strong><p>Clients → Create client → <b>Desktop app</b>. Copy the client ID and client secret.</p></li>
+      <li><strong>Connect &amp; Collect</strong><p>In Noctua, expand <b>Google Connection</b>, paste both values, choose a folder → <b>Save &amp; connect</b>. Sign in on the computer running Noctua.</p><p>Use <b>Edit prompt</b> and replace <code>&lt;Research Interest&gt;</code> first. Then use <b>Check now</b> or <b>Poll automatically</b> (15 min minimum).</p></li>
+    </ol>
+    <details class="scholar-setup-notes"><summary>Access &amp; Troubleshooting</summary><p>Full Gmail scope: <code>https://www.googleapis.com/auth/gmail.readonly</code></p><p>Emails stay unchanged; credentials stay on your Noctua server. If access expires, choose Save &amp; reconnect. Apps in Testing may require frequent reauthorization.</p><p>Choose scholar_inbox to create it when you save. An existing folder is reused.</p></details>
+    <footer><a href="https://developers.google.com/workspace/gmail/api/quickstart/python#set-up-environment" target="_blank" rel="noopener">Gmail setup guide</a><a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noopener">OAuth guide</a></footer>`;
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    if (previousFocus?.isConnected) previousFocus.focus();
+  }, {once: true});
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  dialog.querySelector('[data-close]').focus();
+}
+async function showScholarPromptEditor(host, onSaved) {
+  if (document.querySelector('#scholar-prompt-editor')) return;
+  const selected = host.querySelector('[data-scholar-collection]');
+  const collection = selected.value, name = selected.selectedOptions[0]?.textContent.trim() || 'scholar_inbox';
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'scholar-prompt-editor'; dialog.className = 'workspace-dialog scholar-prompt-editor';
+  dialog.setAttribute('aria-labelledby', 'scholar-prompt-title');
+  dialog.innerHTML = `<header><strong id="scholar-prompt-title">Scholar Agent Prompt</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close prompt editor" title="Close"></button></header>
+    <p>Screening instructions for <strong>${esc(name)}</strong>. Replace <code>&lt;Research Interest&gt;</code> with your interests before the first sync.</p>
+    <p>The agent reads accessible PDF text and saves matching papers only. It uses the provider and model in Research Assistant. This prompt does not run scripts or other skill tools.</p>
+    <label for="scholar-prompt-text">System prompt</label><textarea id="scholar-prompt-text" rows="11" spellcheck="false" disabled></textarea>
+    <p data-prompt-error role="alert"></p><footer><button type="button" data-prompt-reset disabled>Use default</button><button type="button" data-prompt-cancel>Cancel</button><button type="button" class="primary" data-prompt-save data-icon="save" disabled>Save prompt</button></footer>`;
+  const textarea = dialog.querySelector('textarea'), error = dialog.querySelector('[data-prompt-error]');
+  const close = () => dialog.close();
+  dialog.querySelector('[data-close]').onclick = close; dialog.querySelector('[data-prompt-cancel]').onclick = close;
+  dialog.addEventListener('close', () => {dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus();}, {once:true});
+  document.body.appendChild(dialog); dialog.showModal();
+  let original;
+  try {
+    const result = await api('/api/scholar/prompt?collection=' + encodeURIComponent(collection));
+    if (!dialog.isConnected) return;
+    original = result.prompt; textarea.value = original; textarea.disabled = false;
+    dialog.querySelector('[data-prompt-reset]').disabled = false; dialog.querySelector('[data-prompt-save]').disabled = false;
+    dialog.querySelector('[data-prompt-reset]').onclick = () => {textarea.value = result.default_prompt; textarea.focus();};
+    textarea.focus();
+  } catch (e) { error.textContent = e.message; }
+  dialog.querySelector('[data-prompt-save]').onclick = async () => {
+    const prompt = textarea.value;
+    if (!prompt.trim()) {error.textContent = 'Enter your screening instructions.'; return;}
+    const button = dialog.querySelector('[data-prompt-save]'); button.disabled = true; error.textContent = '';
+    try {
+      const result = await api('/api/scholar/prompt', {collection, prompt, previous:original});
+      await onSaved(result); close();
+    } catch (e) {error.textContent = e.message; button.disabled = false;}
+  };
+}
+
+function scholarPhase(phase) {
+  return ({checking:'Checking Gmail',verifying:'Verifying',reading:'Reading PDF',analyzing:'Analyzing',saving:'Saving',cached:'Cached',imported:'Saved',duplicate:'Linked',excluded:'Excluded',retry:'Retry',completed:'Completed',error:'Error',interrupted:'Interrupted'})[phase] || phase;
+}
+async function showScholarLogs() {
+  if (document.querySelector('#scholar-agent-log')) return;
+  const previousFocus = document.activeElement, dialog = document.createElement('dialog');
+  dialog.id = 'scholar-agent-log'; dialog.className = 'workspace-dialog scholar-agent-log';
+  dialog.setAttribute('aria-labelledby', 'scholar-log-title');
+  dialog.innerHTML = `<header><strong id="scholar-log-title">Scholar Agent Log</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close agent log" title="Close"></button></header>
+    <div class="scholar-log-toolbar"><span data-log-live role="status">Loading…</span><select data-log-mode aria-label="Log detail"><option value="results">Results</option><option value="all">All steps</option></select></div>
+    <p data-log-error role="alert"></p><div data-log-entries></div><footer><button type="button" data-log-older hidden>Older entries</button></footer>`;
+  let timer, loading = false, resetPending = false, cursor = null;
+  const entries = new Map(), mode = dialog.querySelector('[data-log-mode]');
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.addEventListener('close', () => {clearInterval(timer); dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus();}, {once:true});
+  document.body.appendChild(dialog); dialog.showModal(); dialog.querySelector('[data-close]').focus();
+  const refresh = async (older = false) => {
+    if (loading || !dialog.isConnected) return;
+    loading = true;
+    const selectedMode = mode.value;
+    try {
+      const result = await api('/api/scholar/logs?mode=' + selectedMode + (older && cursor ? '&before=' + cursor : ''));
+      if (!dialog.isConnected || mode.value !== selectedMode) return;
+      const live = result.activity;
+      dialog.querySelector('[data-log-live]').textContent = live ? `${scholarPhase(live.phase)}${live.provider ? ' · ' + live.provider : ''}${live.title ? ' · ' + live.title : ''}` : 'Idle';
+      const opened = new Set([...dialog.querySelectorAll('[data-log-entry][open]')].map(e => e.dataset.logEntry));
+      const first = entries.size === 0;
+      const priorNewest = Math.max(0, ...entries.keys());
+      for (const entry of result.entries) entries.set(entry.id, entry);
+      if (older || first || (result.next_before && result.next_before > priorNewest)) cursor = result.next_before;
+      dialog.querySelector('[data-log-entries]').innerHTML = [...entries.values()].sort((a,b) => b.id-a.id).map(entry => {
+        const date = new Date(entry.time * 1000), fullDate = date.toLocaleString();
+        return `<details data-log-entry="${entry.id}" ${opened.has(String(entry.id)) ? 'open' : ''}><summary title="Show reason and details"><span class="scholar-log-row"><time title="${esc(fullDate)}" datetime="${date.toISOString()}">${esc(date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}))}</time><span class="scholar-log-phase" data-phase="${esc(entry.phase)}">${esc(scholarPhase(entry.phase))}</span><span class="scholar-log-paper" title="${esc(entry.title)}">${esc(entry.title || 'Sync')}</span></span></summary><div class="scholar-log-detail"><p>${esc(entry.detail || 'No additional details.')}</p><small>${esc(fullDate)} · ${esc(entry.provider || 'Server')} · ${esc(entry.collection)}${entry.account ? ' · ' + esc(entry.account) : ''}</small></div></details>`;
+      }).join('') || '<p class="hint">No activity yet. Logs appear after a manual or automatic sync.</p>';
+      dialog.querySelector('[data-log-older]').hidden = !cursor;
+      dialog.querySelector('[data-log-error]').textContent = '';
+    } catch (e) {if (dialog.isConnected) dialog.querySelector('[data-log-error]').textContent = e.message;}
+    finally {loading = false; if (resetPending) {resetPending = false; refresh();}}
+  };
+  mode.onchange = () => {entries.clear(); cursor = null; if (loading) resetPending = true; else refresh();};
+  dialog.querySelector('[data-log-older]').onclick = () => refresh(true);
+  await refresh(); timer = setInterval(() => {if (!dialog.isConnected) clearInterval(timer); else refresh();}, 3000);
+}
+
+function mountScholarSettings(host) {
+  if (!host) return;
+  host.querySelector('[data-scholar-help]').addEventListener('click', showScholarSetupHelp);
+  host.querySelector('[data-scholar-log]').addEventListener('click', () => showScholarLogs());
+  let initial = true, loading = false, working = false, libraryStamp = null, saved = null;
+  const status = host.querySelector('[data-scholar-status]');
+  const needsConnection = () => !!host.querySelector('[data-scholar-client]').value.trim() &&
+    (!saved?.connected || saved.reauthorize || host.querySelector('[data-scholar-client]').value.trim() !== saved.client_id || !!host.querySelector('[data-scholar-secret]').value);
+  const renderActions = () => {
+    const save = host.querySelector('[data-scholar-action="save"]');
+    const connect = needsConnection();
+    save.textContent = working ? 'Working…' : connect ? saved?.connected ? 'Save & reconnect' : 'Save & connect' : 'Save changes';
+    save.dataset.icon = connect ? 'log-in' : 'save';
+    save.disabled = working || !saved || saved.running;
+    for (const action of ['check', 'disconnect']) {
+      const button = host.querySelector(`[data-scholar-action="${action}"]`);
+      button.hidden = !saved?.connected;
+      button.disabled = working || !saved?.connected || saved.running || (action === 'check' && (saved.reauthorize || !saved.prompt_ready));
+    }
+  };
+  host.querySelector('[data-scholar-prompt]').onclick = () => showScholarPromptEditor(host, async result => {
+    await refresh();
+    const select = host.querySelector('[data-scholar-collection]');
+    if (![...select.options].some(option => option.value === result.collection)) select.add(new Option('scholar_inbox', result.collection));
+    select.value = result.collection;
+    host.querySelector('[data-scholar-prompt-status]').textContent = result.ready ? 'Prompt saved for this collection. Save changes to use this destination.' : 'Replace <Research Interest> in the prompt before collecting papers.';
+  }).catch(e => {status.textContent = e.message;});
+  host.addEventListener('input', renderActions);
+  renderActions();
+  const refresh = async () => {
+    if (loading || !host.isConnected) return;
+    loading = true;
+    try {
+      const s = await api('/api/scholar');
+      if (!host.isConnected) return;
+      const destination = host.querySelector('[data-scholar-collection]');
+      const selected = initial ? s.collection : destination.value;
+      const folders = s.collections;
+      const inbox = folders.find(f => f.parent === 'L1' && f.name === 'scholar_inbox');
+      const options = folders.map(f => `<option value="${esc(f.id)}">${'　'.repeat(f.level || 0)}${esc(f.name)}</option>`).join('');
+      const extra = inbox ? '' : '<option value="scholar_inbox">scholar_inbox (create when saved)</option>';
+      const missing = selected !== 'scholar_inbox' && !folders.some(f => f.id === selected);
+      const markup = extra + options + (missing ? `<option value="${esc(selected)}" disabled>Unavailable folder — choose another</option>` : '');
+      if (destination.innerHTML !== markup) destination.innerHTML = markup;
+      destination.value = selected === 'scholar_inbox' && inbox ? inbox.id : selected;
+      if (initial) {
+        host.querySelector('[data-scholar-enabled]').checked = s.enabled;
+        host.querySelector('[data-scholar-interval]').value = s.interval_minutes;
+        host.querySelector('[data-scholar-client]').value = s.client_id;
+        host.querySelector('[data-scholar-credentials]').open = !s.connected;
+        initial = false;
+      }
+      const ready = !!s.prompt_ready_by_collection?.[destination.value];
+      host.querySelector('[data-scholar-prompt-status]').textContent = ready ? 'Papers are screened using this collection’s prompt.' : 'First setup: edit the prompt and replace <Research Interest> with your interests.';
+      const stamp = JSON.stringify([s.last_sync, s.counts.imported, s.counts.duplicate]);
+      if (libraryStamp !== null && libraryStamp !== stamp) loadCollections();
+      libraryStamp = stamp;
+      const date = value => value ? new Date(Number(value) * 1000).toLocaleString() : 'Never';
+      status.textContent = `${s.activity ? scholarPhase(s.activity.phase) + (s.activity.title ? ': ' + s.activity.title : '') : s.running ? 'Syncing…' : s.connected ? 'Connected: ' + s.account : 'Gmail is disconnected.'} Last completed sync: ${date(s.last_sync)}. Imported: ${s.counts.imported || 0}; duplicates: ${s.counts.duplicate || 0}; excluded: ${s.counts.excluded || 0}; retry: ${s.counts.retry || 0}.${s.reauthorize ? ' Reconnect Gmail to renew access.' : ''}${s.error ? ' ' + s.error : ''}`;
+      saved = s;
+      renderActions();
+      const outcomesOpen = !!host.querySelector('[data-scholar-outcomes] details')?.open;
+      host.querySelector('[data-scholar-outcomes]').innerHTML = s.message_errors.map(e => `<p class="settings-warning">Alert ${esc(e.message)}: ${esc(e.error)}</p>`).join('') + (s.items.length ? `<details ${outcomesOpen ? 'open' : ''}><summary>Recent Paper Outcomes</summary><ul>${s.items.map(i => `<li>${esc(i.title || 'Untitled link')}: ${esc(i.status)}${i.error ? ' — ' + esc(i.error) : ''}</li>`).join('')}</ul></details>` : '');
+    } catch (e) { status.textContent = e.message; }
+    finally { loading = false; }
+  };
+  host.addEventListener('click', async e => {
+    const button = e.target.closest('[data-scholar-action]');
+    if (!button) return;
+    e.preventDefault();
+    if (working) return;
+    working = true; renderActions();
+    try {
+      switch (button.dataset.scholarAction) {
+        case 'save': {
+          const interval = Number(host.querySelector('[data-scholar-interval]').value);
+          if (!Number.isInteger(interval) || interval < 15 || interval > 1440) throw Error('Polling interval must be between 15 and 1440 whole minutes.');
+          const connect = needsConnection();
+          const secret = host.querySelector('[data-scholar-secret]').value;
+          await api('/api/scholar', {enabled: host.querySelector('[data-scholar-enabled]').checked, collection: host.querySelector('[data-scholar-collection]').value, interval_minutes: interval, client_id: host.querySelector('[data-scholar-client]').value, ...(secret ? {client_secret: secret} : {})});
+          await loadCollections();
+          host.querySelector('[data-scholar-secret]').value = '';
+          host.querySelector('[data-scholar-login]').replaceChildren();
+          if (connect) {
+            const result = await api('/api/scholar/connect', {});
+            const link = document.createElement('a');
+            link.href = result.url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Continue Google sign-in';
+            host.querySelector('[data-scholar-login]').replaceChildren(link);
+            if (settings?.desktop) await api('/api/desktop/open', {url: result.url});
+            else link.click();
+          } else toast('Scholar plugin settings saved.');
+          break;
+        }
+        case 'check': await api('/api/scholar/check', {}); break;
+        case 'disconnect': {
+          const r = await fetch('/api/scholar', {method: 'DELETE'});
+          if (!r.ok) throw Error('Could not disconnect Gmail. Try again after sync finishes.');
+          host.querySelector('[data-scholar-enabled]').checked = false;
+          host.querySelector('[data-scholar-login]').replaceChildren(); break;
+        }
+      }
+      await refresh();
+    } catch (error) { status.textContent = error.message; }
+    finally { working = false; renderActions(); }
+  });
+  refresh();
+  const timer = setInterval(() => { if (!host.isConnected) clearInterval(timer); else refresh(); }, 3000);
+}
+
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
-  return `<section data-step="data"><h2>Data & storage</h2>
+  return `<section data-step="data"><h2>Data & Storage</h2>
     <div class="settings-group" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
     <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
       <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
     </div>
-    <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save destination</h3>
+    <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save Destination</h3>
     <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
       <select id="setup-save-target">${collectionOptions(defaultSaveTarget())}</select></label>
     <p class="hint">New papers added from search or a graph are saved here. PDF imports use the selected folder.</p>
@@ -412,30 +703,19 @@ function dataSection(s) {
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
-function updateSummary(result) {
-  const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
-  const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
-  return `<p class="update-version">${esc(result.current_version || settings?.version || 'Current version')} → ${esc(result.version)}</p>` +
-    releases.map(release => {
-      const changes = Array.isArray(release.changes) ? release.changes : [];
-      const items = changes.filter(group => group && typeof group === 'object').flatMap(group => (Array.isArray(group.items) ? group.items : []).slice(0, 2)
-        .map(item => `<li><strong>${Object.hasOwn(labels, group.kind) ? labels[group.kind] : 'Other'}:</strong> ${esc(String(item))}</li>`)).slice(0, 6);
-      return `<section class="update-release"><h4>Version ${esc(release.version)}</h4>` +
-        (items.length ? `<ul>${items.join('')}</ul>` : '<p>See the full release notes for details.</p>') + '</section>';
-    }).join('') + `<p><a href="https://github.com/UW-CTRL/noctua/compare/v${encodeURIComponent(result.current_version || settings?.version || '')}...v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">All changes since your version</a> · <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Full release notes</a></p>`;
-}
+function updateSummary(result) { return NoctuaUpdateDialogs.summary(result, settings?.version); }
 
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc(s.version || 'unknown')} · ${s.desktop ? 'Desktop app' : 'Browser app'}</p>
     ${s.desktop ? `<div class="settings-group" data-update>
-      <h3>App updates</h3>
+      <h3>App Updates</h3>
       <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
       <div class="update-summary" hidden></div>
       <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
       <p class="setup-msg" role="status" aria-live="polite"></p>
     </div>` : ''}
-    <h3>Keyboard shortcuts</h3><dl class="settings-shortcuts">
+    <h3>Keyboard Shortcuts</h3><dl class="settings-shortcuts">
       <dt>Save note</dt><dd>⌘ / Ctrl + S</dd>
       <dt>Add drawing</dt><dd>⌘ / Ctrl + Shift + D</dd>
       <dt>Finish editing a text block</dt><dd>Esc or ⌘ / Ctrl + Enter</dd>
@@ -444,10 +724,13 @@ function aboutSection(s) {
     </section>`;
 }
 
+// Browser confirm() is not reliable inside the desktop shell's tab webviews.
+function confirmUpdateInstall(version) { return NoctuaUpdateDialogs.confirmInstall(version); }
+
 // The native process retains the checked release and serializes operations across windows.
 async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
   const action = button.dataset.updateAction;
-  if (action === 'install' && confirmInstall && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
+  if (action === 'install' && confirmInstall && !await confirmUpdateInstall(button.dataset.updateVersion)) return;
   msg(section, { check: 'Checking for updates…', install: 'Downloading, verifying, and installing the update…', restart: 'Restarting Noctua…' }[action], true);
   try {
     const result = await api('/api/desktop/update', { action, ...(action === 'install' ? { version: button.dataset.updateVersion } : {}) });
@@ -480,7 +763,7 @@ function showUpdatePrompt(result) {
   dialog.className = 'setup-card';
   dialog.setAttribute('aria-labelledby', 'app-update-title');
   dialog.innerHTML = `<h2 id="app-update-title">A new Noctua version is available</h2>
-    <div class="update-summary">${updateSummary(result)}</div>
+    <div class="update-summary" tabindex="0" role="region" aria-label="Release history">${updateSummary(result)}</div>
     <p>Save your work before updating. Installation may close and restart Noctua.</p>
     <p class="setup-msg ok" role="status" aria-live="polite"></p>
     <div class="setup-actions end"><button data-dismiss>Not now</button>
@@ -528,10 +811,12 @@ function openSetup({ firstRun = false, tab } = {}) {
   el.innerHTML = `<div class="setup-card ${firstRun ? '' : 'settings-card'}" role="dialog" aria-modal="true" aria-labelledby="settings-title"></div>`;
   document.body.appendChild(el);
   const card = el.querySelector('.setup-card');
+  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & Connection: desktop Settings menu opens the local connection manager even while offline. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
+  el.prepend(context);
   let loginAbort = null;
   let assistantSaving = false;
   const close = () => {
-    loginAbort?.abort(); el.remove();
+    loginAbort?.abort(); clearBrowserLocalToken(card); el.remove();
     if (previousFocus?.isConnected) previousFocus.focus();
   };
   el.noctuaClose = close;
@@ -611,6 +896,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   };
   const selectTab = (id, focus = false) => {
+    clearBrowserLocalToken(card);
     if (!SETTINGS_TABS.some(([key]) => key === id)) id = 'appearance';
     for (const button of card.querySelectorAll('[data-settings-tab]')) {
       const active = button.dataset.settingsTab === id;
@@ -626,13 +912,14 @@ function openSetup({ firstRun = false, tab } = {}) {
       card.querySelector('.setup-input')?.focus();
       return;
     }
-    const panels = { appearance: appearanceSection(), agent: agentSection(settings), skills: skillSettingsSection(),
-      connections: keySection(settings, false) + zoteroSection(settings, false), data: dataSection(settings), about: aboutSection(settings) };
+    const panels = { appearance: appearanceSection(), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
+      connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
+    mountScholarSettings(card.querySelector('[data-step="scholar"]'));
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
   };
@@ -662,16 +949,52 @@ function openSetup({ firstRun = false, tab } = {}) {
       colorChoice.dispatchEvent(new Event('change',{bubbles:true}));return;
     }
     const nav = e.target.closest('[data-settings-tab]');
-    if (nav) { selectTab(nav.dataset.settingsTab); return; }
+    if (nav) {
+      selectTab(nav.dataset.settingsTab);
+      if (nav.dataset.settingsTab === 'server') openServerConnectionSettings();
+      return;
+    }
     const t = e.target.closest('[data-act]');
     if (!t) return;
     e.preventDefault();
+    if (t.dataset.act === 'open-server-connection') { openServerConnectionSettings(); return; }
     const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
-    const busy = (on) => section?.querySelectorAll('button, input').forEach((b) => { b.disabled = on; });
+    const busy = (on) => section?.querySelectorAll('button, input, select').forEach((b) => { b.disabled = on; });
     try {
       busy(true);
       switch (t.dataset.act) {
+        case 'show-browser-token':
+        case 'copy-browser-token': {
+          try { await useBrowserLocalToken(section,t.dataset.act==='copy-browser-token'); }
+          catch(error){clearBrowserLocalToken(section);throw error;}
+          break;
+        }
+        case 'browser-connect': {
+          const input=section.querySelector('#browser-server-token');
+          const token=input.value;input.value='';
+          const shell=window.top.noctuaShell;
+          let paused=false;
+          try {
+            const target=await NoctuaBrowserConnection.connect(section.querySelector('#browser-server-address').value,token,async()=>{
+              paused=true;
+              if(shell){shell.beginSwitch();await shell.flush();}
+              else {
+                window.prepareEditorSwitch?.();document.body.inert=true;
+                window.preserveChatDraft?.();await window.saveWorkspaceFile?.();await window.flushNoteEdits?.();await window.flushPDF?.();
+              }
+            });
+            window.top.location.assign(target);
+          } finally {
+            if(paused){if(shell)shell.endSwitch();else document.body.inert=false;}
+          }
+          break;
+        }
+        case 'reconnect-server': {
+          const current=await api('/api/server');
+          if(current.api_version!==1||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');
+          msg(section,`Connected to ${current.server_id}`,true);break;
+        }
         case 'update': await updateApp(t, section, msg); break;
         case 'agent-login': signIn(); break;
         case 'agent-check': await checkAgent(); break;
@@ -714,10 +1037,11 @@ function openSetup({ firstRun = false, tab } = {}) {
           break;
         }
         case 'import-zotero':
-          msg(section, 'Importing Zotero collections and available PDFs…', true);
           await importZoteroLibrary();
-          msg(section, 'Import complete.', true);
           break;
+        case 'save-zotero-pdf':
+          await api('/api/settings/zotero-pdf',{pdf_mode:$('#setup-zotero-pdf').value});
+          toast('Zotero PDF default saved.');await next('zotero');break;
         case 'save-zotero': {
           const dir = $('#setup-zotero').value.trim();
           if (!dir) { msg(section, 'Enter the folder, or choose “I don’t use Zotero”.'); break; }
