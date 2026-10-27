@@ -419,18 +419,7 @@ function dataSection(s) {
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
-function updateSummary(result) {
-  const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
-  const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
-  return `<p class="update-version">${esc(result.current_version || settings?.version || 'Current version')} → ${esc(result.version)}</p>` +
-    releases.map(release => {
-      const changes = Array.isArray(release.changes) ? release.changes : [];
-      const items = changes.filter(group => group && typeof group === 'object').flatMap(group => (Array.isArray(group.items) ? group.items : []).slice(0, 2)
-        .map(item => `<li><strong>${Object.hasOwn(labels, group.kind) ? labels[group.kind] : 'Other'}:</strong> ${esc(String(item))}</li>`)).slice(0, 6);
-      return `<section class="update-release"><h4>Version ${esc(release.version)}</h4>` +
-        (items.length ? `<ul>${items.join('')}</ul>` : '<p>See the full release notes for details.</p>') + '</section>';
-    }).join('') + `<p><a href="https://github.com/UW-CTRL/noctua/compare/v${encodeURIComponent(result.current_version || settings?.version || '')}...v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">All changes since your version</a> · <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Full release notes</a></p>`;
-}
+function updateSummary(result) { return NoctuaUpdateDialogs.summary(result, settings?.version); }
 
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
@@ -451,10 +440,13 @@ function aboutSection(s) {
     </section>`;
 }
 
+// Browser confirm() is not reliable inside the desktop shell's tab webviews.
+function confirmUpdateInstall(version) { return NoctuaUpdateDialogs.confirmInstall(version); }
+
 // The native process retains the checked release and serializes operations across windows.
 async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
   const action = button.dataset.updateAction;
-  if (action === 'install' && confirmInstall && !confirm('Save your work before continuing. Install the update now? Noctua may close and restart during installation.')) return;
+  if (action === 'install' && confirmInstall && !await confirmUpdateInstall(button.dataset.updateVersion)) return;
   msg(section, { check: 'Checking for updates…', install: 'Downloading, verifying, and installing the update…', restart: 'Restarting Noctua…' }[action], true);
   try {
     const result = await api('/api/desktop/update', { action, ...(action === 'install' ? { version: button.dataset.updateVersion } : {}) });
@@ -487,7 +479,7 @@ function showUpdatePrompt(result) {
   dialog.className = 'setup-card';
   dialog.setAttribute('aria-labelledby', 'app-update-title');
   dialog.innerHTML = `<h2 id="app-update-title">A new Noctua version is available</h2>
-    <div class="update-summary">${updateSummary(result)}</div>
+    <div class="update-summary" tabindex="0" role="region" aria-label="Release history">${updateSummary(result)}</div>
     <p>Save your work before updating. Installation may close and restart Noctua.</p>
     <p class="setup-msg ok" role="status" aria-live="polite"></p>
     <div class="setup-actions end"><button data-dismiss>Not now</button>

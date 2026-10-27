@@ -1,7 +1,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const invoke = (command,args={}) => window.__TAURI_INTERNALS__.invoke(command,args);
-let busy=false,step=0,panel='connection',verified=null,serviceSupported=false;
+let busy=false,step=0,panel='connection',verified=null,serviceSupported=false,desktopVersion='Current version',startupMode='';
 const dialog=$('#connection-dialog');
 function status(message,state=''){
   const target=panel==='connection'?$('#status'):$('#management-status');
@@ -70,6 +70,7 @@ tabs.forEach((tab,index)=>{
 });
 async function refresh({restoreSelection=false}={}){
   const state=await invoke('client_state');
+  desktopVersion=state.version||desktopVersion;startupMode=state.connection.mode||'';
   if(restoreSelection){$('#mode').value=state.connection.mode||'local';$('#address').value=state.connection.address||'';mode();}
   serviceSupported=!!state.service.supported;
   $('#autostart').checked=!!state.service.enabled;$('#autostart').disabled=busy||!serviceSupported;
@@ -98,7 +99,48 @@ $('#open-running-server').onclick=()=>operation(async()=>{
   await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:null,deferServerUpdate:true});
   dialog.close();
 });
-document.querySelectorAll('[data-desktop]').forEach(b=>b.onclick=()=>operation(async()=>{const r=await invoke('desktop_action',{action:b.dataset.desktop,version:offered||null});if(r.version)offered=r.version;$('#update').textContent=JSON.stringify(r,null,2);}));
+async function performDesktop(action,version=offered,{offer=true,startup=false,returnFocus=null}={}){
+  const result=await invoke('desktop_action',{action,version:version||null});
+  if(['light','dark'].includes(action)){$('#update').textContent='App icon updated.';return result;}
+  const messages={available:'Version '+result.version+' is available.',current:'You are using the latest published version.',installed:'Update installed. Restart Noctua to use it.',skipped:''};
+  if(!Object.prototype.hasOwnProperty.call(messages,result.status))throw Error('Unexpected desktop updater response');
+  $('#update').textContent=messages[result.status];
+  if(result.status==='available'){
+    offered=result.version;
+    if(offer)await showDesktopOffer(result,startup,returnFocus);
+  }else if(result.status==='current')offered=null;
+  return result;
+}
+async function showDesktopOffer(result,startup=false,returnFocus=null){
+  if($('#app-update-dialog'))return;
+  await invoke('present_client');
+  const previous=returnFocus||document.activeElement,prompt=document.createElement('dialog');
+  prompt.id='app-update-dialog';prompt.className='connection-modal connection-update-modal';prompt.setAttribute('aria-labelledby','app-update-title');
+  prompt.innerHTML='<h2 id="app-update-title">A new Noctua version is available</h2><div class="update-summary" tabindex="0" role="region" aria-label="Release history">'+NoctuaUpdateDialogs.summary(result,desktopVersion)+'</div><p>Save your work before updating. Installation may close and restart Noctua.</p><p class="connection-status" role="status"></p><div class="connection-actions"><button data-dismiss>Not now</button><button class="primary" data-install>Install update</button></div>';
+  const close=()=>{if(busy)return;prompt.close();prompt.remove();if(previous?.isConnected)previous.focus();if(startup&&!dialog.open)invoke('dismiss_connection').catch(()=>{});};
+  prompt.querySelector('[data-dismiss]').onclick=close;
+  prompt.addEventListener('cancel',event=>{event.preventDefault();close();});
+  let action='install';
+  prompt.querySelector('[data-install]').onclick=()=>operation(async()=>{
+    try{
+      const response=await performDesktop(action,result.version,{offer:false});
+      prompt.querySelector('[role=status]').textContent=$('#update').textContent;
+      if(response.status==='installed'){action='restart';prompt.querySelector('[data-install]').textContent='Restart Noctua';}
+    }catch(error){prompt.querySelector('[role=status]').textContent=String(error);throw error;}
+  });
+  document.body.appendChild(prompt);prompt.showModal();prompt.querySelector('[data-dismiss]').focus();
+}
+document.querySelectorAll('[data-desktop]').forEach(button=>button.onclick=async()=>{
+  if(busy)return;
+  const action=button.dataset.desktop,version=offered;
+  if(action==='install'){
+    if(!version){status('Check for a desktop update before installing.','error');return;}
+    if(!await NoctuaUpdateDialogs.confirmInstall(version,{className:'connection-modal connection-update-modal'}))return;
+  }
+  await operation(()=>performDesktop(action,version,{returnFocus:button}));
+});
 mode();render();openDialog();
-operation(async()=>{const s=await refresh({restoreSelection:true});if(s.connection.mode){showStep(1);await connect();}});
+operation(async()=>{const s=await refresh({restoreSelection:true});if(s.connection.mode){showStep(1);await connect();}}).then(async()=>{
+  if(startupMode)try{await performDesktop('startup_check',null,{startup:true});}catch(error){$('#update').textContent='Could not check for a desktop update: '+String(error);}
+});
 setInterval(()=>{refresh().catch(error=>{if(!busy)status(String(error),'error');});},2000);

@@ -51,7 +51,7 @@ The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
 
 `web/ui.css` owns shared theme tokens and controls. Connection and sign-in layouts
 use `web/connection.css`; the desktop build copies these and the shared appearance,
-font and dropdown scripts into its offline bundle. For standalone frontend tests, run
+font, dropdown and shared update-dialog scripts into its offline bundle. For standalone frontend tests, run
 `python3 app/prepare-ui.py` first (`tests/run-frontend.sh` does this automatically).
 Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 
@@ -209,8 +209,9 @@ python3 scripts/setup-tectonic.py
 python3 scripts/setup-pdflatex.py
 ```
 
-On macOS, pass `--universal` to the Tectonic script for Universal packaging;
-pdfLaTeX binaries already include both Mac architectures. Scripts verify pinned
+Current macOS releases target Apple Silicon, so the default Tectonic setup is
+sufficient on an Apple Silicon Mac. pdfLaTeX retains its upstream Universal binaries.
+Scripts verify pinned
 archive checksums and prepare ignored `target/tectonic` and `target/texlive`.
 They do not install system TeX or change the user's PATH. Desktop resources include
 both distributions and their license notices; release and desktop CI prepare them

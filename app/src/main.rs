@@ -91,7 +91,8 @@ fn main() {
             local_server,
             desktop_action,
             clear_connection,
-            dismiss_connection
+            dismiss_connection,
+            present_client
         ])
         .setup(|app| {
             app.manage(Shell {
@@ -324,6 +325,12 @@ fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     };
     anyhow::ensure!(path.is_file(),"Server executable missing. Build `cargo build -p noctua` for development, or reinstall the desktop app");
     noctua::service::stage(&path)
+}
+#[tauri::command]
+fn present_client(window: WebviewWindow) -> Result<(), String> {
+    local_only(&window)?;
+    window.show().map_err(|e|e.to_string())?;
+    window.set_focus().map_err(|e|e.to_string())
 }
 #[tauri::command]
 fn dismiss_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {

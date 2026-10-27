@@ -2,11 +2,14 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
-The release workflow builds macOS Universal (Intel and Apple Silicon), Windows,
+The release workflow builds macOS Apple Silicon (aarch64), Windows,
 and Linux installers. It uploads them to a shared **draft** GitHub Release.
 Once all three platform builds succeed, it verifies the completed installer uploads
 and publishes the release automatically. A failed or cancelled build leaves the
 release unpublished. The workflow never bumps versions or creates tags.
+New macOS releases do not support Intel Macs; Intel users can retain an older Universal release. The new
+updater manifest omits the Intel target, so those installations cannot upgrade
+to an Apple Silicon build.
 
 ## Choose a version
 
@@ -65,7 +68,7 @@ All three builds check out that resolved commit and upload to the same release
 ID. Per-tag concurrency queues overlapping runs. Platform-specific installers
 have distinct names. Platform jobs upload signed updater bundles and signatures;
 the publication job creates a single `latest.json` after all uploads complete,
-mapping the Universal macOS bundle to both Intel and Apple Silicon. This avoids
+offering the macOS bundle only to Apple Silicon Macs. This avoids
 concurrent manifest writes. Missing signatures or failed manifest uploads prevent
 publication. Tags predating `app/tauri.release.conf.json` retain the original
 installer-only workflow, including manual rebuilds of older drafts.
@@ -82,6 +85,9 @@ The tagged commit must contain the preparation scripts and build configuration.
 The publication helper comes from the selected workflow ref, allowing the updated
 workflow on `main` to publish an older tagged draft without changing its source. Selecting
 a branch name as `tag` does not build or create a release from that branch.
+For older tags whose workflow explicitly builds Universal macOS installers,
+preparation retains that architecture for the rebuild, installer checks, download
+alias, and updater manifest. New tags build only Apple Silicon.
 
 ## Prepare release notes
 
@@ -141,7 +147,7 @@ Review the intended tag, commit, version, and any custom release notes before
 pushing the tag or dispatching a manual run. Builds upload into a shared draft;
 the final publication job waits for all three builds and verifies these assets:
 
-- macOS: Universal `.dmg` and `.app.tar.gz`.
+- macOS: Apple Silicon `.dmg` and `.app.tar.gz`.
 - Windows: x64 setup `.exe` and `.msi`.
 - Linux: amd64 `.AppImage`, `.deb`, and x86_64 `.rpm`.
 
@@ -152,14 +158,14 @@ manual publication approval step. Download and test installers on the supported
 operating systems; build success alone does not verify application behavior.
 
 Before publication, the workflow also copies the DMG, Windows setup EXE, and Linux
-AppImage to `Noctua-macOS-universal.dmg`, `Noctua-Windows-x64-setup.exe`, and
+AppImage to `Noctua-macOS-aarch64.dmg`, `Noctua-Windows-x64-setup.exe`, and
 `Noctua-Linux-amd64.AppImage`. README download buttons use GitHub's
 `releases/latest/download/<filename>` URLs, so they follow the latest stable
 release without editing version numbers. The original versioned assets remain
 available for the updater and alternative downloads. A failed alias download or
 upload leaves the release in draft; publication retries replace existing aliases.
-Releases published before this change need these three copies added once before
-the README buttons can target them.
+The Apple Silicon download button becomes available after the first release
+with the new alias; older Universal releases remain available on the releases page.
 
 Merging this workflow does not publish existing drafts retroactively. For an
 existing draft such as `v0.1.1`, dispatch **Actions → release → Run workflow** from
@@ -233,6 +239,11 @@ interrupt the user. Installation always requires confirmation; there are no
 background installations. Linux supports in-app updates only for AppImage;
 package-manager installations must update through their package manager.
 
+Settings uses an in-app confirmation dialog, with **Install update** and **Cancel**
+buttons, rather than relying on the browser confirmation dialog inside desktop
+tabs. Cancel or Esc sends no installation request. The startup update prompt's
+own Update button remains its confirmation and does not open a second dialog.
+
 Users of an older release without the updater must manually install a build
 containing this feature once. Test updates between two signed packaged versions
 on each supported OS before relying on them; unit tests and compilation do not
@@ -247,6 +258,14 @@ installed version and no newer than the offered update, so skipped versions are
 covered. Full release notes and a comparison from the installed version remain
 available through links. Older manifests without summaries show a release-notes
 link instead of invented highlights.
+
+The startup dialog keeps long history in a separately scrolling, keyboard-focusable
+region while its heading and action buttons stay visible. Each listed version
+links to its own full release notes. Deferring an update does not mark any release
+as installed or remove it from this range; the next launch includes the versions
+between the still-installed version and the newly offered version. This history
+covers published stable releases included in the manifest and displays summaries,
+not the complete text of every release note.
 
 By default, summaries use the release body's categorized bullet lists: Breaking
 Changes, New Features, Bug Fixes, Improvements, and Other Changes. Author credits,
@@ -311,8 +330,8 @@ workflow linter, not a runtime release dependency.
 
 `app/prepare-server.py`, invoked by Tauri's beforeBuildCommand, builds the headless
 `noctua` binary for the desktop target and bundles it under `binaries/noctua-server`
-(`.exe` on Windows). Universal macOS uses two Rust targets and lipo. Retain Python 3
-and both macOS Rust targets on release runners. The desktop stages a version and
+(`.exe` on Windows). Official macOS releases target Apple Silicon. Custom
+universal builds require both Rust targets and lipo. Retain Python 3 on runners. The desktop stages a version and
 content-hash copy under NoctuaClient/servers before starting it; bundle replacement
 must not remove that copy or terminate the server. Do not clean staged versions
 while a server or service may still use them.
@@ -339,11 +358,28 @@ pre-protocol binary against migrated data.
 
 ## Paper compiler packaging
 
+Release and desktop CI jobs cache the prepared Tectonic and TinyTeX trees by
+runner OS/architecture, native/Universal compiler layout, and a hash of both setup
+scripts and their license notices.
+Changing a compiler version, package list, setup behavior, or notice invalidates
+the cache. Setup scripts still run after restoration and check their version
+stamps. No partial-key fallback is used.
+
+The release workflow caches Tauri CLI 2.10.1 in a dedicated installation directory,
+separate from the Rust build cache. Update `TAURI_CLI_VERSION` in both CI and release
+workflows together to upgrade it; the new version gets a fresh cache.
+Main-branch desktop CI also prepares this CLI cache because GitHub allows tag runs
+to restore default-branch caches, but not caches belonging to other tags. Let main
+CI finish before tagging to benefit from these caches on the first release run.
+The first run, an evicted cache, or changed inputs still require full setup.
+Cache reuse reduces preparation work; Rust compilation, packaging, and uploads
+still run, and actual time savings depend on the runner and cache transfer time.
+
 Release jobs run `scripts/setup-tectonic.py` and `scripts/setup-pdflatex.py` before
 packaging. They prepare checksum-verified Tectonic 0.17.0 and TinyTeX 2026.10
 (TeX Live 2026 pdfLaTeX/BibTeX), with fixed-date JMLR/algorithm2e/SyncTeX dependencies.
-Universal macOS apps include both architectures. Compilers resolve from app
+macOS releases include the Apple Silicon Tectonic compiler; TinyTeX retains its
+upstream Universal binaries. Compilers resolve from app
 resources at runtime: users need no separate TeX installation. The TeX distribution
 increases installer size; package files, fonts, formats, and license notices must
-ship together with the executables. Local packaging requires both setup scripts
-(`--universal` on the Tectonic script for Universal macOS builds).
+ship together with the executables. Local packaging requires both setup scripts.

@@ -15,3 +15,5 @@ noctua-projects.sqlite*
 /app/dist/appearance.js
 /app/dist/fonts.js
 /app/dist/select.js
+
+/app/dist/update-dialogs.js

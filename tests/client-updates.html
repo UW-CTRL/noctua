@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><title>Offline desktop update regression</title>
+<iframe src="../app/dist/index.html" style="width:100%;height:520px"></iframe><pre id="result">Checking…</pre>
+<script>
+const assert=(value,message)=>{if(!value)throw Error(message)};
+document.querySelector('iframe').onload=async()=>{try{
+ const w=document.querySelector('iframe').contentWindow,d=w.document,calls=[];
+ const releases=[{version:'0.3.0',changes:[{kind:'fixes',items:['<img src=x onerror=alert(1)>']}]}].concat(Array.from({length:30},(_,i)=>({version:'0.2.'+(29-i),changes:[{kind:'features',items:['Release detail '.repeat(15)]}]})));
+ let failInstall=false;
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+  calls.push({command,args});
+  if(command==='client_state')return{version:'0.1.0',connection:{},service:{supported:true,enabled:false}};
+  if(command==='desktop_action'){
+   if(['check','startup_check'].includes(args.action))return{status:'available',current_version:'0.1.0',version:'0.3.0',releases};
+   if(args.action==='install'&&failInstall)throw Error('Installation failed');
+   return{status:'installed'};
+  }
+  return{};
+ }};
+ w.confirm=()=>{throw Error('Native confirm must not be used')};
+ await w.eval('refresh()');d.querySelector('#tab-desktop').click();
+ const check=d.querySelector('[data-desktop=check]'),install=d.querySelector('[data-desktop=install]');
+ check.focus();await check.onclick();let offer=d.querySelector('#app-update-dialog');
+ assert(offer?.open,'manual update check did not show release history');
+ const summary=offer.querySelector('.update-summary');
+ assert(summary.tabIndex===0&&summary.getAttribute('role')==='region'&&summary.getAttribute('aria-label')==='Release history','history is not keyboard accessible');
+ assert(offer.querySelectorAll('.update-release').length===31&&!offer.querySelector('img'),'skipped releases were truncated or unescaped');
+ assert(summary.scrollHeight>summary.clientHeight&&summary.clientHeight>0,'long history is not scrollable');
+ const actions=offer.querySelector('.connection-actions'),top=actions.getBoundingClientRect().top;
+ offer.querySelector('.update-release:last-of-type h4 a').scrollIntoView({block:'nearest'});
+ assert(summary.scrollTop>0&&Math.abs(actions.getBoundingClientRect().top-top)<1&&actions.getBoundingClientRect().bottom<=w.innerHeight,'history clipped or moved the actions');
+ offer.querySelector('[data-dismiss]').click();assert(!offer.isConnected&&d.activeElement===check,'deferral did not restore focus');
+ install.focus();let operation=install.onclick();let confirm=d.querySelector('#app-update-confirm-dialog');
+ assert(confirm?.open&&d.activeElement===confirm.querySelector('[data-cancel]'),'installation did not require an in-app confirmation');
+ assert(await w.NoctuaUpdateDialogs.confirmInstall('0.3.0')===false&&d.querySelectorAll('#app-update-confirm-dialog').length===1,'duplicate confirmation opened');
+ confirm.querySelector('[data-cancel]').click();await operation;
+ assert(!calls.some(c=>c.args?.action==='install')&&d.activeElement===install,'Cancel installed the update or lost focus');
+ operation=install.onclick();confirm=d.querySelector('#app-update-confirm-dialog');confirm.dispatchEvent(new w.Event('cancel',{cancelable:true}));await operation;
+ assert(!calls.some(c=>c.args?.action==='install')&&!confirm.isConnected,'Escape installed the update');
+ failInstall=true;operation=install.onclick();confirm=d.querySelector('#app-update-confirm-dialog');confirm.querySelector('[data-confirm]').click();await operation;
+ assert(d.querySelector('#management-status').textContent.includes('Installation failed')&&!install.disabled,'failure did not allow retry');
+ failInstall=false;operation=install.onclick();confirm=d.querySelector('#app-update-confirm-dialog');confirm.querySelector('[data-confirm]').click();await operation;
+ assert(calls.filter(c=>c.args?.action==='install').length===2&&calls.filter(c=>c.args?.action==='install').every(c=>c.args.version==='0.3.0'),'installation was not pinned to the confirmed version');
+ assert(d.querySelector('#update').textContent.includes('Restart Noctua'),'installed state lost restart recovery');
+ await d.querySelector('[data-desktop=restart]').onclick();d.querySelector('#connection-dialog').close();
+ await w.performDesktop('startup_check',null,{startup:true});offer=d.querySelector('#app-update-dialog');
+ assert(offer?.open&&calls.some(c=>c.command==='present_client'),'startup offer could not reveal the local manager');
+ offer.querySelector('[data-dismiss]').click();await Promise.resolve();
+ assert(calls.some(c=>c.command==='dismiss_connection')&&!calls.some(c=>c.command==='local_server'),'startup deferral started a data server or failed to restore content');
+ const result='PASS: offline update history, scrolling, escaping, visible actions, startup presentation, in-app confirmation, cancel/Escape, focus, pinned installation and retry';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+}catch(error){const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}};
+</script>

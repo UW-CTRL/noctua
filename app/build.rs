@@ -6,6 +6,7 @@ fn main() {
         "appearance.js",
         "fonts.js",
         "select.js",
+        "update-dialogs.js",
     ] {
         let source = format!("../web/{name}");
         println!("cargo:rerun-if-changed={source}");

@@ -63,14 +63,16 @@ jobs:
     needs: release-checks
     if: ${{ !cancelled() }}
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      TAURI_CLI_VERSION: '2.10.1'
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: macos-latest
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: --target aarch64-apple-darwin --target x86_64-apple-darwin
+            targets: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
           - platform: windows-latest
             targets: ""
             args: ""
@@ -102,11 +104,19 @@ jobs:
         if: needs.release-checks.outputs.run_desktop != 'false'
         with:
           python-version: '3.12'
+      - name: Restore managed paper compilers
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/tectonic
+            target/texlive
+          key: paper-compilers-v2-${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('scripts/setup-tectonic.py', 'scripts/setup-pdflatex.py', 'third-party/tectonic/**', 'third-party/texlive/**') }}
       - name: Prepare managed paper compiler
         if: needs.release-checks.outputs.run_desktop != 'false'
         shell: bash
         run: |
-          python scripts/setup-tectonic.py ${{ runner.os == 'macOS' && '--universal' || '' }}
+          python scripts/setup-tectonic.py
           python scripts/setup-pdflatex.py
       - name: Check the desktop app
         if: needs.release-checks.outputs.run_desktop != 'false'
@@ -127,6 +137,18 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+      # Tag runs can restore default-branch caches, but not another tag's cache.
+      - name: Warm release Tauri CLI cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/noctua-tauri-cli
+          key: tauri-cli-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TAURI_CLI_VERSION }}
+      - name: Prepare release Tauri CLI
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "${{ env.TAURI_CLI_VERSION }}" --locked --root "${{ runner.temp }}/noctua-tauri-cli"
 
   release-checks:
     name: Release and workflow checks

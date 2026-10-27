@@ -32,3 +32,13 @@ test('history is sorted numerically and excludes drafts, prereleases, future ver
   ]);
   assert.deepEqual(result.map(r => r.version), ['0.10.0', '0.9.0', '0.2.0']);
 });
+
+test('large release histories retain every stable version for clients that defer updates', () => {
+  const history = Array.from({length:125}, (_, patch) => ({tag_name:`v0.2.${patch}`, body:`- Fix ${patch}`}));
+  const result = releaseSummaries({tag_name:'v0.3.0', body:'- Latest'}, history);
+  assert.equal(result.length, 126);
+  assert.equal(result[0].version, '0.3.0');
+  assert.equal(result[1].version, '0.2.124');
+  assert.equal(result.at(-1).version, '0.2.0');
+  assert.deepEqual(result.at(-1).changes, [{kind:'other', items:['Fix 0']}]);
+});

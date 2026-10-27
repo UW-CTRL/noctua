@@ -708,6 +708,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/shell.js", get(|| async { asset(include_str!("../web/shell.js"), "text/javascript; charset=utf-8") }))
         .route("/fonts.js", get(|| async { asset(include_str!("../web/fonts.js"), "text/javascript; charset=utf-8") }))
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
+        .route("/update-dialogs.js", get(||async{asset(include_str!("../web/update-dialogs.js"),"text/javascript; charset=utf-8")}))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
         .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))

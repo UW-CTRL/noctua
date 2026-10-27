@@ -4,5 +4,5 @@ from pathlib import Path
 from shutil import copyfile
 
 root = Path(__file__).resolve().parent.parent
-for name in ('ui.css', 'connection.css', 'appearance.js', 'fonts.js', 'select.js'):
+for name in ('ui.css', 'connection.css', 'appearance.js', 'fonts.js', 'select.js', 'update-dialogs.js'):
     copyfile(root / 'web' / name, root / 'app' / 'dist' / name)
