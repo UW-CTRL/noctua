@@ -16,7 +16,7 @@ On re-import, **Sync changes** preserves local edits and reports conflicts;
 [Zotero import](getting-started.md#import-from-zotero-optional) for attachment limits.
 Zotero PDFs link to their originals by default; **Copy to Noctua** keeps an
 independent file. Linked PDFs need their source folder available. If a file moves,
-update the Zotero folder in Settings → Connections and import again. Noctua keeps
+update the Zotero folder in Settings → Integrations and import again. Noctua keeps
 notes and annotations locally and does not modify the original PDF.
 Downloading an already linked PDF checks that its source still exists and matches
 the imported content. An unavailable or changed source returns an error rather than

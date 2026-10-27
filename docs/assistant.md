@@ -168,7 +168,7 @@ separately. Prompt instructions work alongside tool permissions and validation.
 
 ### Scholar Inbox Screening
 
-**Settings → Connections → Google Scholar Inbox → Edit prompt** configures a
+**Settings → Integrations → Google Scholar Inbox → Edit prompt** configures a
 separate, collection-specific Scholar worker. Replace `<Research Interest>` before
 first use. It reads accessible PDF text and uses your selected Research Assistant
 provider and model to recommend saving or excluding each paper. It has no tools;
