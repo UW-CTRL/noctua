@@ -94,6 +94,14 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && (needs.prepare.outputs.macos_arch == 'universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'aarch64-apple-darwin') || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Rust cache cleanup can delete non-Cargo files under target/.
+      # Restore managed compiler resources only after that cleanup finishes.
       # Use the same tarfile implementation on all runners; Ubuntu 22.04
       # system Python rejects valid relative symlinks in the TinyTeX archive.
       - uses: actions/setup-python@v5
@@ -147,12 +155,6 @@ jobs:
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 update
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && (needs.prepare.outputs.macos_arch == 'universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'aarch64-apple-darwin') || '' }}
-
-      - uses: Swatinem/rust-cache@v2
-
       - name: Restore Tauri CLI
         id: tauri-cli-cache
         uses: actions/cache@v4
@@ -181,6 +183,17 @@ jobs:
           # The publication job generates one manifest after every upload completes.
           includeUpdaterJson: false
           args: ${{ matrix.args }} ${{ needs.prepare.outputs.updater == 'true' && '--config tauri.release.conf.json' || '' }}
+
+      # Read packaging checks from the selected workflow, including draft rebuilds.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Verify packaged server and paper compilers
+        shell: bash
+        run: python release-tools/.github/scripts/check-release-resources.py
 
   publish:
     needs: [prepare, build]
