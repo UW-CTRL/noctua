@@ -23,6 +23,12 @@ function applyBibliography(){
  typeset();
 }
 function updateWorkspaceHistory(){document.querySelectorAll('[data-history="workspace"],[data-history="file"]').forEach(el=>{const history=el.dataset.history==='file'?W.fileHistory:W.manifest?.history;for(const action of ['undo','redo']){const b=el.querySelector(`[data-${action}]`);b.disabled=action==='redo'&&W.dirty||!(history?.[action]||(action==='undo'&&W.dirty));b.title=(history?.[action]?`${action}: ${history[action]}`:action)+(action==='undo'?' (⌘Z / Ctrl+Z)':' (⇧⌘Z / Ctrl+Shift+Z)');b.setAttribute('aria-keyshortcuts',action==='undo'?'Meta+Z Control+Z':'Meta+Shift+Z Control+Shift+Z');}});}
+function workspaceFileIcon(entry) {
+ const ext=(entry.source_name||entry.name||'').split('.').pop().toLowerCase();
+ if(['png','jpg','jpeg','gif','webp','svg','avif','bmp','tif','tiff','ico','heic','heif'].includes(ext))return 'image';
+ if(['mp4','m4v','mov','webm','avi','mkv','mpeg','mpg'].includes(ext))return 'video';
+ return ext==='bib'?'library':'file-text';
+}
 function renderWorkspaceTree(){
  let tree=document.getElementById('workspace-tree');if(!tree){tree=document.createElement('div');tree.id='workspace-tree';$('#note-list').before(tree);}
  $('#note-list').hidden=true;
@@ -32,7 +38,7 @@ function renderWorkspaceTree(){
  const children=(parent,depth=0)=>entries.filter(e=>(e.parent||'')===parent).sort((a,b)=>(a.kind==='folder'?-1:0)-(b.kind==='folder'?-1:0)||a.name.localeCompare(b.name)).map(e=>{
   const title=e.kind==='note'&&!e.renamed?(N.list.find(n=>n.id===e.note)?.title||e.name):e.name;
   const active=e.kind==='note'?(!W.file&&N.doc?.id===e.note):W.file===e.id;
-  const icon=e.kind==='folder'?(W.expanded.has(e.id)?'folder-open':'folder'):e.kind==='note'?'notebook-pen':/\.bib$/i.test(e.name)?'library':'file-text';
+  const icon=e.kind==='folder'?(W.expanded.has(e.id)?'folder-open':'folder'):e.kind==='note'?'notebook-pen':workspaceFileIcon(e);
   return `<div class="workspace-entry ${active?'active':''} ${W.selected.has(e.id)?'selected':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" aria-pressed="${W.selected.has(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-rename="${esc(e.id)}" data-icon="pencil" data-icon-only title="Rename ${esc(title)}" aria-label="Rename ${esc(title)}"></button><button data-file-trash="${esc(e.id)}" data-icon="trash-2" data-icon-only title="Move ${esc(title)} to trash" aria-label="Move ${esc(title)} to trash"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
