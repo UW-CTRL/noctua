@@ -85,7 +85,10 @@ async function importZoteroLibrary() {
   dialog.setAttribute('aria-labelledby','zotero-import-title');
   const choices=[['bibliography','Detailed bibliography'],['tags','Tags'],['copy_pdfs','Local PDFs'],['copy_notes','Notes'],['copy_annotations','PDF annotations']];
   const pdfMode=typeof settings!=='undefined'&&settings?.zotero_pdf_mode==='copy'?'copy':'link';
-  dialog.innerHTML='<form><h2 id="zotero-import-title">Import from Zotero</h2><p>Collections and basic paper information are always imported. Choose what else to import.</p>'+choices.map(([name,label])=>`<label><input type="checkbox" name="${name}" checked> ${label}</label>`).join('')+`<label>PDF storage <select name="pdf_mode"><option value="link"${pdfMode==='link'?' selected':''}>Link original</option><option value="copy"${pdfMode==='copy'?' selected':''}>Copy to Noctua</option></select></label>`+'<p>Link original reads PDFs from your configured Zotero folder without copying. Keep that folder available. Copy to Noctua stores independent PDF files.</p><p>Notes become text notes. Re-importing keeps existing notes and annotations. PDF annotations require the matching local PDF; only one PDF per paper is imported.</p><p>Close Zotero first for the freshest snapshot.</p><p class="error" role="alert"></p><button type="button" data-cancel>Cancel</button> <button type="submit">Import</button></form>';
+  dialog.innerHTML='<form><h2 id="zotero-import-title">Import from Zotero</h2><p>Collections and basic paper information are always imported. Choose what else to import.</p>'+choices.map(([name,label])=>`<label><input type="checkbox" name="${name}" checked> ${label}</label>`).join('')+`<label>PDF storage <select name="pdf_mode"><option value="link"${pdfMode==='link'?' selected':''}>Link original</option><option value="copy"${pdfMode==='copy'?' selected':''}>Copy to Noctua</option></select></label>`+'<p>Link original reads PDFs from your configured Zotero folder without copying. Keep that folder available. Copy to Noctua stores independent PDF files.</p><p>Notes become text notes. PDF annotations require the matching local PDF; only one PDF per paper is imported.</p><p>Close Zotero first for the freshest snapshot.</p><p class="error" role="alert"></p><button type="button" data-cancel>Cancel</button> <button type="submit">Import</button></form>';
+  const mode=document.createElement('div');
+  mode.innerHTML='<label>Existing items <select name="import_mode"><option value="sync">Sync changes</option><option value="overwrite">Overwrite from Zotero</option></select></label><p>Sync updates untouched imported fields and keeps local edits; conflicts are reported. Overwrite replaces selected paper fields, note content, and imported annotation fields with Zotero values. Neither mode deletes Noctua-only items or replaces a different PDF.</p>';
+  dialog.querySelector('form').insertBefore(mode,dialog.querySelector('.error'));
   document.body.append(dialog);dialog.showModal();dialog.onclose=()=>dialog.remove();
   const form=dialog.querySelector('form'),submit=form.querySelector('[type="submit"]');let busy=false;
   dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
@@ -96,12 +99,13 @@ async function importZoteroLibrary() {
     e.preventDefault();if(busy)return;busy=true;
     const body=Object.fromEntries(choices.map(([name])=>[name,form.elements[name].checked]));
     body.pdf_mode=form.elements.pdf_mode.value;
+    body.import_mode=form.elements.import_mode.value;
     form.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);submit.textContent='Importing…';
     form.querySelector('.error').textContent='';
     try{
       const result=await api('/api/library/import-zotero',body);
       await loadCollections();await loadLibItems();
-      dialog.close();toast(`Import complete: ${result.papers} papers, ${result.linked_pdfs||0} linked PDFs, ${result.pdfs} copied PDFs, ${result.notes} notes, ${result.annotations} annotations.`);
+      dialog.close();toast(`Import complete: ${result.papers} papers, ${result.linked_pdfs||0} linked PDFs, ${result.pdfs} copied PDFs, ${result.notes} notes, ${result.annotations} annotations, ${result.conflicts||0} conflicts kept locally.`);
       if(result.warnings?.length)toast(result.warnings.join('\n'));
     }catch(error){form.querySelector('.error').textContent=error.message;}
     finally{busy=false;form.querySelectorAll('input,select,button').forEach(el=>el.disabled=false);form.elements.pdf_mode.disabled=!form.elements.copy_pdfs.checked;submit.textContent='Import';}

@@ -52,6 +52,21 @@ The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and P
 annotations. Collections and basic paper information are always copied. Cancel
 closes the dialog without importing anything.
 
+**Existing items → Sync changes** is the default. Each import compares Zotero's
+current values with the last imported values. Unchanged imported fields receive
+Zotero updates; local-only edits stay intact. When both sides change a field,
+Noctua keeps the local value and reports the conflict. Imported tags merge source
+and local additions/removals. Note content is compared as a whole.
+
+Choose **Overwrite from Zotero** to replace selected paper fields, imported note
+content, and imported annotation fields with Zotero values. Unselected content,
+Noctua-only items, note settings, and local annotation replies stay intact.
+Neither mode deletes papers, collection memberships, notes, or annotations that
+were removed in Zotero, and neither replaces a different PDF. This is a one-way
+update when you import, not continuous synchronization or a write back to Zotero.
+Older imports without a saved baseline are handled conservatively by Sync;
+choose Overwrite to adopt the source values for reported conflicts.
+
 For PDFs, **Link original** is the default: Noctua reads the PDF at its Zotero
 path without copying it into Noctua storage. Choose **Copy to Noctua** to keep an
 independent file instead. Set the default with **Settings → Connections → Default
@@ -68,17 +83,17 @@ automatically deleted when switching to links.
 
 Noctua copies nested collections, metadata, tags (manual and automatic), and citation
 keys without changing Zotero. Import again to add missing
-tags to existing papers; existing tags are kept and duplicates are skipped.
+tags to existing papers; duplicate tags are skipped.
 Bibliographic details include the full publication date, journal/book/proceedings
 titles, volume, issue, pages, publisher, place, edition, series, ISBN/ISSN, language,
-short title, journal abbreviation, and page/volume counts. Re-importing fills missing
-details without overwriting existing values. These details are stored with the paper;
+short title, journal abbreviation, and page/volume counts. Re-importing follows
+the selected Sync or Overwrite mode. These details are stored with the paper;
 the details editor currently exposes only the common paper fields.
 Notes are copied to their paper's collections; standalone notes keep their own
 collections or go to the library root when unfiled. HTML becomes editable text
 with paragraph breaks. Formatting and embedded images are not reproduced; original
-HTML is retained with the note. Re-imports skip existing imported notes and
-annotations, preserving local edits.
+HTML is retained with the note. Sync preserves local edits and reports conflicts;
+Overwrite replaces imported note content and annotation fields.
 
 PDF annotations include highlights, underlines (shown as highlights), comments,
 area/text annotations, and multi-stroke drawings. Positions, colors, quoted text,

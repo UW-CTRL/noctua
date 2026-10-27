@@ -1,5 +1,18 @@
 // Included in agent::tests to share the isolated app/router fixture.
 #[tokio::test]
+async fn missing_linked_original_is_a_download_failure_instead_of_success()->Result<()> {
+    let f=Fixture::new()?;
+    let key=f.app.library.upload("L1","paper.pdf",b"%PDF-1.7\noriginal")?;
+    let missing=f.root.join("missing-zotero-original.pdf");
+    let db=rusqlite::Connection::open(f.root.join("library/library.sqlite"))?;
+    db.execute("INSERT INTO pdf_links(paper,path) VALUES(?1,?2)",rusqlite::params![key,missing.to_string_lossy()])?;drop(db);
+    let result=mcp_value(&f,"download_pdf",json!({"paper_key":key}),"direct").await;
+    assert_eq!(result["status"],"partial_failure");assert_eq!(result["code"],"DOWNLOAD_FAILED");
+    assert_eq!(result["has_pdf"],false);assert!(result["message"].as_str().unwrap().contains("Settings"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn zotero_pdf_storage_preference_defaults_to_link_and_persists()->Result<()> {
     let f=Fixture::new()?;
     assert_eq!(f.json("/api/settings",None).await["zotero_pdf_mode"],"link");

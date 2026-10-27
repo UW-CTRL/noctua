@@ -14,6 +14,10 @@ use serde_json::{json, Value};
 #[serde(rename_all="snake_case")]
 pub enum PdfMode { #[default] Link, Copy }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum ImportMode { #[default] Sync, Overwrite }
+
 #[derive(serde::Deserialize)]
 #[serde(default)]
 pub struct ImportOptions {
@@ -23,9 +27,36 @@ pub struct ImportOptions {
     pub copy_notes: bool,
     pub copy_annotations: bool,
     pub pdf_mode: Option<PdfMode>,
+    pub import_mode: ImportMode,
 }
 impl Default for ImportOptions {
-    fn default() -> Self { Self { tags: true, bibliography: true, copy_pdfs: false, copy_notes: false, copy_annotations: false, pdf_mode: None } }
+    fn default() -> Self { Self { tags: true, bibliography: true, copy_pdfs: false, copy_notes: false, copy_annotations: false, pdf_mode: None, import_mode: ImportMode::Sync } }
+}
+
+/// Three-way, one-way import. A conflict keeps both the local value and its old baseline.
+pub fn reconcile(current:&Value,incoming:&Value,baseline:Option<&Value>,mode:ImportMode)->(Value,Value,Vec<String>) {
+    let mut merged=current.clone();let mut base=baseline.cloned().unwrap_or_else(||json!({}));let mut conflicts=Vec::new();
+    for (field,value) in incoming.as_object().unwrap() {
+        let local=&current[field];let previous=baseline.and_then(|b|b.get(field));
+        if field=="tags" && mode==ImportMode::Sync {
+            let old=previous.and_then(Value::as_array).cloned().unwrap_or_default();
+            let remote=value.as_array().cloned().unwrap_or_default();let local=local.as_array().cloned().unwrap_or_default();
+            let mut tags=Vec::new();
+            for tag in local.iter().chain(remote.iter()) {
+                if (!old.contains(tag)||(local.contains(tag)&&remote.contains(tag)))&&!tags.contains(tag) {tags.push(tag.clone());}
+            }
+            merged[field]=json!(tags);base[field]=value.clone();continue;
+        }
+        let empty=local.is_null()||local==""||local.as_array().is_some_and(Vec::is_empty);
+        if mode==ImportMode::Overwrite || local==value || previous.is_some_and(|v|local==v) || (previous.is_none()&&empty) {
+            merged[field]=value.clone();base[field]=value.clone();
+        } else if previous==Some(value) {
+            // Only the local value changed.
+        } else {
+            conflicts.push(field.clone());
+        }
+    }
+    (merged,base,conflicts)
 }
 
 /// Bibliographic details retained alongside Noctua's common paper fields.
@@ -457,6 +488,22 @@ mod tests {
         let options:ImportOptions=serde_json::from_value(json!({"copy_pdfs":true}))?;
         assert!(options.copy_pdfs&&options.tags&&options.bibliography);
         assert!(!options.copy_notes&&!options.copy_annotations);
+        assert_eq!(options.import_mode,ImportMode::Sync);
         Ok(())
+    }
+    #[test]
+    fn import_reconciliation_updates_source_changes_and_reports_conflicts() {
+        let base=json!({"title":"Original","volume":"1","comment":"Original comment","tags":["old","shared"]});
+        let local=json!({"title":"Local title","volume":"1","comment":"Local comment","tags":["old","shared","local"],"private":"keep"});
+        let source=json!({"title":"Original","volume":"2","comment":"Remote comment","tags":["shared","remote"]});
+        let (sync,next,conflicts)=reconcile(&local,&source,Some(&base),ImportMode::Sync);
+        assert_eq!(sync["title"],"Local title");assert_eq!(sync["volume"],"2");assert_eq!(sync["comment"],"Local comment");
+        assert_eq!(conflicts,vec!["comment"]);assert_eq!(next["comment"],"Original comment");
+        assert_eq!(sync["tags"],json!(["shared","local","remote"]));
+        let (again,_,conflicts)=reconcile(&sync,&source,Some(&next),ImportMode::Sync);
+        assert_eq!(again,sync);assert_eq!(conflicts,vec!["comment"]);
+        let (overwrite,_,conflicts)=reconcile(&sync,&source,Some(&next),ImportMode::Overwrite);
+        assert!(conflicts.is_empty());assert_eq!(overwrite["comment"],"Remote comment");assert_eq!(overwrite["title"],"Original");assert_eq!(overwrite["private"],"keep");
+        let (_,_,conflicts)=reconcile(&local,&source,None,ImportMode::Sync);assert!(conflicts.contains(&"title".to_owned()));
     }
 }

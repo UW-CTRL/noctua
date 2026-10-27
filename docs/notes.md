@@ -14,8 +14,10 @@ content. The **Note guide** question-mark icon at the far right of the note head
 
 **Library → Import from Zotero → Notes** copies standalone and paper notes into
 their collections as editable text notes. Paragraph breaks are retained; HTML
-formatting and embedded images are not reproduced. Re-importing preserves existing
-imported notes and local edits. See [Zotero import](getting-started.md#import-from-zotero-optional).
+formatting and embedded images are not reproduced. **Sync changes** updates
+untouched imported content and preserves local edits, reporting conflicting source
+changes. **Overwrite from Zotero** replaces imported note content. Noctua-only
+notes are retained. See [Zotero import](getting-started.md#import-from-zotero-optional).
 
 ## Project files, bibliographies, and skills
 
