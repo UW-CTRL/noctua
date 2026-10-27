@@ -28,7 +28,7 @@ c.evaluateScript(#"""
  fail=true;await change(event('dark'));
  assert(settings.app_icon==='light'&&controls[1].checked&&message==='Cannot save icon','failed saves must retain the previous choice and show the error');
  settings.desktop=false;
- assert(appIconSettings().includes('next launch'),'browser mode must explain when the desktop icon will change');
+ assert(appIconSettings()==='','browser/server content must hide native icon controls');
  globalThis.result='PASS: app icon previews, platform-neutral guidance, persistence, failed saves and browser mode';
 })().catch(error=>globalThis.result='FAIL: '+error.stack);
 """#)

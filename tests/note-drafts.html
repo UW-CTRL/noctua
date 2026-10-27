@@ -1,0 +1,53 @@
+<!doctype html><meta charset="utf-8"><title>Note draft failure regression</title>
+<script>window.noctuaServerId='draft-test-server';</script><script src="../web/drafts.js"></script>
+<span id="note-status"></span><pre id="result">Checking…</pre>
+<script>
+(async()=>{try{
+ const assert=(value,message)=>{if(!value)throw Error(message)},$=s=>document.querySelector(s),enc=encodeURIComponent;
+ const N={target:'L1',doc:{id:'note',title:'Draft',updated:1,blocks:[{id:'b',type:'text',src:'First'}]},list:[],dirty:true,saving:false,conflict:false};
+ const NoteUndo={frames:[],group:null},REF={notes:[]};
+ const recordNoteChange=()=>{},notifyProgress=()=>{},refreshNoteHistory=()=>{},toast=()=>{};
+ let rendered=false;async function showNote(){rendered=true;}
+ let api=async()=>{throw Error('offline')};
+ const notes=await(await fetch('../web/notes.js')).text();
+ eval(notes.slice(notes.indexOf('function persistNoteDraft'),notes.indexOf('// ---------------------------------------------------------------- citations')));
+ let finish;
+ const realFetch=window.fetch;
+ window.fetch=()=>new Promise(resolve=>{finish=resolve});
+ const saving=saveNow();
+ N.doc.blocks[0].src='New input while saving';markDirty();
+ finish({ok:true,status:200,json:async()=>({updated:2})});await saving;clearTimeout(N.saveTimer);
+ const recovered=NoteDrafts.get('L1','note');
+ assert(recovered.blocks[0].src==='New input while saving'&&recovered.updated===2,'newer draft was lost or kept the wrong base version');
+ assert(N.dirty,'new input was incorrectly acknowledged');
+ const realPut=NoteDrafts.put;
+ NoteDrafts.put=()=>{throw Error('quota exceeded')};
+ window.fetch=async()=>{throw Error('offline')};
+ await saveNow();clearTimeout(N.saveTimer);
+ assert(N.dirty,'failed save cleared dirty input');
+ assert($('#note-status').textContent.includes('local draft also failed'),'quota plus disconnection was reported as a durable draft');
+ assert(!$('#note-status').textContent.includes('retained'),'storage failure claimed the draft was retained');
+ NoteDrafts.put=realPut;
+ window.fetch=async()=>({ok:true,status:200,json:async()=>({})});
+ await saveNow();clearTimeout(N.saveTimer);
+ assert(N.dirty&&NoteDrafts.get('L1','note'),'malformed successful response cleared an unacknowledged draft');
+
+ // A failed delete must not permit a connection switch with unsaved input.
+ eval(notes.slice(notes.indexOf('async function deleteNote'),notes.indexOf('async function openNote')));
+ const realConfirm=window.confirm;window.confirm=()=>true;
+ window.fetch=async()=>({ok:false});await deleteNote('note');
+ assert(N.dirty,'failed deletion discarded the dirty flag');window.confirm=realConfirm;
+ // Reload is a versioned user decision; input made during its GET must survive.
+ N.conflict=true;N.resolvingConflict=false;
+ let fresh;api=()=>new Promise(resolve=>{fresh=resolve});showConflict();
+ const reload=$('#note-status [data-c=reload]');
+ const resolving=$('#note-status').onclick({target:reload,preventDefault(){}});
+ N.doc.blocks[0].src='Typed after clicking reload';
+ fresh({id:'note',updated:9,blocks:[]});await resolving;
+ assert(N.conflict&&N.dirty&&!rendered,'reload overwrote input typed during the request');
+ assert(N.doc.blocks[0].src==='Typed after clicking reload','new input was replaced');
+ window.fetch=realFetch;clearTimeout(N.saveTimer);
+ const message='PASS: edits during save, base-version recovery, quota plus disconnection, failed deletion, and reload conflict race';
+ $('#result').textContent=message;window.webkit?.messageHandlers.result.postMessage(message);
+}catch(error){window.webkit?.messageHandlers.result.postMessage('FAIL: '+error.stack);}})();
+</script>

@@ -1,5 +1,6 @@
 // Run only after every platform build succeeds; never publish incomplete assets.
-module.exports = async function publishRelease({ github, context, core, tag, releaseId, updaterEnabled = false }) {
+module.exports = async function publishRelease({ github, context, core, tag, releaseId, updaterEnabled = false, macosArch = 'aarch64' }) {
+  if (!['aarch64', 'universal'].includes(macosArch)) throw new Error('Unsupported macOS release architecture.');
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[1-9]\d*$/.test(String(releaseId))) {
     throw new Error('A numeric version tag and release ID are required.');
   }
@@ -14,8 +15,8 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
   }
   const version = tag.slice(1);
   const required = [
-    `Noctua_${version}_universal.dmg`,
-    'Noctua_universal.app.tar.gz',
+    `Noctua_${version}_${macosArch}.dmg`,
+    `Noctua_${macosArch}.app.tar.gz`,
     `Noctua_${version}_x64-setup.exe`,
     `Noctua_${version}_x64_en-US.msi`,
     `Noctua_${version}_amd64.AppImage`,
@@ -29,9 +30,9 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
   }
   if (updaterEnabled) {
     const manifest = require('./updater-manifest.cjs');
-    await manifest({ github, context, release, assets });
+    await manifest({ github, context, release, assets, macosArch });
   }
-  await require('./download-aliases.cjs')({ github, context, release: { ...release, id: params.release_id }, assets });
+  await require('./download-aliases.cjs')({ github, context, release: { ...release, id: params.release_id }, assets, macosArch });
   // Let GitHub choose Latest by version/date instead of promoting an older retry.
   const { data: published } = await github.rest.repos.updateRelease({ ...params, draft: false, make_latest: 'legacy' });
   core.info(`Published: ${published.html_url}`);

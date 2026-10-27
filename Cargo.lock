@@ -2410,8 +2410,10 @@ dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
  "html5ever",
+ "libc",
  "reqwest 0.12.28",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -2442,6 +2444,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

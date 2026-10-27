@@ -223,6 +223,8 @@ pub fn codex_command(app: &App, mcp_url: Option<&str>, instructions: &str) -> Co
     Provider::Codex.configure(app, &mut cmd);
     if let Some(url) = mcp_url {
         cmd.arg("-c").arg(format!("mcp_servers.noctua.url={}", json!(url)))
+            .arg("-c").arg(format!("mcp_servers.noctua.bearer_token_env_var={}",json!("NOCTUA_MCP_TOKEN")))
+            .env("NOCTUA_MCP_TOKEN",app.runtime.as_ref().map(|r|r.owner.token.as_str()).unwrap_or("test"))
             .args(["-c", "mcp_servers.noctua.required=true", "-c", "mcp_servers.noctua.tool_timeout_sec=600"])
             .args(["-c", "mcp_servers.noctua.default_tools_approval_mode=\"approve\""]);
     }
@@ -328,8 +330,8 @@ mod tests {
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,
-                notes: Notes::new(root.join("notes")), data_dir: root.clone(), shared_skills_dir: Some(root.join(".agents/skills")), _storage_lease: None, settings: std::sync::Mutex::new(settings),
-                desktop, login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
+                notes: Notes::new(root.join("notes")), data_dir: root.clone(), shared_skills_dir: Some(root.join(".agents/skills")), _storage_lease: None, runtime: None, settings: std::sync::Mutex::new(settings),
+                desktop, chat_cancels: std::sync::Mutex::new(Default::default()), login_gate: tokio::sync::Mutex::new(()), chat_jobs: std::sync::Mutex::new(Default::default()),
             });
             let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
             Ok(Self { root, router, app })
@@ -791,6 +793,7 @@ mod tests {
         let target=f.app.library.create_collection("L1","Approval test")?;
         let manifest=crate::workspace::list(&f.app,&target)?;
         let turn=crate::chat_approval::Turn::begin(&f.app,"chat-a");
+        f.app.history.reserve("chat-a",Provider::Claude)?;
         let mut events=f.app.actions.subscribe();
         let args=json!({"folder_id":target,"revision":manifest["revision"],"op":"create","name":"main.tex","text":"First"});
         let app=f.app.clone();let id=turn.0.clone();let first=args.clone();
@@ -799,6 +802,10 @@ mod tests {
         assert_eq!(event["action"],"file_edit_approval");
         assert_eq!(event["changes"][0]["after"],"First");
         assert!(!pending.is_finished());
+        assert!(crate::chat_approval::pending(&f.app));
+        let recovered=f.json("/api/chats/chat-a",None).await;
+        assert_eq!(recovered["pending_file_edits"][0]["approval_id"],event["approval_id"]);
+        assert!(crate::chat_approval::pending_for_chat(&f.app,"chat-b").is_empty());
         assert!(crate::workspace::list(&f.app,&target)?["entries"].as_array().unwrap().is_empty());
         let app=f.app.clone();let id=turn.0.clone();let parallel_args=args.clone();
         let parallel=tokio::spawn(async move {crate::chat_approval::authorize(&app,&id,Some("chat-a"),&parallel_args).await});
@@ -809,6 +816,7 @@ mod tests {
         assert!(!wrong.status().is_success());
         f.json(&url,Some(json!({"chat_id":"chat-a","approval_id":approval,"approve":true}))).await;
         pending.await??;parallel.await??;
+        assert!(!crate::chat_approval::pending(&f.app));
         // Once granted, later calls in this turn need no further UI event.
         crate::chat_approval::authorize(&f.app,&turn.0,Some("chat-a"),&args).await?;
         assert!(events.try_recv().is_err());
@@ -863,12 +871,15 @@ mod tests {
         assert!(crate::skills::enabled(&f.app,Some("different"),id).is_err());
         let run=crate::skills::request(&f.app,Some("chat"),&json!({"folder_id":"L1","skill_id":id,"script":"scripts/run.sh","args":[],"files":[]}))?;
         let rid=run["id"].as_str().unwrap();assert_eq!(run["status"],"approval_required");
+        assert!(crate::skills::pending_review(&f.app),"shutdown must preserve an unapproved run");
         assert!(!f.root.join(".skill-runs").join(rid).exists());
         let url=format!("/api/skill-runs/{rid}");f.json(&url,Some(json!({"action":"approve"}))).await;
         let mut result=Value::Null;for _ in 0..100 {result=f.json(&url,None).await;if result["status"]!="running"{break;}tokio::time::sleep(Duration::from_millis(20)).await;}
         assert_eq!(result["status"],"review_required","{result}");assert_eq!(result["stdout"],"done");
+        assert!(crate::skills::pending_review(&f.app),"shutdown must preserve generated output awaiting review");
         assert!(f.json("/api/workspaces/L1",None).await["entries"].as_array().unwrap().is_empty());
         let applied=f.json(&url,Some(json!({"action":"apply"}))).await;
+        assert!(!crate::skills::pending_review(&f.app),"applied outputs must not block future updates");
         let file=applied["entries"][0]["id"].as_str().unwrap();assert_eq!(crate::workspace::read(&f.app,"L1",file)?["text"],"review me");
         let undone=crate::workspace::history(&f.app,"L1",&json!({"revision":applied["revision"],"redo":false}))?;
         assert!(undone["entries"].as_array().unwrap().iter().all(|e|e["deleted"]==true));
@@ -1428,7 +1439,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disconnect_saves_partial_replies_and_rejects_concurrent_turns() -> Result<()> {
+    async fn disconnect_keeps_jobs_running_and_explicit_stop_saves_partial_replies() -> Result<()> {
         let f = Fixture::new()?;
         for provider in ["claude", "codex"] {
             let r = f.request("/api/chat", Some(json!({ "message": "slow", "provider": provider })), None).await;
@@ -1442,7 +1453,10 @@ mod tests {
             }
             let concurrent = f.request("/api/chat", Some(json!({ "message": "another tab", "provider": provider, "chat_id": id })), None).await;
             assert_eq!(concurrent.status(), StatusCode::CONFLICT);
-            drop(stream); // equivalent to the browser's AbortController
+            drop(stream); // closing an interface does not cancel the server job
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(f.json(&format!("/api/chats/{id}?provider={provider}"),None).await["busy"],true);
+            f.json(&format!("/api/chats/{id}/stop"),Some(json!({}))).await;
             let c = f.settled(&id, provider).await;
             assert_eq!(c["messages"][1]["text"], "Partial");
             assert_eq!(c["messages"][1]["stopped"], true);
@@ -1470,7 +1484,7 @@ mod tests {
         assert_eq!(serde_json::from_slice::<Value>(&bytes)?["action"], "select");
         assert!(tokio::time::timeout(Duration::from_millis(50), streams[1].next()).await.is_err(), "another backend's action leaked into this chat");
         drop(streams);
-        for (id, provider) in ids.iter().zip(["claude", "codex"]) { f.settled(id, provider).await; }
+        for (id, provider) in ids.iter().zip(["claude", "codex"]) { f.json(&format!("/api/chats/{id}/stop"),Some(json!({}))).await; f.settled(id, provider).await; }
         Ok(())
     }
 

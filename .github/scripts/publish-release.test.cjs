@@ -4,7 +4,7 @@ const publish = require('./publish-release.cjs');
 
 function fixture() {
   const names = [
-    'Noctua_0.1.1_universal.dmg', 'Noctua_universal.app.tar.gz',
+    'Noctua_0.1.1_aarch64.dmg', 'Noctua_aarch64.app.tar.gz',
     'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_x64_en-US.msi',
     'Noctua_0.1.1_amd64.AppImage', 'Noctua_0.1.1_amd64.deb',
     'Noctua-0.1.1-1.x86_64.rpm',
@@ -50,9 +50,43 @@ test('each missing, empty, or incomplete installer keeps the release unpublished
 
 test('assets for another version cannot satisfy required installers', async () => {
   const f = fixture();
-  f.assets[0].name = 'Noctua_0.1.0_universal.dmg';
-  await assert.rejects(publish(f.args), /Noctua_0.1.1_universal.dmg/);
+  f.assets[0].name = 'Noctua_0.1.0_aarch64.dmg';
+  await assert.rejects(publish(f.args), /Noctua_0.1.1_aarch64.dmg/);
   assert.deepEqual(f.calls, []);
+});
+
+test('Universal installers cannot satisfy a new Apple Silicon release', async () => {
+  const f = fixture();
+  for (const asset of f.assets) asset.name = asset.name.replace('_aarch64', '_universal');
+  await assert.rejects(publish(f.args), /Noctua_0.1.1_aarch64.dmg/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('an explicit legacy Universal rebuild preserves its installers, alias, and updater targets', async () => {
+  const f = fixture();
+  f.release.id = 42;
+  for (const asset of f.assets) asset.name = asset.name.replace('_aarch64', '_universal');
+  for (const name of ['Noctua_universal.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
+    f.assets.push({ name: `${name}.sig`, id: 99, size: 12, state: 'uploaded' });
+  }
+  const repos = f.args.github.rest.repos;
+  repos.listReleases = () => {};
+  f.args.github.paginate = async method => method === repos.listReleases ? [] : f.assets;
+  repos.getReleaseAsset = async p => ({ data: p.asset_id === 99 ? 'c2lnbmF0dXJl' : Buffer.alloc(123) });
+  const uploads = [];
+  repos.uploadReleaseAsset = async p => uploads.push(p);
+  await publish({ ...f.args, macosArch: 'universal', updaterEnabled: true });
+  const platforms = JSON.parse(uploads[0].data).platforms;
+  assert.deepEqual(platforms['darwin-aarch64'], platforms['darwin-x86_64']);
+  assert.ok(platforms['darwin-aarch64'].url.endsWith('/Noctua_universal.app.tar.gz'));
+  assert.equal(uploads[1].name, 'Noctua-macOS-universal.dmg');
+  assert.equal(f.calls.length, 1);
+});
+
+test('an unsupported macOS architecture fails before accessing GitHub', async () => {
+  const f = fixture();
+  f.args.github.rest.repos.getRelease = async () => { throw new Error('Unexpected GitHub call'); };
+  await assert.rejects(publish({ ...f.args, macosArch: 'x86_64' }), /Unsupported macOS/);
 });
 
 test('a release for another tag is never published', async () => {
@@ -111,7 +145,7 @@ test('updater manifest upload must succeed before an enabled release is publishe
   for (const failUpload of [false, true]) {
     const f = fixture();
     f.release.id = 42;
-    for (const name of ['Noctua_universal.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
+    for (const name of ['Noctua_aarch64.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
       f.assets.push({ name: `${name}.sig`, size: 10, state: 'uploaded', id: 10 });
     }
     const repos = f.args.github.rest.repos;
