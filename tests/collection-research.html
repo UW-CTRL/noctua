@@ -1,0 +1,61 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"></head><body>
+<script>
+const collections={targets:[{id:'C1',name:'World <models>'},{id:'C2',name:'Other'}]},requests=[],messages=[];
+const enc=encodeURIComponent,esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+let state={version:1,revision:0,goal:'',progress:0,dates:[]},failure='',gate=null,confirmResult=false;
+window.confirm=()=>confirmResult;
+let refreshes=0;async function loadCollections(){refreshes++;}async function loadLibItems(){}
+const lib={target:'C1',expanded:new Set()},store={set(){}};
+function toast(message){messages.push(message);}
+async function api(path,body){requests.push({path,body});if(gate)await gate;if(failure)throw Error(failure);if(path==='/api/library/folder')return {id:'Cnew'};if(path==='/api/library/rename')return {};if(body)state={version:1,...body,revision:body.revision+1};return structuredClone(state);}
+const tick=()=>new Promise(r=>setTimeout(r,0));
+function assert(value,message){if(!value)throw Error(message);}
+</script><script src="../web/research.js"></script><script>
+(async()=>{
+ await openCollectionResearch('C1');let d=document.querySelector('dialog'),f=d.querySelector('form');
+ assert(d.open&&!f.hidden&&d.querySelector('strong').textContent.includes('World <models>'),'collection title not safely rendered');
+ await openCollectionResearch('C2');assert(document.querySelectorAll('dialog').length===1,'duplicate editor opened');
+ for(const invalid of ['-1','101','1.5','1e2','abc']){
+   f.elements.progress.value=invalid;f.elements.progress.dispatchEvent(new Event('input'));
+   assert(f.elements.progress.value==='0','invalid progress accepted: '+invalid);
+ }
+ for(const valid of ['0','100','45']){f.elements.progress.value=valid;f.elements.progress.dispatchEvent(new Event('input'));assert(f.elements.progress.value===valid,'valid integer rejected');}
+ f.elements.progress.value='1.5';const beforeInvalid=requests.length;await f.onsubmit({preventDefault(){}});assert(requests.length===beforeInvalid,'invalid integer submitted');
+
+ f.elements.is_project.value='true';f.elements.goal.value='Compare methods';f.elements.progress.value='45';f.querySelector('[data-add]').click();
+ const row=f.querySelector('[data-date-row]');row.querySelector('[data-title]').value='Draft';row.querySelector('[data-date]').value='2028-02-29';
+ d.querySelector('[data-close]').click();assert(d.open,'unsaved edits discarded without confirmation');
+ let blocked=false;try{window.flushCollectionResearch();}catch{blocked=true;}assert(blocked,'shell tab close did not protect unsaved research');
+ let unload=new Event('beforeunload',{cancelable:true});window.dispatchEvent(unload);assert(unload.defaultPrevented,'unsaved research not protected on reload');
+ let release;gate=new Promise(r=>release=r);failure='Changed on another device';
+ const pending=f.onsubmit({preventDefault(){}});await f.onsubmit({preventDefault(){}});
+ assert(requests.filter(r=>r.body).length===1&&d.querySelector('[data-close]').disabled,'duplicate save or close allowed while saving');
+ d.dispatchEvent(new Event('cancel',{cancelable:true}));assert(d.open,'escape closed busy editor');
+ release();await pending;gate=null;
+ assert(d.open&&d.querySelector('[data-error]').textContent.includes('another device'),'conflict lost error or closed dialog');
+ assert(f.elements.goal.value==='Compare methods'&&row.querySelector('[data-date]').value==='2028-02-29'&&!f.querySelector('[type="submit"]').disabled,'failed save lost edits or blocked retry');
+ assert(requests.at(-1).path==='/api/collections/C1/research'&&requests.at(-1).body.revision===0,'save used wrong collection or revision');
+ failure='';await f.onsubmit({preventDefault(){}});await tick();
+ assert(!window.flushCollectionResearch,'closed editor left a shell guard');
+ assert(state.is_project===true&&refreshes===1,'project type or icon refresh not saved');
+ assert(!document.querySelector('dialog')&&state.progress===45&&state.dates.length===1,'successful save did not persist');
+ await openCollectionResearch('C1');d=document.querySelector('dialog');f=d.querySelector('form');
+ assert(f.elements.goal.value==='Compare methods'&&f.querySelector('[data-date]').value==='2028-02-29','saved state not reloaded');
+ assert(f.elements.name.value==='World <models>','details did not load folder name');
+ f.elements.name.value='Renamed project';
+ f.querySelector('[data-remove]').click();await f.onsubmit({preventDefault(){}});await tick();assert(state.dates.length===0,'removed date persisted');
+ const renamed=requests.find(r=>r.path==='/api/library/rename');assert(renamed.body.target==='C1'&&renamed.body.name==='Renamed project','details rename lost target or name');
+ assert(!Object.hasOwn(state,'name'),'name leaked into research metadata');
+ await openCollectionResearch('C2');d=document.querySelector('dialog');d.querySelector('[data-cancel]').click();await tick();
+ failure='Network unavailable';await openCollectionResearch('C1');d=document.querySelector('dialog');assert(d.querySelector('form').hidden&&d.querySelector('[data-error]').textContent.includes('unavailable'),'load failure exposed save');d.querySelector('[data-close]').click();await tick();
+ failure='';openCollectionCreate('C1');d=document.querySelector('.collection-create');f=d.querySelector('form');
+ assert(f.elements.kind.value==='folder','new folders must default to ordinary');
+ f.elements.name.value='New project';f.elements.kind.value='project';
+ await f.onsubmit({preventDefault(){}});await tick();
+ const created=requests.find(r=>r.path==='/api/library/folder');
+ assert(created.body.parent==='C1'&&created.body.is_project===true&&created.body.name==='New project','creation lost parent/type/name');
+ assert(lib.target==='Cnew'&&lib.expanded.has('C1')&&document.querySelector('.collection-research')?.open,'project creation did not select collection or open details');
+ document.querySelector('.collection-research [data-cancel]').click();await tick();
+ window.webkit.messageHandlers.result.postMessage('PASS: collection research editor save/reopen, conflict retention, request isolation, dates, cancellation, reload protection, and load errors');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

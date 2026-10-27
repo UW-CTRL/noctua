@@ -92,6 +92,7 @@ const G = {
 // Noctua library browser: selected folder, its items, item shown in details.
 const lib = {
   target: store.get('noctua.libTarget') || 'L1', items: null, detail: null,
+  selected: new Set(), selectionTarget: null, anchor: null, tag: '',
   expanded: (() => {
     try { const saved = JSON.parse(store.get('noctua.expandedFolders') || '["L1"]'); return new Set(Array.isArray(saved) ? saved : ['L1']); }
     catch { return new Set(['L1']); }
@@ -675,27 +676,44 @@ function renderLibTree() {
     return true;
   });
   el.innerHTML = targets.map((t) => `
-    <li data-id="${esc(t.id)}" class="${t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 8}px">
+    <li data-id="${esc(t.id)}" tabindex="0" class="${!lib.trash && t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 8}px">
       ${parents.has(t.id) ? `<button type="button" class="t-toggle" data-icon="${lib.expanded.has(t.id) ? 'chevron-down' : 'chevron-right'}" data-icon-only aria-expanded="${lib.expanded.has(t.id)}" aria-label="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} ${esc(t.name)}" title="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} subfolders"></button>` : '<span class="t-toggle-spacer" aria-hidden="true"></span>'}
-      <span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.id.startsWith('L') ? '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>' : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'}</svg></span>
+      <span class="tree-symbol" title="${t.is_project ? 'Research project' : t.id.startsWith('L') ? 'Library' : 'Folder'}" aria-label="${t.is_project ? 'Research project' : 'Folder'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.id.startsWith('L') ? '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>' : t.is_project ? '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>' : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'}</svg></span>
       <span class="t-name">${esc(t.name)}</span>
       <span class="t-tail">
       <span class="t-count">${t.count ?? ''}</span>
       <span class="t-actions" role="group" aria-label="Folder actions">
-      ${t.id.startsWith('C') ? '<button class="icon t-rename" title="Rename folder" data-icon="pencil" aria-label="Rename folder" data-icon-only>✎</button>' : ''}
+      ${t.id.startsWith('C') ? '<button class="icon t-research" title="Research details" data-icon="pencil" aria-label="Research details" data-icon-only></button>' : ''}
       <button class="icon t-rename t-new" title="New folder inside" data-icon="folder-plus" aria-label="New folder inside" data-icon-only>+</button>
-      ${t.id === lib.target ? '<button id="import-pdf" class="icon t-import" title="Import PDF into this folder" aria-label="Import PDF into this folder" data-icon="file-up" data-icon-only></button>' : ''}
       </span></span>
-    </li>`).join('');
+    </li>`).join('')+`<li data-library-trash data-id="__trash__" tabindex="0" class="library-trash-row ${lib.trash?'active':''}" style="padding-left:16px"><span class="t-toggle-spacer" aria-hidden="true"></span><span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6M10 10v7M14 10v7"/></svg></span><span class="t-name">Trash</span></li>`;
+  if(typeof bindLibraryRootDrop==='function')bindLibraryRootDrop(el);
   el.querySelectorAll('li').forEach((li) => {
+    if(li.hasAttribute('data-library-trash')) {
+      li.addEventListener('click',()=>openLibraryTrash().catch(error=>toast(error.message,{error:true})));
+      li.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();li.click();}});
+      if(typeof bindLibraryFolderDrag==='function'){bindLibraryFolderDrag(li);li.draggable=false;}
+      return;
+    }
+    if (typeof bindLibraryFolderDrag==='function') bindLibraryFolderDrag(li);
+    li.addEventListener('contextmenu', event=>{event.preventDefault();event.stopPropagation();openLibraryFolderMenu(li.dataset.id,li,event);});
     li.addEventListener('click', () => {
       if (li.querySelector('input')) return;
+      lib.trash=false;document.body.classList.remove('library-trash-view');
       lib.target = li.dataset.id;
       store.set('noctua.libTarget', lib.target);
+      renderDetails();
       renderLibTree();
       loadLibItems();
       if (G.layout !== 'library') openProject(lib.target);
+      el.querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
     });
+    li.addEventListener('keydown', (e) => {
+      if (e.target !== li || e.isComposing || e.key !== 'Enter' || !li.dataset.id.startsWith('C')) return;
+      e.preventDefault();
+      startRename(li);
+    });
+    li.querySelector('.t-research')?.addEventListener('click', (e) => { e.stopPropagation(); openCollectionResearch(li.dataset.id); });
     li.querySelector('.t-toggle')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = li.dataset.id;
@@ -712,17 +730,13 @@ function renderLibTree() {
       e.stopPropagation();
       startNewFolder(li);
     });
-    li.querySelector('.t-import')?.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const button = e.currentTarget; button.disabled = true;
-      try { await importLibraryPDF(li.dataset.id); }
-      finally { if (button.isConnected) button.disabled = false; }
-    });
+
   });
 }
 
 function startRename(li) {
   const nameEl = li.querySelector('.t-name');
+  if (!nameEl) return;
   const old = nameEl.textContent;
   const input = document.createElement('input');
   input.className = 't-input';
@@ -756,41 +770,11 @@ function startRename(li) {
 
 // An inline name field under `li`; Enter creates the folder there.
 function startNewFolder(li) {
-  const level = (collections.targets.find((t) => t.id === li.dataset.id)?.level || 0) + 1;
-  const row = document.createElement('li');
-  row.style.paddingLeft = `${8 + level * 8}px`;
-  row.innerHTML = '<span class="t-toggle-spacer" aria-hidden="true"></span><span class="tree-symbol" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><input class="t-input" placeholder="New folder name">';
-  li.after(row);
-  const input = row.querySelector('input');
-  input.focus();
-  let done = false;
-  const finish = async (save) => {
-    if (done) return;
-    done = true;
-    const name = input.value.trim();
-    if (!save || !name) return row.remove();
-    input.disabled = true;
-    try {
-      const { id } = await api('/api/library/folder', { parent: li.dataset.id, name });
-      toast(`Created “${name}”`);
-      lib.target = id;
-      store.set('noctua.libTarget', id);
-      lib.expanded.add(li.dataset.id);
-      store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
-      await loadCollections();
-    } catch (e) {
-      toast(e.message, { error: true });
-      row.remove();
-    }
-  };
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') finish(true);
-    if (e.key === 'Escape') finish(false);
-  });
-  input.addEventListener('blur', () => finish(false));
+  openCollectionCreate(li.dataset.id);
 }
 
 async function loadLibItems() {
+  if(lib.trash)return openLibraryTrash();
   const el = $('#lib-items');
   if (!collections.targets.some((t) => t.id === lib.target)) lib.target = collections.targets[0]?.id;
   if (!lib.target) return;
@@ -800,7 +784,7 @@ async function loadLibItems() {
   el.innerHTML = '<p class="hint">Loading library…</p>';
   try {
     const items = await api(`/api/library/items?target=${enc(target)}`);
-    if (target !== lib.target) return;
+    if (target !== lib.target || lib.trash) return;
     lib.items = items;
   } catch (e) {
     if (target !== lib.target) return;
@@ -820,10 +804,15 @@ const libAuthors = (it) => {
 
 function renderLibItems() {
   const el = $('#lib-items');
+  if(lib.trash)return;
   if (!lib.target || !lib.items) return;
   const f = $('#lib-filter').value.trim().toLowerCase();
   let items = lib.items;
-  if (f) items = items.filter((it) => [it.title, libAuthors(it), it.venue].join(' ').toLowerCase().includes(f));
+  if (lib.selectionTarget !== lib.target) { lib.selected.clear(); lib.selectionTarget=lib.target; lib.anchor=null; }
+  lib.selected=new Set([...lib.selected].filter(key=>items.some(item=>item.key===key)));
+  if(lib.tag&&!items.some(item=>(item.tags||[]).includes(lib.tag)))lib.tag='';
+  if (lib.tag) items=items.filter(item=>(item.tags||[]).includes(lib.tag));
+  if (f) items = items.filter((it) => [it.title, libAuthors(it), it.venue, ...(it.tags||[])].join(' ').toLowerCase().includes(f));
   const cmp = {
     added: (a, b) => (b.dateAdded || '').localeCompare(a.dateAdded || ''),
     title: (a, b) => (a.title || '').localeCompare(b.title || ''),
@@ -837,7 +826,7 @@ function renderLibItems() {
     return;
   }
   el.innerHTML = items.map((it) => `
-    <li class="lib${it.key === G.libKey ? ' graphed' : ''}${it.key === lib.detail?.key ? ' selected' : ''}" data-key="${esc(it.key)}">
+    <li tabindex="0" class="lib${it.key === G.libKey ? ' graphed' : ''}${lib.selected.has(it.key) ? ' selected' : ''}" data-key="${esc(it.key)}">
       <div class="p-body">
         <div class="p-title" title="${esc(it.title || '(untitled)')}">${esc(it.title || '(untitled)')}</div>
         <div class="p-meta p-authors" title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</div>
@@ -850,7 +839,8 @@ function renderLibItems() {
     </li>`).join('');
   el.querySelectorAll('li').forEach((li) => {
     const it = lib.items.find((x) => x.key === li.dataset.key);
-    li.addEventListener('click', () => showLibItem(it));
+    li.addEventListener('click', (event) => { selectLibraryPaper(event,it,li); li.focus(); });
+    if (typeof bindLibraryPaperDrag==='function') bindLibraryPaperDrag(li,it);
     li.querySelector('.read-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openPaperView(it.key, e.metaKey || e.ctrlKey ? 'tab' : 'here'); });
     li.querySelector('.graph-btn').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -871,8 +861,9 @@ function renderLibraryTable(items) {
     const sort = $('#lib-sort').value;
     button.closest('th').setAttribute('aria-sort', button.dataset.librarySort === sort ? (sort === 'year-desc' ? 'descending' : 'ascending') : button.dataset.librarySort === 'year-desc' && sort === 'year-asc' ? 'ascending' : 'none');
   });
+  if (typeof renderLibraryManagement==='function') renderLibraryManagement();
   const rows = $('#library-rows');
-  rows.innerHTML = items.map(it => `<tr data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
+  rows.innerHTML = items.map(it => `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
@@ -881,10 +872,12 @@ function renderLibraryTable(items) {
   rows.querySelectorAll('tr').forEach(row => {
     const it = byKey.get(row.dataset.key);
     row.addEventListener('click', (e) => {
-      showLibItem(it);
+      selectLibraryPaper(e,it,row);
+      row.focus();
     });
+    if (typeof bindLibraryPaperDrag==='function') bindLibraryPaperDrag(row,it);
     row.querySelector('[data-select-paper]').addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showLibItem(it); $('#library-rows').querySelector(`[data-key="${CSS.escape(it.key)}"] [data-select-paper]`)?.focus(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLibraryPaper(e,it,row); $('#library-rows').querySelector(`[data-key="${CSS.escape(it.key)}"] [data-select-paper]`)?.focus(); }
     });
     row.addEventListener('dblclick', () => { if (it.has_pdf) openPaperView(it.key, 'tab'); });
   });
@@ -892,10 +885,12 @@ function renderLibraryTable(items) {
 
 function showLibItem(it) {
   lib.detail = it;
+  if (!lib.selected.has(it.key)) lib.selected=new Set([it.key]);
   G.selected = null;
   updateChatContext();
   renderDetails();
-  document.querySelectorAll('#lib-items [data-key], #library-rows [data-key]').forEach(row => row.classList.toggle('selected', row.dataset.key === it.key));
+  document.querySelectorAll('#lib-items [data-key], #library-rows [data-key]').forEach(row => row.classList.toggle('selected', lib.selected.has(row.dataset.key)));
+  updateLibrarySelection();
   draw();
 }
 
@@ -2215,3 +2210,14 @@ new ResizeObserver(() => {
 
 window.preserveChatDraft = () => { localStorage.setItem(serverStoreKey('noctua.chatDraft.' + chat.provider), $('#chat-input').value); };
 $('#chat-input').addEventListener('input', () => { try { window.preserveChatDraft(); } catch { toast('Chat draft storage unavailable; keep this window open.', {error:true}); } });
+
+// Use physical digit keys: Option changes event.key to symbols on macOS.
+document.addEventListener('keydown', event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || event.isComposing || event.defaultPrevented) return;
+  if (document.querySelector('dialog[open]')) return;
+  const mode = {Digit1:'graph', Digit2:'notes', Digit3:'pdf'}[event.code];
+  if (!mode) return;
+  const button = document.querySelector(`.mode-switch button[data-mode="${mode}"]`);
+  event.preventDefault();
+  if (button && !button.disabled) button.click();
+});

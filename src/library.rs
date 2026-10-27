@@ -6,6 +6,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+#[path = "library_management.rs"]
+pub mod management;
 pub const PDF_LIMIT: usize = 128 << 20;
 pub const COLORS: [&str; 6] = ["#ffd400", "#5fb236", "#2ea8e5", "#e56eee", "#a28ae5", "#ff6666"];
 pub const HIGHLIGHT_CATEGORIES:[&str;4]=["novelty","method","results","limitations"];
@@ -67,6 +69,12 @@ impl Library {
             CREATE TABLE IF NOT EXISTS pdf_auto_highlights (hash TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS page_images (hash TEXT NOT NULL, page INTEGER NOT NULL, png BLOB NOT NULL, PRIMARY KEY(hash,page));
             CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY, paper TEXT NOT NULL REFERENCES papers(key), data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);")?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS library_trash (kind TEXT NOT NULL,id TEXT NOT NULL,batch TEXT NOT NULL,deleted INTEGER NOT NULL,merged_into TEXT,PRIMARY KEY(kind,id));
+            CREATE TABLE IF NOT EXISTS collection_order (id TEXT PRIMARY KEY REFERENCES collections(id),position INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS library_undo (id TEXT PRIMARY KEY,data TEXT NOT NULL,undone INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS library_cleanup (folder TEXT PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS library_state (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL);
+            INSERT OR IGNORE INTO library_state VALUES(1,0);")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         Ok(Self { edit_gate:Mutex::new(()), conn: Mutex::new(conn), root,verified_pdfs:Mutex::new(HashMap::new()),
             #[cfg(test)] pdf_verifications:std::sync::atomic::AtomicUsize::new(0),
@@ -77,13 +85,13 @@ impl Library {
     pub fn collections_scoped(&self, include_subfolders: bool) -> Result<Value> {
         let c = self.conn.lock().unwrap();
         let sql = if include_subfolders {
-            "WITH RECURSIVE descendants(root,id) AS (SELECT id,id FROM collections UNION SELECT d.root,c.id FROM descendants d JOIN collections c ON c.parent=d.id) SELECT id,name,parent,(SELECT count(DISTINCT m.paper) FROM memberships m JOIN descendants d ON m.collection=d.id WHERE d.root=collections.id) FROM collections ORDER BY name COLLATE NOCASE"
+            "WITH RECURSIVE descendants(root,id) AS (SELECT id,id FROM collections UNION SELECT d.root,c.id FROM descendants d JOIN collections c ON c.parent=d.id WHERE c.id NOT IN (SELECT id FROM library_trash WHERE kind='collection')) SELECT id,name,parent,(SELECT count(DISTINCT m.paper) FROM memberships m JOIN descendants d ON m.collection=d.id WHERE d.root=collections.id AND m.paper NOT IN (SELECT id FROM library_trash WHERE kind='paper')) FROM collections WHERE id NOT IN (SELECT id FROM library_trash WHERE kind='collection') ORDER BY COALESCE((SELECT position FROM collection_order WHERE collection_order.id=collections.id),2147483647),name COLLATE NOCASE"
         } else {
-            "SELECT id,name,parent,(SELECT count(*) FROM memberships WHERE collection=collections.id) FROM collections ORDER BY name COLLATE NOCASE"
+            "SELECT id,name,parent,(SELECT count(*) FROM memberships WHERE collection=collections.id AND paper NOT IN (SELECT id FROM library_trash WHERE kind='paper')) FROM collections WHERE id NOT IN (SELECT id FROM library_trash WHERE kind='collection') ORDER BY COALESCE((SELECT position FROM collection_order WHERE collection_order.id=collections.id),2147483647),name COLLATE NOCASE"
         };
         let mut stmt = c.prepare(sql)?;
         let rows: Vec<(String,String,Option<String>,i64)> = stmt.query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?.collect::<rusqlite::Result<_>>()?;
-        let total: i64 = c.query_row("SELECT count(*) FROM papers", [], |r| r.get(0))?;
+        let total: i64 = c.query_row("SELECT count(*) FROM papers WHERE key NOT IN (SELECT id FROM library_trash WHERE kind='paper')", [], |r| r.get(0))?;
         fn walk(rows: &[(String,String,Option<String>,i64)], parent: Option<&str>, depth: usize, out: &mut Vec<Value>) {
             for (id,name,p,count) in rows.iter().filter(|r| r.2.as_deref()==parent) {
                 out.push(json!({"id":id,"name":name,"parent":p,"level":depth,"count":count}));
@@ -95,10 +103,15 @@ impl Library {
         Ok(json!({"live":true,"native":true,"selected":"L1","targets":targets}))
     }
     pub fn folder_id(&self, target: &str) -> Result<String> {
-        self.conn.lock().unwrap().query_row("SELECT notes_folder FROM collections WHERE id=?1", [target], |r|r.get(0)).optional()?.ok_or_else(missing)
+        self.conn.lock().unwrap().query_row("SELECT notes_folder FROM collections WHERE id=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')", [target], |r|r.get(0)).optional()?.ok_or_else(missing)
+    }
+    /// Roll back a collection whose initialization failed before publishing its ID.
+    pub fn remove_unpublished_collection(&self, target: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute("DELETE FROM collections WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM memberships WHERE collection=?1) AND NOT EXISTS (SELECT 1 FROM collections WHERE parent=?1)", [target])?;
+        Ok(())
     }
     pub fn folder_target(&self, folder: &str) -> Option<String> {
-        self.conn.lock().unwrap().query_row("SELECT id FROM collections WHERE notes_folder=?1", [folder], |r|r.get(0)).optional().ok().flatten()
+        self.conn.lock().unwrap().query_row("SELECT id FROM collections WHERE notes_folder=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')", [folder], |r|r.get(0)).optional().ok().flatten()
     }
     pub fn create_collection(&self, parent: &str, name: &str) -> Result<String> {
         self.folder_id(parent)?;
@@ -111,7 +124,7 @@ impl Library {
     pub fn scholar_collection(&self, name: &str) -> Result<String> {
         let mut c = self.conn.lock().unwrap();
         let tx = c.transaction()?;
-        let existing: Option<String> = tx.query_row("SELECT id FROM collections WHERE parent='L1' AND name=?1 ORDER BY rowid LIMIT 1", [name], |r|r.get(0)).optional()?;
+        let existing: Option<String> = tx.query_row("SELECT id FROM collections WHERE parent='L1' AND name=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection') ORDER BY rowid LIMIT 1", [name], |r|r.get(0)).optional()?;
         let key = if let Some(key) = existing { key } else {
             let key = id("C");
             tx.execute("INSERT INTO collections VALUES(?1,?2,'L1',?1)", params![key,name])?;
@@ -130,16 +143,29 @@ impl Library {
     pub fn items_scoped(&self, target: &str, include_subfolders: bool) -> Result<Vec<Value>> {
         self.folder_id(target)?;
         let c=self.conn.lock().unwrap();
-        let mut stmt=c.prepare("WITH RECURSIVE scope(id) AS (SELECT ?1 UNION SELECT c.id FROM collections c JOIN scope s ON c.parent=s.id WHERE ?2) SELECT data,pdf_hash,revision FROM papers WHERE ?1='L1' OR key IN (SELECT paper FROM memberships WHERE collection IN (SELECT id FROM scope)) ORDER BY key")?;
+        let mut stmt=c.prepare("WITH RECURSIVE scope(id) AS (SELECT ?1 UNION SELECT c.id FROM collections c JOIN scope s ON c.parent=s.id WHERE ?2 AND c.id NOT IN (SELECT id FROM library_trash WHERE kind='collection')) SELECT data,pdf_hash,revision FROM papers WHERE key NOT IN (SELECT id FROM library_trash WHERE kind='paper') AND (?1='L1' OR key IN (SELECT paper FROM memberships WHERE collection IN (SELECT id FROM scope))) ORDER BY key")?;
         let rows=stmt.query_map(params![target,include_subfolders], |r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,i64>(2)?)))?;
         rows.map(|r| { let (s,h,revision)=r?; let mut v:Value=serde_json::from_str(&s)?;v["has_pdf"]=json!(h.is_some());v["pdf_hash"]=json!(h);v["revision"]=json!(revision);Ok(v) }).collect()
     }
     pub fn paper(&self, key: &str) -> Result<Value> {
         let c=self.conn.lock().unwrap();
-        let row:Option<(String,Option<String>,i64)>=c.query_row("SELECT data,pdf_hash,revision FROM papers WHERE key=?1",[key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+        let row:Option<(String,Option<String>,i64)>=c.query_row("SELECT data,pdf_hash,revision FROM papers WHERE key=?1 AND key NOT IN (SELECT id FROM library_trash WHERE kind='paper')",[key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
         let (s,h,r)=row.ok_or_else(missing)?;let mut p:Value=serde_json::from_str(&s)?;
         p["has_pdf"]=json!(h.is_some());p["pdf_hash"]=json!(h);p["revision"]=json!(r);
         Ok(p)
+    }
+    /// Move a paper to recoverable trash; annotations, memberships and PDF blobs stay intact.
+    pub fn delete_paper(&self, key:&str, revision:i64)->Result<()> {
+        let _gate=self.edit_gate.lock().unwrap();
+        let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
+        let current:Option<i64>=tx.query_row("SELECT revision FROM papers WHERE key=?1",[key],|r|r.get(0)).optional()?;
+        if current.ok_or_else(missing)?!=revision{return Err(conflict("Paper changed. Refresh before deleting."));}
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM library_trash WHERE kind='paper' AND id=?1)",[key],|r|r.get::<_,bool>(0))?{return Err(missing());}
+        let batch=id("undo-");
+        tx.execute("INSERT INTO library_trash(kind,id,batch,deleted) VALUES('paper',?1,?2,?3)",params![key,batch,now()])?;
+        tx.execute("INSERT INTO library_undo(id,data) VALUES(?1,?2)",params![batch,json!({"kind":"paper","ids":[key]}).to_string()])?;
+        tx.execute("UPDATE library_state SET revision=revision+1 WHERE id=1",[])?;
+        tx.commit()?;Ok(())
     }
     /// Direct memberships, independent of the UI's descendant setting.
     pub fn memberships(&self, key: &str) -> Result<Vec<String>> {
@@ -171,7 +197,7 @@ impl Library {
         if text(&p,"title").trim().is_empty() { return Err(bad("A paper needs a title")); }
         let (s2,doi,arxiv,title)=(text(&p,"s2").to_string(),text(&p,"DOI").trim().to_lowercase(),text(&p,"arxiv").to_lowercase(),norm(text(&p,"title")));
         let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
-        let existing:Option<(String,String)>=tx.query_row("SELECT key,data FROM papers WHERE (?1<>'' AND s2=?1) OR (?2<>'' AND doi=?2) OR (?3<>'' AND arxiv=?3) OR (?4<>'' AND length(?4)>12 AND title_norm=?4) OR (key=?5 AND title_norm=?6) LIMIT 1",params![s2,doi,arxiv,if source["_new_pdf"]==true{""}else{&title},text(source,"key"),title],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let existing:Option<(String,String)>=tx.query_row("SELECT key,data FROM papers WHERE key NOT IN (SELECT id FROM library_trash WHERE kind='paper') AND ((?1<>'' AND s2=?1) OR (?2<>'' AND doi=?2) OR (?3<>'' AND arxiv=?3) OR (?4<>'' AND length(?4)>12 AND title_norm=?4) OR (key=?5 AND title_norm=?6)) LIMIT 1",params![s2,doi,arxiv,if source["_new_pdf"]==true{""}else{&title},text(source,"key"),title],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let created=existing.is_none();
         let key=if let Some((key,body))=existing {
             let mut old:Value=serde_json::from_str(&body)?;
@@ -200,8 +226,8 @@ impl Library {
     pub fn edit(&self, key: &str, data: &Value) -> Result<Value> {
         let mut p=self.paper(key)?;
         let revision=data["revision"].as_i64().context("Missing paper revision")?;
-        for k in ["title","creators","year","DOI","arxiv","s2","venue","abstractNote","pdf_url"] { if let Some(v)=data.get(k) {
-            let valid=match k { "creators"=>v.as_array().is_some_and(|a|a.iter().all(Value::is_string)),"year"=>v.is_null()||v.as_u64().is_some_and(|y|y<=9999),_=>v.is_string() };
+        for k in ["title","creators","year","DOI","arxiv","s2","venue","abstractNote","pdf_url","tags"] { if let Some(v)=data.get(k) {
+            let valid=match k { "creators"|"tags"=>v.as_array().is_some_and(|a|a.iter().all(Value::is_string)),"year"=>v.is_null()||v.as_u64().is_some_and(|y|y<=9999),_=>v.is_string() };
             if !valid{return Err(bad(&format!("Invalid {k}")));} p[k]=v.clone();
         } }
         if text(&p,"title").trim().is_empty() { return Err(bad("A paper needs a title")); }
@@ -254,7 +280,7 @@ impl Library {
     pub fn upload(&self,target:&str,name:&str,bytes:&[u8])->Result<String> {
         self.folder_id(target)?;
         let hash=format!("{:x}",Sha256::digest(bytes));
-        let known:Option<String>=self.conn.lock().unwrap().query_row("SELECT key FROM papers WHERE pdf_hash=?1",[hash],|r|r.get(0)).optional()?;
+        let known:Option<String>=self.conn.lock().unwrap().query_row("SELECT key FROM papers WHERE pdf_hash=?1 AND key NOT IN (SELECT id FROM library_trash WHERE kind='paper')",[hash],|r|r.get(0)).optional()?;
         if let Some(key)=known { self.attach_pdf(&key,bytes)?;self.conn.lock().unwrap().execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?;return Ok(key); }
         // Validate before saving metadata so a rejected upload leaves no empty paper.
         if bytes.len()>PDF_LIMIT || !bytes.iter().take(1024).copied().collect::<Vec<_>>().windows(5).any(|w|w==b"%PDF-") {return Err(bad("Choose a PDF smaller than 128 MB"));}
@@ -696,6 +722,22 @@ mod tests {
     struct Temp(PathBuf);
     impl Drop for Temp {fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
     fn fixture()->(Temp,Library){let root=std::env::temp_dir().join(id("noctua-library-test-"));let lib=Library::open(root.clone()).unwrap();(Temp(root),lib)}
+    #[test]
+    fn paper_deletion_checks_revision_and_preserves_other_papers()->Result<()> {
+        let (_temp,lib)=fixture();let folder=lib.create_collection("L1","Test")?;
+        let key=lib.upload(&folder,"one.pdf",b"%PDF-1.7\nfirst")?;
+        let other=lib.save(&json!({"title":"Other distinct document"}),"L1")?;
+        let pdf=lib.pdf_path(&key)?;
+        let revision=lib.paper(&key)?["revision"].as_i64().unwrap();
+        assert!(lib.delete_paper(&key,revision+1).is_err());
+        assert_eq!(lib.items(&folder)?.len(),1);
+        lib.conn.lock().unwrap().execute("INSERT INTO annotations VALUES('a',?1,'{}',1)",[&key])?;
+        lib.delete_paper(&key,revision)?;
+        assert!(lib.paper(&key).is_err());assert!(lib.items(&folder)?.is_empty());
+        assert!(lib.paper(&other).is_ok());assert!(pdf.is_file());
+        assert_eq!(lib.conn.lock().unwrap().query_row("SELECT count(*) FROM annotations",[],|r|r.get::<_,i64>(0))?,1);
+        assert!(lib.delete_paper(&key,revision).is_err());Ok(())
+    }
     #[test]
     fn persistent_collections_pdfs_and_memberships()->Result<()> {
         let (temp,lib)=fixture();let parent=lib.create_collection("L1","Physics")?;let child=lib.create_collection(&parent,"Quantum")?;

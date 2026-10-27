@@ -38,3 +38,20 @@ resolve it instead of automatically overwriting another device's edits. Closing
 a client does not cancel jobs on its connected server.
 Respect maintenance pauses and preserve unresolved edits; an update notice is
 not proof that a local draft has been saved to the server.
+
+Collection goals, progress, and personal target dates are managed through the
+Library collection tree's Research details UI. They are not note documents.
+Their hidden internal research storage is outside general workspace file access;
+do not treat it as a note or claim to edit it with file tools.
+
+Library collections can be ordinary folders or research projects (briefcase icon). Users choose the type when creating a collection and can change it in Research details without moving files. This type is not inherited; folders inside Notes are ordinary workspace file folders.
+
+Files copied from a file manager can be pasted into the Library collection list with Command+V or Ctrl+V. PDFs become Library papers; other formats are preserved in that collection’s Notes Project files (up to 32 MB each). Binary formats may only support download rather than editing. The browser must expose clipboard files.
+
+
+
+Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+
+Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. Library paper trash preserves annotations and memberships; bulk management and duplicate review are available in the Library UI. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
+
+Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved.

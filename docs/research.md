@@ -95,9 +95,82 @@ Turn it off and use **Summarize threads** when you want to control AI usage. Lin
 See [AI prompts](assistant.md#dedicated-ai-features) for the thread summary's
 inputs, output format, and [source instructions](../src/prompts/lineage.md).
 
+Select a paper in the Library list and press **Delete** or **Backspace** to delete it.
+You can also choose **Delete paper** (the trash icon) in Paper info.
+The confirmation dialog offers **Delete** and **Cancel**; press **Enter** to confirm
+or **Escape** to cancel. Deletion moves the paper out of active lists into **Trash**, preserving
+annotations, PDFs and memberships. **Trash** (the virtual folder at the bottom of the Library tree) → **Restore** restores them.
+Command+Z/Ctrl+Z while the paper list is focused restores the
+last deletion. Linked external PDFs and collection project files are preserved.
+
+Paper info has collapsible **Libraries and Collections** and **Tags** sections.
+The library and assigned collection paths have distinct icons; the Tags heading
+shows the count and each tag appears on its own row. Empty tags show **No tags**.
+The display refreshes after editing tags or applying bulk tag changes.
+**Libraries and Collections** lists the library and direct collection assignments with parent paths. This shows direct
+assignments, independent of the include-subfolders setting; a paper with none
+shows the library with **No collection assigned**. Membership changes refresh the list.
+
+## Manage papers and folders
+
+Command-click (macOS) or Ctrl-click toggles paper selections; Shift-click selects
+ranges, and Command+A/Ctrl+A selects visible papers. Use dragging and
+copy/cut/paste for collection changes, Delete for trash, and Command+Z/Ctrl+Z
+for undo. Right-click selected papers for bulk tag editing or removal from the
+current collection. Paper info retains individual edit and collection actions. The **Tags** panel at the bottom of the Library sidebar lists tags
+from the selected collection with paper counts. **Filter tags** searches tag names
+without changing the paper search. Click a tag to filter papers; click it again or
+use **Clear tag filter** to show all tags. The list scrolls independently and
+respects the include-subfolders setting. Tag and paper text filters combine. Paper info
+**Edit details** also edits tags, one per line.
+
+Collections are links to papers; Library always contains every active paper.
+Copy/paste or drag papers into another collection to add links while keeping all
+existing memberships. PDF bytes are not duplicated. Cutting and pasting papers
+also adds links; only **Remove from collection** explicitly removes a membership.
+Paper info defaults its Collection selector to the currently viewed folder and
+refreshes when you change folders. Its remove button acts on that selector;
+removal is disabled for Library itself.
+
+Cutting and pasting a folder still changes its parent along with its subfolders
+and project files. Folder copy is not offered. Clipboard entries are scoped to
+the same server. Drag papers onto a collection to link them.
+ For folders, drop on the upper/lower edge of a row to insert before/after it
+(the line marks the insertion position), or on its center to move inside.
+Drop on Library or the **Library root** area that appears while dragging to
+bring a nested folder back to the top level. Edge drops also move folders
+between parents in one operation.
+Right-click a collection to open a compact menu with **Edit collection** (the
+pencil action), **New folder**, and **Delete folder**. Use dragging to change
+parents or sibling order. The menu supports arrow keys, Enter and Escape. The Library root cannot be moved or deleted.
+Folder deletion hides its whole subtree but keeps IDs, memberships and project
+files. Restore a folder in **Trash** to restore its deletion group; if its old
+parent remains deleted it returns under Library.
+
+**Settings → Data & Storage → Library → Check for duplicate papers** reviews candidates with a matching DOI, arXiv identifier, PDF hash,
+or normalized title. Choose the paper to keep and review the confirmation.
+Merging fills empty retained fields and combines tags, citation aliases,
+memberships and annotations, retaining annotation IDs. Different PDF contents
+cannot be merged because their page anchors may differ. The source record stays
+archived in Trash and cannot be restored independently or unmerged there. Review
+carefully before confirming. Ordinary paper and folder trash remains restorable until permanently deleted.
+Trash uses the same table and Command/Ctrl/Shift selection style as Library.
+Choose **Restore**, or press Delete/Backspace (or right-click → Delete permanently)
+to permanently delete the selection after confirmation. This removes paper
+metadata, annotations and folder project files, and cannot be undone. External
+original PDFs are preserved; immutable PDF cache blobs may remain for reuse.
+There is no automatic purge.
+
 ## Organize a collection
 
-Use **Add to Noctua**, **Import PDF**, or the optional
+Copy files in your file manager, select a folder or project in the list,
+and press **⌘V** (macOS) or **Ctrl+V** to import them into that collection. PDFs become Library papers; other file
+types (including images, documents, text, code, and archives) are saved as
+original files under **Notes → Project files**, up to 32 MB per general file.
+Importing a file does not guarantee an editable preview for its format.
+Pasting files keeps the current list open; PDFs do not automatically open Reader.
+The browser must expose the copied files to the clipboard event.
+You can also use **Add to Noctua** or the optional
 [Zotero importer](getting-started.md#import-from-zotero-optional). Collections
 can be nested, and one paper can belong to several without duplicating its PDF.
 Folders with children have a chevron on the left: click it to collapse or expand
@@ -126,3 +199,50 @@ Chat can search saved papers, inspect their details, create or rename collection
 and add or remove papers across several projects. Removing a paper from a project
 keeps it and its PDF in the shared Library. These requested actions apply
 immediately in Suggest and Direct; Plan is read-only.
+
+## Collection research details
+
+Choose **New folder inside** in the Library tree, enter a name, and select
+**Folder** or **Research project** before creating it. The compact creation and
+research-details forms use the same aligned controls and footer actions as
+other workspace dialogs. Ordinary folders use the
+folder icon; research projects use the Lucide briefcase icon in Library, Graph,
+and Lineage. New projects open Research details after creation. Existing
+collections without research data remain ordinary folders; previously saved
+research details identify a project.
+
+Click a project or folder in the tree, then press **Enter** to rename it.
+Press **Enter** again to save, or **Escape** to cancel.
+
+Change **Folder type** in Research details later to convert either way. Changing
+the type preserves goals, dates, progress, collection IDs, papers, and files.
+The type belongs to each collection and is not inherited by subfolders. The
+presence of `.workspace/research/state.json` activates the project; no stored type flag is required. Switching to an ordinary folder saves the details as `.workspace/research/inactive.json` and removes the active file. Switching back restores those details. An existing active file always identifies a project, regardless of any older type flag.
+
+Hover or keyboard-focus a collection in the Library folder tree and choose
+**Research details** (the pencil icon). The pencil and new-folder icons change to the accent color on hover or keyboard focus. Rename the folder in **Name**, or enter a goal, progress as a whole number from 0 to 100%,
+and up to 50 personal target dates. Choose **Save** to store the changes. This
+also works from the Graph and Lineage folder tree. Ordinary collections need no
+research fields; no separate project entity is created.
+
+Target dates are calendar dates for your own plan. They do not represent official
+venue deadlines, time zones, or automatic countdowns. Research details belong to
+the selected collection and are not inherited by its subfolders. Existing paper
+membership, note/file IDs, and graph scope are unchanged.
+
+A failed save keeps the editor and your input open. If another device saved a
+new revision, copy any edits you want to retain, close the editor, then reopen it
+to load the saved version before reapplying them. Cancel or Close asks before
+discarding changed input. Changes are not automatically saved or recovered after
+a browser crash.
+
+Research data is stored in `.workspace/research/state.json` inside the collection's
+existing notes directory. It is durable data, excluded from the Notes file tree,
+normal file access, and compiler inputs. Include this hidden directory in backups;
+a complete server update snapshot includes it when notes are inside the data
+folder. An external notes directory needs its own backup, as described in
+[Server and connections](server.md#drafts-backup-and-updates).
+
+Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+
+Trash appears as the last row in the continuous Library folder list and is a virtual folder, not a collection membership. Click it to browse and restore deleted items in the main area. Drag papers or folders onto Trash to delete them after confirmation. Removing a paper from a collection or linking it to other collections does not put it in Trash.

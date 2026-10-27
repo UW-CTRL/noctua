@@ -681,6 +681,8 @@ function dataSection(s) {
     <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
       <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
+    <div class="setup-actions"><button type="button" data-act="check-library-duplicates" data-icon="copy">Check for duplicate papers</button></div>
+    <p class="hint">Review possible duplicates by DOI, arXiv ID, PDF content, or title before choosing whether to merge.</p>
     </div>
     <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save Destination</h3>
     <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
@@ -1036,6 +1038,9 @@ function openSetup({ firstRun = false, tab } = {}) {
           }
           break;
         }
+        case 'check-library-duplicates':
+          await openLibraryDuplicates();
+          break;
         case 'import-zotero':
           await importZoteroLibrary();
           break;

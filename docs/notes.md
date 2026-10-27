@@ -261,3 +261,23 @@ origin and can be cleared or reach a quota. Keep a stable server address for
 recovery and avoid private browsing. This scope preserves open note content; it
 does not provide a full offline library or queue media uploads. See
 [Server and connections](server.md) for reconnection and switching.
+
+## Hidden collection research data
+
+Library research projects use a briefcase icon; ordinary collections use a folder icon. Choose the type when creating a Library collection, or change Folder type in Research details. Notes file folders do not become research projects.
+
+Collection goals, progress, and personal target dates are edited through
+**Research details** in the Library collection tree, not as notes. Their internal
+`.workspace/research/` directory does not appear in the Notes tree and is not
+included in paper builds. Keep it in backups alongside the collection's notes.
+See [Collection research details](research.md#collection-research-details).
+
+Files copied from a file manager can be pasted into the Library collection list with Command+V or Ctrl+V. PDFs become Library papers; other formats are preserved in that collection’s Notes Project files (up to 32 MB each). Binary formats may only support download rather than editing. The browser must expose clipboard files.
+
+
+
+Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+
+Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. Library paper trash preserves annotations and memberships; bulk management and duplicate review are available in the Library UI. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
+
+Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved.

@@ -15,8 +15,8 @@ pub fn routes()->Router<Arc<App>> {
         .route("/vendor/pdfjs/{*file}",get(pdf_asset))
         .route("/api/library/import-zotero",post(import_zotero))
         .route("/api/library/import-pdf",post(import_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
-        .route("/api/library/papers/{key}",get(paper).put(edit_paper))
-        .route("/api/library/papers/{key}/membership",post(membership))
+        .route("/api/library/papers/{key}",get(paper).put(edit_paper).delete(delete_paper))
+        .route("/api/library/papers/{key}/membership",get(paper_memberships).post(membership))
         .route("/api/library/papers/{key}/download",post(download))
         .route("/api/library/papers/{key}/pdf",get(pdf).put(attach_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
         .route("/api/library/papers/{key}/index",get(index).put(save_index).layer(DefaultBodyLimit::max(64<<20)))
@@ -44,8 +44,18 @@ async fn import_pdf(State(app):Shared,Query(q):Query<Upload>,body:Bytes)->ApiRes
     let key=app.library.upload(q.target.as_deref().unwrap_or("L1"),&q.name,&body)?;Ok(Json(app.library.paper(&key)?))
 }
 async fn paper(State(app):Shared,Path(key):Path<String>)->ApiResult {Ok(Json(app.library.paper(&key)?))}
+#[derive(Deserialize)]struct DeletePaper {revision:i64}
+async fn delete_paper(State(app):Shared,Path(key):Path<String>,Json(b):Json<DeletePaper>)->ApiResult {
+    app.library.delete_paper(&key,b.revision)?;Ok(Json(json!({"ok":true})))
+}
 async fn edit_paper(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult {Ok(Json(app.library.edit(&key,&b)?))}
 #[derive(Deserialize)]struct Membership {target:String,#[serde(default)]remove:bool}
+async fn paper_memberships(State(app):Shared,Path(key):Path<String>)->ApiResult {
+    let ids=app.library.memberships(&key)?;
+    let collections=app.library.collections()?;
+    let targets:Vec<Value>=collections["targets"].as_array().unwrap().iter().filter(|target|target["id"]=="L1"||target["id"].as_str().is_some_and(|id|ids.iter().any(|value|value==id))).cloned().collect();
+    Ok(Json(json!({"targets":targets})))
+}
 async fn membership(State(app):Shared,Path(key):Path<String>,Json(b):Json<Membership>)->ApiResult {
     if b.remove{app.library.remove_membership(&key,&b.target)?;}else{app.library.add_membership(&key,&b.target)?;}Ok(Json(json!({"ok":true})))
 }

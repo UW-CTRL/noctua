@@ -83,6 +83,11 @@ document.querySelector('iframe').onload=async()=>{try{
  let saved=[],fail=true,switching=false;
  const tabs=[{frame:{contentWindow:{document:{body:{inert:false},querySelector:()=>null},prepareEditorSwitch(){saved.push('finalize')},preserveChatDraft(){saved.push('chat')},async saveWorkspaceFile(){saved.push('file')},async flushNoteEdits(){saved.push('note');if(fail)throw Error('Save failed')},async flushPDF(){saved.push('pdf')}}}}];
  eval(shellSource.slice(start,end));
+ tabs[0].frame.contentWindow.flushCollectionResearch=()=>{throw Error('Save research details first')};
+ let researchBlocked=false;try{await window.noctuaShell.flush()}catch{researchBlocked=true;}
+ assert(researchBlocked&&saved.length===0,'unsaved research failed to block tab flush');
+ delete tabs[0].frame.contentWindow.flushCollectionResearch;
+
  window.noctuaShell.beginSwitch();
  assert(switching&&tabs[0].frame.contentWindow.document.body.inert,'editors were not frozen before flushing');
  let blocked=false;try{await window.noctuaShell.flush()}catch{blocked=true}

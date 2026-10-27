@@ -27,6 +27,7 @@ mod notes;
 mod editing;
 mod chat_approval;
 mod workspace;
+mod research;
 pub mod paper;
 mod bibliography;
 mod skills;
@@ -126,7 +127,17 @@ impl App {
     }
     fn library_collections(&self) -> anyhow::Result<Value> {
         let include = self.settings.lock().unwrap().library.include_subfolders;
-        if include { self.library.collections_scoped(true) } else { self.library.collections() }
+        let mut result = if include { self.library.collections_scoped(true)? } else { self.library.collections()? };
+        for target in result["targets"].as_array_mut().unwrap() {
+            let id = target["id"].as_str().unwrap();
+            if id.starts_with('C') {
+                match research::collection_kind(self, id) {
+                    Ok(project) => target["is_project"] = json!(project),
+                    Err(_) => { target["is_project"] = Value::Null; target["research_unavailable"] = json!(true); }
+                }
+            }
+        }
+        Ok(result)
     }
     fn ui(&self, action: Value) {
         let _ = self.actions.send(action);
@@ -260,12 +271,20 @@ async fn library_rename(State(app): Shared, Json(b): Json<RenameBody>) -> ApiRes
 
 #[derive(Deserialize)]
 struct NewFolderBody {
+    #[serde(default)]
+    is_project: bool,
     parent: String,
     name: String,
 }
 
 async fn library_new_folder(State(app): Shared, Json(b): Json<NewFolderBody>) -> ApiResult {
     let id = app.library.create_collection(&b.parent, &b.name)?;
+    if b.is_project {
+        if let Err(error) = research::initialize_project(&app, &id) {
+            app.library.remove_unpublished_collection(&id)?;
+            return Err(error.into());
+        }
+    }
     Ok(Json(json!({ "id": id })))
 }
 
@@ -719,6 +738,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
         .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))
+        .route("/research.js",get(||async{asset(include_str!("../web/research.js"),"text/javascript; charset=utf-8")}))
         .route("/workspace.js",get(||async{asset(include_str!("../web/workspace.js"),"text/javascript; charset=utf-8")}))
         .route("/citations.js",get(||async{asset(include_str!("../web/citations.js"),"text/javascript; charset=utf-8")}))
         .route("/find.js",get(||async{asset(include_str!("../web/find.js"),"text/javascript; charset=utf-8")}))
@@ -734,6 +754,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/similar", get(similar))
         .route("/api/links", post(links))
         .route("/api/status", get(status))
+        .route("/api/library/manage", get(library::management::get).post(library::management::post))
         .route("/api/library/collections", get(library_collections))
         .route("/api/library/items", get(library_items))
         .route("/api/library/check", post(library_check))
@@ -762,6 +783,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/skills/{id}/files/{*path}",get(skills::resource))
         .route("/api/chat-edit-approvals/{id}",post(chat_approval::decide))
         .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))
+        .route("/api/collections/{target}/research",get(research::get).post(research::edit))
         .route("/api/workspaces/{target}",get(workspace::get).post(workspace::edit))
         .route("/api/workspaces/{target}/bibliography-search",get(bibliography::search))
         .route("/api/paper-compilers",get(paper::compilers))

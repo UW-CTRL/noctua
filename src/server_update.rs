@@ -813,6 +813,20 @@ fn replacement_confirmed(state: &Value, previous: &Value, ready: &Value, next: &
 mod tests {
     use super::*;
     #[test]
+    fn complete_snapshot_retains_hidden_collection_research() -> Result<()> {
+        let data = tempfile::tempdir()?;
+        let relative = "notes/C1/.workspace/research/state.json";
+        fs::create_dir_all(data.path().join(relative).parent().unwrap())?;
+        fs::write(data.path().join(relative), r#"{"version":1,"revision":1,"goal":"Draft","progress":20,"dates":[]}"#)?;
+        fs::write(data.path().join("server.json"), json!({"product":"noctua","server_id":"test","instance_id":"test-instance","api_version":1,"version":"0.2.8","data_dir":data.path(),"url":"http://127.0.0.1:47878","pid":0}).to_string())?;
+        fs::write(data.path().join("server-format.json"), r#"{"server_version":"0.2.8"}"#)?;
+        let backup = snapshot(data.path())?;
+        assert_eq!(fs::read(backup.join(relative))?, fs::read(data.path().join(relative))?);
+        assert!(backup.join("snapshot-complete.json").exists());
+        Ok(())
+    }
+
+    #[test]
     fn same_binary_retry_waits_for_its_new_instance_and_completed_transaction() {
         let previous = json!({"id":"previous","phase":"failed"});
         let ready = json!({"executable_hash":"same","version":"2.0.0","instance_id":"old"});

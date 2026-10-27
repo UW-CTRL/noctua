@@ -19,6 +19,7 @@ pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
  let requested=args.get("path").map(|v|v.as_str().context("path must be a string")).transpose()?.unwrap_or("");
  let path=if requested==".workspace"{""}else{requested.strip_prefix(".workspace/").unwrap_or(requested)};
  anyhow::ensure!(path.len()<=1000&&!path.contains(['\\','\0',':'])&&(path.is_empty()||path.split('/').all(|s|!s.is_empty()&&s!="."&&s!="..")),"Use a relative path inside .workspace without parent directories");
+ anyhow::ensure!(path.split('/').next()!=Some("research"),"Research details are managed separately from project files");
  let offset=args.get("offset").map(|v|v.as_u64().context("offset must be a nonnegative integer")).transpose()?.unwrap_or(0);
  let tail=args.get("tail").map(|v|v.as_bool().context("tail must be a boolean")).transpose()?.unwrap_or(false);
  anyhow::ensure!(!tail||offset==0,"Choose tail or offset, not both");
@@ -36,7 +37,7 @@ pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
  if meta.is_dir(){
   anyhow::ensure!(!tail,"tail applies only to files");
   let mut entries=Vec::new();
-  for e in std::fs::read_dir(&resolved)? {let e=e?;let t=e.file_type()?;let name=e.file_name().to_string_lossy().into_owned();entries.push(json!({"name":name,"path":if path.is_empty(){name.clone()}else{format!("{path}/{name}")},"kind":if t.is_symlink(){"symlink"}else if t.is_dir(){"directory"}else if t.is_file(){"file"}else{"other"}}));}
+  for e in std::fs::read_dir(&resolved)? {let e=e?;let t=e.file_type()?;let name=e.file_name().to_string_lossy().into_owned();if path.is_empty()&&name=="research"{continue;}entries.push(json!({"name":name,"path":if path.is_empty(){name.clone()}else{format!("{path}/{name}")},"kind":if t.is_symlink(){"symlink"}else if t.is_dir(){"directory"}else if t.is_file(){"file"}else{"other"}}));}
   entries.sort_by(|a,b|a["name"].as_str().cmp(&b["name"].as_str()));
   let start=offset.min(entries.len() as u64) as usize;let end=(start+200).min(entries.len());
   return Ok(json!({"path":path,"kind":"directory","exists":true,"entries":entries[start..end],"total_entries":entries.len(),"next_offset":if end<entries.len(){Some(end)}else{None}}));
