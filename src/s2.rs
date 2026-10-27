@@ -291,20 +291,28 @@ impl S2 {
     /// this way (`references.paperId`) are cached for `links`.
     pub async fn batch(&self, ids: &[String], fields: &str) -> Result<Vec<Value>> {
         let url = format!("{GRAPH}/paper/batch");
-        let mut out = Vec::with_capacity(ids.len());
-        for chunk in ids.chunks(BATCH_MAX) {
-            let body = json!({ "ids": chunk });
+        let key = |id: &str| format!("batch:{fields}:{id}");
+        let mut out = vec![Value::Null; ids.len()];
+        let mut missing = Vec::new();
+        for (i, id) in ids.iter().enumerate() {
+            if let Some(value) = self.cache.get(&key(id), TTL_PAPER) { out[i] = value; }
+            else { missing.push((i, id)); }
+        }
+        for chunk in missing.chunks(BATCH_MAX) {
+            let ids: Vec<&str> = chunk.iter().map(|(_, id)| id.as_str()).collect();
+            let body = json!({ "ids": ids });
             let v = self
                 .send(|c| c.post(&url).query(&[("fields", fields)]).json(&body))
                 .await?;
             let got = v.as_array().map(|a| a.as_slice()).unwrap_or_default();
-            for i in 0..chunk.len() {
+            for (i, (slot, id)) in chunk.iter().enumerate() {
                 let p = got.get(i).cloned().unwrap_or(Value::Null);
+                if got.get(i).is_some() { self.cache.put(&key(id), &p); }
                 if let (Some(id), Some(refs)) = (p["paperId"].as_str(), p["references"].as_array()) {
                     let list: Vec<&str> = refs.iter().filter_map(|r| r["paperId"].as_str()).collect();
                     self.cache.put(&format!("refids:{id}"), &json!(list));
                 }
-                out.push(p);
+                out[*slot] = p;
             }
         }
         Ok(out)
@@ -381,4 +389,24 @@ fn encode_id(id: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod batch_cache_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn batch_reuses_cached_records_and_preserves_order() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = Arc::new(Cache::open(&dir.path().join("cache.sqlite"))?);
+        let fields = "paperId,references.paperId";
+        let paper = json!({"paperId":"one","references":[{"paperId":"two"}]});
+        cache.put(&format!("batch:{fields}:one"), &paper);
+        cache.put(&format!("batch:{fields}:missing"), &Value::Null);
+        let s2 = S2::new(None, cache);
+        let result = s2.batch(&["missing".into(), "one".into(), "one".into()], fields).await?;
+        assert_eq!(result, vec![Value::Null, paper.clone(), paper]);
+        assert_eq!(s2.stats().1, 0);
+        Ok(())
+    }
 }

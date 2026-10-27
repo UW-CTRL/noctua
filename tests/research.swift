@@ -234,6 +234,12 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(lib.target==='L1'&&$('#library-rows').children.length===2,'ignore stale folder response');
  $('[data-layout="network"]').click();await settle();
  assert(G.layout==='network'&&G.project.target==='L1'&&!visible($('#library-view')),'Network builds whole library');
+ const beforeFolderGraphs=requests.filter(p=>p.startsWith('/api/project?')).length;
+ $('#lib-tree [data-id="C1"]').click();$('#lib-tree [data-id="C2"]').click();
+ await new Promise(resolve=>setTimeout(resolve,400));await settle();
+ const folderGraphs=requests.filter(p=>p.startsWith('/api/project?')).slice(beforeFolderGraphs);
+ assert(folderGraphs.length===1&&folderGraphs[0].endsWith('C2')&&G.project.target==='C2','rapid folder changes should load only the final graph');
+ await openProject('L1');await settle();
  assert(!visible($('#library-filter-control'))&&visible($('#search-form')),'library filter hides in Network while global search remains');
  assert(visible($('#graph-filter-control')),'Network shows top-right graph filter');
  const extra=addNode({paperId:'filter-other',title:'Compiler history',authors:[{name:'Grace Hopper'}],year:2020,venue:'Computing',citationCount:12},'exp');
@@ -273,7 +279,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert($('#tab-library').getBoundingClientRect().bottom<=$('#tab-nodes').getBoundingClientRect().top+1,'folder tree is above papers');
  assert(!$('#project-overview')&&!$('#proj-info'),'graph summary card removed');
  const rootBuilds=requests.filter(p=>p.startsWith('/api/project')).length;await setIncludeSubfolders(false);await settle();await setIncludeSubfolders(true);await settle();assert(requests.filter(p=>p.startsWith('/api/project')).length===rootBuilds,'subfolder scope does not rebuild the library-root graph');
- showTab('library');$('#lib-tree [data-id="C1"]').click();await settle();
+ showTab('library');$('#lib-tree [data-id="C1"]').click();await new Promise(resolve=>setTimeout(resolve,400));await settle();
  assert(G.project.target==='C1'&&G.layout==='network'&&!$('#tab-nodes').classList.contains('hidden'),'folder selection opens its graph without a Projects tab');
  const folderBuilds=requests.filter(p=>p.startsWith('/api/project')).length;await setIncludeSubfolders(false);await settle();assert(G.project.target==='C1'&&requests.filter(p=>p.startsWith('/api/project')).length===folderBuilds+1,'scope change refreshes the current collection graph');await setIncludeSubfolders(true);await settle();
 

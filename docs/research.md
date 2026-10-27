@@ -36,7 +36,11 @@ Switching to Graph or Lineage with no graph open builds a graph for the
 selected library or collection. Graph and Lineage share a single sidebar: a
 folder tree above selects the graph target, and **Papers** below
 lists the current graph papers with filtering, sorting, and selection. Choosing
-a folder opens its graph without hiding the tree or paper list. Drag the horizontal
+a folder opens its graph without hiding the tree or paper list. When you switch
+folders quickly, the graph opens after the selection settles. Graph data can be
+reused across collections that contain the same papers. Paper info displays the
+abstract already available in the selected record without fetching it on selection.
+Drag the horizontal
 boundary to resize the folder and paper areas; the height is remembered and shared
 between Graph and Lineage. The folder area starts at 440 pixels, capped at 65% of
 the sidebar height to leave room for the lower list. The focused boundary also supports Up/Down and Home/End;

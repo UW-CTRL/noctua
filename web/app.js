@@ -242,10 +242,12 @@ function clearGraph({ push = true } = {}) {
 }
 
 const targetName = (id) => collections.targets.find((t) => t.id === id)?.name || id;
+let projectFolderTimer = null;
 
 // A Noctua folder's own citation graph: its papers, coloured by cluster, plus
 // the outside papers that several clusters cite.
 async function openProject(target, { push = true } = {}) {
+  clearTimeout(projectFolderTimer);projectFolderTimer=null;
   if (!target) return;
   if (G.layout === 'library') setLayout('network');
   closeSearchResults();
@@ -653,37 +655,12 @@ function collectionOptions(selected) {
   ).join('');
 }
 
-// Selection fetches full records: project/search records can omit abstracts.
-const abstractDetails = new Map();
-function abstractKey(p,native){return (native?'library:':'paper:')+(native?p.key:p.paperId);}
-async function fetchAbstractDetails(p,native){
-  if(!native)return api('/api/paper?id='+enc(p.paperId));
-  const ids=[p.s2,p.arxiv&&'ARXIV:'+p.arxiv,p.DOI&&'DOI:'+p.DOI].filter(Boolean);
-  for(const id of ids){try{return await api('/api/paper?id='+enc(id));}catch(e){if(e.status!==404)throw e;}}
-  if(p.title){try{const match=await api('/api/match?title='+enc(p.title));if(titlesAgree(p.title,match.title))return await api('/api/paper?id='+enc(match.paperId));}catch(e){if(e.status!==404)throw e;}}
-  return {};
-}
-function ensureAbstract(p,native=false){
-  const field=native?'abstractNote':'abstract',key=abstractKey(p,native);
-  if(p[field]?.trim())return;
-  const cached=abstractDetails.get(key);
-  if(cached){if(cached.data?.abstract)p[field]=cached.data.abstract;return;}
-  const state={status:'loading'};abstractDetails.set(key,state);
-  fetchAbstractDetails(p,native).then(data=>{state.status='loaded';state.data=data;if(data.abstract)p[field]=data.abstract;})
-    .catch(e=>{state.status='error';state.error=e.message;})
-    .finally(()=>{
-      const readerPaper=typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')?PDF.paper:null;
-      const current=native?(readerPaper || lib.detail):(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId && r.paperId===G.selected));
-      if(current&&abstractKey(current,native)===key){if(state.data?.abstract)current[field]=state.data.abstract;renderDetails();updateChatContext();}
-    });
-}
 function abstractHTML(p,native=false){
-  const text=native?p.abstractNote:p.abstract,state=abstractDetails.get(abstractKey(p,native));
+  const text=native?p.abstractNote:p.abstract;
   if(text?.trim())return `<div class="abstract">${esc(text)}</div>`;
-  if(state?.status==='error')return `<div class="abstract">Couldn’t load the abstract: ${esc(state.error)} <button data-retry-abstract data-icon="rotate-cw">Retry</button></div>`;
-  return `<div class="abstract">${state?.status==='loading'?'Loading abstract…':'No abstract supplied by Semantic Scholar for this paper.'}</div>`;
+  if(native)return '<div class="abstract">No abstract saved for this paper.</div>';
+  return '<div class="abstract">No abstract available for this paper.</div>';
 }
-function bindAbstractRetry(el,p,native=false){el.querySelector('[data-retry-abstract]')?.addEventListener('click',()=>{abstractDetails.delete(abstractKey(p,native));renderDetails();});}
 
 function renderDetails() {
   const el = $('#details');
@@ -695,7 +672,6 @@ function renderDetails() {
     el.innerHTML = '<p class="hint">Click a node to see the paper and add it to Noctua.</p>';
     return;
   }
-  ensureAbstract(p);
   const ext = p.externalIds || {};
   const pdf = p.openAccessPdf?.url || (ext.ArXiv ? `https://arxiv.org/pdf/${ext.ArXiv}` : '');
   const authors = (p.authors || []).map((a) => a.name);
@@ -743,7 +719,6 @@ function renderDetails() {
     <div class="section-label">Abstract</div>
     ${abstractHTML(p)}
   `;
-  bindAbstractRetry(el,p);
   el.querySelector('#act-read-pdf').addEventListener('click', () => readDiscoveredPaper(p));
   el.querySelector('#act-pdf-tab').addEventListener('click', () => readDiscoveredPaper(p, 'tab'));
   el.querySelector('#act-center')?.addEventListener('click', () => loadGraph(p.paperId));
@@ -820,7 +795,12 @@ function renderLibTree() {
       renderDetails();
       renderLibTree();
       loadLibItems();
-      if (G.layout !== 'library') openProject(lib.target);
+      clearTimeout(projectFolderTimer);projectFolderTimer=null;
+      if (G.layout !== 'library') {
+        G.token++;
+        const target=lib.target;
+        projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
+      }
       el.querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
     });
     li.addEventListener('keydown', (e) => {
@@ -1010,7 +990,6 @@ function showLibItem(it) {
 }
 
 function renderLibDetails(it) {
-  ensureAbstract(it,true);
   const el = $('#details');
   const doi = it.DOI && !/^10\.48550\/arxiv\./i.test(it.DOI) ? it.DOI : null;
   el.innerHTML = `
@@ -1029,7 +1008,6 @@ function renderLibDetails(it) {
     </div>
     <div class="paper-collection-tools"></div>
     <div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
-  bindAbstractRetry(el,it,true);
   el.querySelector('#act-lib-graph').addEventListener('click', () => graphFromLibrary(it));
   libraryPaperActions(el, it);
 }
