@@ -23,6 +23,12 @@ fn bundled(executable: &Path) -> Option<PathBuf> {
 
 pub(crate) fn configure() -> Result<()> {
     if let Some(root) = bundled(&std::env::current_exe()?) {
+        // current_exe can retain the \\?\ prefix from the staged server launch.
+        // TeX Live (notably BibTeX) interprets that prefix as a UNC server and
+        // loses its executable directory. Its argv paths need ordinary drive/UNC
+        // spelling, just like Windows service definitions.
+        #[cfg(windows)]
+        let root = PathBuf::from(crate::service::service_path(&root));
         crate::paper::set_resources(root);
     }
     Ok(())

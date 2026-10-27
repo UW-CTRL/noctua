@@ -110,7 +110,7 @@ pub fn status() -> Value {
     })();
     result.unwrap_or_else(|e|json!({"supported":cfg!(any(target_os="macos",target_os="linux",windows)),"installed":null,"enabled":null,"error":e.to_string()}))
 }
-fn service_path(path: &std::path::Path) -> String {
+pub(crate) fn service_path(path: &std::path::Path) -> String {
     let path = path.to_string_lossy();
     if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{rest}")
