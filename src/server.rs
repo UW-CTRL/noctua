@@ -389,6 +389,31 @@ pub(crate) async fn ensure_locked(
     }
     wait_ready(&data).await
 }
+// Rust's Windows Command duplicates the requested log handles, but also allows
+// inheritable handles already present in this process into the child. In a CLI
+// launched with captured output those include the caller's original pipe ends.
+// They must not stay open for the lifetime of a detached server/update worker.
+#[cfg(windows)]
+fn protect_parent_stdio() -> std::io::Result<()> {
+    use std::ffi::c_void;
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn GetStdHandle(kind: u32) -> *mut c_void;
+        fn SetHandleInformation(handle: *mut c_void, mask: u32, flags: u32) -> i32;
+    }
+    for kind in [-10_i32, -11, -12] { // STD_INPUT/OUTPUT/ERROR_HANDLE
+        let handle = unsafe { GetStdHandle(kind as u32) };
+        if !handle.is_null() && handle as isize != -1 {
+            // Keep the parent's streams usable. Command creates separate
+            // inheritable duplicates for any explicitly selected child stdio.
+            if unsafe { SetHandleInformation(handle, 1, 0) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn spawn_detached(
     executable: &Path,
     data: &Path,
@@ -454,6 +479,7 @@ pub(crate) fn spawn_detached(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        protect_parent_stdio().context("Cannot isolate the background process from parent streams")?;
         cmd.creation_flags(0x00000008 | 0x00000200); // DETACHED_PROCESS | NEW_PROCESS_GROUP
     }
     let mut child = cmd

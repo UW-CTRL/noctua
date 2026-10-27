@@ -92,7 +92,9 @@ to keep browser storage at the same origin; a nondefault explicit port takes pre
 --data-dir /absolute/folder` is also accepted for login-task execution. A shell
 launch can use the inherited environment. Detached starts explicitly set the
 working directory to the data folder, disconnect stdin, append stdout/stderr to
-`server.log` and detach the process/session from its parent. Login launches adopt
+`server.log` and detach the process/session from its parent. On Windows, parent
+standard-stream handles are also made non-inheritable so a captured CLI can exit
+and close its pipes while the server continues running. Login launches adopt
 the user's shell PATH for AI CLI discovery. Absolute CLI paths in server Settings
 are more predictable than shell startup files.
 

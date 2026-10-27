@@ -38,6 +38,7 @@ jobs:
       - name: Test isolated server lifecycle and authentication
         run: |
           cargo build --locked -p noctua
+          python3 tests/server-detach.py
           python3 tests/server-lifecycle.py
           python3 tests/build-update-fixture.py
           python3 tests/server-update.py
@@ -127,6 +128,7 @@ jobs:
         run: |
           cargo build --locked --bin noctua
           python -m unittest discover -s tests -p test_paper_synctex.py
+          python tests/server-detach.py
           python tests/paper-integration.py
       - name: Preserve failed paper compilation diagnostics
         if: failure() && needs.release-checks.outputs.run_desktop != 'false'

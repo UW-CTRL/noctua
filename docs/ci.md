@@ -256,3 +256,7 @@ The offline native manager shares release history and confirmation helpers with
 server-hosted UI. `tests/client-updates.html` covers long-history scrolling,
 Cancel/Escape, focus return, explicit version-pinned installation, failure/retry
 and startup presentation without starting a data server.
+
+`python3 tests/server-detach.py` captures both `ensure` output streams and verifies
+that they close after the launcher exits while the isolated server stays ready.
+It runs in backend CI and all desktop platform jobs, including Windows.
