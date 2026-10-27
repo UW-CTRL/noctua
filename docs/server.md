@@ -156,6 +156,25 @@ forwarded header implicitly grants trust. Use a proxy that preserves the configu
 Host; additional origins must be HTTPS origins with no user info, path, query or
 fragment. Authentication applies locally as well as remotely.
 
+To view or copy this computer's token without a terminal, use the desktop
+connection manager's **This computer → Authentication token → Show token / Copy token**.
+The field is cleared when hidden, when leaving the tab and when closing the
+dialog. Copying leaves the token on the system clipboard until replaced; it is
+not automatically cleared. Authenticated localhost browser sessions can also show/copy the current token
+in **Settings → Server & connection**. This endpoint requires the local HTTP
+origin, a valid session cookie and CSRF/server-identity headers. Bearer access alone
+and remote HTTPS sessions cannot retrieve the token. Responses are not cached.
+
+Browser Settings also supports switching servers with an address and token.
+**Save & connect** opens a target-origin login window, saves the source window's
+editors, then authenticates at the target and navigates the source tab to its
+shell. Allow pop-ups and use compatible Noctua versions on both sides. Failed
+saves or authentication keep the source tab. The token travels in an
+origin-and-window-bound `postMessage`, then a same-origin login request; it is
+never placed in a URL, proxied through the source server, or persisted in web
+storage. The handoff page and script are public cosmetic/authentication assets;
+library APIs still require authentication and retain the existing Origin checks.
+
 Browser login exchanges a bearer token for a 12-hour, in-memory, HttpOnly,
 SameSite=Strict session (Secure for HTTPS). Session cookie names are isolated by
 server identity, so different loopback ports do not overwrite each other’s login. A server restart requires a new login.

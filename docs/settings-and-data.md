@@ -13,12 +13,41 @@ navigation. **This computer** and **Desktop** tabs contain management controls,
 so they do not appear alongside the connection steps. Input is retained when
 going back; changing connection details requires a new test before saving.
 
-The native Settings menu opens the local connection manager, including while
+In the desktop app, clicking **Settings → Server & connection** opens the local
+connection manager directly. If the section was restored when reopening Settings,
+choose **Open connection settings**. Keyboard users can press Enter or Space on
+the category; arrow keys move between sections without opening another window.
+In a browser, **Settings → Server & connection** offers **Server address** and
+**Authentication token** fields. Choose **Save & connect** and allow its pop-up.
+Noctua saves the current browser window's open editors and chat drafts, signs in
+at the target server, and moves this tab there. A failed save, incorrect token,
+closed/blocked pop-up or unavailable server keeps the current connection.
+**How to start a server** in the same section explains starting or reusing a
+background server with `noctua ensure`, viewing its token with `noctua token`,
+and checking/stopping it with `noctua status` / `noctua stop`. Run these commands
+on the server computer; the browser cannot start a stopped server.
+Other browser windows remain on their existing server. Use HTTPS remotely;
+HTTP is supported only for loopback addresses. Both servers must have this
+browser connection feature. Local process controls remain desktop-only; token viewing is also available
+in authenticated localhost browser sessions as described below. Tokens are not put in URLs or browser storage.
+
+The native Settings menu also opens the local connection manager, including while
 servers are offline. It selects this computer or another server, tests and retries
 connections, shows identity/version/status and errors/logs, and manages **this
 computer's** server and user-login auto-start. These local controls remain local
 when a remote server is selected. Start/stop/restart and login auto-start are
 separate actions; app exit and connection changes leave servers running.
+
+In the desktop connection manager, open **This computer → Authentication token**
+and choose **Show token** or **Copy token**. The token is hidden initially;
+**Hide token**, leaving the tab or closing the dialog clears it from the field.
+Copy works while the token stays hidden and replaces the system clipboard.
+These controls always use this computer's server token, even when connected to a
+remote server. Start the local server once if it has no token yet. Share the token
+only with people who should have full server access. An authenticated browser opened at `http://localhost:<port>` or
+`http://127.0.0.1:<port>` also offers **Current server token → Show token / Copy token**
+in **Settings → Server & connection**. It clears the displayed token when hidden,
+leaving the section or closing Settings. Remote HTTPS sessions cannot reveal it.
 
 Connection selection is device-local; remote tokens use the OS secure store.
 AI CLI, API keys, Zotero and data-folder fields in the server UI belong to the

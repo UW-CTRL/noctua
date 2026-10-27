@@ -15,6 +15,7 @@ function render(){
 }
 function showStep(next){step=Math.max(0,Math.min(2,next));render();document.querySelector(`[data-step="${step}"] h2`).focus();}
 function showPanel(next){
+  if(next!=='local')hideLocalToken();
   panel=next;
   document.querySelectorAll('[data-panel]').forEach(tab=>{const selected=tab.dataset.panel===panel;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;$('#panel-'+tab.dataset.panel).hidden=!selected;});
   $('#management-status').hidden=panel==='connection';
@@ -58,7 +59,7 @@ $('#connect').onclick=()=>operation(async()=>{if(!verified||verified.key!==conne
 $('#test').onclick=()=>operation(()=>connect(true));
 $('#change').onclick=()=>operation(async()=>{await invoke('clear_connection');invalidate();showStep(0);status('Saved connection cleared. Existing data and open windows are preserved.');});
 function openDialog(){if(!dialog.open)dialog.showModal();}
-async function closeDialog(){if(busy)return;dialog.close();try{await invoke('dismiss_connection')}catch{/* The local launcher always allows reopening. */}}
+async function closeDialog(){if(busy)return;hideLocalToken();dialog.close();try{await invoke('dismiss_connection')}catch{/* The local launcher always allows reopening. */}}
 $('#open-connection').onclick=openDialog;$('#close-connection').onclick=closeDialog;
 // Escape behaves like Close and always leaves a serverless way back to settings.
 // Do not dismiss while a save/connection switch is still running.
@@ -92,6 +93,29 @@ async function refresh({restoreSelection=false}={}){
   }
   return state;
 }
+function hideLocalToken(){
+  $('#local-token').value='';$('#local-token').type='password';
+  $('#show-local-token').textContent='Show token';$('#show-local-token').setAttribute('aria-pressed','false');
+  $('#local-token-status').textContent='';delete $('#local-token-status').dataset.state;
+}
+async function localTokenAction(copy=false){
+  const message=$('#local-token-status');
+  message.textContent='';delete message.dataset.state;
+  if(!copy&&$('#local-token').type==='text'){hideLocalToken();return;}
+  try{
+    const result=await invoke('local_server',{action:copy?'copy-token':'token'});
+    if(copy){message.textContent='Token copied.';message.dataset.state='ready';}
+    else {
+      if(typeof result.token!=='string'||!result.token)throw Error('No local server token is available. Start this computer’s server first.');
+      $('#local-token').value=result.token;$('#local-token').type='text';
+      $('#show-local-token').textContent='Hide token';$('#show-local-token').setAttribute('aria-pressed','true');
+    }
+  }catch(error){hideLocalToken();message.textContent=String(error);message.dataset.state='error';}
+}
+$('#show-local-token').onclick=()=>operation(()=>localTokenAction());
+$('#copy-local-token').onclick=()=>operation(()=>localTokenAction(true));
+dialog.addEventListener('close',hideLocalToken);
+window.addEventListener('pagehide',hideLocalToken);
 $('#local-actions').onclick=e=>{const action=e.target.dataset.action;if(action)operation(async()=>{const r=await invoke('local_server',{action});if(action==='logs')$('#logs').textContent=r.log;else{if(r.reconnect_local){await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:r.server.server_id});dialog.close();}status(action+' completed','ready');await refresh();}});};
 $('#autostart').onchange=()=>operation(async()=>{try{await invoke('local_server',{action:$('#autostart').checked?'enable':'disable'});}finally{await refresh();}});
 let offered;

@@ -74,6 +74,7 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_updater::Builder::new()
                 .pubkey(
@@ -613,6 +614,16 @@ async fn local_server(
             },
             "enable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::enable(&server_executable(&app)?)?;},
             "disable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::disable()?;},
+            "token" | "copy-token"=>{
+                let data=noctua::paths::existing_data_dir()?;
+                let token=noctua::server::token(&data).map_err(|_| anyhow::anyhow!("Local server token unavailable. Start this computer’s server first."))?;
+                if action=="copy-token" {
+                    use tauri_plugin_clipboard_manager::ClipboardExt;
+                    app.clipboard().write_text(token)?;
+                    return Ok(json!({"copied":true}));
+                }
+                return Ok(json!({"token":token}));
+            },
             "logs"=>{let path=noctua::paths::existing_data_dir()?.join("server.log");let text=std::fs::read_to_string(path)?;return Ok(json!({"log":text.chars().rev().take(20000).collect::<String>().chars().rev().collect::<String>()}))},
             _=>anyhow::bail!("Unknown local server action"),
         }Ok(noctua::service::status())

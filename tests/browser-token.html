@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><section><input id="browser-local-token" type="password"><button data-act="show-browser-token" aria-pressed="false">Show token</button><p id="browser-token-status"></p></section><script>
+(async()=>{try{
+const assert=(v,m)=>{if(!v)throw Error(m)};let copied='',fail=false,calls=0;
+window.api=async(path,body)=>{assert(path==='/api/server/token'&&body,'token request must use POST');calls++;if(fail)throw Error('denied');return{token:'test-token'}};
+Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{copied=text}},configurable:true});
+const source=await(await fetch('../web/setup.js')).text();
+const functions=source.slice(source.indexOf('function clearBrowserLocalToken'),source.indexOf('function serverSection'));
+eval(functions+';window.tokenControls={clearBrowserLocalToken,useBrowserLocalToken};');
+const {clearBrowserLocalToken:clear,useBrowserLocalToken:use}=tokenControls,section=document.querySelector('section'),input=document.querySelector('input');
+await use(section);assert(input.value==='test-token'&&input.type==='text','show must reveal token');
+await use(section);assert(input.value===''&&input.type==='password'&&calls===1,'hide must erase without fetching');
+await use(section,true);assert(copied==='test-token'&&!input.value&&document.querySelector('p').textContent==='Token copied.','hidden copy must use clipboard');
+await use(section);clear(section);assert(!input.value&&document.querySelector('button').getAttribute('aria-pressed')==='false','clear must reset field and toggle');
+fail=true;let rejected=false;try{await use(section)}catch{rejected=true}assert(rejected&&!input.value,'request failure must not display secret');
+window.webkit.messageHandlers.result.postMessage('PASS: localhost token reveal, hide, hidden copy, clearing and request failure');
+}catch(e){window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack)}})();
+</script>

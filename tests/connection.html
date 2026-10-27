@@ -5,8 +5,8 @@
 const assert=(v,m)=>{if(!v)throw Error(m)};
 document.querySelector('iframe').onload=async()=>{try{
  const frame=document.querySelector('iframe'),w=frame.contentWindow,d=frame.contentDocument,calls=[];
- let failSave=false,localReady=false;
- w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:localReady?{server_id:'server-A'}:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
+ let failSave=false,localReady=false,failToken=false;
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='local_server'&&['token','copy-token'].includes(args.action)){if(failToken)throw Error('Local token unavailable');return args.action==='token'?{token:'test-local-token'}:{copied:true};}if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:localReady?{server_id:'server-A'}:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
  await w.eval('refresh()');
  assert(d.querySelector('#connection-dialog').open&&d.querySelector('#dialog-title').textContent.includes('Server'),'serverless connection popup missing');
  const visibleSteps=()=>Array.from(d.querySelectorAll('[data-step]')).filter(node=>!node.hidden);
@@ -45,6 +45,25 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(!d.querySelector('#next').disabled,'retry unavailable');
  d.querySelector('#tab-local').click();
  assert(!d.querySelector('#panel-local').hidden&&d.querySelector('#panel-connection').hidden&&d.querySelector('#panel-desktop').hidden,'management tabs show multiple cards');
+ assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'local token must start empty and masked');
+ await w.eval('localTokenAction()');
+ assert(d.querySelector('#local-token').type==='text'&&d.querySelector('#local-token').value==='test-local-token','show must request this computer token');
+ await w.eval('localTokenAction()');
+ assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'hide must discard the token');
+ await w.eval('localTokenAction(true)');
+ assert(!d.querySelector('#local-token').value&&d.querySelector('#local-token-status').textContent==='Token copied.','copy must work without revealing the token');
+ assert(calls.at(-1).command==='local_server'&&calls.at(-1).args.action==='copy-token','copy must use native clipboard command');
+ await w.eval('localTokenAction()');
+ d.querySelector('#tab-desktop').click();
+ assert(!d.querySelector('#local-token').value&&d.querySelector('#local-token').type==='password','leaving local tab must clear token');
+ d.querySelector('#tab-local').click();
+ await w.eval('localTokenAction()');
+ failToken=true;await w.eval('localTokenAction(true)');failToken=false;
+ assert(!d.querySelector('#local-token').value&&d.querySelector('#local-token-status').dataset.state==='error','clipboard/token failure must clear displayed secret and show error');
+ await w.eval('localTokenAction()');
+ await w.eval('closeDialog()');
+ assert(!d.querySelector('#local-token').value,'closing manager must clear displayed token');
+ d.querySelector('#open-connection').click();
  d.querySelector('#tab-connection').click();
  assert(visibleSteps()[0].dataset.step==='1'&&d.querySelector('#address').value==='https://offline.ts.net','management navigation reset wizard input');
  await d.querySelector('#close-connection').onclick();
@@ -108,6 +127,6 @@ document.querySelector('iframe').onload=async()=>{try{
  assert((await choice).key===choices[0].key,'recovery selected the wrong editor draft');
 
 
- const result='PASS: serverless startup, remote connection test/recovery, no silent fallback, secret clearing, durable drafts, server isolation and late acknowledgment';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+ const result='PASS: serverless startup, remote connection test/recovery, no silent fallback, secret clearing, local token show/hide/native copy and failure handling, durable drafts, server isolation and late acknowledgment';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
 }catch(error){const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}};
 </script>
