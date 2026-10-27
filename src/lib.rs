@@ -34,6 +34,7 @@ pub mod paths;
 mod project;
 mod s2;
 mod settings;
+mod scholar;
 mod storage;
 mod threads;
 mod zotero;
@@ -97,6 +98,7 @@ impl std::error::Error for Status {}
 
 struct App {
     s2: S2,
+    scholar: scholar::Scholar,
     zotero: Zotero,
     library: library::Library,
     /// UI commands from the chat assistant's tools, forwarded to the browser.
@@ -602,6 +604,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     let cache = Arc::new(Cache::open(&data.join("noctua-cache.sqlite"))?);
     let app = Arc::new(App {
         s2: S2::new(key, cache),
+        scholar: scholar::Scholar::open(&data)?,
         zotero: Zotero::new(settings::zotero_dir(&settings)),
         library: library::Library::open(data.join("library"))?,
         actions: broadcast::channel(32).0,
@@ -626,6 +629,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         let _ = desktop.send(DesktopCmd::SetAppIcon(icon, None));
     }
     runtime.owner.publish()?;
+    scholar::poll(&app);
     let shutdown = runtime.clone();
     Ok((url, axum::serve(listener, router(app, hosts)).with_graceful_shutdown(async move { shutdown.shutdown.notified().await }).into_future()))
 }
@@ -781,6 +785,12 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/mcp", post(mcp_endpoint))
         .route("/app-icons/dark.svg", get(|| async { asset(include_str!("../app/icons/icon-dark.svg"), "image/svg+xml") }))
         .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))
+        .route("/api/scholar", get(scholar::get).post(scholar::configure).delete(scholar::disconnect))
+        .route("/api/scholar/logs", get(scholar::logs))
+        .route("/api/scholar/prompt", get(scholar::get_prompt).post(scholar::save_prompt))
+        .route("/api/scholar/connect", post(scholar::connect))
+        .route("/api/scholar/callback", get(scholar::callback))
+        .route("/api/scholar/check", post(scholar::check))
         .route("/api/settings", get(settings::get))
         .route("/api/settings/app-icon", post(settings::set_app_icon))
         .route("/api/settings/library", post(settings::set_library))

@@ -36,4 +36,6 @@ This file is a contributor reference, not an app task prompt.
 | [`pdf-autohighlight.md`](pdf-autohighlight.md) | Categorized PDF auto-highlighting |
 | [`handwriting.md`](handwriting.md) | Handwriting-to-LaTeX transcription |
 | [`lineage.md`](lineage.md) | Research thread summaries |
+| [`scholar-agent.md`](scholar-agent.md) | Tool-free Scholar paper screening rules |
+| [`scholar-default.md`](scholar-default.md) | Editable default collection screening prompt |
 | [`text-task.md`](text-task.md) | Tool-free text task instructions for the Codex worker |

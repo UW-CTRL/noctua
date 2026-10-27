@@ -187,7 +187,10 @@ pub async fn guard(
         )
             .into_response();
     }
-    if !bearer && !cookie {
+    // Google redirects from another site, so the Strict session cookie is absent.
+    // This exact GET endpoint authenticates with its single-use OAuth state and PKCE.
+    let scholar_callback = request.method() == Method::GET && path == "/api/scholar/callback";
+    if !bearer && !cookie && !scholar_callback {
         if request.method() == Method::GET && !path.starts_with("/api/") && path != "/mcp" {
             return (
                 [
