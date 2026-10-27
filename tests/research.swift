@@ -26,16 +26,19 @@ const fixtureItems=[
  {key:'b',title:'Alpha lineage',creators:['Grace Hopper'],year:2020,venue:'Journal B',has_pdf:false,abstractNote:'Unmatched local paper'}
 ];
 const fixturePaper={paperId:'s1',title:'Zebra networks',authors:[{name:'Ada Lovelace'}],year:2024,citationCount:5,abstract:'Abstract'};
-window.requests=[];window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;
+window.requests=[];window.pendingPDF=null;window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;
 window.fetch=async(path,opts)=>{
  requests.push(path);let data={};
  if(path==='/api/settings/library'){if(scopeFailure)return {ok:false,status:500,json:async()=>({error:'Save failed'})};return {ok:true,json:async()=>({include_subfolders:JSON.parse(opts.body).include_subfolders})};}
- if(path==='/api/library/collections')data={live:true,targets:[{id:'L1',name:'My Library',count:2,parent:null},{id:'C1',name:'Networks',count:1,level:1,parent:'L1'},{id:'C3',name:'Subfolder',count:0,level:2,parent:'C1'},{id:'C4',name:'Nested',count:0,level:3,parent:'C3'},{id:'C2',name:'Empty',count:0,level:1,parent:'L1'}]};
+ if(path==='/api/library/add'){window.savedSearchPaper=JSON.parse(opts.body).paper;if(pendingPDF)return await pendingPDF;data={key:'keyboard-paper',paper:{has_pdf:true}};}
+ else if(path==='/api/library/collections')data={live:true,targets:[{id:'L1',name:'My Library',count:2,parent:null},{id:'C1',name:'Networks',count:1,level:1,parent:'L1'},{id:'C3',name:'Subfolder',count:0,level:2,parent:'C1'},{id:'C4',name:'Nested',count:0,level:3,parent:'C3'},{id:'C2',name:'Empty',count:0,level:1,parent:'L1'}]};
  else if(path.includes('/api/library/items')){
   if(path.endsWith('C1')&&pendingFolder)return await pendingFolder;
   data=path.endsWith('L1')?fixtureItems:path.endsWith('C1')?[fixtureItems[0]]:[];
  }else if(path.startsWith('/api/project'))data={target:new URL(path,'http://local').searchParams.get('target'),items:2,papers:[fixturePaper],edges:[],shared:[],links:[],clusters:[{id:1,size:1,papers:['s1']}],unresolved:[{title:fixtureItems[1].title}]};
+ else if(path.startsWith('/api/match'))data={paperId:'s1',title:new URL(path,'http://local').searchParams.get('title')};
  else if(path.startsWith('/api/search')){if(pendingSearch)return await pendingSearch;data={data:[fixturePaper],total:1,next:null};}
+ else if(path.startsWith('/api/paper?'))data=fixturePaper;
  else if(path.startsWith('/api/graph'))data={center:fixturePaper,references:[],citations:[]};
  else if(path.startsWith('/api/similar')||path==='/api/links'||path==='/api/library/check')data=[];
  else if(path==='/api/status')data={pending:0};
@@ -48,6 +51,9 @@ let setup=try String(contentsOf:root.appendingPathComponent("web/setup.js"),enco
 let dataStart=setup.range(of:"function threadSummarySettings(")!.lowerBound
 let dataEnd=setup.range(of:"function updateSummary(",range:dataStart..<setup.endIndex)!.lowerBound
 html=html.replacingOccurrences(of:"</body>",with:"<script>"+String(setup[dataStart..<dataEnd])+"</script></body>")
+let searchSettingsStart=setup.range(of:"function searchSettingsSection()")!.lowerBound
+let searchSettingsEnd=setup.range(of:"function serverSection()")!.lowerBound
+html=html.replacingOccurrences(of:"</body>",with:"<script>"+String(setup[searchSettingsStart..<searchSettingsEnd])+"</script></body>")
 let checks=#"""
 <script>
 openPaperView=(key,where)=>{openedPDF.push([key,where]);};
@@ -196,7 +202,118 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
  setLayout('lineage');assert(visible($('#tab-threads'))&&!visible($('#tab-nodes')),'Lineage restores selected Threads list');
  $('[data-graph-list="nodes"]').click();assert(visible($('#tab-nodes'))&&!visible($('#tab-threads')),'Papers switch restores filter and paper list');
  $('[data-layout="library"]').click();assert(visible($('#library-view'))&&$('#tab-library').classList.contains('hidden')===false,'return to Library');
- $('#search-form button').click();assert(document.activeElement===$('#search'),'search icon focuses field');
+
+ assert(searchEngine==='arxiv'&&$('#search-engine').value==='arxiv','arXiv is the initial default engine');
+ assert(normalizeSearchEngineOrder(['openalex','bad','openalex']).join(',')==='openalex,arxiv,semantic-scholar,google-scholar','saved engine order filters unknown/duplicate engines and restores missing choices');
+ const orderHost=document.createElement('div');orderHost.innerHTML=searchSettingsSection();document.body.append(orderHost);mountSearchEngineOrder(orderHost.querySelector('section'));
+ const orderRows=()=>[...orderHost.querySelectorAll('[data-search-engine]')];
+ const engineRequestsBefore=requests.length;
+ const transfer=new DataTransfer(),drag=engine=>new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer});
+ orderRows()[2].dispatchEvent(drag());
+ const firstRect=orderRows()[0].getBoundingClientRect();
+ const over=new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:firstRect.top+1});orderRows()[0].dispatchEvent(over);assert(over.defaultPrevented,'settings accepts local engine drag');
+ orderRows()[0].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:firstRect.top+1}));
+ assert(searchEngines[0]==='openalex'&&[...$('#search-engine').options][0].value==='openalex','drag reorders menu immediately');
+ assert(orderHost.querySelectorAll('.search-order-default').length===1&&orderHost.querySelector('.search-order-default').closest('li').dataset.searchEngine==='openalex','Default badge follows the first engine after dragging');
+ assert(JSON.parse(store.get('noctua.searchEngineOrder'))[0]==='openalex'&&searchEngine==='openalex'&&$('#search-engine').value==='openalex','moving an engine to the top saves and selects the new default');
+ assert(requests.length===engineRequestsBefore,'reordering does not launch a search');
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert(searchEngine==='arxiv','Tab follows the reordered array from its default');
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert(searchEngine==='semantic-scholar','Tab keeps following the reordered positions');
+ assert(!orderHost.querySelector('button'),'engine order is adjusted by dragging without arrow buttons');
+ const savedOrder=[...searchEngines];orderRows()[1].dispatchEvent(drag());orderRows()[1].dispatchEvent(new DragEvent('dragend',{bubbles:true}));
+ assert(searchEngines.join(',')===savedOrder.join(',')&&!orderHost.querySelector('.dragging'),'cancelled drag preserves saved order');
+ orderHost.remove();$('#search').value='';setSearchEngineOrder(defaultSearchEngines);setSearchEngine('arxiv');
+
+ const initialOpen=window.open,externalSearches=[];
+ window.open=(...args)=>{externalSearches.push(args);};
+ $('#search').value='graph networks';$('#search').dispatchEvent(new Event('input'));
+ await search('graph networks');await settle();
+ assert(requests.some(p=>p.includes('engine=arxiv')),'arXiv uses its own provider');
+ assert(!$('#tab-results .hint').textContent.includes('arXiv')&&!$('#tab-results .hint').textContent.includes('or click')&&$('#tab-results .hint').textContent.includes('Shift+Enter: graph'),'result hint omits engine and describes keyboard graph shortcut');
+ assert($('#tab-results .search-graph')&&$('#tab-results .search-pdf'),'every result has explicit Graph and PDF buttons');
+ const engineTab=new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true});
+ $('#search').dispatchEvent(engineTab);await settle();
+ assert(engineTab.defaultPrevented&&searchEngine==='semantic-scholar'&&$('#search').value==='graph networks','Tab switches engine and preserves query');
+ assert(JSON.parse(store.get('noctua.searchEngineOrder'))[0]==='arxiv'&&searchEngine==='semantic-scholar','temporary engine selection does not change the saved default');
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));await settle();
+ assert(searchEngine==='openalex'&&requests.some(p=>p.includes('engine=openalex')),'Tab searches OpenAlex');
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));await settle();
+ assert(searchEngine==='google-scholar'&&externalSearches.length===0,'Tab selects Google without launching a tab');
+ $('#search-form').requestSubmit();await settle();
+ assert(externalSearches.length===1&&externalSearches[0][0]==='https://scholar.google.com/scholar?q=graph%20networks'&&externalSearches[0][1]==='_blank','Google submit opens encoded query in a new tab');
+ $('#search').dispatchEvent(new Event('input'));await settle();assert(externalSearches.length===1,'Google typing never opens popups');
+ const exitSearch=new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true});$('#search').dispatchEvent(exitSearch);assert(!exitSearch.defaultPrevented,'Shift+Tab retains focus navigation');
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));await settle();assert(searchEngine==='arxiv','Tab wraps back to arXiv');
+ let resolveEngine;pendingSearch=new Promise(r=>resolveEngine=r);const staleEngine=search('old provider');
+ $('#search').value='';setSearchEngine('openalex');
+ resolveEngine({ok:true,json:async()=>({data:[{...fixturePaper,title:'Wrong provider'}],total:1})});await staleEngine;pendingSearch=null;
+ assert(!$('#tab-results').textContent.includes('Wrong provider'),'engine switch rejects stale provider response');
+ searchState={q:'unidentified',total:1,next:null};results=[{paperId:null,title:'Unidentified paper',searchProvider:'openalex',url:'https://openalex.org/W1'}];renderResults();
+ assert(!$('#tab-results li').textContent.includes('0 citations')&&$('#tab-results .search-source'),'unknown citation counts stay unknown and source link remains available');
+ const savedSelection=G.selected;G.selected=null;renderDetails();assert(!$('#details').textContent.includes('Unidentified paper'),'missing provider identifier does not select an unrelated paper');G.selected=savedSelection;
+ $('#tab-results .search-graph').click();await settle();assert(requests.some(p=>p.startsWith('/api/match?title=Unidentified')),'papers without DOI resolve by title before graph');
+ window.open=initialOpen;$('#search').value='';setSearchEngine('semantic-scholar');
+ $('#search').value='keyboard';searchState={q:'keyboard',total:2,next:null};
+ results=[fixturePaper,{...fixturePaper,paperId:'s2',title:'Second result',url:'https://arxiv.org/abs/1706.03762'}];searchActiveIndex=-1;renderResults();
+ const pressSearch=(key,options={})=>{const event=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});$('#search').dispatchEvent(event);return event;};
+ assert(searchActiveIndex===0&&$('#search-result-0').getAttribute('aria-selected')==='true','first result starts selected');
+ assert(pressSearch('ArrowDown').defaultPrevented&&searchActiveIndex===1,'Down selects next result without moving input caret');
+ assert($('#search').getAttribute('aria-activedescendant')==='search-result-1'&&$('#search-result-1').classList.contains('selected'),'keyboard selection is visible and announced');
+ pressSearch('ArrowDown');assert(searchActiveIndex===1,'Down stops at last result');
+ pressSearch('ArrowUp');pressSearch('ArrowUp');assert(searchActiveIndex===0,'Up stops at first result');
+ renderResults();assert(searchActiveIndex===0&&$('#search-result-0').classList.contains('selected'),'background result rendering keeps selection');
+ pressSearch('ArrowDown');
+ const pdfBefore=openedPDF.length,searchBeforePDF=requests.filter(p=>p.startsWith('/api/search')).length,addsBefore=requests.filter(p=>p==='/api/library/add').length;
+ let releasePDF;pendingPDF=new Promise(r=>releasePDF=r);
+ assert(pressSearch('Enter').defaultPrevented,'Enter handles selected PDF instead of submitting another search');
+ assert(pressSearch('Enter',{repeat:true}).defaultPrevented&&pressSearch('Enter').defaultPrevented,'Enter stays suppressed while PDF is opening');await settle();
+ assert(requests.filter(p=>p==='/api/library/add').length===addsBefore+1,'held Enter does not open the paper repeatedly');
+ assert(savedSearchPaper.title==='Second result'&&savedSearchPaper.externalIds.ArXiv==='1706.03762','Enter uses the selected row and preserves arXiv PDF access from provider source links');
+ releasePDF({ok:true,json:async()=>({key:'keyboard-paper',paper:{has_pdf:true}})});pendingPDF=null;await settle();
+ assert(openedPDF.length===pdfBefore+1&&openedPDF.at(-1)[0]==='keyboard-paper','Enter saves/downloads and opens the selected PDF');
+ assert(requests.filter(p=>p.startsWith('/api/search')).length===searchBeforePDF,'Enter on a selected result does not search again');
+ assert($('#tab-results').classList.contains('hidden')&&!$('#search').hasAttribute('aria-activedescendant'),'opening PDF closes list and clears active descendant');
+ $('#search').dispatchEvent(new FocusEvent('focus'));pressSearch('ArrowUp');
+ const graphsBefore=requests.filter(p=>p.startsWith('/api/graph')).length;
+ assert(pressSearch('Enter',{shiftKey:true}).defaultPrevented,'Shift+Enter is handled');await settle();
+ assert(requests.filter(p=>p.startsWith('/api/graph')).length===graphsBefore+1&&openedPDF.length===pdfBefore+1,'Shift+Enter opens graph without opening PDF');
+ $('#search').dispatchEvent(new FocusEvent('focus'));
+ const pdfBeforeRow=openedPDF.length,graphsBeforeRow=requests.filter(p=>p.startsWith('/api/graph')).length;
+ $('#tab-results li').click();await settle();
+ assert(openedPDF.length===pdfBeforeRow+1&&requests.filter(p=>p.startsWith('/api/graph')).length===graphsBeforeRow,'clicking paper row opens PDF without building graph');
+ $('#search').dispatchEvent(new FocusEvent('focus'));
+ const pdfBeforeButton=openedPDF.length,graphsBeforeButton=requests.filter(p=>p.startsWith('/api/graph')).length;
+ $('#tab-results .search-graph').click();await settle();
+ assert(openedPDF.length===pdfBeforeButton&&requests.filter(p=>p.startsWith('/api/graph')).length===graphsBeforeButton+1,'Graph button builds graph without triggering row PDF action');
+ $('#search').dispatchEvent(new FocusEvent('focus'));
+ const pdfBeforePDFButton=openedPDF.length,graphsBeforePDFButton=requests.filter(p=>p.startsWith('/api/graph')).length;
+ $('#tab-results .search-pdf').click();await settle();
+ assert(openedPDF.length===pdfBeforePDFButton+1&&openedPDF.at(-1)[1]===undefined&&requests.filter(p=>p.startsWith('/api/graph')).length===graphsBeforePDFButton,'PDF button opens Reader here exactly once without building a graph');
+
+ $('#search').value='';$('#search').dispatchEvent(new Event('input'));
+ assert(searchActiveIndex===-1&&$('#search').getAttribute('aria-expanded')==='false','editing query resets keyboard selection');
+
+ $('#search-form > button[type="submit"]').click();assert(document.activeElement===$('#search'),'search icon focuses field');
+ const pause=ms=>new Promise(r=>setTimeout(r,ms));
+ const beforeLive=requests.filter(p=>p.startsWith('/api/search')).length;
+ const originalCenter=G.centerId,originalLayout=G.layout;
+ $('#search').value='network';$('#search').dispatchEvent(new Event('input'));
+ $('#search').value='networks';$('#search').dispatchEvent(new Event('input'));
+ await pause(450);await settle();
+ assert(requests.filter(p=>p.startsWith('/api/search')).length===beforeLive+1,'typing debounces into one search without Enter');
+ assert($('#tab-results li').textContent.includes('Zebra networks'),'live search lists papers');
+ assert(G.centerId===originalCenter&&G.layout===originalLayout,'typing preserves current graph and view');
+ $('#search').value='1706.03762';$('#search').dispatchEvent(new Event('input'));await pause(450);await settle();
+ assert(requests.includes('/api/paper?id=ARXIV%3A1706.03762')&&$('#tab-results li'),'identifier lookup shows a paper result');
+ assert(G.centerId===originalCenter,'identifier lookup waits for selection');
+ const beforeClear=requests.length;
+ $('#search').value='cancelled';$('#search').dispatchEvent(new Event('input'));
+ $('#search').value='';$('#search').dispatchEvent(new Event('input'));await pause(450);
+ assert(requests.length===beforeClear&&$('#tab-results').classList.contains('hidden'),'clearing cancels pending search');
+ $('#search').value='dismissed';$('#search').dispatchEvent(new Event('input'));
+ $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause(450);
+ assert(requests.length===beforeClear&&$('#tab-results').classList.contains('hidden'),'Escape cancels pending search');
+
  $('#search').value='networks';$('#search').dispatchEvent(new Event('input'));$('#search-form').requestSubmit();await settle();
  assert(!$('#tab-results').classList.contains('hidden'),'header search opens results');
  $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert($('#tab-results').classList.contains('hidden'),'Escape dismisses results');
@@ -208,7 +325,7 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
  resolveSearch({ok:true,json:async()=>({data:[{...fixturePaper,title:'Stale result'}],total:1})});await old;pendingSearch=null;
  assert(!$('#tab-results').textContent.includes('Stale result'),'ignore stale query response');
  $('#search').value='networks';$('#search').dispatchEvent(new Event('input'));await search('networks');
- $('#tab-results li').click();await settle();assert(G.layout==='network'&&G.centerId==='s1'&&$('#tab-results').classList.contains('hidden'),'search result opens paper network');
+ $('#tab-results .search-graph').click();await settle();assert(G.layout==='network'&&G.centerId==='s1'&&$('#tab-results').classList.contains('hidden'),'search result opens paper network');
  $('[data-layout="library"]').click();$('#lib-tree [data-id="C1"]').click();await settle();
  $('[data-layout="lineage"]').click();await settle();assert(G.project.target==='C1'&&G.layout==='lineage','collection carries into visualization');
 

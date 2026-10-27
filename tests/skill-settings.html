@@ -2,6 +2,9 @@
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)},settings={},collections={targets:[{id:'L1',name:'Research'},{id:'L2',name:'Other'}]},W={target:'L1',fileRevision:1};
+let searchEngines=['arxiv','semantic-scholar','openalex','google-scholar'];
+const searchEngineNames={arxiv:'arXiv','semantic-scholar':'Semantic Scholar',openalex:'OpenAlex','google-scholar':'Google Scholar'};
+function setSearchEngineOrder(order){searchEngines=[...order];}
 let active='L1',fail=false,importFail=false,projectFail=false,pendingProject=null,errors=[],saveCount=0,resourceLoads=0,importCount=0,zipCount=0,disconnectFail=false,locationFail=false;
 let config={location:'/home/test/.agents/skills',default_location:'/home/test/.agents/skills',projects:[]};
 let skills=[{id:'s1',name:'Review',description:'Review research',source:'local'},{id:'s2',name:'Writing',description:'Write clearly'}],manifests={L1:{revision:1,skills:['s1']},L2:{revision:1,skills:[]}};

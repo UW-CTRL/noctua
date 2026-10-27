@@ -32,6 +32,7 @@ tokio-stream = "0.1"
 tempfile = "3"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.1"
+roxmltree = "0.21"
 
 [profile.release]
 opt-level = 3

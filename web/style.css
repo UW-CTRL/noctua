@@ -643,6 +643,14 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 .settings-content h2:has(+ p) { margin-bottom: 8px; }
 .settings-content h2 + p { margin: 0 0 20px; }
 .settings-content h2 + p + .setup-input, .settings-content h2 + p + .setup-row { margin-top: 0; }
+.search-engine-order { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0; max-width: 480px; }
+.search-engine-order > li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); cursor: grab; user-select: none; }
+.search-engine-order > li.dragging { opacity: .45; }
+.search-engine-order > li.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+.search-engine-order > li.drop-after { box-shadow: 0 3px 0 var(--accent); }
+.search-order-grip { display: flex; color: var(--muted); }
+.search-order-name { flex: 1; }
+.search-order-default { display: inline-block; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent); font-size: 12px; font-weight: 600; }
 .settings-content .settings-group + .settings-group { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 20px; }
 .settings-content .settings-group > h3 { margin: 0 0 8px; }
 .settings-content .setting-field > h3 { margin: 0; }
@@ -1142,13 +1150,21 @@ header .web-select-trigger { height: var(--header-control-height); }
 #left > #layout button { flex: 1; min-width: 0; padding: 7px 8px; }
 body:is(.notes-mode, .pdf-mode) #left > #layout { display: none !important; }
 header #research-search { position: relative; flex: 1; min-width: 140px; max-width: 720px; }
-header #search-form { position: relative; width: 100%; max-width: none; gap: 0; }
-header #search-form input { border-radius: 10px; padding-right: 42px; }
-header #search-form button {
+header #search-form { position: relative; width: 100%; max-width: none; gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+header #search-form:focus-within { border-color: var(--accent); }
+header #search-form > .web-select { flex: none; max-width: 175px; border-right: 1px solid var(--line); }
+header #search-form .web-select-trigger { height: 100%; border: 0; border-radius: 9px 0 0 9px; background: transparent; color: var(--ink); gap: 6px; }
+header #search-form .web-select-trigger > svg { display: none; }
+.search-result-actions { display: flex; align-items: center; gap: 12px; margin-top: 5px; }
+.search-source, button.search-graph, button.search-pdf { font-size: 12px; }
+button.search-graph, button.search-pdf { display: inline-flex; align-items: center; gap: 4px; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--accent); }
+button.search-graph:hover, button.search-pdf:hover { text-decoration: underline; }
+header #search-form input { border: 0; border-radius: 0 10px 10px 0; padding-right: 42px; outline: none; }
+header #search-form > button[type="submit"] {
   position: absolute; right: 3px; top: 3px; width: 28px; height: 28px; min-height: 0;
   padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted);
 }
-header #search-form button:hover { background: var(--panel); color: var(--accent); }
+header #search-form > button[type="submit"]:hover { background: var(--panel); color: var(--accent); }
 .expanding-filter {
   position: relative; flex: none; width: 36px; height: 36px;
   transition: width 180ms ease; border-radius: 10px;
@@ -1170,7 +1186,7 @@ header #search-form button:hover { background: var(--panel); color: var(--accent
 .expanding-filter button:hover { color: var(--accent); }
 body:not(.library-view) #library-filter-control { display: none; }
 .search-results {
-  position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; width: min(460px, calc(100vw - 48px));
+  position: absolute; z-index: 30; top: calc(100% + 8px); left: 0; width: min(460px, 100%); min-width: 100%;
   max-height: min(65vh, 600px); overflow: auto; padding: 12px;
   border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
   box-shadow: 0 12px 32px #0002;

@@ -33,6 +33,7 @@ mod skills;
 pub mod paths;
 mod project;
 mod s2;
+mod search_providers;
 mod settings;
 mod scholar;
 mod storage;
@@ -99,6 +100,7 @@ impl std::error::Error for Status {}
 struct App {
     s2: S2,
     scholar: scholar::Scholar,
+    search_providers: search_providers::SearchProviders,
     zotero: Zotero,
     library: library::Library,
     /// UI commands from the chat assistant's tools, forwarded to the browser.
@@ -163,6 +165,8 @@ struct SearchQ {
     q: String,
     #[serde(default)]
     offset: u32,
+    engine: Option<String>,
+    id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -190,7 +194,12 @@ struct AddBody {
 }
 
 async fn search(State(app): Shared, Query(q): Query<SearchQ>) -> ApiResult {
-    Ok(Json(app.s2.search(&q.q, q.offset).await?))
+    let engine = q.engine.as_deref().unwrap_or("semantic-scholar");
+    if engine == "semantic-scholar" {
+        Ok(Json(app.s2.search(&q.q, q.offset).await?))
+    } else {
+        Ok(Json(app.search_providers.search(engine, &q.q, q.offset, q.id.as_deref()).await?))
+    }
 }
 
 async fn paper(State(app): Shared, Query(q): Query<IdQ>) -> ApiResult {
@@ -603,6 +612,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
 
     let cache = Arc::new(Cache::open(&data.join("noctua-cache.sqlite"))?);
     let app = Arc::new(App {
+        search_providers: search_providers::SearchProviders::new(cache.clone()),
         s2: S2::new(key, cache),
         scholar: scholar::Scholar::open(&data)?,
         zotero: Zotero::new(settings::zotero_dir(&settings)),

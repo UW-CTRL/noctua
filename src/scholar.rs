@@ -1529,6 +1529,7 @@ mod tests {
         }
         Ok(App {
             scholar,
+            search_providers: crate::search_providers::SearchProviders::new(cache.clone()),
             s2: crate::s2::S2::new(None, cache),
             zotero: crate::zotero::Zotero::new(None),
             library: crate::library::Library::open(data.join("library"))?,
