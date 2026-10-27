@@ -1468,7 +1468,7 @@ button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent);
 #workspace-tree:focus, #workspace-tree [data-file]:focus {outline:none;   }
 
 /* Focus uses color feedback instead of enclosing rings. */
-:focus-visible { outline:none; }
+:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:none; }
 button:focus-visible, a:focus-visible, summary:focus-visible { color:var(--accent); }
 
 .workspace-trash-hint { margin:0 0 12px; font-size:calc(12px * var(--ui-font-scale)); }
