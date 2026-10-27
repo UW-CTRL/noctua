@@ -88,6 +88,13 @@ Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while
 chat tools annotate individual passages. See [Notes](notes.md#assistant-edits)
 for note-editing boundaries.
 
+Zotero import is a Library dialog control. Imported notes are ordinary editable
+text notes; imported PDF annotations can be read and edited through the existing
+annotation tools. Re-importing with Sync preserves local edits and reports conflicting
+source changes; Overwrite replaces imported fields with Zotero values. HTML note
+formatting and embedded images are not reproduced. A download request for a broken
+linked PDF reports failure and requires reconnecting or attaching the original.
+
 Project root is a drag target shown only while dragging project entries. The project sidebar combines its collection selector and creation controls in one row. Hover or keyboard-focus a creation icon to reveal its label below. The collection menu uses fixed indentation for nested folders and highlights the selection without checkmarks. New note or file offers Note and Text file in one compact form. Import files opens a review queue for chosen or dropped files before uploading; these remain UI actions.
 
 The collection and save status align with the left end of the divider below
@@ -214,6 +221,35 @@ These use separate task prompts rather than the combined chat instructions.
 | Execution | Reader analysis and handwriting run separately from chat; Reader workers have no tools. |
 | Editing | Source files only; no Settings prompt editor. `AGENTS.md` governs repository work. |
 | Applying changes | Rebuild and restart; cached analysis may be reused. See [Development](development.md#ai-prompts). |
+
+## Local drafts and server edits
+
+Finish pending client file uploads, or resolve/remove failed uploads, before
+switching servers or installing an update. Attachment drafts stay with their
+original server and chat.
+
+During a server update, open editors save and pause while existing AI tasks finish.
+An unresolved save/conflict blocks replacement; local drafts are preserved. An
+update notice alone does not confirm that unsaved client input reached the server.
+Skill approvals and output reviews must be resolved before a server update;
+replacement is canceled rather than discarding those session-owned results.
+
+The assistant reads saved server content, not unsaved local input. Multiple editor
+drafts remain separate, and another device's edits require conflict resolution.
+See [note draft recovery](notes.md#connection-aware-note-drafts) before discarding
+a draft or explicitly keeping a local version.
+
+## Server job lifetime
+
+Closing a desktop window, losing the connection or switching servers leaves an
+AI reply running on its original server. Reopen that server's chat history to
+see its busy state and eventual persisted result. Use **Stop server reply** in
+a restored running chat, or the Stop control for the current stream, to request
+explicit cancellation. Stopping retains the partial reply. A client disconnect
+is not a stop request. Provider changes/new chat retain their explicit stop
+behavior for the currently attached stream.
+Reopening a running chat restores its pending file-edit approval cards. They
+still require an explicit decision; reconnecting never grants edit permission.
 
 ## Paper files
 

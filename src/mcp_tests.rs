@@ -1,4 +1,37 @@
 // Included in agent::tests to share the isolated app/router fixture.
+#[tokio::test]
+async fn missing_linked_original_is_a_download_failure_instead_of_success()->Result<()> {
+    let f=Fixture::new()?;
+    let key=f.app.library.upload("L1","paper.pdf",b"%PDF-1.7\noriginal")?;
+    let missing=f.root.join("missing-zotero-original.pdf");
+    let db=rusqlite::Connection::open(f.root.join("library/library.sqlite"))?;
+    db.execute("INSERT INTO pdf_links(paper,path) VALUES(?1,?2)",rusqlite::params![key,missing.to_string_lossy()])?;drop(db);
+    let result=mcp_value(&f,"download_pdf",json!({"paper_key":key}),"direct").await;
+    assert_eq!(result["status"],"partial_failure");assert_eq!(result["code"],"DOWNLOAD_FAILED");
+    assert_eq!(result["has_pdf"],false);assert!(result["message"].as_str().unwrap().contains("Settings"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn zotero_pdf_storage_preference_defaults_to_link_and_persists()->Result<()> {
+    let f=Fixture::new()?;
+    assert_eq!(f.json("/api/settings",None).await["zotero_pdf_mode"],"link");
+    let saved=f.json("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"copy"}))).await;
+    assert_eq!(saved["zotero_pdf_mode"],"copy");
+    assert_eq!(crate::settings::Settings::load(&f.root).zotero_pdf_mode,crate::zotero::PdfMode::Copy);
+    assert_eq!(f.request("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"invalid"})),None).await.status(),StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(f.json("/api/settings",None).await["zotero_pdf_mode"],"copy");
+    let source=f.root.join("configured-zotero");std::fs::create_dir_all(&source)?;
+    let db=rusqlite::Connection::open(source.join("zotero.sqlite"))?;
+    db.execute_batch("CREATE TABLE collections(collectionID INTEGER); INSERT INTO collections VALUES(1);")?;drop(db);
+    f.json("/api/settings/zotero",Some(json!({"dir":source}))).await;
+    let settings=f.json("/api/settings",None).await;
+    assert_eq!(settings["zotero_dir"],source.to_string_lossy().as_ref());assert_eq!(settings["zotero_pdf_mode"],"copy");
+    f.json("/api/settings/zotero-pdf",Some(json!({"pdf_mode":"link"}))).await;
+    assert_eq!(crate::settings::Settings::load(&f.root).zotero_pdf_mode,crate::zotero::PdfMode::Link);
+    Ok(())
+}
+
 async fn mcp_value(f: &Fixture, name: &str, args: Value, mode: &str) -> Value {
     let r=crate::mcp::handle(&f.app,&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}}),mode,None).await.unwrap();
     let mut v: Value =

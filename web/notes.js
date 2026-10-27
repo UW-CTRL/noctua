@@ -97,7 +97,7 @@ async function createNote(title = '') {
     const doc = await api('/api/notes', { target: N.target, title: typeof title === 'string' ? title : '' });
     N.list.unshift({ id: doc.id, title: doc.title, created: doc.created, updated: doc.updated });
     REF.notes.push({ id: doc.id, title: doc.title, updated: doc.updated, target: N.target });
-    showNote(doc);
+    await showNote(doc);
     await loadWorkspace(N.target);
     startEdit(doc.blocks[0].id);
     const t = $('.note-title');
@@ -112,12 +112,13 @@ async function createNote(title = '') {
 async function deleteNote(id) {
   const n = N.list.find((x) => x.id === id);
   if (!confirm(`Delete “${n?.title || 'this note'}”?\n(It's moved to notes/.trash in Noctua's folder.)`)) return;
-  if (N.doc?.id === id) { clearTimeout(N.saveTimer); N.dirty = false; }
+  if (N.doc?.id === id) { clearTimeout(N.saveTimer); if (N.dirty) persistNoteDraft(); }
   const r = await fetch(`/api/notes/${enc(N.target)}/${enc(id)}`, { method: 'DELETE' }).catch(() => null);
   if (!r?.ok) return toast("Couldn't delete the note", { error: true });
   N.list = N.list.filter((x) => x.id !== id);
   REF.notes = REF.notes.filter((x) => x.id !== id);
   if (N.doc?.id === id) {
+    N.dirty = false;
     N.doc = null;
     if (N.list.length) return openNote(N.list[0].id);
     renderEditor();
@@ -128,13 +129,55 @@ async function deleteNote(id) {
 async function openNote(id) {
   try {
     await saveWorkspaceFile();await flushNoteEdits();
-    showNote(await api(`/api/notes/${enc(N.target)}/${enc(id)}`));
+    await showNote(await api(`/api/notes/${enc(N.target)}/${enc(id)}`));
   } catch (e) {
     toast(e.message, { error: true });
   }
 }
 
-function showNote(doc) {
+function chooseLocalDraft(candidates) {
+  if (candidates.length <= 1) return Promise.resolve(candidates[0] || null);
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'local-draft-recovery';
+    dialog.innerHTML = '<h2>Recover a local draft</h2><p>Several editors saved different drafts of this note. Choose one to recover. Other drafts stay on this device until saved or explicitly discarded.</p><div data-drafts></div><button data-server>Open server copy</button>';
+    const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
+    for (const candidate of candidates) {
+      const row = document.createElement('section');
+      const text = document.createElement('p');
+      text.textContent = `${candidate.doc.title || 'Untitled'} — ${(candidate.doc.blocks || []).map(b => b.src || b.type).join(' ').slice(0, 180)}`;
+      const recover = document.createElement('button'); recover.textContent = 'Recover this draft'; recover.onclick = () => finish(candidate);
+      const discard = document.createElement('button'); discard.textContent = 'Discard this draft';
+      discard.onclick = () => {
+        try { NoteDrafts.acknowledge(N.target, candidate.doc.id, candidate.snapshot, candidate.key); row.remove(); }
+        catch (error) { toast(error.message, {error:true}); }
+      };
+      row.append(text, recover, discard); dialog.querySelector('[data-drafts]').append(row);
+    }
+    dialog.querySelector('[data-server]').onclick = () => finish(null);
+    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+    document.body.append(dialog); dialog.showModal();
+  });
+}
+
+async function showNote(doc) {
+  if (window.noctuaServer) await window.noctuaServer;
+  let recovered = false, conflict = false;
+  N.draftSource = null; N.draftError = null;
+  try {
+    const candidates = NoteDrafts.candidates(N.target, doc.id);
+    const serverSnapshot = JSON.stringify(doc);
+    for (const candidate of candidates.filter(c => c.snapshot === serverSnapshot)) NoteDrafts.acknowledge(N.target, doc.id, candidate.snapshot, candidate.key);
+    const selected = await chooseLocalDraft(candidates.filter(c => c.snapshot !== serverSnapshot));
+    if (selected) {
+      conflict = selected.doc.updated !== doc.updated;
+      N.draftSource = selected;
+      doc = selected.doc; recovered = true;
+      // Claim an editor-owned copy before any automatic save is scheduled.
+      NoteDrafts.put(N.target, doc);
+    }
+  } catch (e) { N.draftError = e.message; toast('Local draft recovery failed: ' + e.message, { error: true }); }
+
   if (N.doc?.id !== doc.id) { N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
   W.file=null;
@@ -145,15 +188,24 @@ function showNote(doc) {
   renderNoteList();
   renderEditor();
   updateChatContext();
+  N.dirty = recovered; N.conflict = conflict;
+  if (conflict) showConflict();
+  else if (recovered) { setStatus(N.draftError ? 'Draft recovered in memory; local storage failed — keep this window open' : 'Local draft recovered'); N.saveTimer = setTimeout(saveNow, 800); }
 }
 
 // ---------------------------------------------------------------- saving
 
+function persistNoteDraft(target = N.target, doc = N.doc) {
+  try { const snapshot = NoteDrafts.put(target, doc); N.draftError = null; return snapshot; }
+  catch (error) { N.draftError = error.message; return null; }
+}
+
 function markDirty() {
   recordNoteChange();
   N.dirty = true;
-  if (N.conflict) return;  // keep the conflict notice until the user picks
-  setStatus('Unsaved');
+  if (persistNoteDraft()) setStatus('Local draft saved');
+  else setStatus('Local draft unavailable — keep this window open until server save succeeds');
+  if (N.conflict) { showConflict(); return; }
   clearTimeout(N.saveTimer);
   N.saveTimer = setTimeout(saveNow, 800);
 }
@@ -162,23 +214,30 @@ function markDirty() {
 function showConflict() {
   const el = $('#note-status');
   if (!el) return;
-  el.innerHTML = '<span class="warn">Changed in another tab or window.</span> <a href="#" data-c="reload">Reload it</a> (drops your changes here) · <a href="#" data-c="mine">Keep mine</a> (overwrites)';
+  el.innerHTML = (N.draftError ? '<span class="warn">Local draft storage failed — keep this window open.</span> ' : '') + '<span class="warn">Changed on the server (another tab or device).</span> <a href="#" data-c="reload">Reload it</a> (drops your changes here) · <a href="#" data-c="mine">Keep mine</a> (overwrites)';
   el.onclick = async (e) => {
     const a = e.target.closest('[data-c]');
     if (!a) return;
     e.preventDefault();
+    if (N.resolvingConflict) return;
+    N.resolvingConflict = true;
     el.onclick = null;
-    const doc = N.doc;
-    N.conflict = false;
+    const doc = N.doc, snapshotBeforeReload = JSON.stringify(N.doc);
     if (a.dataset.c === 'reload') {
-      N.dirty = false;
-      N.doc = null;
-      await openNote(doc.id);
+      try {
+        const fresh = await api(`/api/notes/${enc(N.target)}/${enc(doc.id)}`);
+        if (N.doc !== doc || JSON.stringify(doc) !== snapshotBeforeReload) throw Error('The note changed while fetching the server copy. Your newer input was kept; choose again.');
+        const snapshot = persistNoteDraft();
+        if (snapshot) NoteDrafts.acknowledge(N.target, doc.id, snapshot);
+        N.draftSource = null; N.dirty = false; N.doc = null; await showNote(fresh);
+      } catch (e) { N.conflict = true; showConflict(); toast(e.message, { error: true }); }
     } else {
-      const fresh = await api(`/api/notes/${enc(N.target)}/${enc(doc.id)}`);
-      doc.updated = fresh.updated;
-      saveNow();
+      try {
+        const fresh = await api(`/api/notes/${enc(N.target)}/${enc(doc.id)}`);
+        doc.updated = fresh.updated; N.conflict = false; await saveNow();
+      } catch (e) { N.conflict = true; showConflict(); toast(e.message, { error: true }); }
     }
+    N.resolvingConflict = false;
   };
 }
 
@@ -191,10 +250,13 @@ async function saveNow() {
   clearTimeout(N.saveTimer);
   if (!N.dirty || !N.doc || N.saving || N.conflict) return;
   const doc = N.doc, target = N.target;
+  const draftSnapshot = persistNoteDraft(target, doc);
   N.dirty = false;
   N.saving = true;
+  setStatus('Saving to server…');
   const historyFrames=NoteUndo.frames.splice(0);
   NoteUndo.group=null;
+  let failed = false;
   const progressKey = `note-save:${target}:${doc.id}`;
   notifyProgress(progressKey, 'Saving note…');
   try {
@@ -210,24 +272,37 @@ async function saveNow() {
       return;
     }
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if (!Number.isSafeInteger(j.updated) || j.updated <= 0) throw new Error('The server did not acknowledge a saved note version; local draft kept');
+    try {
+      if (draftSnapshot) {
+        NoteDrafts.acknowledge(target, doc.id, draftSnapshot);
+        if (N.draftSource?.snapshot === draftSnapshot) NoteDrafts.acknowledge(target, doc.id, draftSnapshot, N.draftSource.key);
+      }
+    } catch { toast('Server saved; local draft cleanup failed.', {error:true}); }
     doc.updated = j.updated;
+    if (N.dirty && N.doc === doc) persistNoteDraft(target, doc);
     const entry = N.list.find((n) => n.id === doc.id);
     if (entry) { entry.updated = j.updated; entry.title = doc.title; }
     const ref = REF.notes.find((n) => n.id === doc.id);
     if (ref) { ref.updated = j.updated; ref.title = doc.title; }
-    if (N.doc === doc) { setStatus('Saved'); refreshNoteHistory(); }
+    if (N.doc === doc) { setStatus(N.dirty ? (N.draftError ? 'New input is not saved locally — keep this window open' : 'Local draft saved') : 'Saved to server'); refreshNoteHistory(); }
   } catch (e) {
+    failed = true;
     if (N.doc === doc) {
       NoteUndo.frames.unshift(...historyFrames);
       N.dirty = true;
-      setStatus(`Save failed (${e.message}); retrying…`);
+      persistNoteDraft(target, doc);
+      setStatus(N.draftError ? 'Disconnected; local draft also failed — keep this window open' : 'Disconnected / save failed; local draft retained. Retrying…');
       N.saveTimer = setTimeout(saveNow, 3000);
     }
   } finally {
     notifyProgress(progressKey, null);
     N.saving = false;
   }
-  if (N.dirty && N.doc === doc) markDirty();  // edited while saving
+  if (N.dirty && N.doc === doc) {
+    clearTimeout(N.saveTimer);
+    N.saveTimer = setTimeout(saveNow, failed ? 3000 : 800);
+  }
 }
 
 // ---------------------------------------------------------------- citations
@@ -308,8 +383,9 @@ function showNoteHelp() {
     const example = source => `<pre><code>${esc(source)}</code></pre>`;
     dialog.innerHTML = `<div class="note-help-header"><h2 id="note-help-title">Note guide</h2><form method="dialog"><button data-icon="x" data-icon-only aria-label="Close note guide" title="Close" autofocus></button></form></div>
       <p class="note-help-intro">Write, add media, and connect your research.</p>
+      <section><h3>Zotero notes</h3><p>Choose Library → Import from Zotero → Notes to copy paper and standalone notes into their collections. Imported notes are editable text with paragraph breaks; HTML formatting and embedded images are not reproduced. On re-import, Sync updates untouched imported content and keeps local edits, reporting conflicts. Overwrite replaces imported note content from Zotero.</p></section>
       <section><h3>Selected passages in chat</h3><p>Drag across rendered note text and click Add to chat. You can attach several passages, hover over the annotation count to preview them, and remove individual passages before sending. Theme-colored numbered badges and faint highlights mark attached source passages. The badges match the attachment preview; click a badge to open it. Removing or sending attachments removes the badges and faint highlights without changing your note. These are chat attachments, not saved PDF annotations. The assistant receives the quoted text and note identifiers; adding or removing attachments is a UI-only control.</p></section>
-      <section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically.</p>${example(String.raw`Inline math: $E = mc^2$
+      <section><h3>Connection and drafts</h3><p>Open notes save a local draft on this device, separately for each server, note, and editor tab. Reloading recovers it. If several drafts exist, choose one in Recover a local draft; other drafts remain until saved or explicitly discarded. Local draft saved, Saving to server, Saved to server, and Disconnected show different states. Reconnection checks the saved server version; another device’s edits require a conflict choice. Keep mine explicitly overwrites the current server version. Drafts are cleared only after a matching server save, or after you explicitly reload the server copy. A failed local save explicitly asks you to keep the window open. A successful HTTP response clears a draft only when it confirms the saved note version. Browser storage is tied to the server web origin; keep a stable address. Storage limits or clearing website data can remove drafts. Server updates temporarily pause editing and save open content before restart. Resolve save conflicts or open dialogs if an update is waiting; failed saves keep the existing server running. Local drafts remain on this device. Offline images and full-library offline access are not supported.</p></section><section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically.</p>${example(String.raw`Inline math: $E = mc^2$
 
 \[ a^2 + b^2 = c^2 \]
 
@@ -819,3 +895,13 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 window.addEventListener('DOMContentLoaded',()=>{ if (store.get('noctua.mode') === 'notes' && !location.hash.startsWith('#pdf=')) collectionsReady.then(() => { if (!location.hash.startsWith('#pdf=')) setMode('notes'); }); });
+
+window.addEventListener('online', () => { if (N.dirty && !N.conflict) saveNow(); });
+
+// Finalize live input before the native shell freezes all editors for a switch.
+window.prepareEditorSwitch = () => {
+  window.NoctuaChatFiles?.snapshot(); // Finish or resolve client uploads before closing their owner.
+  stopEdit();
+  for (const pad of N.pads.values()) pad.finish?.();
+  window.preserveChatDraft?.();
+};

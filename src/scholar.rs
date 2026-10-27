@@ -682,7 +682,31 @@ pub fn poll(app: &Arc<App>) {
         }
     });
 }
+struct BackgroundRequest(Arc<crate::security::Runtime>);
+impl Drop for BackgroundRequest {
+    fn drop(&mut self) {
+        self.0
+            .requests
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+fn admit_background(app: &App) -> Result<Option<BackgroundRequest>> {
+    let Some(runtime) = &app.runtime else {
+        return Ok(None);
+    };
+    let _admission = runtime.admission.lock().unwrap();
+    if runtime.draining.load(std::sync::atomic::Ordering::SeqCst) {
+        bail!("Server is draining; Scholar will resume after restart");
+    }
+    runtime
+        .requests
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Ok(Some(BackgroundRequest(runtime.clone())))
+}
 async fn run(app: &App) {
+    let Ok(_request) = admit_background(app) else {
+        return;
+    };
     let result = async {
         let provider = app.settings.lock().unwrap().agent;
         app.scholar.begin_run(provider.key())?;
@@ -1517,6 +1541,8 @@ mod tests {
             data_dir: data.into(),
             shared_skills_dir: None,
             _storage_lease: None,
+            runtime: None,
+            chat_cancels: Mutex::new(Default::default()),
             settings: Mutex::new(settings),
             desktop: None,
             login_gate: tokio::sync::Mutex::new(()),
@@ -1803,6 +1829,57 @@ mod tests {
         .await
         .map_err(|e| e.0)?;
         assert!(other["entries"].as_array().unwrap().is_empty());
+        Ok(())
+    }
+    #[tokio::test]
+    async fn oauth_callback_is_nonce_protected_and_background_jobs_block_server_stop() -> Result<()>
+    {
+        use std::sync::atomic::Ordering;
+        let dir = tempfile::tempdir()?;
+        let mut app = fixture(dir.path(), "http://127.0.0.1:1")?;
+        let owner = crate::server::Owner::acquire(dir.path(), "http://127.0.0.1:7878")?;
+        let runtime = Arc::new(crate::security::Runtime::new(
+            owner,
+            vec!["127.0.0.1:7878".into()],
+            vec!["http://127.0.0.1:7878".into()],
+        ));
+        app.runtime = Some(runtime.clone());
+        let app = Arc::new(app);
+        let router = crate::router(app.clone(), Arc::new(vec!["127.0.0.1:7878".into()]));
+        async fn request(router: &Router, method: &str, path: &str) -> StatusCode {
+            router
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header("host", "127.0.0.1:7878")
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+        assert_eq!(
+            request(&router, "GET", "/api/scholar").await,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            request(&router, "GET", "/api/scholar/callback?state=wrong&code=x").await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            request(&router, "POST", "/api/scholar/callback").await,
+            StatusCode::UNAUTHORIZED
+        );
+        let lease = admit_background(&app)?;
+        assert_eq!(runtime.requests.load(Ordering::SeqCst), 1);
+        assert!(crate::server_stop(State(app.clone())).await.is_err());
+        drop(lease);
+        assert_eq!(runtime.requests.load(Ordering::SeqCst), 0);
+        runtime.draining.store(true, Ordering::SeqCst);
+        assert!(admit_background(&app).is_err());
         Ok(())
     }
     #[test]

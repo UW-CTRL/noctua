@@ -1,1 +1,38 @@
-<!doctype html><meta charset="utf-8"><title>Noctua</title><p style="font:14px sans-serif;color:#888;text-align:center;margin-top:40vh">Starting Noctua…</p>
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server &amp; connection · Noctua</title>
+<link rel="stylesheet" href="connection.css"><script src="appearance.js"></script><script src="fonts.js"></script>
+</head><body>
+<main class="connection-welcome"><p class="connection-eyebrow">Noctua</p><h1>Your research, connected.</h1><p>Choose a server to open your library.</p><button id="open-connection" class="primary">Open connection settings</button></main>
+<dialog id="connection-dialog" class="connection-modal" aria-labelledby="dialog-title">
+<div class="connection-modal-heading"><div><p class="connection-eyebrow">Noctua · Settings</p><h1 id="dialog-title">Server &amp; connection</h1></div><button id="close-connection">Close</button></div>
+<nav class="connection-tabs" role="tablist" aria-label="Connection settings">
+<button id="tab-connection" role="tab" aria-selected="true" aria-controls="panel-connection" data-panel="connection">Connection</button>
+<button id="tab-local" role="tab" aria-selected="false" aria-controls="panel-local" data-panel="local" tabindex="-1">This computer</button>
+<button id="tab-desktop" role="tab" aria-selected="false" aria-controls="panel-desktop" data-panel="desktop" tabindex="-1">Desktop</button>
+</nav>
+<section id="panel-connection" class="connection-card" role="tabpanel" aria-labelledby="tab-connection">
+<ol class="connection-steps" aria-label="Connection setup"><li aria-current="step">Choose</li><li>Connect</li><li>Save</li></ol>
+<div data-step="0"><h2 tabindex="-1">Where do you want to work?</h2><p>Your library and AI tasks live on the connected server.</p>
+<label class="connection-field">Connection mode<select id="mode"><option value="local">Use this computer</option><option value="remote">Connect to another computer</option></select></label><small>Closing Noctua leaves the server and its tasks running.</small></div>
+<div data-step="1" hidden><h2 tabindex="-1">Check your connection</h2>
+<p id="local-explanation">Noctua will reuse this computer’s server or start one in the background. This does not install login auto-start.</p>
+<div id="remote" hidden><label class="connection-field">Server HTTPS address<input id="address" type="url" placeholder="https://computer.tailnet-name.ts.net" autocomplete="url"></label><label class="connection-field">Authentication token<input id="secret" type="password" autocomplete="current-password" placeholder="Leave empty to use the OS keyring"></label><small>AI CLIs, API keys, Zotero paths and data folders belong to the server computer. Local AI setup is unnecessary for a remote connection.</small></div>
+<div class="connection-actions"><button id="test">Test connection</button></div></div>
+<div data-step="2" hidden><h2 tabindex="-1">Ready to connect</h2><p>Review the tested server before saving this device’s connection.</p><dl class="connection-review"><dt>Use</dt><dd id="review-mode"></dd><dt>Address</dt><dd id="review-address"></dd><dt>Server</dt><dd id="review-server"></dd><dt>Version</dt><dd id="review-version"></dd></dl><details id="server-details"><summary>Server details</summary><pre id="identity"></pre></details><small>Switching saves open edits first. Failed saves keep the current connection. Tasks stay on their original server.</small></div>
+<p class="connection-status" role="status" id="status">Choose a connection to begin.</p>
+<footer class="connection-actions connection-wizard-actions"><button id="back" hidden>Back</button><button class="primary" id="next">Next</button><button class="primary" id="connect" hidden>Save &amp; connect</button></footer>
+<details class="connection-saved"><summary>Current &amp; saved connection</summary><p class="connection-status" role="status" id="connection-status">No active connection.</p><pre id="current-identity" aria-label="Current server details"></pre><button id="change">Clear saved connection</button></details>
+</section>
+<section id="panel-local" class="connection-card" role="tabpanel" aria-labelledby="tab-local" hidden>
+<h2>This computer’s server</h2><p>These controls manage this computer, even when you connect to a remote server. Switching connections leaves the local server running.</p><p id="local-status" class="connection-status" role="status"></p>
+<div id="local-actions" class="connection-actions"><button data-action="start">Start</button><button data-action="stop">Stop safely</button><button data-action="restart">Restart safely</button><button data-action="update">Update server</button><button data-action="logs">Show server logs</button></div>
+<p id="server-update-status" class="connection-status" role="status"></p>
+<button id="open-running-server" hidden>Open running server · defer update</button>
+<label class="connection-check"><input type="checkbox" id="autostart"> Start at user login</label><p id="service" class="connection-status"></p><small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running.</small><pre id="logs" aria-label="Server logs"></pre>
+</section>
+<section id="panel-desktop" class="connection-card" role="tabpanel" aria-labelledby="tab-desktop" hidden><h2>Desktop</h2>
+<div class="connection-actions"><button data-desktop="light">Light app icon</button><button data-desktop="dark">Dark app icon</button></div><div class="connection-actions"><button data-desktop="check">Check desktop update</button><button data-desktop="install">Install offered update</button><button data-desktop="restart">Restart updated app</button></div><pre id="update" role="status"></pre><small>After the updated app opens, an existing local server is updated separately: clients save edits, active tasks finish, then the new server starts. Unused old staged executables are removed after verification.</small></section>
+<p id="management-status" class="connection-status" role="status" hidden></p>
+</dialog><script src="select.js"></script><script src="update-dialogs.js"></script><script src="client.js"></script></body></html>

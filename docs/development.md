@@ -7,45 +7,62 @@
 Install [Rust](https://rustup.rs), then run from the repository root:
 
 ```sh
-cargo run --release
+cargo build --locked -p noctua
+NOCTUA_HOME=/absolute/isolated/data target/debug/noctua ensure
+NOCTUA_HOME=/absolute/isolated/data target/debug/noctua token
 ```
 
-The browser app opens at `http://127.0.0.1:7878`. For desktop development, install
-the Tauri CLI and platform prerequisites, then:
+Open the URL returned by ensure in a browser and sign in with the token. The
+server remains running after ensure exits. Stop that isolated server explicitly
+with `NOCTUA_HOME=/absolute/isolated/data target/debug/noctua stop`. Never use
+production data for tests. See [Server operations](server.md) for CLI semantics.
+
+For desktop development, build the headless binary first, then the Tauri app:
 
 ```sh
+cargo build --locked -p noctua
 cargo install tauri-cli --version "^2" --locked
 cd app
 cargo tauri dev
-# Build installers instead:
+# Build installers (also builds and bundles the headless executable):
 cargo tauri build
 ```
 
-Installers appear under `target/release/bundle/`. See the
-[release workflow](../.github/workflows/release.yml) for platform dependencies,
-including WebKitGTK on Linux.
+Installers appear under `target/release/bundle/`. The bundled local connection
+screen opens without starting a data server. `app/prepare-server.py` runs from
+the build hook, builds the requested server target and puts it in the bundle's
+`binaries/` resources. Universal macOS builds combine both architectures with
+lipo. Tauri supplies the target through its [build hook environment](https://v2.tauri.app/reference/config/#buildconfig).
+The desktop stages a version/content-addressed durable copy before ensure, so
+an app update does not remove a running server's executable.
 
-To preview changes alongside an existing server, use a separate port:
-
-```sh
-NOCTUA_PORT=7879 NOCTUA_NO_OPEN=1 cargo run --locked
-```
-
-Open `http://127.0.0.1:7879`. This uses the same configured library and data
-folder as the app; set `NOCTUA_HOME` to use separate development data. Web assets
-are embedded at build time, so stop and rerun the command after edits, then
-refresh the browser.
+Use `NOCTUA_HOME` and `NOCTUA_CLIENT_HOME` pointing to separate temporary folders
+for parallel development. A second port does not permit a second writer to the
+same data. `NOCTUA_SERVICE_HOME` redirects generated definitions and
+`NOCTUA_SERVICE_MANAGER` substitutes a fake manager executable for tests; always
+set both for service tests. Do not install a real service during development.
+Server web assets are embedded: rebuild, explicitly stop/restart your isolated
+server, then refresh. Rebuilding the desktop alone does not update a running
+server. Platform prerequisites are in the [release workflow](../.github/workflows/release.yml).
 
 ## Project structure and checks
 
 The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
+
+`web/ui.css` owns shared theme tokens and controls. Connection and sign-in layouts
+use `web/connection.css`; the desktop build copies these and the shared appearance,
+font, dropdown and shared update-dialog scripts into its offline bundle. For standalone frontend tests, run
+`python3 app/prepare-ui.py` first (`tests/run-frontend.sh` does this automatically).
+Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 
 | Path | Responsibility |
 | --- | --- |
 | `src/` | Rust server, domain models, assistant integration, and MCP tools. |
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
-| `app/` | Tauri desktop shell, native controls, icons, and updater. |
+| `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
+| `src/server.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
+| `src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
@@ -130,12 +147,58 @@ readable when no renderer is active; new previews require an active chat tab.
 | `ZOTERO_DATA_DIR` | Zotero source folder |
 | `NOCTUA_NOTES` | Notes folder |
 | `NOCTUA_CLAUDE` / `NOCTUA_CODEX` | Assistant CLI paths |
-| `NOCTUA_PORT` | Browser port; default 7878 (desktop uses 47878) |
-| `NOCTUA_NO_OPEN` | Prevent automatic browser opening |
-| `NOCTUA_DEBUG` | Log requests |
+| `NOCTUA_PORT` | Preferred loopback server port; default 47878, free-port fallback on conflict |
+| `NOCTUA_PROFILE_HOME` | Isolated server profile/config root; preserves migration locking in tests |
+| `NOCTUA_CLIENT_HOME` | Device-local connection preferences and staged server binaries |
+| `NOCTUA_ORIGINS` | Comma-separated exact HTTPS origins, overriding server-config.json |
+| `NOCTUA_SERVICE_HOME` / `NOCTUA_SERVICE_MANAGER` | Isolated definition directory and fake service manager for tests |
+| `NOCTUA_SERVER_NAME` | Human-readable name in server identity |
 
 For an assistant CLI not found automatically, you can also set `claude_path` or
 `codex_path` in `settings.json`.
+
+## Connection and shutdown transactions
+
+A per-client-profile machine owner lock permits one local server across data
+folders; the separate data owner lock still protects each folder. The global
+manager lock spans ensure, stop, restart and updates, including an enabled
+service's executable refresh. Migration also locks the source data owner before
+copying. Response bodies retain the admitted request count until consumed or
+abandoned; safe shutdown refuses an active stream or detached AI/write job.
+
+Native connection callbacks are bound to a window and purpose. The provisional
+window and callback are discarded on any error; the old connection is saved only
+after the new WebView authenticates and every old editor freezes and flushes.
+Failure resumes the old editors. Device preferences use exact shared keys, while
+server state and its removal operations share the same namespace.
+Shell pauses have separate connection and maintenance owners. Releasing either
+must leave editors inert while the other owner remains; regress both completion
+orders and maintenance disconnection during a native connection change.
+
+Note drafts use an editor-owned slot within each server/note namespace. A legacy
+slot and multiple editor versions remain available for explicit recovery. An
+HTTP success without a valid saved revision does not acknowledge a draft. Test
+quota failures together with disconnection, edits during saves/reloads, and
+multiple tabs before changing this contract.
+
+## Server update regression
+
+Build the normal server, then `python3 tests/build-update-fixture.py` to build a
+fictional next patch version offline under ignored `target/` sources. Run
+`python3 tests/server-update.py` with temporary data/client profiles only. The
+fixture exercises a real version change, active work, client acknowledgments,
+concurrent ensure, complete snapshots, executable cleanup, launch-environment
+preservation, service-start/refresh failures, cold retry and downgrade fencing.
+No updater download or resident-service installation is used.
+The detached `update` CLI accepts `--grace-seconds` and `--timeout-seconds`; use
+short durations only in isolated tests. `--force` tests an identical binary
+replacement without bypassing editor acknowledgments or active-work draining.
+On macOS, also build `python3 tests/build-update-fixture.py --previous` and run
+`python3 tests/desktop-update.py`. It launches a uniquely identified test app,
+expires the prior desktop editor presence, quits during the automatic upgrade,
+verifies the detached worker finishes,
+then reopens the actual WebView against the replacement. Test profiles/services
+are isolated; never substitute production paths.
 
 ## Managed paper compilers
 
@@ -158,5 +221,13 @@ together when upgrading, so cached output is invalidated.
 
 `python3 tests/paper-integration.py` exercises both real compilers against isolated
 projects after `cargo build --bin noctua`. Tectonic's first run downloads resources;
-pdfLaTeX uses bundled packages. Backend unit tests need neither distribution.
+pdfLaTeX uses bundled packages. Startup is bounded; stage progress, periodic Python
+stack traces and isolated server logs diagnose a stalled CI run. Windows compiler
+resources use ordinary drive/UNC paths; TeX Live cannot resolve its programs from
+verbatim-prefixed executable arguments. Backend unit tests
+need neither distribution.
 Use `swift tests/reader.swift tests/paper.html` on macOS for paper UI checks.
+
+`tests/server-paper-lifecycle.py` uses isolated packaged fake compilers to verify
+build ownership during stop/update, app-bundle removal, persisted output and
+retired compiler cleanup. It runs in backend CI without installing TeX or services.

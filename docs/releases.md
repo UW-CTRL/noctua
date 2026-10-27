@@ -326,6 +326,36 @@ actionlint .github/workflows/release.yml
 The first command requires Python 3.11+. `actionlint` is an optional local
 workflow linter, not a runtime release dependency.
 
+## Independent server packaging and release smoke tests
+
+`app/prepare-server.py`, invoked by Tauri's beforeBuildCommand, builds the headless
+`noctua` binary for the desktop target and bundles it under `binaries/noctua-server`
+(`.exe` on Windows). Official macOS releases target Apple Silicon. Custom
+universal builds require both Rust targets and lipo. Retain Python 3 on runners. The desktop stages a version and
+content-hash copy under NoctuaClient/servers before starting it; bundle replacement
+must not remove that copy or terminate the server. Do not clean staged versions
+while a server or service may still use them.
+
+Before release, exercise installation and login/logout on each actual OS: macOS
+LaunchAgent, Linux systemd user unit, Windows interactive logon task and each OS
+credential store. Verify missing service manager/keyring, registration failure,
+disable without stopping, app quit while tasks run, two clients reusing one owner,
+remote browser authentication and app replacement with an old server still active.
+A successful compile or generated service definition is not sufficient. Signed
+installer/update replacement, live Tailscale Serve and two-computer use remain
+release smoke tests. The development tests never register a real service.
+
+On first opening the new desktop release, a separate update worker verifies the
+bundled server, announces maintenance, waits for editor saves and active tasks,
+and creates a complete stopped snapshot before replacement. It refreshes enabled
+login registration and removes retired staged binaries only after readiness and
+identity/hash checks. Test interrupted workers, failed replacement startup,
+service-refresh failure, deferred Windows cleanup and rollback from a completed
+snapshot with the matching release. Automatic downgrade is refused after newer
+DBs have been opened. Maintenance and recovery are described in
+[Server operations](server.md#drafts-backup-and-updates); do not run an older
+pre-protocol binary against migrated data.
+
 ## Paper compiler packaging
 
 Release and desktop CI jobs cache the prepared Tectonic and TinyTeX trees by

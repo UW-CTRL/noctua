@@ -2,11 +2,36 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Server & connection
+
+Connection, recovery and browser sign-in screens use the app’s light/dark colors,
+controls and UI typography. The desktop remembers the last connected app’s
+appearance on this device, so its local connection screen keeps that appearance
+even while the server is offline; first launch follows the system theme.
+Connection setup is a popup with **Choose → Connect → Save** steps and **Back**
+navigation. **This computer** and **Desktop** tabs contain management controls,
+so they do not appear alongside the connection steps. Input is retained when
+going back; changing connection details requires a new test before saving.
+
+The native Settings menu opens the local connection manager, including while
+servers are offline. It selects this computer or another server, tests and retries
+connections, shows identity/version/status and errors/logs, and manages **this
+computer's** server and user-login auto-start. These local controls remain local
+when a remote server is selected. Start/stop/restart and login auto-start are
+separate actions; app exit and connection changes leave servers running.
+
+Connection selection is device-local; remote tokens use the OS secure store.
+AI CLI, API keys, Zotero and data-folder fields in the server UI belong to the
+server computer. Client uploads are separate browser file controls. A connection
+switch flushes every open editor first and is blocked by failed saves/conflicts.
+Read [Server and connections](server.md) for operations, backup and recovery.
+
 ## Personalize the workspace
 
 In **Settings → Appearance**, choose App, Notes, and Reader themes independently.
-The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork separately; Light is the
-default and the choice is applied on the next desktop launch.
+The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in the local connection manager’s Desktop
+section; Light is the default. The device-local choice applies immediately and
+is restored on launch. Server-hosted pages do not change native app artwork.
 
 Checkboxes and selected graph filters follow the app theme's accent color:
 brown in Light and purple in Dark, including when System changes appearance.
@@ -17,7 +42,15 @@ You can also adjust interface, note, and chat fonts and highlight colors.
 Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
-**Connections** holds the Semantic Scholar key and optional Zotero source and Google Scholar Inbox;
+**Connections** holds the Semantic Scholar key, optional Zotero source, and Google Scholar Inbox;
+choose the Zotero data folder containing `zotero.sqlite`. **Default PDF storage**
+defaults to **Link original**, which reads PDFs from their source paths without
+copying them. Choose **Copy to Noctua** and **Save default** for independent copies.
+The import dialog uses this preference and allows a per-import override, including
+when the source folder is set by `ZOTERO_DATA_DIR`. Save the source folder, then
+choose **Import from Zotero** to select and import content. After moving the source,
+update the folder and re-import to reconnect unchanged PDFs.
+
 **Research Assistant** holds provider and model settings. Its **Lineage** group
 contains **Summarize threads automatically** (enabled by default). This preference
 is remembered in this browser and takes effect immediately; turning it off cancels
@@ -48,7 +81,8 @@ Choose **Check now** to collect alerts immediately, or enable **Poll automatical
 and save. Polling defaults to every 15 minutes; the minimum is 15 minutes (maximum: 1440).
 Saving a shorter interval shows an error. Previously saved shorter intervals
 use 15 minutes after restart. Polling runs only while the Noctua
-server is running. Check now also works with automatic polling turned off.
+server is running. Active Scholar runs prevent a safe server stop or update
+until they finish. Check now also works with automatic polling turned off.
 The first scan considers all available messages from
 `scholaralerts-noreply@google.com`, including already-read alerts; subsequent
 scans skip completed messages. Mail is never marked read, labeled, moved, deleted,
@@ -113,7 +147,7 @@ To revoke Google's grant too, remove the app from your Google Account connection
 ## Skills
 
 Open **Settings → Skills**. **Global Agent Skills** reads installed packages in
-place. **Location** defaults to `~/.agents/skills`, the
+place on the server computer. **Location** defaults to `~/.agents/skills`, the
 [Vercel Skills CLI's shared global location](https://github.com/vercel-labs/skills/blob/main/src/installer.ts).
 Enter an existing absolute folder path (or a path beginning with `~/`) and choose
 **Save location** to use another folder. **Use default** restores the default.
@@ -193,17 +227,23 @@ last only for the backend session. Globally installed skills stay in
 the configured global location and are not included in Noctua backups or storage relocation.
 App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
+Linked Zotero PDFs remain outside Noctua storage and are not copied by backups or
+storage relocation. Their notes, annotations, and cached analysis stay in Noctua;
+keep the Zotero source available separately. Originals are read without modification.
 
 To move storage, choose an empty folder in **Settings → Data & Storage**, save,
-then quit all Noctua apps and servers and restart. Noctua copies the data and
+then use **Restart safely** after other tasks finish. Closing a desktop window
+alone does not stop the independent server. An enabled login definition follows
+the relocated data, and the source remains available as a backup. Noctua copies the data and
 keeps the original. Unset `NOCTUA_HOME` and `NOCTUA_NOTES` if they override the
 location you want to select.
 
 ## Updates
 
-Official desktop builds check for updates at startup. You can also use
-**Settings → About & Shortcuts → Check for updates**. Save work before installing.
-**Update to …** opens an in-app confirmation. Choose **Install update** to download,
+Use the local connection manager's **Desktop → Check desktop update**.
+Server-hosted web pages do not control the native updater. Official builds check
+at startup after restoring or retrying a saved connection. Save work before installing.
+**Install offered update** opens an in-app confirmation. Choose **Install update** to download,
 verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
 installation, use **Restart Noctua** when offered.
 The startup popup lists release highlights from your installed version through
@@ -216,3 +256,19 @@ Linux in-app updates require AppImage; use your package manager for other builds
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.
+
+## Independent server updates
+
+After the updated desktop opens, an existing local server is upgraded separately.
+Clients receive a maintenance notice and save open edits; active tasks finish
+before the server is stopped, backed up and replaced. Failed saves or a task wait
+timeout keep the old owner running. An enabled login service follows the verified
+replacement; auto-start is never installed implicitly. Previous staged executables
+are cleaned only after the new identity/version is verified and their references
+are released. Use **This computer → Update server** to retry and inspect progress.
+A default OS-user client profile permits one local server across data folders.
+If pending skill reviews block an update, use **Open running server · defer
+update** to resolve them on the compatible current server, then retry. Failed
+replacement startup can be retried from the same popup while the server is down.
+See [server backup and updates](server.md#drafts-backup-and-updates) for complete
+backup/restore and validation limits.

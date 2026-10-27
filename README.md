@@ -11,8 +11,10 @@ Noctua brings together citation graphs, a PDF reader, LaTeX and handwritten
 notes, and an optional assistant powered by Codex or Claude Code.
 
 Available for **macOS (Apple Silicon), Windows, and Linux**, or in your browser.
-Your library, PDFs, notes, and chats are stored locally. Online search uses
-Semantic Scholar; AI features use your assistant CLI and account.
+Desktop and browser interfaces connect to an independent Noctua server on this
+computer or another computer. The server stores your library, PDFs, notes and
+chats and runs your assistant CLI. It keeps running when the desktop app closes.
+Online search uses Semantic Scholar.
 
 [Get started](docs/getting-started.md) ·
 [Release Note](https://github.com/UW-CTRL/noctua/releases)
@@ -37,6 +39,7 @@ Semantic Scholar; AI features use your assistant CLI and account.
 | --- | --- |
 | Research and reading | [Research](docs/research.md) · [PDF reader](docs/reader.md) |
 | Writing and AI | [Notes](docs/notes.md) · [Research assistant](docs/assistant.md) · [AI prompts](docs/assistant.md#ai-prompts) |
+| Server | [Connections and server operations](docs/server.md) |
 | Settings and data | [Appearance, storage, and backups](docs/settings-and-data.md) |
 | Development | [Build](docs/development.md) · [CI](docs/ci.md) · [Releasing](docs/releases.md) |
 

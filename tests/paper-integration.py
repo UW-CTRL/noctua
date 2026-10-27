@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real compiler/API regression. Requires cargo build and both compiler setup scripts."""
 import gzip
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -81,21 +82,50 @@ def run(engine):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        env = dict(os.environ, NOCTUA_HOME=str(data), NOCTUA_PORT=str(port), NOCTUA_NO_OPEN='1', PATH='')
+        env = {k:v for k,v in os.environ.items() if not k.startswith('NOCTUA_')}
+        env.update(NOCTUA_HOME=str(data), NOCTUA_CLIENT_HOME=str(Path(temp)/'client'), NOCTUA_PROFILE_HOME=str(Path(temp)/'profile'), NOCTUA_SERVICE_HOME=str(Path(temp)/'services'), NOCTUA_PORT=str(port), PATH='')
         binary = ROOT/'target'/'debug'/('noctua.exe' if os.name == 'nt' else 'noctua')
-        process = subprocess.Popen([str(binary)], cwd=temp, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        # Exercise compiler lookup from the independent server's durable resource
+        # tree, including the managed path layout on Windows.
+        staged=Path(temp)/'client'/'servers'/'paper-integration-release'
+        staged.mkdir(parents=True)
+        executable=staged/binary.name
+        shutil.copy2(binary,executable)
+        distribution='tectonic' if engine=='tectonic' else 'texlive'
+        print(f'{engine}: copying compiler resources', flush=True)
+        shutil.copytree(ROOT/'target'/distribution,staged/'paper-resources'/distribution,symlinks=True)
+        # Use the production stager, then retain foreground ownership for fixture
+        # cleanup. The compiler copy must work independently of its source tree.
+        print(f'{engine}: ensuring detached owner', flush=True)
+        prepared=subprocess.run([str(executable),'ensure'],cwd=temp,env=env,capture_output=True,text=True,timeout=180)
+        assert prepared.returncode==0,prepared.stderr
+        record=json.loads(prepared.stdout)
+        print(f'{engine}: stopping prepared owner', flush=True)
+        stopped=subprocess.run([str(executable),'stop'],cwd=temp,env=env,capture_output=True,text=True,timeout=60)
+        assert stopped.returncode==0,stopped.stderr
+        executable=Path(record['executable'])
+        shutil.rmtree(staged)
+        print(f'{engine}: starting staged foreground owner', flush=True)
+        server_log = (data/'server-test.log').open('wb')
+        process = subprocess.Popen([str(executable),'serve'], cwd=temp, env=env, stdout=server_log, stderr=server_log)
         base = f'http://127.0.0.1:{port}'
-        def api(path, body=None, raw=False):
-            request = urllib.request.Request(base+path, data=body if isinstance(body,bytes) else json.dumps(body).encode() if body is not None else None, headers={'Content-Type':'application/json'})
-            with urllib.request.urlopen(request, timeout=30) as response:
+        def api(path, body=None, raw=False, timeout=30):
+            request = urllib.request.Request(base+path, data=body if isinstance(body,bytes) else json.dumps(body).encode() if body is not None else None, headers={'Content-Type':'application/json','Authorization':'Bearer '+((data/'server-token').read_text() if (data/'server-token').exists() else '')})
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.read() if raw else json.load(response)
         try:
-            for _ in range(100):
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise AssertionError(f'Staged server exited: {process.returncode}')
                 try:
-                    api('/api/settings')
+                    api('/api/settings', timeout=1)
                     break
                 except (OSError, urllib.error.URLError):
                     time.sleep(.1)
+            else:
+                raise AssertionError('Staged server readiness timed out')
+            print(f'{engine}: staged server ready; exercising paper API', flush=True)
             target = api('/api/library/folder', {'parent':'L1','name':'Paper test'})['id']
             url = '/api/workspaces/'+target
             manifest = api(url)
@@ -292,6 +322,7 @@ def run(engine):
             diagnostics = ROOT/'target/paper-diagnostics'/engine
             diagnostics.mkdir(parents=True, exist_ok=True)
             (diagnostics/'failure.txt').write_text(traceback.format_exc(), encoding='utf-8')
+            shutil.copyfile(data/'server-test.log', diagnostics/'server.log')
             for paper_dir in (data/'notes').glob('*/.workspace/paper'):
                 shutil.copytree(paper_dir, diagnostics/paper_dir.parents[1].name, dirs_exist_ok=True)
             raise
@@ -299,8 +330,10 @@ def run(engine):
             process.terminate()
             try: process.wait(timeout=10)
             except subprocess.TimeoutExpired: process.kill();process.wait()
+            server_log.close()
 
 if __name__=='__main__':
+    faulthandler.dump_traceback_later(90, repeat=True)
     failures = []
     for engine in ('tectonic','pdflatex'):
         print("Testing",engine,flush=True)

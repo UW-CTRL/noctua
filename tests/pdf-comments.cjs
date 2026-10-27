@@ -6,7 +6,7 @@ let server,calls=[],release,fail=false,defer=false;
 const drafts=new Map(),timers=new Map();let nextTimer=0;
 const context=vm.createContext({console,TextEncoder,Promise,enc:encodeURIComponent,PDF:{key:'paper',annotations:[]},
  document:{querySelectorAll:()=>[]},window:{addEventListener(){}},
- store:{get:k=>drafts.get(k),set:(k,v)=>drafts.set(k,v)},localStorage:{removeItem:k=>drafts.delete(k)},
+ store:{get:k=>drafts.get(k),set:(k,v)=>drafts.set(k,v),remove:k=>drafts.delete(k)},localStorage:{removeItem:k=>drafts.delete(k)},
  setTimeout:fn=>{timers.set(++nextTimer,fn);return nextTimer;},clearTimeout:id=>timers.delete(id),
  pdfSaves:new Set(),paperURL:key=>'/api/papers/'+key,pdfSave:p=>p,
  api:async()=>[{...server}],

@@ -4,6 +4,7 @@ import Foundation
 import JavaScriptCore
 let context = JSContext()!
 context.exceptionHandler = { _, error in print(error?.toString() ?? "JavaScript error"); exit(1) }
+let shared = try String(contentsOfFile: "web/update-dialogs.js", encoding: .utf8)
 let source = try String(contentsOfFile: "web/setup.js", encoding: .utf8)
 let start = source.range(of: "function updateSummary")!.lowerBound
 let end = source.range(of: "// First run stays short")!.lowerBound
@@ -17,7 +18,7 @@ const button={dataset:{updateAction:'check'},textContent:'Check for updates'};
 const section={querySelector(){return null;}};
 const msg=(_,text)=>messages.push(text);
 function assert(v,why){if(!v)throw new Error(why);}
-"""# + String(source[start..<end]))
+"""# + shared + String(source[start..<end]))
 context.evaluateScript(#"""
 // DOM confirmation is exercised in updates-ui.swift; keep state tests DOM-free.
 confirmUpdateInstall = async () => allow;

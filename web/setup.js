@@ -7,7 +7,7 @@ let settings = null;
 const keyNeeded = (s) => !s.key_source && !s.skipped;
 
 function keySection(s, firstRun) {
-  const intro = '<h2>Semantic Scholar API Key</h2><p>An optional API key for paper searches and citation lookups.</p>';
+  const intro = '<h2>Server Semantic Scholar API Key</h2><p>An optional API key for paper searches and citation lookups.</p>';
   if (s.key_source === 'env') {
     return `<section data-step="key">${intro}
       <p class="setup-current"><code>${esc(s.key_hint || '')}</code> · <code>NOCTUA_S2_KEY</code></p></section>`;
@@ -30,11 +30,13 @@ function keySection(s, firstRun) {
 }
 
 function zoteroSection(s, firstRun) {
-  const intro = '<h2>Import from Zotero</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const intro = '<h2>Import from Zotero on the server computer</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
+  const pdfPreference=`<label for="setup-zotero-pdf">Default PDF storage</label><div class="setup-row"><select id="setup-zotero-pdf"><option value="link"${s.zotero_pdf_mode!=='copy'?' selected':''}>Link original</option><option value="copy"${s.zotero_pdf_mode==='copy'?' selected':''}>Copy to Noctua</option></select><button type="button" data-act="save-zotero-pdf" data-icon="save">Save default</button></div><p>Link original reads PDFs from this Zotero folder without copying them. Change the folder and import again to reconnect moved files. You can override the storage mode for each import.</p>`;
   const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
       <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p>
+      ${pdfPreference}
       <p class="setup-msg" role="status"></p><div class="setup-actions">${importAction}</div></section>`;
   }
   const value = s.zotero_dir || s.zotero_suggested || '';
@@ -45,6 +47,7 @@ function zoteroSection(s, firstRun) {
       <input class="setup-input" id="setup-zotero" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}">
       ${s.desktop ? '<button data-act="browse" data-icon="folder-open">Browse…</button>' : ''}
     </div>
+    ${pdfPreference}
     <p class="setup-msg"></p>
     <div class="setup-actions">
       <button class="primary" data-act="save-zotero" data-icon="${firstRun ? 'folder-open' : 'save'}">${firstRun ? 'Use this folder' : 'Save folder'}</button>
@@ -138,14 +141,20 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
-  ['appearance', 'Appearance'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
+  ['appearance', 'Appearance'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
   ['connections', 'Connections'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
+
+function serverSection() {
+  const id=window.noctuaServerId || 'Unavailable';
+  const desktop=window.noctuaDesktopClient || window.top?.noctuaDesktopClient;
+  return `<section><h2>Server &amp; connection</h2><p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File upload controls choose files on this client.</p>${desktop ? '<p>Use Settings from the native menu or <a href="https://noctua.invalid/settings" target="_top">open the local connection manager</a>. It works while the server is offline, and provides connection tests, switching, local start/stop/restart, login auto-start and server logs.</p>' : '<p>To connect to another server in a browser, open its HTTPS address and sign in.</p>'}<p>In a browser, open another server’s HTTPS address and sign in there. Local process, service, credentials, app icons and desktop update controls are only available in the desktop app or local CLI. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
+}
 
 function skillSettingsSection() {
   return `<section data-step="skills"><h2>Skills</h2><p>Use / in chat to select an available skill for one message.</p>
     <div class="settings-group"><h3>Global Agent Skills</h3>
-      <p>Read global installations in place. The default location is ~/.agents/skills.</p>
+      <p>Read global installations on this server computer. The default location is ~/.agents/skills.</p>
       <label class="setting-field">Location<input class="setup-input" data-skill-location placeholder="~/.agents/skills" spellcheck="false"></label>
       <div class="setup-actions"><button type="button" data-skill-location-save data-icon="save">Save location</button><button type="button" data-skill-location-reset>Use default</button><button type="button" data-skill-reload data-icon="refresh-cw">Refresh</button></div>
       <div data-global-skill-list></div>
@@ -342,6 +351,7 @@ async function saveHighlightPalette(colors){
   if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
 }
 function appIconSettings() {
+  if (!settings?.desktop) return ''; // Native artwork is managed by the local connection screen.
   const selected = settings?.app_icon || 'light';
   const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
   return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App Icon</h3>
@@ -647,19 +657,7 @@ function dataSection(s) {
     <p class="setup-msg ok" role="status"></p></section>`;
 }
 
-function updateSummary(result) {
-  const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
-  const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
-  return `<p class="update-version">${esc(result.current_version || settings?.version || 'Current version')} → ${esc(result.version)}</p>` +
-    '<p class="update-history-hint">Release highlights, newest first. Open each version’s release notes for full details.</p>' +
-    releases.map(release => {
-      const changes = Array.isArray(release.changes) ? release.changes : [];
-      const items = changes.filter(group => group && typeof group === 'object').flatMap(group => (Array.isArray(group.items) ? group.items : []).slice(0, 2)
-        .map(item => `<li><strong>${Object.hasOwn(labels, group.kind) ? labels[group.kind] : 'Other'}:</strong> ${esc(String(item))}</li>`)).slice(0, 6);
-      return `<section class="update-release"><h4>Version ${esc(release.version)} <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(release.version)}" target="_blank" rel="noopener" aria-label="Full release notes for version ${esc(release.version)}">Release notes</a></h4>` +
-        (items.length ? `<ul>${items.join('')}</ul>` : '<p>See the full release notes for details.</p>') + '</section>';
-    }).join('') + `<p><a href="https://github.com/UW-CTRL/noctua/compare/v${encodeURIComponent(result.current_version || settings?.version || '')}...v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">All changes since your version</a> · <a href="https://github.com/UW-CTRL/noctua/releases/tag/v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Full release notes</a></p>`;
-}
+function updateSummary(result) { return NoctuaUpdateDialogs.summary(result, settings?.version); }
 
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
@@ -681,31 +679,7 @@ function aboutSection(s) {
 }
 
 // Browser confirm() is not reliable inside the desktop shell's tab webviews.
-function confirmUpdateInstall(version) {
-  if (document.querySelector('#app-update-confirm-dialog')) return Promise.resolve(false);
-  return new Promise(resolve => {
-    const previousFocus = document.activeElement;
-    const dialog = document.createElement('dialog');
-    dialog.id = 'app-update-confirm-dialog';
-    dialog.className = 'setup-card';
-    dialog.setAttribute('aria-labelledby', 'app-update-confirm-title');
-    dialog.innerHTML = `<h2 id="app-update-confirm-title">Install Noctua ${esc(version)}?</h2>
-      <p>Save your work before continuing. Noctua may close and restart during installation.</p>
-      <div class="setup-actions end"><button data-cancel>Cancel</button><button class="primary" data-confirm>Install update</button></div>`;
-    let confirmed = false;
-    dialog.addEventListener('close', () => {
-      dialog.remove();
-      if (previousFocus?.isConnected) previousFocus.focus();
-      resolve(confirmed);
-    }, { once: true });
-    dialog.querySelector('[data-cancel]').addEventListener('click', () => dialog.close());
-    dialog.querySelector('[data-confirm]').addEventListener('click', () => { confirmed = true; dialog.close(); });
-    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); });
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    dialog.querySelector('[data-cancel]').focus();
-  });
-}
+function confirmUpdateInstall(version) { return NoctuaUpdateDialogs.confirmInstall(version); }
 
 // The native process retains the checked release and serializes operations across windows.
 async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
@@ -791,6 +765,8 @@ function openSetup({ firstRun = false, tab } = {}) {
   el.innerHTML = `<div class="setup-card ${firstRun ? '' : 'settings-card'}" role="dialog" aria-modal="true" aria-labelledby="settings-title"></div>`;
   document.body.appendChild(el);
   const card = el.querySelector('.setup-card');
+  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & Connection: desktop Settings menu opens the local connection manager even while offline. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
+  el.prepend(context);
   let loginAbort = null;
   let assistantSaving = false;
   const close = () => {
@@ -889,11 +865,11 @@ function openSetup({ firstRun = false, tab } = {}) {
       card.querySelector('.setup-input')?.focus();
       return;
     }
-    const panels = { appearance: appearanceSection(), agent: agentSection(settings), skills: skillSettingsSection(),
+    const panels = { appearance: appearanceSection(), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
       connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
     mountScholarSettings(card.querySelector('[data-step="scholar"]'));
@@ -932,10 +908,15 @@ function openSetup({ firstRun = false, tab } = {}) {
     e.preventDefault();
     const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
-    const busy = (on) => section?.querySelectorAll('button, input').forEach((b) => { b.disabled = on; });
+    const busy = (on) => section?.querySelectorAll('button, input, select').forEach((b) => { b.disabled = on; });
     try {
       busy(true);
       switch (t.dataset.act) {
+        case 'reconnect-server': {
+          const current=await api('/api/server');
+          if(current.api_version!==1||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');
+          msg(section,`Connected to ${current.server_id}`,true);break;
+        }
         case 'update': await updateApp(t, section, msg); break;
         case 'agent-login': signIn(); break;
         case 'agent-check': await checkAgent(); break;
@@ -978,10 +959,11 @@ function openSetup({ firstRun = false, tab } = {}) {
           break;
         }
         case 'import-zotero':
-          msg(section, 'Importing Zotero collections and available PDFs…', true);
           await importZoteroLibrary();
-          msg(section, 'Import complete.', true);
           break;
+        case 'save-zotero-pdf':
+          await api('/api/settings/zotero-pdf',{pdf_mode:$('#setup-zotero-pdf').value});
+          toast('Zotero PDF default saved.');await next('zotero');break;
         case 'save-zotero': {
           const dir = $('#setup-zotero').value.trim();
           if (!dir) { msg(section, 'Enter the folder, or choose “I don’t use Zotero”.'); break; }

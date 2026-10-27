@@ -13,10 +13,11 @@ let handler = UpdateHandler(), config = WKWebViewConfiguration()
 config.websiteDataStore = .nonPersistent()
 config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 config.userContentController.add(handler, name: "result")
+let shared = try String(contentsOf: root.appendingPathComponent("web/update-dialogs.js"), encoding: .utf8)
 let source = try String(contentsOf: root.appendingPathComponent("web/setup.js"), encoding: .utf8)
 let start = source.range(of: "function updateSummary")!.lowerBound
 let end = source.range(of: "// First run stays short")!.lowerBound
-config.userContentController.addUserScript(WKUserScript(source: String(source[start..<end]), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+config.userContentController.addUserScript(WKUserScript(source: shared + String(source[start..<end]), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 // CI covers the minimum desktop window; optional dimensions exercise other sizes.
 let width = Double(CommandLine.arguments.dropFirst().first ?? "") ?? 820
 let height = Double(CommandLine.arguments.dropFirst(2).first ?? "") ?? 520

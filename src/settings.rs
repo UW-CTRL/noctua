@@ -40,6 +40,8 @@ pub struct Settings {
     pub s2_key_skipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zotero_dir: Option<String>,
+    #[serde(default)]
+    pub zotero_pdf_mode: crate::zotero::PdfMode,
     /// The user said they don't use Zotero.
     #[serde(default)]
     pub zotero_disabled: bool,
@@ -240,6 +242,7 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "key_hint": app.s2.key_hint(),
         "skipped": s.s2_key_skipped,
         "zotero_dir": zotero_dir(&s),
+        "zotero_pdf_mode": s.zotero_pdf_mode,
         "zotero_source": zotero_source,
         "zotero_disabled": s.zotero_disabled && !env_set("ZOTERO_DATA_DIR"),
         "zotero_suggested": zotero_suggestion(),
@@ -328,6 +331,15 @@ pub async fn skip_key(State(app): State<Arc<App>>) -> ApiResult {
 pub struct ZoteroBody {
     /// The Zotero data folder, or null for "I don't use Zotero".
     dir: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZoteroPdfBody { pub pdf_mode: crate::zotero::PdfMode }
+
+pub async fn set_zotero_pdf(State(app):State<Arc<App>>,Json(body):Json<ZoteroPdfBody>)->ApiResult {
+    update(&app,|s|s.zotero_pdf_mode=body.pdf_mode)?;
+    Ok(Json(json!({"zotero_pdf_mode":body.pdf_mode})))
 }
 
 pub async fn set_zotero(State(app): State<Arc<App>>, Json(b): Json<ZoteroBody>) -> ApiResult {
