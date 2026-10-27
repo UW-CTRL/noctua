@@ -10,7 +10,7 @@ let start = source.range(of: "function updateSummary")!.lowerBound
 let end = source.range(of: "// First run stays short")!.lowerBound
 context.evaluateScript(#"""
 const esc = s => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-const settings={version:'0.1.0'};
+const settings={version:'0.1.0'};let native=false;function isDesktopConnectionClient(){return native;}
 let allow=true, calls=[], messages=[], fail=false, status='available';
 const confirm = () => { throw new Error('Native confirmation must not be used'); };
 async function api(path,body){calls.push({path,body});if(fail)throw new Error('Network unavailable');return {status,version:'0.2.0'};}
@@ -25,6 +25,7 @@ confirmUpdateInstall = async () => allow;
 (async()=>{
   assert(!aboutSection({desktop:false}).includes('data-act="update"'),'browser app offers native updates');
   assert(aboutSection({desktop:true}).includes('Check for updates'),'desktop update button missing');
+  native=true;assert(aboutSection({desktop:false}).includes('data-client-section="desktop"'),'independent desktop must offer local app updates through general settings');native=false;
   const html=updateSummary({current_version:'0.1.0',version:'0.3.0',releases:[{version:'0.3.0',changes:[{kind:'fixes',items:['<img src=x onerror=alert(1)>']}]}]});
   assert(html.includes('0.1.0 → 0.3.0')&&html.includes('Fixed:'),'version range or category missing');
   assert(!html.includes('<img')&&html.includes('&lt;img'),'release highlight was not escaped');

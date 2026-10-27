@@ -18,14 +18,14 @@ controls and UI typography. The desktop remembers the last connected app’s
 appearance on this device, so its local connection screen keeps that appearance
 even while the server is offline; first launch follows the system theme.
 Connection setup is a popup with **Choose → Connect → Save** steps and **Back**
-navigation. **This computer** and **Desktop** tabs contain management controls,
-so they do not appear alongside the connection steps. Input is retained when
+navigation. Management controls are separate from this wizard. Input is retained when
 going back; changing connection details requires a new test before saving.
 
-In the desktop app, clicking **Settings → Server & connection** opens the local
-connection manager directly. If the section was restored when reopening Settings,
-choose **Open connection settings**. Keyboard users can press Enter or Space on
-the category; arrow keys move between sections without opening another window.
+In the desktop app, **Settings → Server & Connection** offers **Change connection**
+for the connection wizard and **Server management** for local start, stop, token,
+and login controls. Selecting the category stays inside general Settings; it does
+not open a second window automatically. First-run connection setup shows only
+**Choose → Connect → Save**, with no server-management or app-update tabs.
 In a browser, **Settings → Server & connection** offers **Server address** and
 **Authentication token** fields. Choose **Save & connect** and allow its pop-up.
 Noctua saves the current browser window's open editors and chat drafts, signs in
@@ -40,14 +40,14 @@ HTTP is supported only for loopback addresses. Both servers must have this
 browser connection feature. Local process controls remain desktop-only; token viewing is also available
 in authenticated localhost browser sessions as described below. Tokens are not put in URLs or browser storage.
 
-The native Settings menu also opens the local connection manager, including while
-servers are offline. It selects this computer or another server, tests and retries
-connections, shows identity/version/status and errors/logs, and manages **this
-computer's** server and user-login auto-start. These local controls remain local
+The native Settings menu opens general Settings while connected and local management
+while no library window is open. General Settings links to connection setup, local
+server management, and app updates. Server management shows identity, status,
+errors/logs, authentication token and user-login auto-start for **this computer**. These local controls remain local
 when a remote server is selected. Start/stop/restart and login auto-start are
 separate actions; app exit and connection changes leave servers running.
 
-In the desktop connection manager, open **This computer → Authentication token**
+In the desktop connection manager, open **Settings → Server & Connection → Server management → Authentication token**
 and choose **Show token** or **Copy token**. The token is hidden initially;
 **Hide token**, leaving the tab or closing the dialog clears it from the field.
 Copy works while the token stays hidden and replaces the system clipboard.
@@ -62,14 +62,18 @@ Connection selection is device-local; remote tokens use the OS secure store.
 AI CLI, API keys, Zotero and data-folder fields in the server UI belong to the
 server computer. Client uploads are separate browser file controls. A connection
 switch flushes every open editor first and is blocked by failed saves/conflicts.
+If an older server blocks startup, **Previous server detected** explains how to
+save work, quit the older app or stop its terminal server, and retry. Supported
+servers on the same data folder upgrade automatically after editors save and
+active tasks finish. A server on another folder is preserved and needs an explicit
+choice; Noctua never deletes locks or force-kills it.
 Read [Server and connections](server.md) for operations, backup and recovery.
 
 ## Personalize the workspace
 
 In **Settings → Appearance**, choose App, Notes, and Reader themes independently.
-The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in the local connection manager’s Desktop
-section; Light is the default. The device-local choice applies immediately and
-is restored on launch. Server-hosted pages do not change native app artwork.
+The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in **Settings → Appearance → App Icon**; Light is the default. The device-local choice applies immediately and
+is restored on launch, independently of the connected server.
 
 Checkboxes and selected graph filters follow the app theme's accent color:
 brown in Light and purple in Dark, including when System changes appearance.
@@ -278,9 +282,12 @@ location you want to select.
 
 ## Updates
 
-Use the local connection manager's **Desktop → Check desktop update**.
+Open **Settings → About & Shortcuts → App updates**, then choose **Check desktop update**.
 Server-hosted web pages do not control the native updater. Official builds check
 at startup after restoring or retrying a saved connection. Save work before installing.
+**Install offered update** is enabled only when a newer version is available.
+**Restart updated app** is enabled only after installation succeeds. Both stay
+disabled before checking or when the app is current.
 **Install offered update** opens an in-app confirmation. Choose **Install update** to download,
 verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
 installation, use **Restart Noctua** when offered.
@@ -303,7 +310,7 @@ before the server is stopped, backed up and replaced. Failed saves or a task wai
 timeout keep the old owner running. An enabled login service follows the verified
 replacement; auto-start is never installed implicitly. Previous staged executables
 are cleaned only after the new identity/version is verified and their references
-are released. Use **This computer → Update server** to retry and inspect progress.
+are released. Use **Settings → Server & Connection → Server management → Update server** to retry and inspect progress.
 A default OS-user client profile permits one local server across data folders.
 If pending skill reviews block an update, use **Open running server · defer
 update** to resolve them on the compatible current server, then retry. Failed

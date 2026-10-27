@@ -204,7 +204,11 @@ window.noctuaShell = {
     else if (name === 'nextTab') step(1);
     else if (name === 'prevTab') step(-1);
     else if (name === 'reload') active?.frame.contentWindow.location.reload();
-    else if (name === 'settings') active?.frame.contentWindow.openSetup?.({ firstRun: false });
+    else if (name === 'settings') {
+      const open=active?.frame.contentWindow.openSetup;
+      if(open)open({firstRun:false});
+      else if(window.noctuaDesktopClient)location.href='https://noctua.invalid/settings?section=local';
+    }
   },
 };
 

@@ -19,7 +19,8 @@ Changing the mode, address or token requires another connection test. Only
 **Save & connect** commits a new connection; a failed test or save keeps the popup
 available. **Close** returns to the connected library, or leaves an **Open
 connection settings** button on the local launcher when no library is open.
-Server controls and desktop options are separate popup tabs.
+Server management and app updates are accessed separately from general Settings.
+The first-run wizard contains only connection setup.
 
 Choose **Use this computer** to validate and reuse an existing server, or
 start a detached background process when none owns the data. Validation checks
@@ -44,8 +45,8 @@ unlocked). Storage errors leave the connection manager available. Resetting the
 connection selection does not delete research data or remove credentials from
 the OS keyring. Credentials never belong in URLs.
 
-Use the native **Settings** menu to reopen the manager at any time, including
-while disconnected. Settings → **Server & connection** in the web UI shows the
+Use the native **Settings** menu for general Settings while connected.
+When no library window is open, it opens local management so recovery remains available. Settings → **Server & connection** in the web UI shows the
 server origin, identifier and version, and offers a connection test. In a browser,
 connect to another server by opening that server's HTTPS address and signing in;
 OS service and process controls are restricted to the local desktop screen/CLI.
@@ -110,6 +111,29 @@ data stays in its configured folder. Stale records are replaced only after the
 ownership lock proves no server is using the data. A live unavailable or
 incompatible owner is never replaced automatically.
 
+## Upgrading an already running server
+
+When this computer already runs an authenticated server for the selected data
+folder, the desktop checks its update capability. Compatible servers use the
+coordinated update described below: editors save, tasks finish, the stopped data
+is backed up, and the replacement is verified before reconnecting.
+
+If an older server cannot coordinate updates, connection setup and Server
+management show **Previous server detected**, the available version/address/data
+folder, and shutdown instructions. Save work in older windows and let jobs finish.
+Quit the older desktop app completely, or press Ctrl+C in the terminal that
+originally started its server. A compatible independent server in another data
+folder also shows a safe-stop command using its matching executable and folder.
+Run that command only after saving work; its server refuses to stop while tasks
+or pending reviews remain. Choose **Retry connection** after stopping it.
+
+Another data folder is never selected, stopped, or upgraded automatically. Reuse
+its address explicitly if that is the library you want. Unverified owners and
+storage/update operations are left alone; wait for those operations to finish or
+use the older app's own shutdown path. No lock file is deleted and no process is
+force-killed. Older servers without identity metadata may show only the affected
+folder, since a process ID or listening port does not prove ownership.
+
 ## Login auto-start
 
 macOS uses a per-user LaunchAgent, Linux uses a `systemd --user` unit, and Windows
@@ -157,7 +181,7 @@ Host; additional origins must be HTTPS origins with no user info, path, query or
 fragment. Authentication applies locally as well as remotely.
 
 To view or copy this computer's token without a terminal, use the desktop
-connection manager's **This computer → Authentication token**, using the eye and copy icons inside the field.
+**Settings → Server & Connection → Server management → Authentication token**, using the eye and copy icons inside the field.
 The field is cleared when hidden, when leaving the tab and when closing the
 dialog. Copying leaves the token on the system clipboard until replaced; it is
 not automatically cleared. Authenticated localhost browser sessions can also show/copy the current token
@@ -215,7 +239,7 @@ server copy was fetched successfully. See [Notes](notes.md).
 After opening a new desktop release, an existing local server is upgraded by an
 independent worker. This also applies to a local server left running while the
 client uses a remote connection; remote servers are updated on their own computer.
-A remote-only client never starts a local data server. **This computer → Update
+A remote-only client never starts a local data server. **Settings → Server & Connection → Server management → Update
 server** retries an update or deferred cleanup. Update progress/errors appear in
 the local connection popup, including while the data server is stopped.
 

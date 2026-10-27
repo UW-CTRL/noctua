@@ -61,12 +61,24 @@ const apply=(f,theme)=>{const w=f.contentWindow;w.localStorage.setItem('noctua.t
  assert(offline.contentWindow.getComputedStyle(banner).backgroundColor==='rgb(27, 29, 34)','offline banner ignores dark palette');
  const nativeSource=await(await fetch('../app/src/appearance.rs')).text();
  const injection=nativeSource.split('pub const CONTENT_SCRIPT: &str = r#"')[1].split('"#;')[0];
- const handlers={},fakeWindow={addEventListener:(event,callback)=>handlers[event]=callback},location={pathname:'/shell'};fakeWindow.top=fakeWindow;
+ const handlers={},fakeWindow={addEventListener:(event,callback)=>handlers[event]=callback,removeEventListener:event=>delete handlers[event]},location={pathname:'/shell'};fakeWindow.top=fakeWindow;
  const prefs=new Map([['noctua.theme','dark'],['noctua.font.ui',JSON.stringify({id:'georgia',name:''})],['noctua.font.uiSize','16']]);
  Function('window','location','localStorage',injection)(fakeWindow,location,{getItem:key=>prefs.get(key)});
  handlers.DOMContentLoaded();
  const appearance=JSON.parse(new URL(location.href).searchParams.get('value'));
  assert(appearance.theme==='dark'&&appearance.font_id==='georgia'&&appearance.font_size===16,'native appearance callback omitted theme or typography');
+ let iconPromise=fakeWindow.noctuaSetAppIcon('dark');
+ let request=new URL(location.href).searchParams.get('request');
+ assert(new URL(location.href).pathname==='/app-icon'&&new URL(location.href).searchParams.get('icon')==='dark','native icon callback must contain only the cosmetic choice');
+ handlers['noctua-app-icon']({detail:{request:'unrelated',icon:'light'}});
+ assert(handlers['noctua-app-icon'],'unrelated native reply consumed pending icon request');
+ handlers['noctua-app-icon']({detail:{request,icon:'dark'}});
+ assert((await iconPromise).app_icon==='dark'&&!handlers['noctua-app-icon'],'native icon acknowledgment did not resolve/clean up');
+ iconPromise=fakeWindow.noctuaSetAppIcon('light');request=new URL(location.href).searchParams.get('request');
+ handlers['noctua-app-icon']({detail:{request,error:'Cannot save icon'}});
+ let iconError='';try{await iconPromise;}catch(error){iconError=error.message;}
+ assert(iconError==='Cannot save icon'&&!handlers['noctua-app-icon'],'native icon save failure did not reject/clean up');
+ let invalid=false;try{await fakeWindow.noctuaSetAppIcon('stop');}catch{invalid=true;}assert(invalid,'native cosmetic channel accepted a non-icon command');
  const result='PASS: shared light/dark/system palettes, live typography, narrow layout, offline recovery, browser login, loading page, status banner and bounded native appearance channel';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
 }catch(error){const result='FAIL: '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}})();
 </script>

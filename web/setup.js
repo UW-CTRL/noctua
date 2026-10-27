@@ -149,9 +149,9 @@ function isDesktopConnectionClient() {
   try { return !!(window.noctuaDesktopClient || window.top?.noctuaDesktopClient); }
   catch { return false; }
 }
-function openServerConnectionSettings() {
+function openServerConnectionSettings(section='connection') {
   if (!isDesktopConnectionClient()) return false;
-  window.top.location.href = 'https://noctua.invalid/settings';
+  window.top.location.href = 'https://noctua.invalid/settings?section='+encodeURIComponent(section);
   return true;
 }
 
@@ -251,7 +251,7 @@ function mountSearchEngineOrder(section) {
 function serverSection() {
   const id=window.noctuaServerId || 'Unavailable';
   const desktop=isDesktopConnectionClient();
-  return `<section><h2>Server &amp; Connection</h2>${desktop ? '<p>Change servers, manage this computer’s server, or view and copy its authentication token in the connection settings window.</p><button class="primary" data-act="open-server-connection" data-icon="plug">Open connection settings</button>' : '<p>Connect this browser to another Noctua server. Allow the connection pop-up; your open edits are saved before switching.</p><label class="setting-field">Server address<input class="setup-input" id="browser-server-address" type="url" placeholder="https://computer.example.com" autocomplete="url"></label><label class="setting-field">Authentication token<input class="setup-input" id="browser-server-token" type="password" autocomplete="off" spellcheck="false"></label><button class="primary" data-act="browser-connect" data-icon="plug">Save &amp; connect</button><p class="hint">Use HTTPS for remote servers or HTTP for localhost. The target server must support browser connections. Tokens are sent only to the address you enter and are not saved in browser storage. Local process controls remain in the desktop app.</p>'}${browserServerStartHelp()}${browserLocalTokenSection()}<p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File uploads choose files on this client. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
+  return `<section><h2>Server &amp; Connection</h2>${desktop ? '<p>Choose a server connection or manage the server on this computer. Local server controls remain available when connected to a remote server.</p><button class="primary" data-act="open-server-connection" data-icon="plug">Change connection</button><button data-act="open-server-connection" data-client-section="local" data-icon="server">Server management</button>' : '<p>Connect this browser to another Noctua server. Allow the connection pop-up; your open edits are saved before switching.</p><label class="setting-field">Server address<input class="setup-input" id="browser-server-address" type="url" placeholder="https://computer.example.com" autocomplete="url"></label><label class="setting-field">Authentication token<input class="setup-input" id="browser-server-token" type="password" autocomplete="off" spellcheck="false"></label><button class="primary" data-act="browser-connect" data-icon="plug">Save &amp; connect</button><p class="hint">Use HTTPS for remote servers or HTTP for localhost. The target server must support browser connections. Tokens are sent only to the address you enter and are not saved in browser storage. Local process controls remain in the desktop app.</p>'}${browserServerStartHelp()}${browserLocalTokenSection()}<p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File uploads choose files on this client. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
 }
 
 function skillSettingsSection() {
@@ -454,16 +454,21 @@ async function saveHighlightPalette(colors){
   if(PDF.key&&typeof refreshPDFAnnotations==='function')await refreshPDFAnnotations();
 }
 function appIconSettings() {
-  if (!settings?.desktop) return ''; // Native artwork is managed by the local connection screen.
-  const selected = settings?.app_icon || 'light';
-  const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
+  if (!settings?.desktop && !isDesktopConnectionClient()) return '';
+  const selected = currentAppIcon();
+  const note = (settings?.desktop || isDesktopConnectionClient()) ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
   return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App Icon</h3>
     <p class="hint">${note}</p>
     <div class="settings-app-icons">${['light','dark'].map(icon => `<label class="settings-app-icon"><input type="radio" name="app-icon" value="${icon}" ${icon === selected ? 'checked' : ''}><img src="/app-icons/${icon}.svg" width="80" height="80" alt=""><span>${icon === 'dark' ? 'Dark' : 'Light'}</span></label>`).join('')}</div>
     </div>`;
 }
+function currentAppIcon() {
+  return isDesktopConnectionClient() ? window.top.noctuaAppIcon || 'light' : settings?.app_icon || 'light';
+}
 async function saveAppIcon(icon) {
-  const result = await api('/api/settings/app-icon', {app_icon: icon});
+  const result = isDesktopConnectionClient()
+    ? await window.top.noctuaSetAppIcon(icon)
+    : await api('/api/settings/app-icon', {app_icon: icon});
   settings.app_icon = result.app_icon;
 }
 function appearanceSection() {
@@ -767,7 +772,7 @@ function updateSummary(result) { return NoctuaUpdateDialogs.summary(result, sett
 function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc(s.version || 'unknown')} · ${s.desktop ? 'Desktop app' : 'Browser app'}</p>
-    ${s.desktop ? `<div class="settings-group" data-update>
+    ${isDesktopConnectionClient() ? '<div class="settings-group"><h3>App Updates</h3><p>Check and install updates for the app on this computer.</p><button data-act="open-server-connection" data-client-section="desktop" data-icon="refresh-cw">App updates</button></div>' : s.desktop ? `<div class="settings-group" data-update>
       <h3>App Updates</h3>
       <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
       <div class="update-summary" hidden></div>
@@ -870,7 +875,7 @@ function openSetup({ firstRun = false, tab } = {}) {
   el.innerHTML = `<div class="setup-card ${firstRun ? '' : 'settings-card'}" role="dialog" aria-modal="true" aria-labelledby="settings-title"></div>`;
   document.body.appendChild(el);
   const card = el.querySelector('.setup-card');
-  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & Connection: desktop Settings menu opens the local connection manager even while offline. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
+  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & Connection manages connections and this computer’s server. App updates are under About & Shortcuts. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
   el.prepend(context);
   let loginAbort = null;
   let assistantSaving = false;
@@ -1011,13 +1016,12 @@ function openSetup({ firstRun = false, tab } = {}) {
     const nav = e.target.closest('[data-settings-tab]');
     if (nav) {
       selectTab(nav.dataset.settingsTab);
-      if (nav.dataset.settingsTab === 'server') openServerConnectionSettings();
       return;
     }
     const t = e.target.closest('[data-act]');
     if (!t) return;
     e.preventDefault();
-    if (t.dataset.act === 'open-server-connection') { openServerConnectionSettings(); return; }
+    if (t.dataset.act === 'open-server-connection') { openServerConnectionSettings(t.dataset.clientSection||'connection'); return; }
     const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
     const busy = (on) => section?.querySelectorAll('button, input, select').forEach((b) => { b.disabled = on; });
@@ -1125,9 +1129,9 @@ function openSetup({ firstRun = false, tab } = {}) {
     if (e.target.name === 'app-icon') {
       const section = e.target.closest('section'), controls = [...section.querySelectorAll('input[name="app-icon"]')];
       controls.forEach(control => control.disabled = true);
-      try { await saveAppIcon(e.target.value); msg(section, settings.desktop ? 'App icon updated.' : 'Saved for the next desktop launch.', true); }
+      try { await saveAppIcon(e.target.value); msg(section, (settings.desktop || isDesktopConnectionClient()) ? 'App icon updated.' : 'Saved for the next desktop launch.', true); }
       catch (error) { msg(section, error.message); }
-      finally { controls.forEach(control => { control.disabled = false; control.checked = control.value === (settings.app_icon || 'light'); }); }
+      finally { controls.forEach(control => { control.disabled = false; control.checked = control.value === currentAppIcon(); }); }
       return;
     }
     const category=e.target.dataset?.highlightColor,paletteIndex=e.target.dataset?.highlightPalette;

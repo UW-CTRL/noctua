@@ -450,7 +450,10 @@ pub async fn run(
         return Ok(current);
     }
     if running {
-        anyhow::ensure!(current["capabilities"]["server_updates"]==true,"This server cannot coordinate updates. Notify clients and safely stop it with its matching CLI before upgrading; no process was stopped");
+        if current["capabilities"]["server_updates"]!=true {
+            if let Some(help)=crate::server_recovery::inspect(&data).await {anyhow::bail!("{}",crate::server_recovery::error(&help));}
+            anyhow::bail!("This server cannot coordinate updates. Save work and stop it with its matching CLI before retrying; no process was stopped.");
+        }
     }
     if std::env::var_os("NOCTUA_HOME").is_none() {
         anyhow::ensure!(
@@ -661,6 +664,9 @@ pub async fn ensure_current(executable: &Path, port: u16) -> Result<Value> {
     let mut current = match server::status_any(&data).await {
         Ok(value) => value,
         Err(_) => {
+            if let Some(help)=crate::server_recovery::inspect(&data).await {
+                anyhow::bail!("{}",crate::server_recovery::error(&help));
+            }
             if let Ok(record) = server::record(&data) {
                 let state = progress();
                 if record.executable_hash != next["executable_hash"].as_str().unwrap_or("")
@@ -747,7 +753,10 @@ pub async fn ensure_current(executable: &Path, port: u16) -> Result<Value> {
         }
         return Ok(current);
     }
-    anyhow::ensure!(current["capabilities"]["server_updates"]==true,"This older server cannot coordinate an update. Notify clients, finish tasks and stop it safely with its matching CLI, then retry the new release");
+    if current["capabilities"]["server_updates"]!=true {
+        if let Some(help)=crate::server_recovery::inspect(&data).await {anyhow::bail!("{}",crate::server_recovery::error(&help));}
+        anyhow::bail!("This older server cannot coordinate an update. Save work, stop it with its matching CLI, then retry. No process was stopped.");
+    }
     launch_and_wait(executable, port, &next, &data, false).await
 }
 pub async fn retry_current(executable: &Path, port: u16) -> Result<Value> {

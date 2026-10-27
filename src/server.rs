@@ -374,6 +374,9 @@ pub(crate) async fn ensure_locked(
     if let Ok(v) = status(coordination).await {
         return Ok(v);
     }
+    if let Some(help)=crate::server_recovery::inspect(coordination).await {
+        bail!("{}",crate::server_recovery::error(&help));
+    }
     drop(machine_lease()?);
     let lease = crate::storage::lease()?;
     crate::storage::exclusive_lease(&lease)?;
