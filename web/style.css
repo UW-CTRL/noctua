@@ -1708,6 +1708,15 @@ body.library-view:not(.notes-mode):not(.pdf-mode) #library-tags { display:flex; 
 .paper-info-section li span { min-width:0; overflow-wrap:anywhere; }
 .paper-info-tags ul { display:flex; flex-direction:column; gap:0; margin:8px 0 0 10px; padding:0; }
 .paper-info-tags>.hint { margin:8px 0 0 10px; }
+.paper-tag-editor { margin:10px 0 0 10px; }
+.paper-tag-input-row { display:flex; gap:6px; }
+.paper-tag-input-row input { flex:1; min-width:0; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--ink); font:inherit; font-size:calc(12px * var(--ui-font-scale)); }
+.paper-tag-input-row button { flex:none; }
+.paper-tag-suggestions { max-height:160px; overflow:auto; margin-top:4px; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+.paper-tag-suggestions[hidden] { display:none; }
+.paper-tag-suggestions button { display:block; width:100%; min-height:28px; padding:5px 8px; border:0; border-radius:0; background:transparent; color:var(--ink); text-align:left; font-weight:400; overflow-wrap:anywhere; }
+.paper-tag-suggestions button:is(:hover,:focus-visible) { background:var(--bg); color:var(--accent); }
+.paper-tag-error:empty { display:none; }
 .paper-collection-tools:has(.paper-info-section) { border-top:0; padding-top:0; margin-bottom:0; }
 
 .library-folder-menu { position:fixed; inset:auto; margin:0; padding:4px; width:190px; max-width:calc(100vw - 16px); border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--ink); box-shadow:0 6px 24px #0002; z-index:100; }

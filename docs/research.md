@@ -36,7 +36,11 @@ Switching to Graph or Lineage with no graph open builds a graph for the
 selected library or collection. Graph and Lineage share a single sidebar: a
 folder tree above selects the graph target, and **Papers** below
 lists the current graph papers with filtering, sorting, and selection. Choosing
-a folder opens its graph without hiding the tree or paper list. Drag the horizontal
+a folder opens its graph without hiding the tree or paper list. When you switch
+folders quickly, the graph opens after the selection settles. Graph data can be
+reused across collections that contain the same papers. Paper info displays the
+abstract already available in the selected record without fetching it on selection.
+Drag the horizontal
 boundary to resize the folder and paper areas; the height is remembered and shared
 between Graph and Lineage. The folder area starts at 440 pixels, capped at 65% of
 the sidebar height to leave room for the lower list. The focused boundary also supports Up/Down and Home/End;
@@ -129,9 +133,12 @@ Command+Z/Ctrl+Z while the paper list is focused restores the
 last deletion. Linked external PDFs and collection project files are preserved.
 
 Paper info has collapsible **Libraries and Collections** and **Tags** sections.
+It shows the abstract saved in the Library; selecting a paper does not fetch a missing abstract.
 The library and assigned collection paths have distinct icons; the Tags heading
 shows the count and each tag appears on its own row. Empty tags show **No tags**.
-The display refreshes after editing tags or applying bulk tag changes.
+Add a tag directly in Paper info by typing its name and pressing Enter or the
+add button. Matching tags from the entire Library appear below the field; select
+one to add it. The display refreshes after editing tags or applying bulk tag changes.
 **Libraries and Collections** lists the library and direct collection assignments with parent paths. This shows direct
 assignments, independent of the include-subfolders setting; a paper with none
 shows the library with **No collection assigned**. Membership changes refresh the list.

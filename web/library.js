@@ -65,6 +65,7 @@ function libraryPaperActions(el,it) {
   const tags=document.createElement('details');tags.open=true;tags.className='paper-info-section paper-info-tags';tags.setAttribute('aria-label','Paper tags');
   const values=[...new Set((it.tags||[]).filter(tag=>typeof tag==='string'&&tag.trim()))];
   tags.innerHTML=`<summary>${paperInfoIcon('tag')}<span>${values.length} Tags</span>${paperInfoIcon('chevron')}</summary>`+(values.length?'<ul>'+values.map(tag=>`<li>${paperInfoIcon('tag')}<span>${esc(tag)}</span></li>`).join('')+'</ul>':'<p class="hint">No tags</p>');membership.after(tags);
+  addPaperTagEditor(tags,it,values);
 
   const label=document.createElement('label');label.className='paper-collection-label';label.htmlFor='paper-collection-target';label.textContent='Collection';
   const row=document.createElement('div');row.className='paper-collection-row';
@@ -73,6 +74,52 @@ function libraryPaperActions(el,it) {
   button('Add to collection',async()=>{await api(paperURL(it.key)+'/membership',{target:select.value});await loadCollections();await loadLibItems();await renderPaperCollections(assigned,it.key);},{iconOnly:true,parent:row});
   const remove=button('Remove from collection',async()=>{const target=select.value;if(target==='L1')return;await api(paperURL(it.key)+'/membership',{target,remove:true});await loadCollections();await loadLibItems();await renderPaperCollections(assigned,it.key);},{iconOnly:true,parent:row});remove.className='paper-remove-action';
   const syncRemove=()=>{remove.disabled=select.value==='L1';remove.title=remove.disabled?'Library always contains every paper':`Remove from ${targetName(select.value)||'selected collection'}`;};select.addEventListener('change',syncRemove);syncRemove();
+}
+function addPaperTagEditor(section,paper,assigned){
+  const form=document.createElement('form');form.className='paper-tag-editor';
+  form.innerHTML='<div class="paper-tag-input-row"><input type="text" aria-label="Add tag" placeholder="Add a tag" autocomplete="off"><button type="submit" data-icon="plus" aria-label="Add tag" title="Add tag" data-icon-only> Add </button></div><div class="paper-tag-suggestions" aria-label="Existing tags" hidden></div><p class="paper-tag-error" role="alert"></p>';
+  section.append(form);
+  const input=form.querySelector('input'),list=form.querySelector('.paper-tag-suggestions'),button=form.querySelector('button'),error=form.querySelector('.paper-tag-error');
+  let existing=[],loaded=false,loading=null;
+  const render=()=>{
+    const q=input.value.trim().toLocaleLowerCase();
+    const matches=existing.filter(tag=>!assigned.includes(tag)&&tag.toLocaleLowerCase().includes(q));
+    list.replaceChildren();
+    for(const tag of matches){const choice=document.createElement('button');choice.type='button';choice.textContent=tag;choice.addEventListener('click',()=>save(tag));list.append(choice);}
+    list.hidden=!matches.length||document.activeElement!==input;
+  };
+  input.addEventListener('focus',async()=>{
+    if(!loaded){
+      if(!loading)loading=api('/api/library/items?target=L1').then(items=>{existing=[...libraryTagCounts(items).keys()].sort((a,b)=>a.localeCompare(b));loaded=true;}).catch(e=>{error.textContent=e.message;}).finally(()=>{loading=null;});
+      await loading;
+    }
+    render();
+  });
+  input.addEventListener('input',()=>{error.textContent='';render();});
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&!list.hidden){e.preventDefault();e.stopPropagation();list.hidden=true;}
+    else if(e.key==='ArrowDown'&&!list.hidden){e.preventDefault();list.querySelector('button')?.focus();}
+  });
+  list.addEventListener('keydown',e=>{
+    const choices=[...list.querySelectorAll('button')],index=choices.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();(choices[index+(e.key==='ArrowDown'?1:-1)]||input).focus();}
+    else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();input.focus();list.hidden=true;}
+  });
+  form.addEventListener('focusout',()=>setTimeout(()=>{if(!form.contains(document.activeElement))list.hidden=true;},0));
+  async function save(value){
+    const tag=value.trim();if(!tag||button.disabled)return;
+    button.disabled=true;error.textContent='';
+    try{
+      const current=await api(paperURL(paper.key));
+      const tags=[...new Set([...(current.tags||[]),tag])];
+      const saved=tags.length===(current.tags||[]).length?current:await libraryRequest(paperURL(paper.key),'PUT',{revision:current.revision,tags});
+      if(lib.detail?.key===paper.key)lib.detail=saved;
+      if(typeof PDF!=='undefined'&&PDF.paper?.key===paper.key)PDF.paper=saved;
+      await loadLibItems();
+      if(lib.detail?.key===paper.key||(typeof PDF!=='undefined'&&PDF.paper?.key===paper.key))renderDetails();
+    }catch(e){error.textContent=e.message;button.disabled=false;}
+  }
+  form.addEventListener('submit',e=>{e.preventDefault();save(input.value);});
 }
 async function editLibraryPaper(key){
   const p=await api(paperURL(key));const dialog=document.createElement('dialog');dialog.className='paper-editor';
