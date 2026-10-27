@@ -683,9 +683,12 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
     let security = (hosts, app.runtime.clone());
     Router::new()
         .route("/api/server", get(server_identity))
+        .route("/api/server/token", post(||async{StatusCode::FORBIDDEN}))
         .route("/api/server/stop", post(server_stop))
         .route("/api/server/update", post(server_update_control))
         .route("/api/server/update/ack", post(server_update_ack))
+        .route("/browser-connect", get(||async{asset(include_str!("../web/browser-connect.html"),"text/html; charset=utf-8")}))
+        .route("/browser-connect.js", get(||async{asset(include_str!("../web/browser-connect.js"),"text/javascript; charset=utf-8")}))
         .route("/auth/login", post(||async{StatusCode::UNAUTHORIZED}))
         .route("/drafts.js", get(||async{asset(include_str!("../web/drafts.js"),"text/javascript; charset=utf-8")}))
         .route("/connection.js", get(||async{asset(include_str!("../web/connection.js"),"text/javascript; charset=utf-8")}))

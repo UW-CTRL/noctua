@@ -183,7 +183,6 @@
         <div id="chat-files" class="chat-file-list chat-file-drafts" aria-live="polite" hidden></div>
         <form id="chat-form" class="chat-form">
           <input id="chat-file-input" type="file" multiple hidden>
-          <button id="chat-attach" type="button" data-icon="paperclip" data-icon-only aria-label="Attach files" title="Attach files"></button>
           <div id="skill-picker" class="skill-picker" role="listbox" aria-label="Available skills" hidden></div>
           <textarea id="chat-input" role="combobox" aria-autocomplete="list" aria-controls="skill-picker" aria-expanded="false" rows="2" placeholder="Ask a question… Type @ to attach papers, notes, files, or folders."></textarea>
           <button type="submit" id="chat-send" class="primary" data-icon="send" aria-label="Send" title="Send" data-icon-only>Send</button>
@@ -191,6 +190,7 @@
         <div class="chat-foot">
           <button type="button" id="chat-mode" class="chat-mode" title="Click or press Shift+Tab in the chat box to change mode"></button>
           <span>shift+tab to cycle</span>
+          <button id="chat-attach" type="button" data-icon="paperclip" data-icon-only aria-label="Attach files" title="Attach files"></button>
         </div>
       </div>
     </aside>
@@ -223,6 +223,7 @@
   <script src="/pdf-objects.js"></script>
   <script src="/pdf.js"></script>
   <script src="/update-dialogs.js"></script>
+  <script src="/browser-connect.js"></script>
   <script src="/setup.js"></script>
   <script src="/select.js"></script>
 </body>

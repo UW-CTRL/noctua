@@ -142,13 +142,59 @@ function agentSection(s) {
 
 const SETTINGS_TABS = [
   ['appearance', 'Appearance'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
-  ['connections', 'Connections'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
+  ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
+
+function isDesktopConnectionClient() {
+  try { return !!(window.noctuaDesktopClient || window.top?.noctuaDesktopClient); }
+  catch { return false; }
+}
+function openServerConnectionSettings() {
+  if (!isDesktopConnectionClient()) return false;
+  window.top.location.href = 'https://noctua.invalid/settings';
+  return true;
+}
+
+function browserLocalTokenSection() {
+  if (isDesktopConnectionClient() || !['localhost','127.0.0.1'].includes(location.hostname) || location.protocol !== 'http:') return '';
+  return '<div class="settings-group"><h3>Current server token</h3><label class="setting-field">Authentication token<input class="setup-input" id="browser-local-token" type="password" readonly autocomplete="off" placeholder="Hidden until requested"></label><div class="setup-actions"><button data-act="show-browser-token" aria-controls="browser-local-token" aria-pressed="false">Show token</button><button data-act="copy-browser-token">Copy token</button></div><p class="hint">Anyone with this token can access this server. Copying replaces your clipboard.</p><p id="browser-token-status" role="status"></p></div>';
+}
+function clearBrowserLocalToken(root) {
+  const input=root.querySelector('#browser-local-token');
+  if(input){input.value='';input.type='password';}
+  const button=root.querySelector('[data-act="show-browser-token"]');
+  if(button){button.textContent='Show token';button.setAttribute('aria-pressed','false');}
+  const status=root.querySelector('#browser-token-status');if(status)status.textContent='';
+}
+async function useBrowserLocalToken(section, copy=false) {
+  const input=section.querySelector('#browser-local-token');
+  if(!copy&&input.type==='text'){clearBrowserLocalToken(section);return;}
+  const result=await api('/api/server/token',{});
+  if(!section.isConnected)return;
+  if(copy){
+    try { await navigator.clipboard.writeText(result.token); }
+    catch {
+      const field=document.createElement('textarea');field.value=result.token;field.style.position='fixed';field.style.opacity='0';section.appendChild(field);
+      try { field.select();if(!document.execCommand('copy'))throw Error('Copy was blocked. Show the token and copy it manually.'); }
+      finally { field.value='';field.remove(); }
+    }
+    section.querySelector('#browser-token-status').textContent='Token copied.';
+  }else{
+    input.value=result.token;input.type='text';
+    const button=section.querySelector('[data-act="show-browser-token"]');button.textContent='Hide token';button.setAttribute('aria-pressed','true');
+  }
+}
+
+function browserServerStartHelp() {
+  if(isDesktopConnectionClient())return '';
+  return `<details class="settings-group" id="browser-server-start-help"><summary>How to start a server</summary><p>On the computer that will host your library, open a terminal with the Noctua server executable installed. Run these commands (or use the full path to the executable):</p><pre><code>noctua ensure
+noctua token</code></pre><p><code>ensure</code> starts a background server or reuses one already running, and prints its address. <code>token</code> shows the authentication token. Enter that address and token above. Keep the token private.</p><p>A localhost address works only on the computer running the server. To connect from another computer, configure an HTTPS proxy and add its exact origin to the server’s <code>server-config.json</code>.</p><p>Check the running address with <code>noctua status</code>. To stop the server after saving your work, run <code>noctua stop</code>. Closing the browser leaves the server running.</p><p>The browser cannot start a stopped server. If this page will not load, start the server from its computer’s terminal or the desktop app’s connection settings.</p></details>`;
+}
 
 function serverSection() {
   const id=window.noctuaServerId || 'Unavailable';
-  const desktop=window.noctuaDesktopClient || window.top?.noctuaDesktopClient;
-  return `<section><h2>Server &amp; connection</h2><p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File upload controls choose files on this client.</p>${desktop ? '<p>Use Settings from the native menu or <a href="https://noctua.invalid/settings" target="_top">open the local connection manager</a>. It works while the server is offline, and provides connection tests, switching, local start/stop/restart, login auto-start and server logs.</p>' : '<p>To connect to another server in a browser, open its HTTPS address and sign in.</p>'}<p>In a browser, open another server’s HTTPS address and sign in there. Local process, service, credentials, app icons and desktop update controls are only available in the desktop app or local CLI. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
+  const desktop=isDesktopConnectionClient();
+  return `<section><h2>Server &amp; Connection</h2>${desktop ? '<p>Change servers, manage this computer’s server, or view and copy its authentication token in the connection settings window.</p><button class="primary" data-act="open-server-connection" data-icon="plug">Open connection settings</button>' : '<p>Connect this browser to another Noctua server. Allow the connection pop-up; your open edits are saved before switching.</p><label class="setting-field">Server address<input class="setup-input" id="browser-server-address" type="url" placeholder="https://computer.example.com" autocomplete="url"></label><label class="setting-field">Authentication token<input class="setup-input" id="browser-server-token" type="password" autocomplete="off" spellcheck="false"></label><button class="primary" data-act="browser-connect" data-icon="plug">Save &amp; connect</button><p class="hint">Use HTTPS for remote servers or HTTP for localhost. The target server must support browser connections. Tokens are sent only to the address you enter and are not saved in browser storage. Local process controls remain in the desktop app.</p>'}${browserServerStartHelp()}${browserLocalTokenSection()}<p>Address: <code>${esc(location.origin)}</code><br>Server identifier: <code>${esc(id)}</code><br>Server version: ${esc(settings?.version || 'unknown')}</p><p>AI CLI, API credentials, Zotero and data paths belong to this server computer. File uploads choose files on this client. Closing this interface leaves server tasks running.</p><button data-act="reconnect-server">Test / reconnect this server</button><p class="setup-msg" role="status"></p></section>`;
 }
 
 function skillSettingsSection() {
@@ -770,7 +816,7 @@ function openSetup({ firstRun = false, tab } = {}) {
   let loginAbort = null;
   let assistantSaving = false;
   const close = () => {
-    loginAbort?.abort(); el.remove();
+    loginAbort?.abort(); clearBrowserLocalToken(card); el.remove();
     if (previousFocus?.isConnected) previousFocus.focus();
   };
   el.noctuaClose = close;
@@ -850,6 +896,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     }
   };
   const selectTab = (id, focus = false) => {
+    clearBrowserLocalToken(card);
     if (!SETTINGS_TABS.some(([key]) => key === id)) id = 'appearance';
     for (const button of card.querySelectorAll('[data-settings-tab]')) {
       const active = button.dataset.settingsTab === id;
@@ -902,16 +949,47 @@ function openSetup({ firstRun = false, tab } = {}) {
       colorChoice.dispatchEvent(new Event('change',{bubbles:true}));return;
     }
     const nav = e.target.closest('[data-settings-tab]');
-    if (nav) { selectTab(nav.dataset.settingsTab); return; }
+    if (nav) {
+      selectTab(nav.dataset.settingsTab);
+      if (nav.dataset.settingsTab === 'server') openServerConnectionSettings();
+      return;
+    }
     const t = e.target.closest('[data-act]');
     if (!t) return;
     e.preventDefault();
+    if (t.dataset.act === 'open-server-connection') { openServerConnectionSettings(); return; }
     const section = t.closest('[data-update], section');
     // Keep navigation and Close available during network requests.
     const busy = (on) => section?.querySelectorAll('button, input, select').forEach((b) => { b.disabled = on; });
     try {
       busy(true);
       switch (t.dataset.act) {
+        case 'show-browser-token':
+        case 'copy-browser-token': {
+          try { await useBrowserLocalToken(section,t.dataset.act==='copy-browser-token'); }
+          catch(error){clearBrowserLocalToken(section);throw error;}
+          break;
+        }
+        case 'browser-connect': {
+          const input=section.querySelector('#browser-server-token');
+          const token=input.value;input.value='';
+          const shell=window.top.noctuaShell;
+          let paused=false;
+          try {
+            const target=await NoctuaBrowserConnection.connect(section.querySelector('#browser-server-address').value,token,async()=>{
+              paused=true;
+              if(shell){shell.beginSwitch();await shell.flush();}
+              else {
+                window.prepareEditorSwitch?.();document.body.inert=true;
+                window.preserveChatDraft?.();await window.saveWorkspaceFile?.();await window.flushNoteEdits?.();await window.flushPDF?.();
+              }
+            });
+            window.top.location.assign(target);
+          } finally {
+            if(paused){if(shell)shell.endSwitch();else document.body.inert=false;}
+          }
+          break;
+        }
         case 'reconnect-server': {
           const current=await api('/api/server');
           if(current.api_version!==1||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');

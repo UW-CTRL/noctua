@@ -41,7 +41,8 @@ Choose the mode with the badge below the composer.
 ## Chat attachments
 
 Drag files onto the chat input, paste clipboard files or screenshots with
-Ctrl+V (Cmd+V on macOS), or choose **Attach files** (paperclip). Clipboard file
+Ctrl+V (Cmd+V on macOS), or choose **Attach files** (paperclip) at the right of the toolbar below the
+input. The input uses the full composer width. Clipboard file
 pasting depends on the browser and operating system; use drag-and-drop or the
 file picker if copied files are not available to the browser. Ordinary text
 pasting continues to insert text.

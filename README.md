@@ -23,6 +23,14 @@ Online search uses Semantic Scholar.
 
 *[Scripted demo](docs/pr-3.md) of source-aware chat attachments.*
 
+## Use in a browser
+
+No desktop installation is needed on the computer you browse from. Open a running
+Noctua server’s address and sign in with its authentication token. A server must
+already be running on this computer or another computer; Noctua does not provide
+a hosted service. See [Browser quick start](docs/getting-started.md#use-in-a-browser-without-the-desktop-app)
+for connecting and starting your own server.
+
 ## Main Features
 
 - **Explore:** follow citation networks and research threads over time.

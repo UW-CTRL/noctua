@@ -24,6 +24,41 @@ and open Noctua. On Linux, make the AppImage executable before opening it.
 You can continue without a Semantic Scholar API key. AI and Zotero are optional;
 you do not need them to read local PDFs or write notes.
 
+## Use in a browser without the desktop app
+
+You do not need to install the Noctua desktop app on the computer you browse
+from. You do need a running Noctua server. Noctua does not provide a hosted
+service, and opening a browser alone does not start a server.
+
+If a server is already running, get its address and authentication token from
+its owner. Open that address in your browser, enter the token and choose
+**Connect**. Use the local address only on the server computer; another computer
+needs the server’s configured HTTPS address. No local AI CLI or API key is needed
+on a browser-only client.
+
+To host a server without installing the desktop app, [build the standalone
+server](development.md#run-and-build) on the computer that will store your library.
+With its executable available, run:
+
+```sh
+noctua ensure
+noctua token
+```
+
+Use the executable’s full path if it is not on your PATH: for a source build,
+`target/debug/noctua` on macOS/Linux or `target/debug/noctua.exe` on Windows.
+`ensure` starts or reuses a background server and prints its address; `token`
+prints the authentication token separately. Open the returned address and sign
+in. Keep the token private. Building the server requires the development tools
+in the build guide; only the browser client needs no Noctua installation.
+
+Once connected, **Settings → Server & connection** lets you enter another server’s
+address and token, with a **How to start a server** reminder. Authenticated
+localhost sessions also offer **Show token / Copy token** for the current server.
+Closing the browser leaves the server running; use `noctua stop` on the server
+computer to stop it after saving your work. For remote HTTPS setup and server
+operations, see [Server and connections](server.md).
+
 ## Read your first paper and write a note
 
 | Step | Action |
@@ -42,7 +77,7 @@ For more, see [Research](research.md), [PDF reader](reader.md), and [Notes](note
 
 ### Add a Semantic Scholar API key
 
-Enter a key in **Settings → Connections** for your own API access. Without one,
+Enter a key in **Settings → Integrations** for your own API access. Without one,
 online search uses a slower shared pool and may encounter rate limits.
 
 ### Connect an assistant (optional)
@@ -59,7 +94,7 @@ See [Research assistant](assistant.md) for capabilities, edit modes, and prompts
 
 ### Import from Zotero (optional)
 
-Set the Zotero data folder on the **server computer** in **Settings → Connections**, then choose
+Set the Zotero data folder on the **server computer** in **Settings → Integrations**, then choose
 **Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
 The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and PDF
 annotations. Collections and basic paper information are always copied. Cancel

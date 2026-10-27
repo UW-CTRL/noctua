@@ -160,7 +160,7 @@ pub async fn guard(
     if request.method() == Method::GET
         && matches!(
             path,
-            "/ui.css" | "/connection.css" | "/appearance.js" | "/fonts.js"
+            "/ui.css" | "/connection.css" | "/appearance.js" | "/fonts.js" | "/browser-connect" | "/browser-connect.js"
         )
     {
         return next.run(request).await;
@@ -235,6 +235,21 @@ pub async fn guard(
             return (StatusCode::CONFLICT,Json(json!({"error":"Server identity is required before saving. Reconnect to this server."}))).into_response();
         }
     }
+    if path == "/api/server/token" {
+        let local = host == format!("localhost:{}", runtime.owner.record.url.rsplit(':').next().unwrap_or(""))
+            || host == runtime.owner.record.url.trim_start_matches("http://");
+        let expected_origin = format!("http://{host}");
+        if request.method() != Method::POST || !local || !cookie
+            || origin != Some(expected_origin.as_str())
+            || request.headers().get("x-noctua-client").and_then(|v|v.to_str().ok()) != Some("1")
+            || request.headers().get("x-noctua-server").and_then(|v|v.to_str().ok()) != Some(runtime.owner.record.server_id.as_str()) {
+            return (StatusCode::FORBIDDEN, "Token access requires an authenticated local browser session").into_response();
+        }
+        return (
+            [(header::CACHE_CONTROL,"no-store"),(header::HeaderName::from_static("referrer-policy"),"no-referrer")],
+            Json(json!({"token":runtime.owner.token})),
+        ).into_response();
+    }
     let control = path == "/api/server/stop" || path == "/api/server/update";
     if control {
         if !bearer {
@@ -305,6 +320,49 @@ mod tests {
     use super::*;
     use axum::{body::Body, routing::post, Router};
     use tower::ServiceExt;
+    #[tokio::test]
+    async fn token_reveal_requires_local_cookie_origin_and_csrf_headers() {
+        let root=tempfile::tempdir().unwrap();
+        let owner=Owner::acquire(root.path(),"http://127.0.0.1:1").unwrap();
+        let runtime=Arc::new(Runtime::new(owner,vec!["localhost:1".into(),"remote.example".into()],vec!["http://localhost:1".into(),"https://remote.example".into()]));
+        let cookie=format!("{}={}",runtime.cookie_name(),runtime.session());
+        let router=Router::new().route("/api/server/token",post(||async{StatusCode::FORBIDDEN})).layer(axum::middleware::from_fn_with_state((Arc::new(vec![]),Some(runtime.clone())),guard));
+        for (host,origin,session,csrf,method,expected) in [
+            ("localhost:1","http://localhost:1",true,true,"POST",StatusCode::OK),
+            ("remote.example","https://remote.example",true,true,"POST",StatusCode::FORBIDDEN),
+            ("localhost:1","http://localhost:1",false,true,"POST",StatusCode::FORBIDDEN),
+            ("localhost:1","http://localhost:1",true,false,"POST",StatusCode::FORBIDDEN),
+            ("localhost:1","https://evil.example",true,true,"POST",StatusCode::FORBIDDEN),
+            ("localhost:1","http://localhost:1",true,true,"GET",StatusCode::FORBIDDEN),
+        ] {
+            let mut request=Request::builder().uri("/api/server/token").method(method).header("host",host).header("origin",origin).header("authorization",format!("Bearer {}",runtime.owner.token));
+            if session{request=request.header("cookie",&cookie);}
+            if csrf{request=request.header("x-noctua-client","1").header("x-noctua-server",&runtime.owner.record.server_id);}
+            let response=router.clone().oneshot(request.body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(response.status(),expected);
+            if expected==StatusCode::OK{assert_eq!(response.headers()[header::CACHE_CONTROL],"no-store");}
+        }
+    }
+    #[tokio::test]
+    async fn browser_connection_assets_do_not_expose_data_or_bypass_host_checks() {
+        let root = tempfile::tempdir().unwrap();
+        let owner = Owner::acquire(root.path(), "http://127.0.0.1:1").unwrap();
+        let runtime = Arc::new(Runtime::new(owner, vec!["127.0.0.1:1".into()], vec!["http://127.0.0.1:1".into()]));
+        let router = Router::new()
+            .route("/browser-connect", axum::routing::get(||async{"handoff"}))
+            .route("/browser-connect.js", axum::routing::get(||async{"script"}))
+            .route("/api/private", axum::routing::get(||async{"private"}))
+            .layer(axum::middleware::from_fn_with_state((Arc::new(vec![]), Some(runtime)), guard));
+        for (path, host, expected) in [
+            ("/browser-connect", "127.0.0.1:1", StatusCode::OK),
+            ("/browser-connect.js", "127.0.0.1:1", StatusCode::OK),
+            ("/api/private", "127.0.0.1:1", StatusCode::UNAUTHORIZED),
+            ("/browser-connect", "evil.example", StatusCode::FORBIDDEN),
+        ] {
+            let response=router.clone().oneshot(Request::builder().uri(path).header("host",host).body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(response.status(), expected);
+        }
+    }
     #[tokio::test]
     async fn lost_client_does_not_cancel_an_admitted_server_job() {
         let root =

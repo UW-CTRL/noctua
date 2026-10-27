@@ -28,6 +28,12 @@
 <section id="panel-local" class="connection-card" role="tabpanel" aria-labelledby="tab-local" hidden>
 <h2>This computer’s server</h2><p>These controls manage this computer, even when you connect to a remote server. Switching connections leaves the local server running.</p><p id="local-status" class="connection-status" role="status"></p>
 <div id="local-actions" class="connection-actions"><button data-action="start">Start</button><button data-action="stop">Stop safely</button><button data-action="restart">Restart safely</button><button data-action="update">Update server</button><button data-action="logs">Show server logs</button></div>
+<div class="connection-token">
+<label class="connection-field" for="local-token">Authentication token<input id="local-token" type="password" readonly autocomplete="off" spellcheck="false" placeholder="Hidden until requested" aria-describedby="local-token-help"></label>
+<div class="connection-actions"><button id="show-local-token" type="button" aria-controls="local-token" aria-pressed="false">Show token</button><button id="copy-local-token" type="button">Copy token</button></div>
+<small id="local-token-help">Use this computer’s token to connect from another device. Anyone with it can access this server. Copying replaces your clipboard.</small>
+<p id="local-token-status" class="connection-status" role="status"></p>
+</div>
 <p id="server-update-status" class="connection-status" role="status"></p>
 <button id="open-running-server" hidden>Open running server · defer update</button>
 <label class="connection-check"><input type="checkbox" id="autostart"> Start at user login</label><p id="service" class="connection-status"></p><small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running.</small><pre id="logs" aria-label="Server logs"></pre>
