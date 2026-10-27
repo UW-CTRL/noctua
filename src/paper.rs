@@ -187,13 +187,18 @@ fn directory_size(path:&FsPath)->u64 {std::fs::read_dir(path).into_iter().flatte
 fn automatic_bibliography_source(source:&str)->String{
     // Keep line numbers intact for SyncTeX. Only the disposable build input changes.
     let prefix=concat!(
-        r"\newif\ifnoctuabibused\newif\ifnoctuabibstyle",
+        r"\newif\ifnoctuabibused\newif\ifnoctuabibstyle\newif\ifnoctuacited",
+        r"\def\noctuatrackcitation#1{\ifcsname#1\endcsname\AddToHook{cmd/#1/before}{\global\noctuacitedtrue}\fi}",
         r"\let\noctuaoriginalstyle\bibliographystyle",
         r"\renewcommand{\bibliographystyle}[1]{\global\noctuabibstyletrue\noctuaoriginalstyle{#1}}",
-        r"\AtBeginDocument{\let\noctuaoriginalbib\bibliography",
-        r"\renewcommand{\bibliography}[1]{\ifnoctuabibused\else\global\noctuabibusedtrue",
-        r"\ifnoctuabibstyle\else\bibliographystyle{plain}\fi\noctuaoriginalbib{.noctua-project-references}\fi}}",
-        r"\AtEndDocument{\ifnoctuabibused\else\bibliography{}\fi}"
+        r"\AtBeginDocument{\noctuatrackcitation{cite}\noctuatrackcitation{nocite}",
+        r"\noctuatrackcitation{citep}\noctuatrackcitation{citet}\noctuatrackcitation{citealt}\noctuatrackcitation{citealp}",
+        r"\noctuatrackcitation{citeauthor}\noctuatrackcitation{citeyear}\noctuatrackcitation{citeyearpar}",
+        r"\noctuatrackcitation{Citep}\noctuatrackcitation{Citet}\noctuatrackcitation{citenum}",
+        r"\let\noctuaoriginalbib\bibliography",
+        r"\renewcommand{\bibliography}[1]{\ifnoctuacited\ifnoctuabibused\else\global\noctuabibusedtrue",
+        r"\ifnoctuabibstyle\else\bibliographystyle{plain}\fi\noctuaoriginalbib{.noctua-project-references}\fi\fi}}",
+        r"\AtEndDocument{\ifnoctuacited\ifnoctuabibused\else\bibliography{}\fi\fi}"
     );
     format!("{prefix}{source}")
 }

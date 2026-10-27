@@ -86,8 +86,8 @@ folders. In Project LaTeX settings, switch Bibliographies to **Selected files** 
 choose a subset. Selecting none disables automatic integration and leaves the
 document’s own bibliography commands in control. This setting is separate from citation autocomplete.
 For BibTeX/natbib, existing bibliography commands use these files; if no command
-is present, references are added at the end using `plain` unless a style is
-specified. Only disposable build files change. Duplicate keys across selected
+is present and the document cites references, a bibliography is added at the end
+using `plain` unless a style is specified. Only disposable build files change. Duplicate keys across selected
 files must be resolved. Automatic bibliography integration does not support biblatex.
 
 ## Templates, figures, and bibliographies

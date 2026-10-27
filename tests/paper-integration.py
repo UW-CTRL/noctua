@@ -239,6 +239,15 @@ def run(engine):
             implicit = two_citations.replace('\\bibliographystyle{plain}', '').replace('\\bibliography{references}', '')
             change(op='edit', id=main, text=implicit)
             assert build()['state']=='success' and 'Hopper' in bbl_path.read_text()
+            natbib = implicit.replace('\\usepackage{amsmath,graphicx}', '\\usepackage{amsmath,graphicx}\n\\usepackage[numbers]{natbib}').replace('\\cite{second}', '\\citep{second}')
+            change(op='edit', id=main, text=natbib)
+            assert build()['state']=='success' and 'Hopper' in bbl_path.read_text()
+            no_citations = r'\documentclass{article}\begin{document}No citations here.\end{document}'
+            change(op='edit', id=main, text=no_citations)
+            assert build()['state']=='success'
+            change(op='edit', id=main, text=no_citations.replace('No citations here.', r'\nocite{*}'))
+            assert build()['state']=='success' and 'Hopper' in bbl_path.read_text()
+            change(op='edit', id=main, text=implicit)
             change(op='config', paper={'bibliographies':[bib_entry['id']]})
             assert build()['state']=='success' and 'Hopper' not in bbl_path.read_text()
             change(op='edit', id=main, text=source)
@@ -246,7 +255,7 @@ def run(engine):
             assert build()['state']=='success' and 'Lovelace' in bbl_path.read_text()
             change(op='config', paper={'bibliographies':'all'})
             change(op='delete', id=extra)
-            print('PASS: all/selected/disabled bibliography integration, implicit references and unchanged stored source')
+            print('PASS: all/selected/disabled bibliographies, natbib, nocite, citation-free documents and unchanged stored source')
             warm = build(True)
             assert warm['state']=='success',warm
             print('PASS: forced warm rebuild;',warm['last_success']['elapsed_ms'],'ms')
