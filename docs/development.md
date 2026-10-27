@@ -221,7 +221,9 @@ together when upgrading, so cached output is invalidated.
 
 `python3 tests/paper-integration.py` exercises both real compilers against isolated
 projects after `cargo build --bin noctua`. Tectonic's first run downloads resources;
-pdfLaTeX uses bundled packages. Backend unit tests need neither distribution.
+pdfLaTeX uses bundled packages. Startup is bounded; stage progress, periodic Python
+stack traces and isolated server logs diagnose a stalled CI run. Backend unit tests
+need neither distribution.
 Use `swift tests/reader.swift tests/paper.html` on macOS for paper UI checks.
 
 `tests/server-paper-lifecycle.py` uses isolated packaged fake compilers to verify
