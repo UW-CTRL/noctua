@@ -112,8 +112,11 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
 
  const row=$('#library-rows tr');row.querySelector('[data-select-paper]').click();
  assert(lib.detail.key==='a'&&row.classList.contains('selected')&&row.isConnected,'selection preserves row for double-click and keyboard');
- row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));assert(openedPDF[0][0]==='a','double-click reads PDF');
- row.querySelector('[data-read]').click();assert(openedPDF.length===2,'PDF action');
+ assert(openedPDF.length===0,'single title click only shows details');
+ row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));assert(openedPDF.length===1&&openedPDF[0][0]==='a'&&openedPDF[0][1]==='tab','double-click opens Reader in new tab');
+ assert(document.querySelectorAll('#library-table th').length===4&&row.children.length===4&&!row.querySelector('.paper-row-actions'),'library table omits Actions column');
+ const noPDF=$('#library-rows tr[data-key="b"]');noPDF.querySelector('[data-select-paper]').click();
+ noPDF.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));assert(openedPDF.length===1&&lib.detail.key==='b','paper without PDF only shows details');
  $('[data-library-sort="title"]').click();assert($('#library-rows tr').dataset.key==='b','sort by title');
  $('[data-library-sort="year-desc"]').click();assert($('#library-rows tr').dataset.key==='a','sort newest');
  $('[data-library-sort="year-desc"]').click();assert($('#library-rows tr').dataset.key==='b','reverse year sort');
