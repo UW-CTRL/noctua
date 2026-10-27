@@ -8,6 +8,22 @@ Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
 of the app's appearance.
 
+To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
+The matching local PDF is required. Imported highlights, comments, area/text
+annotations, and drawings appear in the Reader; underlines display as highlights.
+On re-import, **Sync changes** preserves local edits and reports conflicts;
+**Overwrite from Zotero** replaces imported fields while retaining local replies. See
+[Zotero import](getting-started.md#import-from-zotero-optional) for attachment limits.
+Zotero PDFs link to their originals by default; **Copy to Noctua** keeps an
+independent file. Linked PDFs need their source folder available. If a file moves,
+update the Zotero folder in Settings → Connections and import again. Noctua keeps
+notes and annotations locally and does not modify the original PDF.
+Downloading an already linked PDF checks that its source still exists and matches
+the imported content. An unavailable or changed source returns an error rather than
+a successful download. File verification is reused while size, timestamps, and
+file identity remain unchanged, so cached text and outlines do not reread the whole
+PDF on every request. A restart or detected file change requires validation again.
+
 Hover linked citations to preview bibliography titles, including grouped numbered
 and author-year citations. Other internal links preview the destination passage,
 equation, figure, table, or algorithm. Previews adapt to the content and can be

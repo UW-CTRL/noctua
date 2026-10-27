@@ -93,6 +93,19 @@ installation, upgrades, or live provider behavior works.
 
 ## Run locally
 
+Zotero import coverage includes selectable content and retry/cancel behavior in
+`tests/library-import.html`, PDF coordinate conversion in
+`tests/zotero-annotations.swift`, and SQLite fixtures for notes, annotations,
+re-imports, and PDF mismatches in the backend library tests.
+Linked-PDF coverage includes source-folder relocation, missing/changed originals,
+conversion to managed copies, annotation preservation, and persisted storage defaults;
+`tests/zotero-settings.swift` exercises Settings controls and save failures.
+Sync/Overwrite checks cover source-only updates, retained local edits, conflict
+reporting, deselected fields, and note/annotation updates. The 64 MiB linked-PDF
+fixture counts full-file validations across 100 cache queries and checks that file
+changes invalidate verification; timings are diagnostic, not a pass/fail threshold.
+The MCP regression verifies that a missing linked original reports download failure.
+
 From the repository root:
 
 ```sh
