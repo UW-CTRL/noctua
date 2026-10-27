@@ -2,7 +2,8 @@
 const $ = s => document.querySelector(s);
 const invoke = (command,args={}) => window.__TAURI_INTERNALS__.invoke(command,args);
 let busy=false,step=0,panel='connection',verified=null,serviceSupported=false,desktopVersion='Current version',startupMode='';
-const dialog=$('#connection-dialog');
+let serverRecovery=null;
+const dialog=$('#connection-dialog'),settingsDialog=$('#client-settings-dialog');
 function status(message,state=''){
   const target=panel==='connection'?$('#status'):$('#management-status');
   target.textContent=message;target.dataset.state=state;
@@ -12,13 +13,18 @@ function render(){
   document.querySelectorAll('.connection-steps li').forEach((node,index)=>{if(index===step)node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');});
   $('#back').hidden=step===0;$('#next').hidden=step===2;$('#connect').hidden=step!==2;
   $('#next').textContent=step===1&&!verified?'Test & continue':'Next';
+  renderDesktopActions();
+  renderServerRecovery();
 }
 function showStep(next){step=Math.max(0,Math.min(2,next));render();document.querySelector(`[data-step="${step}"] h2`).focus();}
 function showPanel(next){
   if(next!=='local')hideLocalToken();
+  if(next==='connection'){settingsDialog.close();if(!dialog.open)dialog.showModal();}
+  else{dialog.close();if(!settingsDialog.open)settingsDialog.showModal();}
   panel=next;
   document.querySelectorAll('[data-panel]').forEach(tab=>{const selected=tab.dataset.panel===panel;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;$('#panel-'+tab.dataset.panel).hidden=!selected;});
   $('#management-status').hidden=panel==='connection';
+  if(panel!=='connection')document.querySelector(`[data-panel="${panel}"]`).focus();
 }
 function invalidate(){verified=null;$('#identity').textContent='';render();}
 function mode(){const remote=$('#mode').value==='remote';$('#remote').hidden=!remote;$('#local-explanation').hidden=remote;}
@@ -30,6 +36,20 @@ async function operation(fn){
   controls.forEach(([node])=>node.disabled=true);
   try{await fn()}catch(e){status(String(e),'error')}finally{busy=false;controls.forEach(([node,disabled])=>node.disabled=disabled);$('#autostart').disabled=!serviceSupported;render();}
 }
+function renderServerRecovery(){
+  for(const id of ['connection-recovery','local-recovery']){
+    const box=$('#'+id),visible=serverRecovery&&(id==='local-recovery'||$('#mode').value==='local');
+    box.hidden=!visible;if(!visible)continue;
+    box.querySelector('[data-recovery-summary]').textContent=serverRecovery.message;
+    const details=[serverRecovery.version?'Version: '+serverRecovery.version:'',serverRecovery.url?'Address: '+serverRecovery.url:'',serverRecovery.data_dir?'Data folder: '+serverRecovery.data_dir:'',serverRecovery.executable?'Server executable: '+serverRecovery.executable:'',serverRecovery.stop_command?'Safe-stop command: '+serverRecovery.stop_command:'',serverRecovery.requested_data_dir?'Requested data folder: '+serverRecovery.requested_data_dir:''].filter(Boolean);
+    box.querySelector('[data-recovery-identity]').textContent=details.join('\n');
+    box.querySelector('[data-recovery-steps]').replaceChildren(...(serverRecovery.steps||[]).map(text=>{const item=document.createElement('li');item.textContent=text;return item;}));
+  }
+}
+document.querySelectorAll('[data-recovery-retry]').forEach(button=>button.onclick=()=>operation(async()=>{
+  if(panel!=='connection'){showPanel('connection');$('#mode').value='local';mode();}
+  invalidate();showStep(1);await nextStep();
+}));
 function connectionKey(){return JSON.stringify([$('#mode').value,$('#address').value.trim()]);}
 async function connect(testOnly=false){
   const key=connectionKey(),previous=verified?.key===key?verified:null;
@@ -38,7 +58,7 @@ async function connect(testOnly=false){
   if(testOnly)verified=null;
   let identity;
   try{identity=await invoke('connect_server',{mode:$('#mode').value,address:$('#address').value.trim(),secret,testOnly,expectedServerId:!testOnly?previous?.identity.server_id||null:null,newWindow:new URLSearchParams(location.search).has('new'),openPath:new URLSearchParams(location.search).get('open')});}
-  catch(error){if(testOnly)$('#secret').value=secret;throw error;}
+  catch(error){if(testOnly)$('#secret').value=secret;try{await refresh();}catch{}if(serverRecovery)throw Error(serverRecovery.message);throw error;}
   $('#secret').value='';$('#identity').textContent=JSON.stringify(identity,null,2);
   if(testOnly){
     verified={key,secret,identity};
@@ -58,12 +78,13 @@ $('#back').onclick=()=>{if(!busy){status('');showStep(step-1);}};
 $('#connect').onclick=()=>operation(async()=>{if(!verified||verified.key!==connectionKey()){showStep(1);throw Error('Test this connection before saving.');}await connect();});
 $('#test').onclick=()=>operation(()=>connect(true));
 $('#change').onclick=()=>operation(async()=>{await invoke('clear_connection');invalidate();showStep(0);status('Saved connection cleared. Existing data and open windows are preserved.');});
-function openDialog(){if(!dialog.open)dialog.showModal();}
-async function closeDialog(){if(busy)return;hideLocalToken();dialog.close();try{await invoke('dismiss_connection')}catch{/* The local launcher always allows reopening. */}}
-$('#open-connection').onclick=openDialog;$('#close-connection').onclick=closeDialog;
+function openDialog(){showPanel('connection');}
+window.openClientSettings=section=>showPanel(['local','desktop'].includes(section)?section:'connection');
+async function closeDialog(){if(busy)return;hideLocalToken();dialog.close();settingsDialog.close();try{await invoke('dismiss_connection')}catch{/* The local launcher always allows reopening. */}}
+$('#open-connection').onclick=openDialog;$('#close-connection').onclick=$('#close-settings').onclick=closeDialog;
 // Escape behaves like Close and always leaves a serverless way back to settings.
 // Do not dismiss while a save/connection switch is still running.
-dialog.addEventListener('cancel',event=>{event.preventDefault();closeDialog();});
+for(const modal of [dialog,settingsDialog])modal.addEventListener('cancel',event=>{event.preventDefault();closeDialog();});
 const tabs=Array.from(document.querySelectorAll('[data-panel]'));
 tabs.forEach((tab,index)=>{
   tab.onclick=()=>{if(!busy)showPanel(tab.dataset.panel);};
@@ -71,6 +92,7 @@ tabs.forEach((tab,index)=>{
 });
 async function refresh({restoreSelection=false}={}){
   const state=await invoke('client_state');
+  serverRecovery=state.server_recovery||null;renderServerRecovery();
   desktopVersion=state.version||desktopVersion;startupMode=state.connection.mode||'';
   if(restoreSelection){$('#mode').value=state.connection.mode||'local';$('#address').value=state.connection.address||'';mode();}
   serviceSupported=!!state.service.supported;
@@ -115,13 +137,18 @@ async function localTokenAction(copy=false){
 $('#show-local-token').onclick=()=>operation(()=>localTokenAction());
 $('#copy-local-token').onclick=()=>operation(()=>localTokenAction(true));
 dialog.addEventListener('close',hideLocalToken);
+settingsDialog.addEventListener('close',hideLocalToken);
 window.addEventListener('pagehide',hideLocalToken);
-$('#local-actions').onclick=e=>{const action=e.target.dataset.action;if(action)operation(async()=>{const r=await invoke('local_server',{action});if(action==='logs')$('#logs').textContent=r.log;else{if(r.reconnect_local){await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:r.server.server_id});dialog.close();}status(action+' completed','ready');await refresh();}});};
+$('#local-actions').onclick=e=>{const action=e.target.dataset.action;if(action)operation(async()=>{const r=await invoke('local_server',{action});if(action==='logs')$('#logs').textContent=r.log;else{if(r.reconnect_local){await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:r.server.server_id});dialog.close();settingsDialog.close();}status(action+' completed','ready');await refresh();}});};
 $('#autostart').onchange=()=>operation(async()=>{try{await invoke('local_server',{action:$('#autostart').checked?'enable':'disable'});}finally{await refresh();}});
-let offered;
+let offered=null,desktopInstalled=false;
+function renderDesktopActions(){
+  $('[data-desktop="install"]').disabled=busy||!offered||desktopInstalled;
+  $('[data-desktop="restart"]').disabled=busy||!desktopInstalled;
+}
 $('#open-running-server').onclick=()=>operation(async()=>{
   await invoke('connect_server',{mode:'local',address:'',secret:'',testOnly:false,newWindow:false,openPath:null,expectedServerId:null,deferServerUpdate:true});
-  dialog.close();
+  dialog.close();settingsDialog.close();
 });
 async function performDesktop(action,version=offered,{offer=true,startup=false,returnFocus=null}={}){
   const result=await invoke('desktop_action',{action,version:version||null});
@@ -130,9 +157,12 @@ async function performDesktop(action,version=offered,{offer=true,startup=false,r
   if(!Object.prototype.hasOwnProperty.call(messages,result.status))throw Error('Unexpected desktop updater response');
   $('#update').textContent=messages[result.status];
   if(result.status==='available'){
-    offered=result.version;
+    offered=result.version;desktopInstalled=false;
+    renderDesktopActions();
     if(offer)await showDesktopOffer(result,startup,returnFocus);
-  }else if(result.status==='current')offered=null;
+  }else if(result.status==='current'){offered=null;desktopInstalled=false;}
+  else if(result.status==='installed'){offered=null;desktopInstalled=true;}
+  renderDesktopActions();
   return result;
 }
 async function showDesktopOffer(result,startup=false,returnFocus=null){
@@ -141,7 +171,7 @@ async function showDesktopOffer(result,startup=false,returnFocus=null){
   const previous=returnFocus||document.activeElement,prompt=document.createElement('dialog');
   prompt.id='app-update-dialog';prompt.className='connection-modal connection-update-modal';prompt.setAttribute('aria-labelledby','app-update-title');
   prompt.innerHTML='<h2 id="app-update-title">A new Noctua version is available</h2><div class="update-summary" tabindex="0" role="region" aria-label="Release history">'+NoctuaUpdateDialogs.summary(result,desktopVersion)+'</div><p>Save your work before updating. Installation may close and restart Noctua.</p><p class="connection-status" role="status"></p><div class="connection-actions"><button data-dismiss>Not now</button><button class="primary" data-install>Install update</button></div>';
-  const close=()=>{if(busy)return;prompt.close();prompt.remove();if(previous?.isConnected)previous.focus();if(startup&&!dialog.open)invoke('dismiss_connection').catch(()=>{});};
+  const close=()=>{if(busy)return;prompt.close();prompt.remove();if(previous?.isConnected)previous.focus();if(startup&&!dialog.open&&!settingsDialog.open)invoke('dismiss_connection').catch(()=>{});};
   prompt.querySelector('[data-dismiss]').onclick=close;
   prompt.addEventListener('cancel',event=>{event.preventDefault();close();});
   let action='install';

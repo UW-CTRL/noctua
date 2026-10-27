@@ -5,11 +5,25 @@
 const assert=(v,m)=>{if(!v)throw Error(m)};
 document.querySelector('iframe').onload=async()=>{try{
  const frame=document.querySelector('iframe'),w=frame.contentWindow,d=frame.contentDocument,calls=[];
- let failSave=false,localReady=false,failToken=false;
- w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='local_server'&&['token','copy-token'].includes(args.action)){if(failToken)throw Error('Local token unavailable');return args.action==='token'?{token:'test-local-token'}:{copied:true};}if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},local:localReady?{server_id:'server-A'}:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
+ let failSave=false,localReady=false,failToken=false,recovery=null;
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='local_server'&&['token','copy-token'].includes(args.action)){if(failToken)throw Error('Local token unavailable');return args.action==='token'?{token:'test-local-token'}:{copied:true};}if(command==='client_state')return{connection:{},service:{supported:true,enabled:false},server_recovery:recovery,local:localReady?{server_id:'server-A'}:null};if(command==='connect_server'){if(args.address.includes('offline'))throw Error('Connection failed');if(!args.testOnly&&failSave)throw Error('Save failed');return{server_id:'server-A',api_version:1,ready:true,url:args.address}};return{}}};
  await w.eval('refresh()');
  assert(d.querySelector('#connection-dialog').open&&d.querySelector('#dialog-title').textContent.includes('Server'),'serverless connection popup missing');
+ recovery={kind:'legacy',message:'Older server <img src=x onerror=alert(1)>',version:'0.2.4',data_dir:'/old data',steps:['Save work','Press Ctrl+C in the original terminal. Do not delete lock files.']};
+ await w.eval('refresh()');const help=d.querySelector('#connection-recovery');
+ assert(!help.hidden&&help.textContent.includes('/old data')&&help.textContent.includes('Ctrl+C')&&!help.querySelector('img'),'legacy guidance must be visible and escape server text');
+ assert(!calls.some(c=>c.command==='local_server'),'recovery advice must not stop a server');
+ d.querySelector('#mode').value='remote';d.querySelector('#mode').dispatchEvent(new Event('change'));assert(help.hidden,'local recovery must not block a remote-only connection');
+ d.querySelector('#mode').value='local';d.querySelector('#mode').dispatchEvent(new Event('change'));
+ await help.querySelector('[data-recovery-retry]').onclick();
+ const tested=calls.filter(call=>call.command==='connect_server').length;
+ await help.querySelector('[data-recovery-retry]').onclick();
+ assert(calls.filter(call=>call.command==='connect_server').length===tested+1,'retry reused an old successful test instead of probing again');
+ recovery=null;await w.eval('refresh()');assert(help.hidden,'recovery advice must clear after the blocker is gone');
+ w.eval('invalidate();showStep(0)');calls.length=0;
  const visibleSteps=()=>Array.from(d.querySelectorAll('[data-step]')).filter(node=>!node.hidden);
+ assert(!d.querySelector('#connection-dialog [role=tablist]')&&!d.querySelector('#connection-dialog #local-actions')&&!d.querySelector('#connection-dialog [data-desktop]'),'first connection must not contain management or app updates');
+ assert(!d.querySelector('#client-settings-dialog').open,'first launch opened general settings');
  assert(visibleSteps().length===1&&visibleSteps()[0].dataset.step==='0','startup shows more than the first card');
  assert(d.querySelector('#panel-local').hidden&&d.querySelector('#panel-desktop').hidden&&d.querySelector('#back').hidden,'setup includes unrelated management cards');
  d.querySelector('#mode').value='remote';d.querySelector('#mode').dispatchEvent(new Event('change'));
@@ -44,6 +58,7 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(d.querySelector('#mode').value==='remote'&&w.eval('verified===null'),'remote failure fell back to local or retained a stale test');
  assert(!d.querySelector('#next').disabled,'retry unavailable');
  d.querySelector('#tab-local').click();
+ assert(d.querySelector('#client-settings-dialog').open&&!d.querySelector('#connection-dialog').open,'management must open separately from first connection');
  assert(!d.querySelector('#panel-local').hidden&&d.querySelector('#panel-connection').hidden&&d.querySelector('#panel-desktop').hidden,'management tabs show multiple cards');
  assert(d.querySelector('.token-field #show-local-token svg')&&d.querySelector('.token-field #copy-local-token svg'),'desktop token icons must sit inside the token field');
  assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'local token must start empty and masked');

@@ -62,7 +62,7 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
-| `src/server.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
+| `src/server.rs`, `src/server_recovery.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
 | `src/research.rs`, `web/research.js` | Revisioned collection goals, progress, and personal target dates; durable hidden `.workspace/research/` storage and its editor. |
 | `src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
 | `tests/` | Frontend checks and manual demo fixtures. |

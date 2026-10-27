@@ -81,3 +81,9 @@ summary { cursor: pointer; color: var(--muted); font-size: .93em; }
 .token-icon[aria-pressed="true"] [data-eye-closed] { display:block; }
 
 .connection-token>.connection-field { margin-bottom:0; }
+
+.server-recovery { margin:16px 0; padding:14px 16px; border:1px solid var(--line); border-radius:var(--control-radius); background:var(--bg); }
+.server-recovery h3 { margin:0 0 8px; font-size:1em; }
+.server-recovery [data-recovery-identity] { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.86em; }
+.server-recovery ol { padding-left:20px; color:var(--muted); font-size:.93em; }
+.server-recovery li+li { margin-top:8px; }

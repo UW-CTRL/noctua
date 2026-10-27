@@ -3,6 +3,7 @@
 //! authenticated data server; the CLI owns its lifetime and interfaces connect.
 
 pub mod server;
+pub mod server_recovery;
 pub mod service;
 pub mod client;
 pub mod server_update;

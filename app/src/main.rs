@@ -151,7 +151,10 @@ fn main() {
                     _ => return,
                 };
                 match focused(app) {
-                    Some(_) if cmd == "settings" => open_settings(app),
+                    Some(w) if cmd == "settings" && w.label().starts_with("content") => {
+                        let _ = w.eval("window.noctuaShell && noctuaShell.cmd('settings')");
+                    }
+                    Some(_) if cmd == "settings" => open_settings_section(app, "local"),
                     Some(w) => {
                         let _ = w.eval(&format!("window.noctuaShell && noctuaShell.cmd('{cmd}')"));
                     }
@@ -294,13 +297,14 @@ fn local_only(window: &WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
-fn open_settings(app: &AppHandle) {
+fn open_settings_section(app: &AppHandle, section: &str) {
     if let Some(w) = app
         .webview_windows()
         .into_values()
         .find(|w| w.label().starts_with('w'))
     {
-        let _ = w.eval("document.querySelector('#open-connection')?.click()");
+        let section = match section { "local" => "local", "desktop" => "desktop", _ => "connection" };
+        let _ = w.eval(&format!("window.openClientSettings?.('{section}')"));
         let _ = w.show();
         let _ = w.set_focus();
     } else {
@@ -367,6 +371,10 @@ async fn client_state(app: AppHandle, window: WebviewWindow) -> Result<Value, St
             .map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };
+    let recovery=match noctua::paths::existing_data_dir() {
+        Ok(data) if local.as_ref().map_or(true,|identity|identity["capabilities"]["server_updates"]!=true)=>noctua::server_recovery::inspect(&data).await,
+        _=>None,
+    };
     let active = app.state::<Shell>().connected.lock().unwrap().clone();
     let current = if let Some((address, id, secret)) = active {
         match noctua::server::probe(&address, &secret).await {
@@ -382,7 +390,7 @@ async fn client_state(app: AppHandle, window: WebviewWindow) -> Result<Value, St
         json!({"reachable":false})
     };
     Ok(
-        json!({"connection":connection,"local":local.as_ref().ok(),"local_error":local.as_ref().err(),"current":current,"service":noctua::service::status(),"server_update":noctua::server_update::progress(),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"connection":connection,"local":local.as_ref().ok(),"local_error":local.as_ref().err(),"server_recovery":recovery,"current":current,"service":noctua::service::status(),"server_update":noctua::server_update::progress(),"version":env!("CARGO_PKG_VERSION")}),
     )
 }
 struct ProvisionalWindow {
@@ -537,6 +545,7 @@ async fn connect_server(
         let mut provisional=ProvisionalWindow{app:app.clone(),label:label.clone(),ticket:ready_ticket.clone(),committed:false};
         let w=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("loading.html".into()))
             .initialization_script(appearance::CONTENT_SCRIPT)
+            .initialization_script(format!("window.noctuaAppIcon = {};",serde_json::to_string(&*app.state::<icons::Icons>().0.lock().unwrap()).unwrap()))
             .visible(false)
             .on_page_load(move |window,payload| {
                 if payload.event()==tauri::webview::PageLoadEvent::Finished && payload.url().origin().ascii_serialization()==ready_origin && !ready_once.swap(true,Ordering::SeqCst) {let _=window.eval(&ready_script);}
@@ -554,7 +563,22 @@ async fn connect_server(
             .on_navigation(move|url|{
                 if url.host_str()==Some("noctua.invalid") {
                     if url.path()=="/appearance" {appearance::remember(&callback_app,url);return false;}
-                    if url.path()=="/settings" {open_settings(&callback_app);return false;}
+                    if url.path()=="/app-icon" {
+                        if let Some((icon,request))=appearance::icon_request(url) {
+                                let app=callback_app.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let result=set_local_app_icon(&app,icon).await;
+                                    let detail=json!({"request":request,"icon":icon,"error":result.err()});
+                                    let script=format!("if(!{detail}.error)window.noctuaAppIcon={detail}.icon;window.dispatchEvent(new CustomEvent('noctua-app-icon',{{detail:{detail}}}));");
+                                    for window in app.webview_windows().into_values().filter(|w|w.label().starts_with("content")) {let _=window.eval(&script);}
+                                });
+                        }
+                        return false;
+                    }
+                    if url.path()=="/settings" {
+                        let section=url.query_pairs().find(|(key,_)|key=="section").map(|(_,value)|value.into_owned()).unwrap_or_else(||"connection".into());
+                        open_settings_section(&callback_app,&section);return false;
+                    }
                     let parts=url.path().split('/').collect::<Vec<_>>();
                     if parts.len()==4 {
                         let shell=callback_app.state::<Shell>();
@@ -630,6 +654,25 @@ async fn local_server(
     }.await;
     result.map_err(|e| format!("{e:#}"))
 }
+async fn set_local_app_icon(app: &AppHandle, icon: noctua::AppIcon) -> Result<(), String> {
+    let previous = *app.state::<icons::Icons>().0.lock().unwrap();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    run(app, DesktopCmd::SetAppIcon(icon, Some(tx)));
+    rx.await.map_err(|_| "App icon operation did not complete".to_string())??;
+    let saved = (|| -> anyhow::Result<()> {
+        noctua::paths::write_private(
+            &noctua::client::config_dir()?.join("app-icon.json"),
+            &serde_json::to_string(&icon)?,
+        )
+    })();
+    if let Err(error) = saved {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        run(app, DesktopCmd::SetAppIcon(previous, Some(tx)));
+        let _ = rx.await;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
 #[tauri::command]
 async fn desktop_action(
     app: AppHandle,
@@ -639,22 +682,8 @@ async fn desktop_action(
 ) -> Result<Value, String> {
     local_only(&window)?;
     if action == "light" || action == "dark" {
-        let icon = if action == "dark" {
-            noctua::AppIcon::Dark
-        } else {
-            noctua::AppIcon::Light
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        run(&app, DesktopCmd::SetAppIcon(icon, Some(tx)));
-        rx.await
-            .map_err(|_| "Desktop icon operation did not complete".to_string())??;
-        noctua::paths::write_private(
-            &noctua::client::config_dir()
-                .map_err(|e| e.to_string())?
-                .join("app-icon.json"),
-            &serde_json::to_string(&icon).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        let icon = if action == "dark" { noctua::AppIcon::Dark } else { noctua::AppIcon::Light };
+        set_local_app_icon(&app, icon).await?;
         return Ok(json!({"status":"applied"}));
     }
     let action =

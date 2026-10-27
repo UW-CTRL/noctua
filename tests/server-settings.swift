@@ -18,12 +18,13 @@ assert(!openServerConnectionSettings()&&window.top.location.href==='','browser m
 assert(!serverSection().includes('data-act="open-server-connection"')&&serverSection().includes('browser-server-token'),'browser must offer address and token fields');
 assert(serverSection().includes('How to start a server')&&serverSection().includes('noctua ensure')&&serverSection().includes('noctua token')&&serverSection().includes('noctua status')&&serverSection().includes('noctua stop'),'browser startup guide must include executable commands');
 window.top.noctuaDesktopClient=true;
-assert(serverSection().includes('data-act="open-server-connection"')&&!serverSection().includes('browser-server-start-help'),'desktop must offer native manager instead of browser startup guide');
+assert(serverSection().includes('data-client-section="local"')&&serverSection().includes('Change connection')&&!serverSection().includes('browser-server-start-help'),'desktop must offer native manager instead of browser startup guide');
 clickCategory({dataset:{settingsTab:'server'}});
-assert(selected==='server'&&window.top.location.href==='https://noctua.invalid/settings','desktop server category must open manager through native callback');
+assert(selected==='server'&&!window.top.location.href,'desktop server category must stay in general settings');
+openServerConnectionSettings('local');assert(window.top.location.href==='https://noctua.invalid/settings?section=local','server management must open the local settings section');
 window.top.location.href='';clickCategory({dataset:{settingsTab:'appearance'}});
 assert(selected==='appearance'&&!window.top.location.href,'other categories must stay in settings');
 window.top={location:{href:''}};window.noctuaDesktopClient=true;
 assert(openServerConnectionSettings(),'top-level desktop marker must also work');
 """#)
-print("PASS: Settings server category opens native manager, explicit reopen button, other categories and browser fallback")
+print("PASS: general Settings navigation, separate connection/server management actions, scoped native callbacks and browser fallback")

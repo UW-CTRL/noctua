@@ -166,14 +166,21 @@ If a runner or download fails transiently, use **Re-run failed jobs** in Actions
 If a test or workflow fails consistently, inspect its log and correct the cause
 rather than bypassing the check.
 
+Linux desktop and release jobs use the official Ubuntu archive over HTTPS instead
+of the Azure package mirror, with bounded request timeouts and retries. Package
+signature verification remains enabled.
+
 ## Independent server regression
 
-After `cargo build --locked -p noctua`, run `python3 tests/server-lifecycle.py`.
-It uses a new temporary server/client/service directory and fake OS manager,
+After `cargo build --locked -p noctua`, run `python3 tests/server-lifecycle.py` and
+`python3 tests/server-recovery.py`.
+These use new temporary server/client/service directories and fake OS managers,
 covering concurrent ensure, detached parent lifetime, identity/data ownership,
 stale records, port collisions, safe restart, token/Host/Origin/CSRF rejection,
 browser sessions, two-device note version conflicts, native isolation and the
-incompatible data-format fence. It never addresses a user's server or registers
+incompatible data-format fence. Recovery regression also covers pre-protocol
+storage locks, human-readable shutdown advice, explicit retry, and preservation
+of another data folder's authenticated server. Neither addresses a user's server or registers
 a real resident service. CI runs it on the backend Linux runner.
 
 `tests/connection.html` runs with the nonpersistent WebKit fixture. It covers the

@@ -227,8 +227,7 @@ variables and set `plugins.updater.pubkey` to the same public key in your local
 release configuration. Then run
 `cargo tauri build --config tauri.release.conf.json` in `app/`.
 
-In the desktop app, open the local connection manager and choose **Desktop →
-Check desktop update** to check for a strictly newer version. **Install offered
+In the desktop app, open **Settings → About & Shortcuts → App updates**, then choose **Check desktop update** to check for a strictly newer version. **Install offered
 update** opens an in-app confirmation with **Install update** and **Cancel**.
 Cancel or Esc sends no installation request. Confirming downloads and verifies
 the signed bundle before replacing the app. Windows exits and relaunches through
