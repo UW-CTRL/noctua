@@ -7,7 +7,7 @@ let settings = null;
 const keyNeeded = (s) => !s.key_source && !s.skipped;
 
 function keySection(s, firstRun) {
-  const intro = '<h2>Semantic Scholar API key</h2><p>An optional API key for paper searches and citation lookups.</p>';
+  const intro = '<h2>Semantic Scholar API Key</h2><p>An optional API key for paper searches and citation lookups.</p>';
   if (s.key_source === 'env') {
     return `<section data-step="key">${intro}
       <p class="setup-current"><code>${esc(s.key_hint || '')}</code> · <code>NOCTUA_S2_KEY</code></p></section>`;
@@ -114,14 +114,14 @@ function assistantOptions(s, provider) {
 
 function agentSection(s) {
   const provider = chat.provider;
-  return `<section data-step="agent"><h2>Research assistant</h2>
+  return `<section data-step="agent"><h2>Research Assistant</h2>
     <div class="settings-group" role="group" aria-labelledby="settings-provider-title">
     <div class="setting-field"><h3 id="settings-provider-title">Provider</h3>
     <select id="setup-agent" aria-labelledby="settings-provider-title" ${chat.switching ? 'disabled' : ''}>
       <option value="claude" ${provider === 'claude' ? 'selected' : ''}>Claude Code</option>
       <option value="codex" ${provider === 'codex' ? 'selected' : ''}>Codex</option>
     </select></div></div>
-    <div class="settings-group" role="group" aria-labelledby="settings-model-title"><h3 id="settings-model-title">Model settings</h3>
+    <div class="settings-group" role="group" aria-labelledby="settings-model-title"><h3 id="settings-model-title">Model Settings</h3>
     <div id="assistant-options">${assistantOptions(s, provider)}</div>
     </div>
     ${threadSummarySettings()}
@@ -138,8 +138,8 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
-  ['appearance', 'Appearance'], ['agent', 'Research assistant'], ['skills', 'Skills'],
-  ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
+  ['appearance', 'Appearance'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
+  ['connections', 'Connections'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
 
 function skillSettingsSection() {
@@ -154,11 +154,11 @@ function skillSettingsSection() {
       <p>Import multiple skills from a project folder or its skills folder. Expand each project to see its available skills. Disconnect removes only Noctua copies; the original project stays unchanged.</p>
       <div class="setup-actions"><button type="button" data-skill-import="project" data-icon="folder-open">Import Skills from Project</button></div>
       <div data-skill-list></div>
-      <details class="skill-individual-import"><summary>Import an individual skill</summary><div class="setup-actions">
+      <details class="skill-individual-import"><summary>Import An Individual Skill</summary><div class="setup-actions">
         <button type="button" data-skill-import="folder" data-icon="folder-open">Import folder</button><button type="button" data-skill-import="zip" data-icon="file-up">Import ZIP</button><button type="button" data-skill-import="md" data-icon="file-up">Import SKILL.md</button>
       </div></details>
     </div>
-    <div class="settings-group"><h3>Chat project defaults</h3>
+    <div class="settings-group"><h3>Chat Project Defaults</h3>
       <p>Choose skills to make available on every message in a Noctua project. Slash commands add skills for one message.</p>
       <label class="setting-field">Project<select data-skill-project><option value="">Choose a project</option></select></label>
       <div data-skill-defaults></div><button type="button" data-skill-save data-icon="save" disabled>Save project defaults</button>
@@ -197,7 +197,7 @@ function mountSkillSettings(host) {
       const groups=config.projects||[],grouped=new Set(groups.flatMap(g=>g.skill_ids));
       const projects=groups.map(group=>{const entries=skills.filter(s=>group.skill_ids.includes(s.id));return `<details class="settings-skill-project" data-skill-group="${esc(group.id)}"><summary>${esc(group.name)} <small>(${entries.length} ${entries.length===1?'skill':'skills'})</small></summary><div class="setup-actions"><button type="button" data-skill-project-disconnect="${esc(group.id)}" data-icon="x" aria-label="Disconnect ${esc(group.name)} from Noctua">Disconnect</button></div>${entries.map(s=>packageHTML(s)).join('')||'<p>No available skills in this project.</p>'}</details>`;}).join('');
       const individual=skills.filter(s=>s.source!=='local'&&!grouped.has(s.id));
-      host.querySelector('[data-skill-list]').innerHTML=projects+(individual.length?`<details class="settings-skill-project" data-skill-group="individual"><summary>Other imported skills (${individual.length})</summary>${individual.map(s=>packageHTML(s,true)).join('')}</details>`:'')||'<p>No project skills imported yet.</p>';
+      host.querySelector('[data-skill-list]').innerHTML=projects+(individual.length?`<details class="settings-skill-project" data-skill-group="individual"><summary>Other Imported Skills (${individual.length})</summary>${individual.map(s=>packageHTML(s,true)).join('')}</details>`:'')||'<p>No project skills imported yet.</p>';
       host.querySelectorAll('[data-skill-package]').forEach(details=>details.addEventListener('toggle',()=>{if(details.open&&!details.querySelector('pre'))inspect(details);}));
       host.querySelectorAll('[data-skill-disconnect],[data-skill-project-disconnect]').forEach(button=>button.onclick=async()=>{
         if(importing||loading||saving)return;importing=true;controls();status.textContent='Disconnecting skill…';
@@ -315,7 +315,7 @@ function highlightColorOptions(selected,category){
   return pdfColors.map((color,index)=>`<button type="button" data-highlight-color="${category}" value="${color}" style="--swatch:${color}" aria-label="${pdfCategories[category].label}: color ${index+1}" aria-pressed="${color===selected}"></button>`).join('');
 }
 function highlightColorSettings(){
-  return `<div class="settings-group highlight-settings" role="group" aria-labelledby="settings-highlight-colors-title"><h3 id="settings-highlight-colors-title">Highlight colors</h3><div class="settings-highlight-rows">
+  return `<div class="settings-group highlight-settings" role="group" aria-labelledby="settings-highlight-colors-title"><h3 id="settings-highlight-colors-title">Highlight Colors</h3><div class="settings-highlight-rows">
     <div class="settings-highlight-palette" role="group" aria-label="Reader highlight palette">${pdfColors.map((color,index)=>`<input type="color" id="setup-palette-${index}" data-highlight-palette="${index}" value="${color}" aria-label="Highlight color ${index+1}">`).join('')}</div>
     <div class="settings-ai-highlights" role="group" aria-label="AI highlight colors">${Object.entries(pdfCategories).map(([key,category])=>`<div class="settings-ai-highlight"><span id="setup-highlight-label-${key}">${category.label}</span><details class="settings-ai-color-picker"><summary data-category-swatch="${key}" style="--swatch:${category.color}" aria-label="Choose ${category.label} highlight color" title="Choose ${category.label} highlight color"></summary><div class="settings-ai-color-options" id="setup-highlight-${key}" role="group" aria-labelledby="setup-highlight-label-${key}">${highlightColorOptions(category.color,key)}</div></details></div>`).join('')}</div>
   </div></div>`;
@@ -344,7 +344,7 @@ async function saveHighlightPalette(colors){
 function appIconSettings() {
   const selected = settings?.app_icon || 'light';
   const note = settings?.desktop ? 'Applies immediately and is restored when you reopen Noctua.' : 'Saved for the desktop app and applied on its next launch.';
-  return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App icon</h3>
+  return `<div class="settings-group" role="group" aria-labelledby="settings-app-icon-title"><h3 id="settings-app-icon-title">App Icon</h3>
     <p class="hint">${note}</p>
     <div class="settings-app-icons">${['light','dark'].map(icon => `<label class="settings-app-icon"><input type="radio" name="app-icon" value="${icon}" ${icon === selected ? 'checked' : ''}><img src="/app-icons/${icon}.svg" width="80" height="80" alt=""><span>${icon === 'dark' ? 'Dark' : 'Light'}</span></label>`).join('')}</div>
     </div>`;
@@ -385,13 +385,13 @@ function threadSummarySettings() {
 
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
-  return `<section data-step="data"><h2>Data & storage</h2>
+  return `<section data-step="data"><h2>Data & Storage</h2>
     <div class="settings-group" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
     <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
       <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
     </div>
-    <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save destination</h3>
+    <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save Destination</h3>
     <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
       <select id="setup-save-target">${collectionOptions(defaultSaveTarget())}</select></label>
     <p class="hint">New papers added from search or a graph are saved here. PDF imports use the selected folder.</p>
@@ -430,13 +430,13 @@ function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc(s.version || 'unknown')} · ${s.desktop ? 'Desktop app' : 'Browser app'}</p>
     ${s.desktop ? `<div class="settings-group" data-update>
-      <h3>App updates</h3>
+      <h3>App Updates</h3>
       <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
       <div class="update-summary" hidden></div>
       <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
       <p class="setup-msg" role="status" aria-live="polite"></p>
     </div>` : ''}
-    <h3>Keyboard shortcuts</h3><dl class="settings-shortcuts">
+    <h3>Keyboard Shortcuts</h3><dl class="settings-shortcuts">
       <dt>Save note</dt><dd>⌘ / Ctrl + S</dd>
       <dt>Add drawing</dt><dd>⌘ / Ctrl + Shift + D</dd>
       <dt>Finish editing a text block</dt><dd>Esc or ⌘ / Ctrl + Enter</dd>

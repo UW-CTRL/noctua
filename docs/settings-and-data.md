@@ -18,7 +18,7 @@ Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
 **Connections** holds the Semantic Scholar key and optional Zotero source;
-**Research assistant** holds provider and model settings. Its **Lineage** group
+**Research Assistant** holds provider and model settings. Its **Lineage** group
 contains **Summarize threads automatically** (enabled by default). This preference
 is remembered in this browser and takes effect immediately; turning it off cancels
 pending automatic summaries, while an already running request may finish. Manual
@@ -54,7 +54,7 @@ again to reconnect; reselect any desired chat defaults.
 imports. These and older ungrouped imports appear under **Other imported skills**
 with individual Disconnect actions. Global installations have no Disconnect action.
 
-Under **Chat project defaults**, choose a Noctua project, select skills to make
+Under **Chat Project Defaults**, choose a Noctua project, select skills to make
 available on every chat message there, and choose **Save project defaults**.
 This is separate from the source-project import groups. An empty selection clears
 its defaults. Use `/` in chat to search all available skills and invoke additional
@@ -65,15 +65,15 @@ Scripts require approval and separate output review; see
 
 ## Save destination and notifications
 
-**Data & storage** groups its controls under **Library**, **Save destination**,
+**Data & Storage** groups its controls under **Library**, **Save Destination**,
 and **Storage**, using the same bold headings and section dividers as the other Settings pages.
 
-**Settings → Data & storage → Include papers from subfolders** is enabled by
+**Settings → Data & Storage → Include papers from subfolders** is enabled by
 default and saved with Noctua's data. Turn it off to show only direct collection
 members in folder lists, counts, and graphs. The library root always includes
 all papers. Scope changes keep existing graph lookups cached.
 
-Choose **Settings → Data & storage → Default save folder** for papers added
+Choose **Settings → Data & Storage → Default save folder** for papers added
 from search or a graph. The choice is remembered in this browser; if the folder
 is unavailable, new papers default to the library root. PDF imports use the
 folder selected in Library. Folder lists and counts refresh after changes.
@@ -108,7 +108,7 @@ the configured global location and are not included in Noctua backups or storage
 App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
 
-To move storage, choose an empty folder in **Settings → Data & storage**, save,
+To move storage, choose an empty folder in **Settings → Data & Storage**, save,
 then quit all Noctua apps and servers and restart. Noctua copies the data and
 keeps the original. Unset `NOCTUA_HOME` and `NOCTUA_NOTES` if they override the
 location you want to select.
@@ -116,7 +116,7 @@ location you want to select.
 ## Updates
 
 Official desktop builds check for updates at startup. You can also use
-**Settings → About & shortcuts → Check for updates**. Save work before installing.
+**Settings → About & Shortcuts → Check for updates**. Save work before installing.
 **Update to …** opens an in-app confirmation. Choose **Install update** to download,
 verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
 installation, use **Restart Noctua** when offered.
