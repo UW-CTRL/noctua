@@ -73,6 +73,12 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
  failure=false;await form.onsubmit({preventDefault(){}});await tick();
  assert(!document.querySelector('dialog')&&calls.length===2,'successful retry did not close dialog');
  assert(messages.some(s=>s.includes('1 notes')),'import summary missing');
+ await importZoteroLibrary();dialog=document.querySelector('dialog');form=dialog.querySelector('form');
+ form.elements.pdf_mode.value='link';await form.onsubmit({preventDefault(){}});await tick();
+ assert(calls.at(-1).path==='/api/settings/zotero-pdf'&&calls.at(-1).body.pdf_mode==='link'&&settings.zotero_pdf_mode==='link','successful PDF import did not remember choice');
+ await importZoteroLibrary();dialog=document.querySelector('dialog');form=dialog.querySelector('form');
+ assert(form.elements.pdf_mode.value==='link','remembered PDF choice not restored');
+ form.querySelector('[data-cancel]').click();await tick();
  window.webkit.messageHandlers.result.postMessage('PASS: Zotero import selection, dependencies, cancel, busy state, errors and retry');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

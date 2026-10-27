@@ -31,12 +31,10 @@ function keySection(s, firstRun) {
 
 function zoteroSection(s, firstRun) {
   const intro = '<h2>Import from Zotero on the server computer</h2><p>Import collections, papers, and available PDFs from your Zotero library.</p>';
-  const pdfPreference=`<label for="setup-zotero-pdf">Default PDF storage</label><div class="setup-row"><select id="setup-zotero-pdf"><option value="link"${s.zotero_pdf_mode!=='copy'?' selected':''}>Link original</option><option value="copy"${s.zotero_pdf_mode==='copy'?' selected':''}>Copy to Noctua</option></select><button type="button" data-act="save-zotero-pdf" data-icon="save">Save default</button></div><p>Link original reads PDFs from this Zotero folder without copying them. Change the folder and import again to reconnect moved files. You can override the storage mode for each import.</p>`;
   const importAction = firstRun ? '' : '<button type="button" id="import-zotero" data-act="import-zotero" data-icon="import">Import from Zotero</button>';
   if (s.zotero_source === 'env') {
     return `<section data-step="zotero">${intro}
       <code class="settings-path">${esc(s.zotero_dir)}</code><p><code>ZOTERO_DATA_DIR</code></p>
-      ${pdfPreference}
       <p class="setup-msg" role="status"></p><div class="setup-actions">${importAction}</div></section>`;
   }
   const value = s.zotero_dir || s.zotero_suggested || '';
@@ -44,13 +42,11 @@ function zoteroSection(s, firstRun) {
     ${intro}
     ${s.zotero_disabled ? '<p class="setup-current">Zotero is turned off.</p>' : ''}
     <div class="setup-row">
-      <input class="setup-input" id="setup-zotero" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}">
+      <div class="zotero-location"><input class="setup-input" id="setup-zotero" aria-label="Zotero data folder" spellcheck="false" placeholder="e.g. ~/Zotero" value="${esc(value)}"><button type="button" data-act="save-zotero">Save Zotero location</button></div>
       ${s.desktop ? '<button data-act="browse" data-icon="folder-open">Browse…</button>' : ''}
     </div>
-    ${pdfPreference}
     <p class="setup-msg"></p>
     <div class="setup-actions">
-      <button class="primary" data-act="save-zotero" data-icon="${firstRun ? 'folder-open' : 'save'}">${firstRun ? 'Use this folder' : 'Save folder'}</button>
       ${importAction}
       <a href="#" data-act="no-zotero">I don't use Zotero</a>
     </div></section>`;
@@ -739,12 +735,11 @@ function mountScholarSettings(host) {
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
   return `<section data-step="data"><h2>Data & Storage</h2>
-    <div class="settings-group" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
-    <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders</span>
+    <div class="settings-group library-settings" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
+    <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders<span class="hint library-setting-hint">Include nested papers in lists, counts, Graph, and Lineage. The library root always shows all papers.</span></span>
       <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
-    <p class="hint">Show papers from nested folders in folder lists, counts, Graph, and Lineage. The library root always includes all papers.</p>
-    <div class="setup-actions"><button type="button" data-act="check-library-duplicates" data-icon="copy">Check for duplicate papers</button></div>
-    <p class="hint">Review possible duplicates by DOI, arXiv ID, PDF content, or title before choosing whether to merge.</p>
+    <div class="library-duplicates"><button type="button" data-act="check-library-duplicates" data-icon="search">Check for duplicate papers</button>
+    <p class="hint">Review matches by DOI, arXiv ID, PDF content, or title before merging.</p></div>
     </div>
     <div class="settings-group" role="group" aria-labelledby="settings-saving-title"><h3 id="settings-saving-title">Save Destination</h3>
     <label class="setting-field" for="setup-save-target"><span>Default save folder</span>
@@ -875,8 +870,6 @@ function openSetup({ firstRun = false, tab } = {}) {
   el.innerHTML = `<div class="setup-card ${firstRun ? '' : 'settings-card'}" role="dialog" aria-modal="true" aria-labelledby="settings-title"></div>`;
   document.body.appendChild(el);
   const card = el.querySelector('.setup-card');
-  const context = document.createElement('p'); context.className='hint'; context.textContent='Server & Connection manages connections and this computer’s server. App updates are under About & Shortcuts. AI CLI, credentials, Zotero and data paths below are on the server computer. Upload buttons choose files from this client.';
-  el.prepend(context);
   let loginAbort = null;
   let assistantSaving = false;
   const close = () => {
@@ -1106,9 +1099,6 @@ function openSetup({ firstRun = false, tab } = {}) {
         case 'import-zotero':
           await importZoteroLibrary();
           break;
-        case 'save-zotero-pdf':
-          await api('/api/settings/zotero-pdf',{pdf_mode:$('#setup-zotero-pdf').value});
-          toast('Zotero PDF default saved.');await next('zotero');break;
         case 'save-zotero': {
           const dir = $('#setup-zotero').value.trim();
           if (!dir) { msg(section, 'Enter the folder, or choose “I don’t use Zotero”.'); break; }

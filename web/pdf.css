@@ -151,3 +151,20 @@
 .pdf-page-actions .edit-history{flex:none}
 .pdf-page-actions .edit-history button{width:24px;height:24px;min-height:24px}
 .pdf-page-actions .edit-history button::before{width:14px;height:14px}
+
+/* Compact Zotero import dialog */
+.zotero-import { width: min(520px, calc(100vw - 32px)); box-sizing: border-box; }
+.zotero-import h2 { margin: 0 0 8px; }
+.zotero-import .zotero-intro, .zotero-import .zotero-hint, .zotero-import .zotero-mode-hint { color: var(--muted); margin: 0 0 14px; }
+.zotero-import .zotero-choices { border: 0; padding: 0; margin: 0 0 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.zotero-import .zotero-choices legend { font-weight: 600; margin-bottom: 8px; }
+.zotero-import .zotero-choices label { margin: 0; }
+.zotero-import .zotero-settings { display: grid; gap: 8px; margin-bottom: 14px; }
+.zotero-import .zotero-settings label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; }
+.zotero-import .zotero-settings select { max-width: 65%; }
+.zotero-import .zotero-help { margin-bottom: 14px; color: var(--muted); }
+.zotero-import .zotero-help summary { cursor: pointer; }
+.zotero-import .zotero-help p { margin: 8px 0; }
+.zotero-import .error:empty { display: none; }
+.zotero-import .zotero-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 420px) { .zotero-import .zotero-choices { grid-template-columns: 1fr; } }

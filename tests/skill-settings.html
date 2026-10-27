@@ -31,6 +31,9 @@ async function settle(){for(let i=0;i<40;i++)await Promise.resolve();await new P
 async function importFiles(kind,files){const create=document.createElement.bind(document);let pending;document.createElement=name=>{const node=create(name);if(name==='input'){Object.defineProperty(node,'files',{value:files});node.click=()=>{pending=node.onchange();};}return node;};try{$(`[data-skill-import=${kind}]`).click();await pending;await settle();}finally{document.createElement=create;}}
 window.addEventListener('load',()=>{(async()=>{
  openSetup({tab:'skills'});await settle();
+ const overlay=$('#setup'),card=overlay.querySelector('.setup-card'),bounds=card.getBoundingClientRect();
+ assert(overlay.children.length===1&&overlay.firstElementChild===card,'settings overlay must contain only the dialog');
+ assert(Math.abs(bounds.left+bounds.width/2-innerWidth/2)<2&&Math.abs(bounds.top+bounds.height/2-innerHeight/2)<2,'settings dialog must be centered');
  assert($('#settings-tab-skills').getAttribute('aria-selected')==='true'&&!$('#settings-panel-skills').hidden,'Skills tab opens');
  assert(!$('[data-override]')&&!$('#setup').textContent.includes('Override skills'),'no chat override control');assert($('[data-skill-package=s1]').textContent.includes('Global installation')&&$('#setup').textContent.includes('~/.agents/skills'),'shared global source is explained');assert(!$('[data-skill-package=s1] [data-skill-disconnect]'),'global source has no disconnect action');
  assert($('[data-skill-project]').value==='L1'&&$('[data-skill-default=s1]').checked,'active project defaults loaded');

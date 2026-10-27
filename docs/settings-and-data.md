@@ -85,12 +85,11 @@ Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
 **Integrations** holds the Semantic Scholar key, optional Zotero source, and Google Scholar Inbox;
-choose the Zotero data folder containing `zotero.sqlite`. **Default PDF storage**
-defaults to **Link original**, which reads PDFs from their source paths without
-copying them. Choose **Copy to Noctua** and **Save default** for independent copies.
-The import dialog uses this preference and allows a per-import override, including
-when the source folder is set by `ZOTERO_DATA_DIR`. Save the source folder, then
-choose **Import from Zotero** to select and import content. After moving the source,
+choose the Zotero data folder containing `zotero.sqlite`. Save the source folder,
+then choose **Import from Zotero** to select content and PDF storage. **Link original**
+reads PDFs from their source paths; **Copy to Noctua** saves independent copies.
+The import dialog remembers the choice after a successful PDF import, including
+when the source folder is set by `ZOTERO_DATA_DIR`. After moving the source,
 update the folder and re-import to reconnect unchanged PDFs.
 
 **Research Assistant** holds provider and model settings. Its **Lineage** group
