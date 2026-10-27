@@ -45,6 +45,7 @@ document.querySelector('iframe').onload=async()=>{try{
  assert(!d.querySelector('#next').disabled,'retry unavailable');
  d.querySelector('#tab-local').click();
  assert(!d.querySelector('#panel-local').hidden&&d.querySelector('#panel-connection').hidden&&d.querySelector('#panel-desktop').hidden,'management tabs show multiple cards');
+ assert(d.querySelector('.token-field #show-local-token svg')&&d.querySelector('.token-field #copy-local-token svg'),'desktop token icons must sit inside the token field');
  assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'local token must start empty and masked');
  await w.eval('localTokenAction()');
  assert(d.querySelector('#local-token').type==='text'&&d.querySelector('#local-token').value==='test-local-token','show must request this computer token');

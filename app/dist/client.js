@@ -95,7 +95,7 @@ async function refresh({restoreSelection=false}={}){
 }
 function hideLocalToken(){
   $('#local-token').value='';$('#local-token').type='password';
-  $('#show-local-token').textContent='Show token';$('#show-local-token').setAttribute('aria-pressed','false');
+  $('#show-local-token').setAttribute('aria-label','Show token');$('#show-local-token').title='Show token';$('#show-local-token').setAttribute('aria-pressed','false');
   $('#local-token-status').textContent='';delete $('#local-token-status').dataset.state;
 }
 async function localTokenAction(copy=false){
@@ -108,7 +108,7 @@ async function localTokenAction(copy=false){
     else {
       if(typeof result.token!=='string'||!result.token)throw Error('No local server token is available. Start this computer’s server first.');
       $('#local-token').value=result.token;$('#local-token').type='text';
-      $('#show-local-token').textContent='Hide token';$('#show-local-token').setAttribute('aria-pressed','true');
+      $('#show-local-token').setAttribute('aria-label','Hide token');$('#show-local-token').title='Hide token';$('#show-local-token').setAttribute('aria-pressed','true');
     }
   }catch(error){hideLocalToken();message.textContent=String(error);message.dataset.state='error';}
 }

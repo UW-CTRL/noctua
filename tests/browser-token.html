@@ -1,9 +1,13 @@
-<!doctype html><meta charset="utf-8"><section><input id="browser-local-token" type="password"><button data-act="show-browser-token" aria-pressed="false">Show token</button><p id="browser-token-status"></p></section><script>
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><section><input id="browser-local-token" type="password"><button data-act="show-browser-token" aria-pressed="false">Show token</button><p id="browser-token-status"></p></section><script>
 (async()=>{try{
 const assert=(v,m)=>{if(!v)throw Error(m)};let copied='',fail=false,calls=0;
 window.api=async(path,body)=>{assert(path==='/api/server/token'&&body,'token request must use POST');calls++;if(fail)throw Error('denied');return{token:'test-token'}};
 Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{copied=text}},configurable:true});
 const source=await(await fetch('../web/setup.js')).text();
+const markupSource=source.slice(source.indexOf('function browserLocalTokenSection'),source.indexOf('function clearBrowserLocalToken'));
+const markup=Function('isDesktopConnectionClient','location',markupSource+';return browserLocalTokenSection();')(()=>false,{hostname:'localhost',protocol:'http:'});
+const layout=document.createElement('div');layout.innerHTML=markup;layout.style.width='600px';document.body.append(layout);assert(layout.querySelector('.token-field-actions [aria-label="Show token"] svg')&&layout.querySelector('.token-field-actions [aria-label="Copy token"] svg'),'token actions must be icons inside the field');
+const fieldRect=layout.querySelector('input').getBoundingClientRect(),copyRect=layout.querySelector('[aria-label="Copy token"]').getBoundingClientRect();assert(copyRect.right<=fieldRect.right&&copyRect.left>=fieldRect.left,'copy icon must sit inside the input border');
 const functions=source.slice(source.indexOf('function clearBrowserLocalToken'),source.indexOf('function serverSection'));
 eval(functions+';window.tokenControls={clearBrowserLocalToken,useBrowserLocalToken};');
 const {clearBrowserLocalToken:clear,useBrowserLocalToken:use}=tokenControls,section=document.querySelector('section'),input=document.querySelector('input');

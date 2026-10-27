@@ -157,7 +157,7 @@ Host; additional origins must be HTTPS origins with no user info, path, query or
 fragment. Authentication applies locally as well as remotely.
 
 To view or copy this computer's token without a terminal, use the desktop
-connection manager's **This computer → Authentication token → Show token / Copy token**.
+connection manager's **This computer → Authentication token**, using the eye and copy icons inside the field.
 The field is cleared when hidden, when leaving the tab and when closing the
 dialog. Copying leaves the token on the system clipboard until replaced; it is
 not automatically cleared. Authenticated localhost browser sessions can also show/copy the current token
@@ -306,3 +306,5 @@ network still require a release-environment smoke test. Windows and Linux servic
 credential-store and installer behavior is implemented but has not been exercised
 on those OSes in this development environment. Do not interpret a generated
 service file or successful compile as a verified login service installation.
+
+Authentication tokens use 15 randomly generated, case-sensitive characters, omitting visually confusing characters. On the first start of this version, an older long token is replaced and no longer authenticates; reconnect other computers with the new token. The new token remains stable across subsequent restarts. The eye icon toggles visibility and the copy icon copies without revealing the token.

@@ -287,3 +287,5 @@ Collection kind regressions also cover regular/project creation, type conversion
 Library management tests cover atomic bulk operations, stale edits, tag changes, trash restoration and undo, folder cycles/order/storage preservation, safe duplicate merging and differing-PDF refusal. `tests/library-management.html` exercises selection, native clipboard routing, dragging, batch actions, restore/undo, duplicate candidates and failed-form retention.
 
 Trash regressions additionally cover table-style selection, Restore actions, Delete confirmation, rejection of purging active items, irreversible paper/annotation removal, and cleanup of owned folder files while preserving other storage.
+
+Authentication tests cover stable 15-character token generation, replacement and rejection of older long credentials, and inline eye/copy controls in both browser and desktop connection fields, including containment inside the input border.

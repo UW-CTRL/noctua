@@ -94,21 +94,19 @@ impl Owner {
             id
         };
         let token_path = data.join("server-token");
-        let token = if token_path.exists() {
+        let mut token = if token_path.exists() {
             fs::read_to_string(&token_path)?
         } else {
-            let token = format!(
-                "{}{}",
-                uuid::Uuid::new_v4().simple(),
-                uuid::Uuid::new_v4().simple()
-            );
+            let token = new_connection_token();
             crate::paths::write_private(&token_path, &token)?;
             token
         };
         anyhow::ensure!(
-            token.len() >= 32 && !token.contains(char::is_whitespace),
+            (valid_connection_token(&token) || token.len() >= 32) && !token.contains(char::is_whitespace),
             "Invalid server-token file"
         );
+        // Replace older credentials once; the short token stays stable on subsequent restarts.
+        if !valid_connection_token(&token){token=new_connection_token();crate::paths::write_private(&token_path,&token)?;}
         let record = Record {
             product: "noctua".into(),
             server_id,
@@ -196,9 +194,20 @@ pub fn record(data: &Path) -> Result<Record> {
         data.join("server.json"),
     )?)?)
 }
+const CONNECTION_ALPHABET:&[u8]=b"23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+fn valid_connection_token(value:&str)->bool{value.len()==15&&value.bytes().all(|byte|CONNECTION_ALPHABET.contains(&byte))}
+fn new_connection_token()->String{
+    let mut out=String::with_capacity(15);let limit=256/CONNECTION_ALPHABET.len()*CONNECTION_ALPHABET.len();
+    while out.len()<15{let random=uuid::Uuid::new_v4();for(index,byte)in random.as_bytes().iter().enumerate(){
+        // UUID version/variant bytes contain fixed bits; use only wholly random bytes.
+        if index==6||index==8||usize::from(*byte)>=limit{continue;}
+        out.push(CONNECTION_ALPHABET[usize::from(*byte)%CONNECTION_ALPHABET.len()]as char);if out.len()==15{break;}
+    }}out
+}
 pub fn token(data: &Path) -> Result<String> {
     Ok(fs::read_to_string(data.join("server-token"))?)
 }
+
 pub fn http() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .no_proxy()
@@ -585,6 +594,14 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+    #[test]
+    fn connection_tokens_are_short_stable_and_replace_legacy_credentials()->Result<()> {
+        let folder=Folder::new();let old="a".repeat(64);crate::paths::write_private(&folder.0.join("server-token"),&old)?;
+        let owner=Owner::acquire(&folder.0,"http://127.0.0.1:1")?;
+        assert!(valid_connection_token(&owner.token));assert_ne!(owner.token,old);assert_eq!(token(&folder.0)?,owner.token);
+        let short=owner.token.clone();drop(owner);let owner=Owner::acquire(&folder.0,"http://127.0.0.1:1")?;assert_eq!(owner.token,short);
+        let other=Folder::new();let fresh=Owner::acquire(&other.0,"http://127.0.0.1:2")?;assert!(valid_connection_token(&fresh.token));assert_ne!(fresh.token,short);Ok(())
     }
     #[test]
     fn ownership_is_exclusive_and_identity_survives_processes() -> Result<()> {
