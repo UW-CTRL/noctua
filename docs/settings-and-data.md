@@ -2,11 +2,36 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Server & connection
+
+Connection, recovery and browser sign-in screens use the app’s light/dark colors,
+controls and UI typography. The desktop remembers the last connected app’s
+appearance on this device, so its local connection screen keeps that appearance
+even while the server is offline; first launch follows the system theme.
+Connection setup is a popup with **Choose → Connect → Save** steps and **Back**
+navigation. **This computer** and **Desktop** tabs contain management controls,
+so they do not appear alongside the connection steps. Input is retained when
+going back; changing connection details requires a new test before saving.
+
+The native Settings menu opens the local connection manager, including while
+servers are offline. It selects this computer or another server, tests and retries
+connections, shows identity/version/status and errors/logs, and manages **this
+computer's** server and user-login auto-start. These local controls remain local
+when a remote server is selected. Start/stop/restart and login auto-start are
+separate actions; app exit and connection changes leave servers running.
+
+Connection selection is device-local; remote tokens use the OS secure store.
+AI CLI, API keys, Zotero and data-folder fields in the server UI belong to the
+server computer. Client uploads are separate browser file controls. A connection
+switch flushes every open editor first and is blocked by failed saves/conflicts.
+Read [Server and connections](server.md) for operations, backup and recovery.
+
 ## Personalize the workspace
 
 In **Settings → Appearance**, choose App, Notes, and Reader themes independently.
-The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork separately; Light is the
-default and the choice is applied on the next desktop launch.
+The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in the local connection manager’s Desktop
+section; Light is the default. The device-local choice applies immediately and
+is restored on launch. Server-hosted pages do not change native app artwork.
 
 Checkboxes and selected graph filters follow the app theme's accent color:
 brown in Light and purple in Dark, including when System changes appearance.
@@ -27,7 +52,7 @@ pending automatic summaries, while an already running request may finish. Manual
 ## Skills
 
 Open **Settings → Skills**. **Global Agent Skills** reads installed packages in
-place. **Location** defaults to `~/.agents/skills`, the
+place on the server computer. **Location** defaults to `~/.agents/skills`, the
 [Vercel Skills CLI's shared global location](https://github.com/vercel-labs/skills/blob/main/src/installer.ts).
 Enter an existing absolute folder path (or a path beginning with `~/`) and choose
 **Save location** to use another folder. **Use default** restores the default.
@@ -109,15 +134,18 @@ App updates do not replace it. Quit Noctua apps and servers before backing up
 the entire folder; copying PDFs alone does not preserve annotations or notes.
 
 To move storage, choose an empty folder in **Settings → Data & storage**, save,
-then quit all Noctua apps and servers and restart. Noctua copies the data and
+then use **Restart safely** after other tasks finish. Closing a desktop window
+alone does not stop the independent server. An enabled login definition follows
+the relocated data, and the source remains available as a backup. Noctua copies the data and
 keeps the original. Unset `NOCTUA_HOME` and `NOCTUA_NOTES` if they override the
 location you want to select.
 
 ## Updates
 
-Official desktop builds check for updates at startup. You can also use
-**Settings → About & shortcuts → Check for updates**. Save work before installing.
-**Update to …** opens an in-app confirmation. Choose **Install update** to download,
+Use the local connection manager's **Desktop → Check desktop update**.
+Server-hosted web pages do not control the native updater. Official builds check
+at startup after restoring or retrying a saved connection. Save work before installing.
+**Install offered update** opens an in-app confirmation. Choose **Install update** to download,
 verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
 installation, use **Restart Noctua** when offered.
 The startup popup lists release highlights from your installed version through
@@ -130,3 +158,19 @@ Linux in-app updates require AppImage; use your package manager for other builds
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.
+
+## Independent server updates
+
+After the updated desktop opens, an existing local server is upgraded separately.
+Clients receive a maintenance notice and save open edits; active tasks finish
+before the server is stopped, backed up and replaced. Failed saves or a task wait
+timeout keep the old owner running. An enabled login service follows the verified
+replacement; auto-start is never installed implicitly. Previous staged executables
+are cleaned only after the new identity/version is verified and their references
+are released. Use **This computer → Update server** to retry and inspect progress.
+A default OS-user client profile permits one local server across data folders.
+If pending skill reviews block an update, use **Open running server · defer
+update** to resolve them on the compatible current server, then retry. Failed
+replacement startup can be retried from the same popup while the server is down.
+See [server backup and updates](server.md#drafts-backup-and-updates) for complete
+backup/restore and validation limits.

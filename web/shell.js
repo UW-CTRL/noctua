@@ -11,13 +11,14 @@ window.addEventListener('storage', (e) => { if (e.key === 'noctua.theme' || e.ke
 
 const params = new URLSearchParams(location.search);
 const WIN = params.get('w') || 'w1';
-const STORE = `noctua.shell.${WIN}`;
+const STORE = `noctua.shell.${window.noctuaServerId || location.origin}.${WIN}`;
 const tabsEl = document.getElementById('tabs');
 const framesEl = document.getElementById('frames');
 const newBtn = document.getElementById('new');
 let tabs = [];      // { id, el, frame }
 let active = null;
 let seq = 0;
+let switching = false;
 
 const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -29,14 +30,20 @@ function tabUrl(t) {
   } catch { return t.frame.getAttribute('src'); }
 }
 
+function safeTabPath(url) {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') && !url.includes('\\') && !url.startsWith('/shell') ? url : '/';
+}
+
 function addTab(url = '/', { activate = true, after = null } = {}) {
+  if (switching) return null;
   const id = `t${++seq}`;
   const el = document.createElement('div');
   el.className = 'tab';
   el.draggable = true;
   el.innerHTML = '<span class="t">Noctua</span><button class="x" title="Close tab (⌘W / Ctrl+W)" data-icon="x" aria-label="Close tab (⌘W / Ctrl+W)" data-icon-only>×</button>';
   const frame = document.createElement('iframe');
-  frame.src = url.startsWith('/') && !url.startsWith('/shell') ? url : '/';
+  frame.name = `noctua:${window.noctuaServerId || location.origin}:${WIN}:${id}`;
+  frame.src = safeTabPath(url);
   const t = { id, el, frame };
   const at = after ? tabs.indexOf(after) + 1 : tabs.length;
   tabs.splice(at, 0, t);
@@ -98,6 +105,7 @@ const activate = activateTab;
 async function closeTab(t) {
   const i = tabs.indexOf(t);
   if (i < 0) return;
+  try { await flushFrame(t); } catch (e) { alert('Tab remains open: ' + e.message); return; }
   tabs.splice(i, 1);
   t.el.remove();
   // Removing an iframe skips its beforeunload, so save its open note first.
@@ -105,23 +113,23 @@ async function closeTab(t) {
   t.frame.remove();
   if (!tabs.length) {
     save();
-    post('/api/desktop/close', { window: WIN });
+    addTab('/');
     return;
   }
   if (active === t) activateTab(tabs[Math.min(i, tabs.length - 1)]);
   save();
 }
 
-function moveToNewWindow(t) {
-  const url = tabUrl(t);
-  post('/api/desktop/window', { url }).then(() => closeTab(t));  // closeTab saves the note first
+async function moveToNewWindow(t) {
+  try { await flushFrame(t); window.open(tabUrl(t), '_blank', 'noopener'); }
+  catch (error) { alert('Save before opening another window: ' + error.message); }
 }
 
 function tabMenu(t, x, y) {
   document.getElementById('menu')?.remove();
   const m = document.createElement('div');
   m.id = 'menu';
-  m.innerHTML = '<button data-a="new" data-icon="plus">New tab to the right</button><button data-a="move" data-icon="app-window">Move to new window</button><button data-a="close" data-icon="x">Close tab</button>';
+  m.innerHTML = '<button data-a="new" data-icon="plus">New tab to the right</button><button data-a="move" data-icon="app-window">Open in new window</button><button data-a="close" data-icon="x">Close tab</button>';
   m.style.left = `${x}px`;
   m.style.top = `${y}px`;
   document.body.appendChild(m);
@@ -150,16 +158,46 @@ function shortcut(e) {
   }
 }
 
-// Only the first window restores its tabs at launch; others start fresh.
+// Window keys survive reconnection; explicitly new windows start fresh.
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({ tabs: tabs.map(tabUrl), active: tabs.indexOf(active) }));
   } catch { /* storage unavailable */ }
 }
 
+async function flushFrame(t) {
+  const w=t.frame.contentWindow;
+  if (!w?.flushNoteEdits) throw Error('A tab has not finished loading. Retry shortly.');
+  w.preserveChatDraft?.();
+  await w.saveWorkspaceFile?.(); await w.flushNoteEdits(); await w.flushPDF?.();
+}
+const switchOwners = new Set();
 window.noctuaShell = {
+  beginSwitch(owner = 'connection') {
+    switchOwners.add(owner);
+    switching = true;
+    document.body.inert = true;
+    for (const tab of tabs) {
+      const w = tab.frame.contentWindow;
+      if (w.document?.querySelector('dialog[open]')) throw Error('Close open editor dialogs before switching servers.');
+      w.prepareEditorSwitch?.();
+      if (w.document?.body) w.document.body.inert = true;
+    }
+  },
+  endSwitch(owner = 'connection') {
+    switchOwners.delete(owner);
+    if (switchOwners.size) return;
+    for (const tab of tabs) {
+      const w = tab.frame.contentWindow;
+      if (w.document?.body) w.document.body.inert = false;
+    }
+    document.body.inert = false;
+    switching = false;
+  },
+  async flush() { for (const t of tabs) await flushFrame(t); },
   openTab(url) { return addTab(url, { after: active }); },
   cmd(name) {
+    if (switching) return;
     if (name === 'newTab') addTab('/', { after: active });
     else if (name === 'closeTab') active && closeTab(active);
     else if (name === 'nextTab') step(1);
@@ -177,7 +215,7 @@ setInterval(save, 5000);  // tab locations change as you browse
 
 {
   let saved = null;
-  try { saved = WIN === 'w1' && !params.get('open') ? JSON.parse(localStorage.getItem(STORE) || 'null') : null; } catch { /* ignore */ }
+  try { saved = !params.has('fresh') && !params.get('open') ? JSON.parse(localStorage.getItem(STORE) || 'null') : null; } catch { /* ignore */ }
   if (params.get('open')) addTab(params.get('open'));
   else if (saved?.tabs?.length) {
     saved.tabs.forEach((u) => addTab(u, { activate: false }));

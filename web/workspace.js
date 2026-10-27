@@ -232,7 +232,7 @@ function fileEditDiffHTML(changes) {
 }
 function showFileEditApproval(a, host) {
  const key=a.approval_id;
- if(fileEditApprovals.has(key)){const previous=fileEditApprovals.get(key);if(!previous.deciding&&!previous.settled)previous.card.querySelector('[data-diffs]').innerHTML=fileEditDiffHTML(a.changes);return;}
+ if(fileEditApprovals.has(key)){const previous=fileEditApprovals.get(key);if(!previous.card.isConnected)(host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(previous.card);if(!previous.deciding&&!previous.settled)previous.card.querySelector('[data-diffs]').innerHTML=fileEditDiffHTML(a.changes);return;}
  const d=document.createElement('section');d.className='chat-edit-approval';
  d.innerHTML=`<p><strong>Allow edits to ${esc(a.changes[0]?.name||'this file')} for this prompt?</strong></p><details><summary>View proposed changes</summary><div class="edit-diff-scroll" data-diffs>${fileEditDiffHTML(a.changes)}</div></details><p class="workspace-error" role="alert" data-error></p><footer><button data-reject>Decline</button><button class="primary" data-approve>Allow this file</button></footer><p data-status role="status"></p>`;
  (host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(d);
@@ -345,7 +345,7 @@ async function refreshAgentNote(a){
  const entry=N.list.find(n=>n.id===id);if(entry){entry.title=doc.title;entry.updated=doc.updated;}
  if(W.target===target)renderWorkspaceTree();
  if(!active||doc.updated<=N.doc.updated)return;
- showNote(doc);
+ await showNote(doc);
 }
 async function showAgentEdits(){
  const list=await api('/api/agent-edits');

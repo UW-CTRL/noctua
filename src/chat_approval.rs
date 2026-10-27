@@ -10,6 +10,18 @@ struct FileApproval { id: String, decision: Option<bool>, changes: Vec<Value> }
 struct Approval { root: PathBuf, chat: String, files: HashMap<String, FileApproval> }
 static TURNS: OnceLock<Mutex<HashMap<String, Approval>>> = OnceLock::new();
 fn turns() -> &'static Mutex<HashMap<String, Approval>> { TURNS.get_or_init(Default::default) }
+pub(crate) fn pending(app:&App)->bool{
+    turns().lock().unwrap().values().any(|turn|turn.root==app.data_dir&&turn.files.values().any(|file|file.decision.is_none()&&!file.changes.is_empty()))
+}
+pub(crate) fn pending_for_chat(app:&App,chat:&str)->Vec<Value>{
+    let map=turns().lock().unwrap();let mut events=Vec::new();
+    for (id,turn) in map.iter().filter(|(_,turn)|turn.root==app.data_dir&&turn.chat==chat){
+        for file in turn.files.values().filter(|file|file.decision.is_none()&&!file.changes.is_empty()){
+            events.push(json!({"action":"file_edit_approval","chat_id":chat,"turn_id":id,"approval_id":file.id,"changes":file.changes}));
+        }
+    }
+    events
+}
 
 pub struct Turn(pub String);
 impl Turn {

@@ -1,0 +1,72 @@
+@import url("ui.css");
+
+.connection-update-modal[open] { display: flex; flex-direction: column; gap: 10px; }
+.connection-update-modal .update-summary { min-height: 0; overflow: auto; max-height: min(48vh, 420px); }
+.connection-update-modal .connection-actions, .connection-update-modal .setup-actions { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; }
+.connection-update-modal a { color: var(--accent); }
+.connection-update-modal .update-release { padding: 10px 0; border-top: 1px solid var(--line); }
+.connection-update-modal h4 { margin: 0; font-size: 1em; }
+
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: calc(14px * var(--ui-font-scale))/1.6 var(--font-ui); }
+.connection-page { width: min(820px, 100%); margin: 0 auto; padding: 48px 28px; }
+.connection-heading { margin-bottom: 28px; }
+.connection-eyebrow { color: var(--accent); font-size: .86em; font-weight: 600; margin: 0 0 6px; }
+h1 { margin: 0 0 10px; font-size: 1.85em; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
+h2 { margin: 0 0 8px; font-size: 1.1em; font-weight: 600; }
+p { margin: 8px 0 16px; color: var(--muted); }
+.connection-card { padding: 24px; margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.connection-field { display: block; margin: 18px 0; font-size: .93em; font-weight: 500; }
+.connection-field>.web-select { display: flex; width: 100%; margin-top: 6px; }
+.connection-field .web-select-trigger { min-height: var(--control-height); padding: 8px 12px; font-size: inherit; }
+input:not([type=checkbox]), select { display: block; width: 100%; min-height: var(--control-height); margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg); color: var(--ink); }
+input::placeholder { color: var(--muted); opacity: 1; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.connection-actions button { margin: 0; }
+.connection-check { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; }
+.connection-check input { margin: 0; }
+small { display: block; color: var(--muted); font-size: .86em; }
+.connection-status { margin: 10px 0; color: var(--muted); overflow-wrap: anywhere; }
+.connection-status[data-state=error] { color: var(--danger); }
+.connection-status[data-state=ready] { color: var(--ok); }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: .86em/1.6 ui-monospace, monospace; }
+pre:empty { display: none; }
+details { margin: 16px 0; }
+summary { cursor: pointer; color: var(--muted); font-size: .93em; }
+.connection-login { max-width: 520px; padding-top: 12vh; }
+.connection-login button { width: 100%; }
+.connection-loading { max-width: 520px; padding-top: 18vh; }
+.connection-loading .connection-card { border-top: 2px solid var(--accent); }
+.connection-welcome { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px; text-align: center; }
+.connection-welcome h1 { font-size: 2em; }
+.connection-modal { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 0 24px 80px #0004; }
+.connection-modal::backdrop { background: #0006; backdrop-filter: blur(4px); }
+.connection-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.connection-modal-heading h1 { font-size: 1.45em; }
+.connection-modal-heading>button { background: transparent; color: var(--muted); border-color: transparent; }
+.connection-tabs { display: flex; gap: 4px; margin-top: 20px; padding: 4px; border-radius: 9px; background: var(--bg); }
+.connection-tabs button { flex: 1; border-color: transparent; background: transparent; color: var(--muted); }
+.connection-tabs button[aria-selected=true] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 4px #0001; }
+.connection-modal .connection-card { padding: 20px 0 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
+.connection-steps { display: flex; gap: 16px; list-style: none; counter-reset: step; margin: 0 0 24px; padding: 0; color: var(--muted); font-size: .86em; }
+.connection-steps li { counter-increment: step; display: flex; align-items: center; gap: 6px; }
+.connection-steps li::before { content: counter(step); display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; }
+.connection-steps [aria-current=step] { color: var(--accent); font-weight: 600; }
+.connection-steps [aria-current=step]::before { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.connection-wizard-actions { justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 20px; }
+.connection-wizard-actions #back { margin-right: auto; }
+.connection-review { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px 16px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); font-size: .93em; }
+.connection-review dt { color: var(--muted); }
+.connection-review dd { margin: 0; overflow-wrap: anywhere; }
+.connection-saved { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 0; }
+.connection-saved button { font-size: .86em; }
+[data-step]>h2:focus { outline: none; }
+[hidden] { display: none !important; }
+@media (max-width: 540px) {
+  .connection-page { padding: 28px 16px; }
+  .connection-card { padding: 18px; }
+  .connection-actions button { flex: 1 1 auto; }
+  .connection-modal { padding: 18px; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+  .connection-tabs { gap: 0; }
+  .connection-tabs button { padding: 6px; font-size: .86em; }
+}

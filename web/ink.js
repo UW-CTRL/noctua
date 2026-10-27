@@ -225,6 +225,7 @@ const Ink = (() => {
     syncToolbars();
 
     return {
+      finish,
       // Black-on-white PNG of the strokes, cropped, for handwriting recognition.
       toPNG() { return preview(block); },
       destroy() { ro.disconnect(); },

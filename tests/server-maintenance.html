@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="noctua-server-id" content="server-one"><title>Server maintenance regression</title>
+<script>
+window.noctuaServerId='server-one';
+let notice=null,failSave=false,offline=false,calls=[],acks=[];
+window.fetch=async(input,options={})=>{
+ if(offline)throw Error('Disconnected');
+ const path=new URL(input,location.href).pathname;
+ if(path==='/api/server/update/ack'){acks.push(JSON.parse(options.body));return{ok:true};}
+ return{ok:true,json:async()=>({server_id:'server-one',api_version:1,ready:notice?.phase!=='draining',maintenance:notice})};
+};
+window.prepareEditorSwitch=()=>calls.push('finish');
+window.preserveChatDraft=()=>calls.push('draft');
+window.saveWorkspaceFile=async()=>{calls.push('file');};
+window.flushNoteEdits=async()=>{calls.push('note');if(failSave)throw Error('Conflicting note');};
+window.flushPDF=async()=>calls.push('pdf');
+</script><script src="../web/connection.js"></script></head><body><input value="Keep this input"><pre id="result">Checking…</pre>
+<script>
+const assert=(value,message)=>{if(!value)throw Error(message)};
+const wait=async test=>{for(let i=0;i<100;i++){if(test())return;await new Promise(r=>setTimeout(r,20));}throw Error('Maintenance response timed out');};
+window.addEventListener('load',async()=>{try{
+ await new Promise(r=>setTimeout(r,50));
+ notice={id:'update-one',phase:'announcing',version:'2.0.0'};
+ window.dispatchEvent(new Event('online'));await wait(()=>acks.length===1);
+ assert(acks[0].saved&&acks[0].client&&document.body.inert,'client did not save and freeze before acknowledging');
+ assert(calls.join(',')==='finish,draft,file,note,pdf','maintenance skipped an editor or finalized it after freezing');
+ assert(document.querySelector('input').value==='Keep this input','maintenance erased unsaved input');
+ notice.phase='draining';window.dispatchEvent(new Event('online'));await new Promise(r=>setTimeout(r,50));
+ assert(acks.length===1&&document.body.inert,'draining repeated the save or resumed input');
+ notice=null;window.dispatchEvent(new Event('online'));await wait(()=>!document.body.inert);
+ failSave=true;notice={id:'update-two',phase:'announcing'};
+ window.dispatchEvent(new Event('online'));await wait(()=>acks.length===2);
+ assert(!acks[1].saved&&!document.body.inert,'failed save acknowledged success or left editing frozen');
+ assert(!document.querySelector('.connection-banner').hidden,'failed update save has no visible recovery message');
+ // Simulate a native switch already freezing the shell while maintenance starts.
+ const owners=new Set(['connection']);document.body.inert=true;
+ window.noctuaShell={beginSwitch(owner){owners.add(owner);document.body.inert=true;},endSwitch(owner){owners.delete(owner);document.body.inert=!!owners.size;},async flush(){}};
+ notice={id:'update-three',phase:'announcing'};
+ window.dispatchEvent(new Event('online'));await wait(()=>acks.length===3);
+ assert(acks[2].saved&&owners.has('maintenance'),'maintenance did not own its shell pause');
+ offline=true;window.dispatchEvent(new Event('offline'));await wait(()=>!owners.has('maintenance'));
+ assert(owners.has('connection')&&document.body.inert,'disconnect released the native connection freeze');
+ window.noctuaShell.endSwitch('connection');assert(!document.body.inert,'native switch could not resume after disconnection');
+ const result='PASS: maintenance notice, draft preservation, editor flushing, freeze acknowledgment, no repeated save, cancellation, conflict recovery and independent pause owners';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+}catch(error){const result='FAIL: '+error.message+' '+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}});
+</script></body></html>

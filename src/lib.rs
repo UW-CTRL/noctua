@@ -1,7 +1,14 @@
 //! Noctua: a local research app for exploring Semantic Scholar citation
-//! graphs, native Library collections and LaTeX notes. `start` runs the local web server;
-//! the browser binary (`src/main.rs`) and the desktop app (`app/`) both use it.
+//! graphs, native Library collections and LaTeX notes. `start` runs the independent
+//! authenticated data server; the CLI owns its lifetime and interfaces connect.
 
+pub mod server;
+pub mod service;
+pub mod client;
+pub mod server_update;
+mod server_resources;
+mod security;
+mod maintenance;
 mod agent;
 mod cache;
 mod chat;
@@ -34,9 +41,9 @@ mod zotero;
 use std::{env, future::{Future, IntoFuture}, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, Query, Request, State},
-    http::{header, Method, StatusCode},
-    middleware::{self, Next},
+    extract::{DefaultBodyLimit, Path, Query, State},
+    http::{header, StatusCode},
+    middleware::{self},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
@@ -72,7 +79,7 @@ pub enum UpdateAction { Check, StartupCheck, Install, Restart }
 pub struct ServeOptions {
     /// 0 picks a free port.
     pub port: u16,
-    pub desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
+
 }
 
 /// An error with a specific HTTP status and a message for the user.
@@ -102,10 +109,12 @@ struct App {
     data_dir: PathBuf,
     shared_skills_dir: Option<PathBuf>,
     _storage_lease: Option<std::fs::File>,
+    runtime: Option<Arc<security::Runtime>>,
     settings: std::sync::Mutex<Settings>,
     desktop: Option<mpsc::UnboundedSender<DesktopCmd>>,
     login_gate: tokio::sync::Mutex<()>,
     chat_jobs: std::sync::Mutex<std::collections::HashSet<String>>,
+    chat_cancels: std::sync::Mutex<std::collections::HashMap<String,Arc<tokio::sync::Notify>>>,
 }
 
 impl App {
@@ -303,10 +312,15 @@ async fn chats_list(State(app): Shared, Query(q): Query<AgentQuery>) -> ApiResul
 
 async fn chats_get(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> Response {
     match app.history.get(&id, q.provider(&app)) {
-        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); Json(c).into_response() },
+        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); c["pending_file_edits"]=json!(chat_approval::pending_for_chat(&app,&id)); Json(c).into_response() },
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such chat" }))).into_response(),
         Err(e) => ApiError(e).into_response(),
     }
+}
+
+async fn chat_cancel(State(app): Shared, Path(id): Path<String>) -> ApiResult {
+    if let Some(cancel)=app.chat_cancels.lock().unwrap().get(&id) {cancel.notify_one();}
+    Ok(Json(json!({"ok":true})))
 }
 
 async fn chats_delete(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> ApiResult {
@@ -536,38 +550,32 @@ async fn desktop_update(State(app): Shared, Json(body): Json<UpdateBody>) -> Api
     Ok(Json(result))
 }
 
-/// Only this server's own pages (and local tools like `claude`) may use it:
-/// the Host must be our address (stops DNS rebinding), and a write from a
-/// page must come from our own origin (stops other websites posting to it).
-async fn guard(State(hosts): State<Arc<Vec<String>>>, req: Request, next: Next) -> Response {
-    if env::var_os("NOCTUA_DEBUG").is_some() {
-        eprintln!("{} {}", req.method(), req.uri());
-    }
-    let host = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("");
-    if !hosts.iter().any(|h| h == host) {
-        return (StatusCode::FORBIDDEN, "unexpected Host").into_response();
-    }
-    if req.method() != Method::GET && req.method() != Method::HEAD {
-        if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
-            if !hosts.iter().any(|h| origin == format!("http://{h}")) {
-                return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
-            }
-        }
-    }
-    next.run(req).await
-}
-
 /// Sets up the data folder and starts the server on 127.0.0.1. Returns its
 /// URL and the future that runs it.
 pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Output = std::io::Result<()>>)> {
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], opts.port))).await?;
+    server_update::check_reservation()?;
+    let machine=server::machine_lease()?;
     let storage_lease = storage::lease()?;
+    storage::exclusive_lease(&storage_lease)?;
     let data = paths::data_dir()?;
-    storage::share_lease(&storage_lease)?;
     std::fs::create_dir_all(&data)?;
-    let migrated = paths::migrate_legacy(&data)?;
+    let config_path=data.join("server-config.json");
+    let config:Value=if config_path.exists(){serde_json::from_slice(&std::fs::read(config_path)?)?}else{json!({})};
+    let preferred_port=server::preferred_port(&data,opts.port);
+    let listener = match tokio::net::TcpListener::bind(SocketAddr::from(([127,0,0,1],preferred_port))).await {
+        Ok(listener)=>listener,
+        Err(e) if e.kind()==std::io::ErrorKind::AddrInUse => tokio::net::TcpListener::bind(SocketAddr::from(([127,0,0,1],0))).await?,
+        Err(e)=>return Err(e.into()),
+    };
+    let port = listener.local_addr()?.port();
+    let url = format!("http://127.0.0.1:{port}");
+    let owner = server::Owner::acquire_with_machine(&data, &url,Some(machine))?;
+    server_update::restore_launch(&data, &owner.record.server_id)?;
+    server_resources::configure()?;
+    let migrated = if env::var_os("NOCTUA_HOME").is_some() || env::var_os("NOCTUA_PROFILE_HOME").is_some() { None } else { paths::migrate_legacy(&data)? };
     let mut settings = Settings::load(&data);
     if let Some(old) = &migrated {
+        server::backup(&data)?;
         println!("Moved Noctua's data from {} to {} (the old files were left in place).", old.display(), data.display());
         if settings.zotero_dir.is_none() {
             settings.zotero_dir = settings::zotero_suggestion().map(|d| d.to_string_lossy().into_owned());
@@ -579,9 +587,17 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         println!("No Semantic Scholar key yet: Noctua will ask for one in its window.");
     }
 
-    let port = listener.local_addr()?.port();
-    let url = format!("http://127.0.0.1:{port}");
-    let hosts = Arc::new(vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")]);
+    let mut allowed_hosts = vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")];
+    let mut origins = allowed_hosts.iter().map(|h| format!("http://{h}")).collect::<Vec<_>>();
+    let configured_origins=env::var("NOCTUA_ORIGINS").ok().unwrap_or_else(||config["origins"].as_array().map(|a|a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(",")).unwrap_or_default());
+    for origin in configured_origins.split(',').filter(|s| !s.is_empty()) {
+        let parsed = server::validate_url(origin)?;
+        anyhow::ensure!(parsed.scheme() == "https", "Additional origins must use HTTPS");
+        allowed_hosts.push(parsed.authority().to_string());
+        origins.push(parsed.origin().ascii_serialization());
+    }
+    let hosts = Arc::new(allowed_hosts.clone());
+    let runtime = Arc::new(security::Runtime::new(owner, allowed_hosts, origins));
 
     let cache = Arc::new(Cache::open(&data.join("noctua-cache.sqlite"))?);
     let app = Arc::new(App {
@@ -598,21 +614,78 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         shared_skills_dir: dirs::home_dir().map(|home| home.join(".agents").join("skills")),
         _storage_lease: storage_lease,
         settings: std::sync::Mutex::new(settings),
-        desktop: opts.desktop,
+        desktop: None,
+        runtime: Some(runtime.clone()),
         login_gate: tokio::sync::Mutex::new(()),
         chat_jobs: std::sync::Mutex::new(Default::default()),
+        chat_cancels: std::sync::Mutex::new(Default::default()),
     });
 
     if let Some(desktop) = &app.desktop {
         let icon = app.settings.lock().unwrap().app_icon;
         let _ = desktop.send(DesktopCmd::SetAppIcon(icon, None));
     }
-    Ok((url, axum::serve(listener, router(app, hosts)).into_future()))
+    runtime.owner.publish()?;
+    let shutdown = runtime.clone();
+    Ok((url, axum::serve(listener, router(app, hosts)).with_graceful_shutdown(async move { shutdown.shutdown.notified().await }).into_future()))
 }
 
+fn page(app: &App, html: &str) -> Response {
+    let id=app.runtime.as_ref().map(|r|r.owner.record.server_id.as_str()).unwrap_or("test");
+    // UUIDs originate locally, never from a request.
+    asset_owned(html.replace("<head>", &format!("<head><meta name=\"noctua-server-id\" content=\"{id}\">")), "text/html; charset=utf-8")
+}
+fn asset_owned(html: String, mime: &'static str) -> Response { ([(header::CONTENT_TYPE,mime)],html).into_response() }
+async fn page_index(State(app): Shared) -> Response { page(&app,include_str!("../web/index.html")) }
+async fn page_shell(State(app): Shared) -> Response { page(&app,include_str!("../web/shell.html")) }
+
+async fn server_identity(State(app): Shared, headers: axum::http::HeaderMap) -> Json<Value> {
+    if let (Some(runtime),Some(client))=(app.runtime.as_ref(),headers.get("x-noctua-editor").and_then(|v|v.to_str().ok())) {runtime.maintenance.lock().unwrap().touch(client);}
+    Json(app.runtime.as_ref().map(|r|r.identity()).unwrap_or(json!({"product":"noctua","server_id":"test","api_version":1,"ready":true})))
+}
+async fn server_stop(State(app): Shared) -> ApiResult {
+    let r = app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
+    let _admission=r.admission.lock().unwrap();
+    let previous=r.draining.swap(true,std::sync::atomic::Ordering::SeqCst);
+    let pending_review=skills::pending_review(&app)||chat_approval::pending(&app);
+    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || paper::busy() || pending_review || app.login_gate.try_lock().is_err() {
+        r.draining.store(previous,std::sync::atomic::Ordering::SeqCst);
+        return Err(Status(StatusCode::CONFLICT,if pending_review{"A chat file edit or skill run awaits approval/output review. Apply/reject it before stopping; its results were kept."}else{"Tasks or other requests are active. Wait and retry; no task was stopped."}.into()).into());
+    }
+    r.shutdown.notify_one();
+    Ok(Json(json!({"draining":true})))
+}
+async fn server_update_control(State(app):Shared,Json(body):Json<Value>)->ApiResult {
+    let r=app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
+    let action=body["action"].as_str().unwrap_or("");let id=body["id"].as_str().unwrap_or("");
+    if id.is_empty()||id.len()>128 {return Err(anyhow::anyhow!("Invalid update transaction").into());}
+    let pending_review=skills::pending_review(&app)||chat_approval::pending(&app);
+    if action=="begin"&&pending_review {return Err(anyhow::anyhow!("A chat file edit or skill run is awaiting approval/output review. Apply/reject it before updating; its results were kept").into());}
+    let _admission=r.admission.lock().unwrap();
+    let notice=r.maintenance.lock().unwrap().control(action,id,body["version"].as_str().unwrap_or(""))?;
+    if action=="drain" {r.draining.store(true,std::sync::atomic::Ordering::SeqCst);}
+    if action=="cancel" {r.draining.store(false,std::sync::atomic::Ordering::SeqCst);}
+    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && !paper::busy() && app.login_gate.try_lock().is_ok();
+    let mut response=json!({"maintenance":notice,"idle":idle&&!pending_review,"pending_review":pending_review});
+    if action=="begin" {response["launch_environment"]=server_update::launch_environment(&app)?;}
+    Ok(Json(response))
+}
+async fn server_update_ack(State(app):Shared,Json(body):Json<Value>)->ApiResult {
+    let r=app.runtime.as_ref().ok_or_else(||anyhow::anyhow!("Server control unavailable"))?;
+    r.maintenance.lock().unwrap().acknowledge(body["id"].as_str().unwrap_or(""),body["client"].as_str().unwrap_or(""),body["saved"].as_bool().unwrap_or(false))?;
+    Ok(Json(json!({"ok":true})))
+}
 fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
+    let security = (hosts, app.runtime.clone());
     Router::new()
-        .route("/", get(|| async { asset(include_str!("../web/index.html"), "text/html; charset=utf-8") }))
+        .route("/api/server", get(server_identity))
+        .route("/api/server/stop", post(server_stop))
+        .route("/api/server/update", post(server_update_control))
+        .route("/api/server/update/ack", post(server_update_ack))
+        .route("/auth/login", post(||async{StatusCode::UNAUTHORIZED}))
+        .route("/drafts.js", get(||async{asset(include_str!("../web/drafts.js"),"text/javascript; charset=utf-8")}))
+        .route("/connection.js", get(||async{asset(include_str!("../web/connection.js"),"text/javascript; charset=utf-8")}))
+        .route("/", get(page_index))
         .route("/app.js", get(|| async { asset(include_str!("../web/app.js"), "text/javascript; charset=utf-8") }))
         .route("/chat-render.js", get(|| async { asset(include_str!("../web/chat-render.js"), "text/javascript; charset=utf-8") }))
         .route("/vendor/highlight/highlight.min.js", get(|| async { asset(include_str!("../web/vendor/highlight/highlight.min.js"), "text/javascript; charset=utf-8") }))
@@ -620,6 +693,10 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/vendor/mermaid/mermaid.min.js", get(|| async { asset(include_str!("../web/vendor/mermaid/mermaid.min.js"), "text/javascript; charset=utf-8") }))
         .route("/icons.css", get(|| async { asset(include_str!("../web/icons.css"), "text/css; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(include_str!("../web/style.css"), "text/css; charset=utf-8") }))
+        .route("/ui.css", get(|| async { asset(include_str!("../web/ui.css"), "text/css; charset=utf-8") }))
+        .route("/connection.css", get(|| async { asset(include_str!("../web/connection.css"), "text/css; charset=utf-8") }))
+        .route("/connection-status.css", get(|| async { asset(include_str!("../web/connection-status.css"), "text/css; charset=utf-8") }))
+        .route("/appearance.js", get(|| async { asset(include_str!("../web/appearance.js"), "text/javascript; charset=utf-8") }))
         .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
         .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
         .route("/notes.js", get(|| async { asset(include_str!("../web/notes.js"), "text/javascript; charset=utf-8") }))
@@ -627,10 +704,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/chat-selections.js", get(|| async { asset(include_str!("../web/chat-selections.js"), "text/javascript; charset=utf-8") }))
         .route("/pdf-objects.js", get(|| async { asset(include_str!("../web/pdf-objects.js"), "text/javascript; charset=utf-8") }))
         .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
-        .route("/shell", get(|| async { asset(include_str!("../web/shell.html"), "text/html; charset=utf-8") }))
+        .route("/shell", get(page_shell))
         .route("/shell.js", get(|| async { asset(include_str!("../web/shell.js"), "text/javascript; charset=utf-8") }))
         .route("/fonts.js", get(|| async { asset(include_str!("../web/fonts.js"), "text/javascript; charset=utf-8") }))
         .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
+        .route("/update-dialogs.js", get(||async{asset(include_str!("../web/update-dialogs.js"),"text/javascript; charset=utf-8")}))
         .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
         .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
         .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))
@@ -696,6 +774,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/note-images/{target}/{file}", get(note_image_get))
         .route("/api/ink-latex", post(ink_latex).layer(DefaultBodyLimit::max(16 << 20)))
         .route("/api/chats", get(chats_list))
+        .route("/api/chats/{id}/stop", post(chat_cancel))
         .route("/api/chats/{id}", get(chats_get).delete(chats_delete))
         .route("/api/agent-edits", get(mcp_edits::list))
         .route("/api/agent-edits/{id}", get(mcp_edits::get).post(mcp_edits::decide))
@@ -722,5 +801,5 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/desktop/update", post(desktop_update))
         .merge(reader::routes())
         .with_state(app)
-        .layer(middleware::from_fn_with_state(hosts, guard))
+        .layer(middleware::from_fn_with_state(security, security::guard))
 }

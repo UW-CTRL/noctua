@@ -207,3 +207,29 @@ The assistant can read paper compiler logs and browse internal build files using
 
 Double-click text in a compiled paper preview to jump to its source line; see
 [PDF-to-source navigation](papers.md#jump-from-pdf-to-source).
+
+## Connection-aware note drafts
+
+Server updates announce a maintenance pause and save open editors before restart.
+Resolve open dialogs or save conflicts if an update is waiting. A failed save
+keeps the current server running; drafts stay on this device. After restart,
+desktop clients reconnect, while browser clients may need to reload and sign in.
+
+Open notes save local drafts separately for each server, note, and editor tab.
+After a refresh or relaunch, reopen the note to recover them. If several editors
+have different drafts, choose one in **Recover a local draft**. Opening the server
+copy leaves the other drafts available; **Discard this draft** removes only that
+unchanged snapshot. Legacy drafts remain recoverable.
+
+The status distinguishes **Local draft saved**, **Saving to server**, **Saved to
+server**, and a disconnected or failed save. A local storage failure explicitly
+asks you to keep the window open. If another device changed the server version,
+resolve the conflict; **Keep mine** explicitly overwrites the current server copy.
+New input made while fetching a conflict's server copy is kept.
+
+A save acknowledgment removes only its matching draft, including when another
+tab edits during the request. Browser storage is specific to the server's web
+origin and can be cleared or reach a quota. Keep a stable server address for
+recovery and avoid private browsing. This scope preserves open note content; it
+does not provide a full offline library or queue media uploads. See
+[Server and connections](server.md) for reconnection and switching.

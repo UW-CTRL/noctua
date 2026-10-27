@@ -3,7 +3,8 @@
   "productName": "Noctua",
   "identifier": "app.noctua.desktop",
   "build": {
-    "frontendDist": "dist"
+    "frontendDist": "dist",
+    "beforeBuildCommand": "python3 prepare-server.py"
   },
   "plugins": {
     "updater": {
@@ -36,6 +37,7 @@
       "minimumSystemVersion": "11.0"
     },
     "resources": {
+      "binaries/": "binaries/",
       "../target/tectonic/": "tectonic/",
       "../target/texlive/": "texlive/"
     }
