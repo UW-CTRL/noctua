@@ -398,23 +398,83 @@ function parseId(s) {
   return null;
 }
 
+const defaultSearchEngines = ['arxiv', 'semantic-scholar', 'openalex', 'google-scholar'];
+function normalizeSearchEngineOrder(order) {
+  const known = Array.isArray(order) ? [...new Set(order.filter(engine => defaultSearchEngines.includes(engine)))] : [];
+  return [...known, ...defaultSearchEngines.filter(engine => !known.includes(engine))];
+}
+let searchEngines;
+try { searchEngines = normalizeSearchEngineOrder(JSON.parse(store.get('noctua.searchEngineOrder'))); }
+catch { searchEngines = [...defaultSearchEngines]; }
+const searchEngineNames = { arxiv: 'arXiv', 'semantic-scholar': 'Semantic Scholar', openalex: 'OpenAlex', 'google-scholar': 'Google Scholar' };
+let searchEngine = searchEngines[0];
+function syncSearchEngineOrder() {
+  const select = $('#search-engine');
+  select.append(...searchEngines.map(engine => select.querySelector(`option[value="${engine}"]`)));
+  select.value = searchEngine;
+}
+function setSearchEngineOrder(order) {
+  searchEngines = normalizeSearchEngineOrder(order);
+  store.set('noctua.searchEngineOrder', JSON.stringify(searchEngines));
+  syncSearchEngineOrder();
+  setSearchEngine(searchEngines[0]);
+}
+syncSearchEngineOrder();
+function updateSearchPlaceholder() {
+  $('#search').placeholder = searchEngine === 'google-scholar' ? 'Search Google Scholar in a new tab…' : `Search ${searchEngineNames[searchEngine]} papers…`;
+  $('#search').title = '↑↓: select paper · Enter: PDF · Shift+Enter: graph · Tab: next engine · Shift+Tab: leave search field';
+}
+updateSearchPlaceholder();
 let searchState = { q: '', next: null };
 let searchToken = 0;
+let searchTimer = null;
+let searchActiveIndex = -1;
+let searchOpening = false;
 
-function closeSearchResults() { $('#tab-results').classList.add('hidden'); }
+function closeSearchResults() {
+  clearTimeout(searchTimer);
+  searchToken++;
+  $('#tab-results').classList.add('hidden');
+  $('#search').setAttribute('aria-expanded', 'false');
+  $('#search').removeAttribute('aria-activedescendant');
+}
 
+function googleScholarUrl(q) { return `https://scholar.google.com/scholar?q=${enc(q)}`; }
+function showExternalSearch(q) {
+  $('#tab-results').classList.remove('hidden');
+  $('#tab-results').innerHTML = `<p class="hint">Google Scholar opens in a new tab. Press Enter or <a href="${googleScholarUrl(q)}" target="_blank" rel="noopener noreferrer">search Google Scholar ↗</a>.</p>`;
+}
+function setSearchEngine(engine, openExternal = false) {
+  if (!searchEngines.includes(engine)) return;
+  closeSearchResults();
+  searchEngine = engine;
+  $('#search-engine').value = engine;
+  updateSearchPlaceholder();
+  results = []; searchState = { q: '', next: null };
+  const q = $('#search').value.trim();
+  if (q && (engine !== 'google-scholar' || openExternal)) search(q);
+  else if (q) showExternalSearch(q);
+}
 async function search(q, offset = 0) {
-  if (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) setMode('graph');
+  clearTimeout(searchTimer);
+  if (searchEngine === 'google-scholar') {
+    closeSearchResults();
+    window.open(googleScholarUrl(q), '_blank', 'noopener,noreferrer');
+    return;
+  }
   const token = ++searchToken;
   const id = parseId(q);
-  if (id) return loadGraph(id);
   $('#tab-results').classList.remove('hidden');
   if (offset === 0) {
+    searchActiveIndex = -1;
+    $('#search').removeAttribute('aria-activedescendant');
     results = [];
     $('#tab-results').innerHTML = '<p class="hint">Searching…</p>';
   }
   try {
-    const r = await api(`/api/search?q=${enc(q)}&offset=${offset}`);
+    const r = id && (searchEngine === 'semantic-scholar' || /^[0-9a-f]{40}$/i.test(id))
+      ? { data: [await api(`/api/paper?id=${enc(id)}`)], total: 1 }
+      : await api(`/api/search?q=${enc(q)}&offset=${offset}&engine=${enc(searchEngine)}${id ? '&id=' + enc(id) : ''}`);
     if (token !== searchToken) return;
     results = results.concat(r.data || []);
     searchState = { q, next: r.next ?? null, total: r.total };
@@ -447,10 +507,59 @@ function paperLi(p, extraClass = '') {
   return `<li data-id="${esc(p.paperId)}" class="${extraClass}">
     <div class="p-title">${esc(p.title)}${inLib}</div>
     <div class="p-meta">${esc(authorsShort(p))}</div>
-    <div class="p-meta">${venue}${p.year ?? '—'} · ${fmt(p.citationCount)} citations</div>
+    <div class="p-meta">${venue}${p.year ?? '—'}${p.citationCount == null ? '' : ' · ' + fmt(p.citationCount) + ' citations'}</div>
   </li>`;
 }
 
+function selectSearchResult(index, scroll = false) {
+  searchActiveIndex = Math.max(0, Math.min(index, results.length - 1));
+  const rows = [...$('#tab-results').querySelectorAll('li')];
+  rows.forEach((row, i) => {
+    row.classList.toggle('selected', i === searchActiveIndex);
+    row.setAttribute('aria-selected', String(i === searchActiveIndex));
+  });
+  const row = rows[searchActiveIndex];
+  if (row && !$('#tab-results').classList.contains('hidden')) {
+    $('#search').setAttribute('aria-expanded', 'true');
+    $('#search').setAttribute('aria-activedescendant', row.id);
+    if (scroll) row.scrollIntoView({ block: 'nearest' });
+  }
+}
+async function searchGraphId(paper) {
+  const id = paper.paperId || parseId(paper.url || '');
+  if (id) return id;
+  const match = await api(`/api/match?title=${enc(paper.title)}`);
+  if (!titlesAgree(paper.title, match.title)) throw new Error('No matching title found. Use Open paper to read the source.');
+  return match.paperId;
+}
+async function openSearchResult(index, action = 'pdf') {
+  const paper = results[index];
+  if (!paper || searchOpening) return;
+  searchOpening = true;
+  const token = searchToken;
+  try {
+    if (action === 'pdf') {
+      closeSearchResults();
+      const sourceId = parseId(paper.url || '');
+      const arxiv = paper.externalIds?.ArXiv || (sourceId?.startsWith('ARXIV:') ? sourceId.slice(6) : null);
+      await readDiscoveredPaper(arxiv ? { ...paper, externalIds: { ...paper.externalIds, ArXiv: arxiv } } : paper);
+      return;
+    }
+    const id = await searchGraphId(paper);
+    if (token !== searchToken) return;
+    if (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) setMode('graph');
+    const outcome = await loadGraph(id, { quiet404: true });
+    if (outcome === 'notfound' && searchToken === token + 1) {
+      renderResults(); $('#tab-results').classList.remove('hidden'); selectSearchResult(index);
+      toast('This paper has no Semantic Scholar graph. Use Open paper to read the source.', { error: true });
+    }
+  } catch (e) { if (token === searchToken) toast('Could not open this paper: ' + e.message, { error: true }); }
+  finally { searchOpening = false; }
+}
+function searchResultActions(paper) {
+  const source = paper.url || (paper.externalIds?.ArXiv ? `https://arxiv.org/abs/${enc(paper.externalIds.ArXiv)}` : paper.externalIds?.DOI ? `https://doi.org/${enc(paper.externalIds.DOI)}` : '');
+  return `<div class="search-result-actions">${/^https?:\/\//i.test(source) ? `<a class="search-source" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Open paper ↗</a>` : ''}<button type="button" class="search-graph" data-icon="network" aria-label="Build graph for ${esc(paper.title)}">Graph</button><button type="button" class="search-pdf" data-icon="file-text" aria-label="Read PDF for ${esc(paper.title)}">PDF</button></div>`;
+}
 function renderResults() {
   const el = $('#tab-results');
   if (!searchState.q) return;
@@ -458,10 +567,16 @@ function renderResults() {
     el.innerHTML = '<p class="hint">No results.</p>';
     return;
   }
-  el.innerHTML = `<p class="hint">${fmt(searchState.total)} results — click one to build its graph.</p>
-    <ul class="papers">${results.map((p) => paperLi(p)).join('')}</ul>
+  el.innerHTML = `<p class="hint">${fmt(searchState.total)} results · ↑↓ select · Enter: PDF · Shift+Enter: graph.</p>
+    <ul id="search-result-list" class="papers" role="listbox" aria-label="Paper search results">${results.map((p, index) => paperLi(p).replace('<li ', `<li id="search-result-${index}" role="option" aria-selected="false" `).replace('</li>', `${searchResultActions(p)}</li>`)).join('')}</ul>
     ${searchState.next ? '<button class="more" id="more" data-icon="chevron-down">More results</button>' : ''}`;
-  el.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => loadGraph(li.dataset.id)));
+  el.querySelectorAll('li').forEach((li, index) => {
+    li.addEventListener('pointermove', () => selectSearchResult(index));
+    li.addEventListener('click', (event) => { if (!event.target.closest('a, button')) openSearchResult(index, 'pdf'); });
+    li.querySelector('.search-graph').addEventListener('click', (event) => { event.stopPropagation(); openSearchResult(index, 'graph'); });
+    li.querySelector('.search-pdf').addEventListener('click', (event) => { event.stopPropagation(); openSearchResult(index, 'pdf'); });
+  });
+  selectSearchResult(searchActiveIndex < 0 ? 0 : searchActiveIndex);
   el.querySelector('#more')?.addEventListener('click', () => search(searchState.q, searchState.next));
 }
 
@@ -558,7 +673,7 @@ function ensureAbstract(p,native=false){
     .catch(e=>{state.status='error';state.error=e.message;})
     .finally(()=>{
       const readerPaper=typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')?PDF.paper:null;
-      const current=native?(readerPaper || lib.detail):(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId===G.selected));
+      const current=native?(readerPaper || lib.detail):(G.nodes.get(G.selected)?.p || results.find(r=>r.paperId && r.paperId===G.selected));
       if(current&&abstractKey(current,native)===key){if(state.data?.abstract)current[field]=state.data.abstract;renderDetails();updateChatContext();}
     });
 }
@@ -574,7 +689,7 @@ function renderDetails() {
   const el = $('#details');
   if (typeof PDF !== 'undefined' && document.body.classList.contains('pdf-mode') && PDF.paper) return renderLibDetails(PDF.paper);
   const n = G.nodes.get(G.selected);
-  const p = n?.p || results.find((r) => r.paperId === G.selected);
+  const p = n?.p || results.find((r) => r.paperId && r.paperId === G.selected);
   if (!p) {
     if (lib.detail) return renderLibDetails(lib.detail);
     el.innerHTML = '<p class="hint">Click a node to see the paper and add it to Noctua.</p>';
@@ -1936,15 +2051,44 @@ $('#search-form').addEventListener('submit', (e) => {
   if (q) search(q);
 });
 
-$('#search-form button').addEventListener('click', (e) => {
+$('#search-form > button[type="submit"]').addEventListener('click', (e) => {
   if (!$('#search').value.trim()) { e.preventDefault(); $('#search').focus(); }
 });
-$('#search').addEventListener('input', () => {
-  searchToken++; // Ignore responses for a query that has since been edited.
-  closeSearchResults();
+$('#search-engine').addEventListener('change', () => setSearchEngine($('#search-engine').value, true));
+$('#search').addEventListener('keydown', (e) => {
+  if (e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.key === 'Enter' && (searchOpening || e.repeat)) { e.preventDefault(); return; }
+  const matches = searchEngine !== 'google-scholar' && results.length && searchState.q === $('#search').value.trim();
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && matches) {
+    e.preventDefault();
+    $('#tab-results').classList.remove('hidden');
+    selectSearchResult(searchActiveIndex < 0 ? (e.key === 'ArrowDown' ? 0 : results.length - 1) : searchActiveIndex + (e.key === 'ArrowDown' ? 1 : -1), true);
+    return;
+  }
+  if (e.key === 'Enter' && matches && !$('#tab-results').classList.contains('hidden')) {
+    e.preventDefault();
+    if (!e.repeat) openSearchResult(searchActiveIndex < 0 ? 0 : searchActiveIndex, e.shiftKey ? 'graph' : 'pdf');
+    return;
+  }
+  if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+  e.preventDefault();
+  setSearchEngine(searchEngines[(searchEngines.indexOf(searchEngine) + 1) % searchEngines.length]);
 });
+$('#search').addEventListener('input', (e) => {
+  closeSearchResults();
+  searchActiveIndex = -1;
+  const q = $('#search').value.trim();
+  results = [];
+  searchState = { q: '', next: null };
+  if (!q || e.isComposing) return;
+  if (searchEngine === 'google-scholar') { showExternalSearch(q); return; }
+  $('#tab-results').innerHTML = '<p class="hint">Searching…</p>';
+  $('#tab-results').classList.remove('hidden');
+  searchTimer = setTimeout(() => search(q), 350);
+});
+$('#search').addEventListener('compositionend', () => $('#search').dispatchEvent(new Event('input')));
 $('#search').addEventListener('focus', () => {
-  if (searchState.q === $('#search').value.trim() && results.length) $('#tab-results').classList.remove('hidden');
+  if (searchState.q === $('#search').value.trim() && results.length) { $('#tab-results').classList.remove('hidden'); selectSearchResult(searchActiveIndex); }
 });
 $('#research-search').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeSearchResults(); $('#search').blur(); }

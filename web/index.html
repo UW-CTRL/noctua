@@ -23,7 +23,13 @@
     </div>
     <div id="research-search">
       <form id="search-form" autocomplete="off" role="search">
-        <input id="search" type="search" placeholder="Search papers, or paste a DOI / arXiv / Semantic Scholar link" aria-label="Search papers, DOI or arXiv" aria-controls="tab-results" required>
+        <select id="search-engine" aria-label="Paper search engine" title="Choose search engine. Tab in the search field switches engines.">
+          <option value="arxiv">arXiv</option>
+          <option value="semantic-scholar">Semantic Scholar</option>
+          <option value="openalex">OpenAlex</option>
+          <option value="google-scholar">Google Scholar ↗</option>
+        </select>
+        <input id="search" type="search" placeholder="Search arXiv papers…" aria-label="Search papers, DOI or arXiv" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" aria-controls="search-result-list" required>
         <button type="submit" data-icon="search" data-icon-only aria-label="Search papers" title="Search papers"></button>
       </form>
       <section id="tab-results" class="search-results hidden" aria-label="Paper search results" aria-live="polite"></section>

@@ -14,7 +14,8 @@ Available for **macOS (Apple Silicon), Windows, and Linux**, or in your browser.
 Desktop and browser interfaces connect to an independent Noctua server on this
 computer or another computer. The server stores your library, PDFs, notes and
 chats and runs your assistant CLI. It keeps running when the desktop app closes.
-Online search uses Semantic Scholar.
+Search papers with arXiv, Semantic Scholar, or OpenAlex; explore citation graphs
+with Semantic Scholar.
 
 [Get started](docs/getting-started.md) ·
 [Release Note](https://github.com/UW-CTRL/noctua/releases)

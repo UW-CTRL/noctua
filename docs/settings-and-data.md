@@ -2,6 +2,15 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Search engines
+
+Open **Settings → Search** and drag search engines into your preferred order.
+The order saves automatically
+for this browser and server and applies to both the search menu and Tab cycling.
+The first engine is marked **Default** and is selected immediately after reordering
+and whenever the app reopens or reloads. Choosing another engine in the search
+menu temporarily changes the current search. arXiv is first initially.
+
 ## Server & connection
 
 Connection, recovery and browser sign-in screens use the app’s light/dark colors,

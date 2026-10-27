@@ -142,7 +142,7 @@ function agentSection(s) {
 
 const SETTINGS_TABS = [
   ['appearance', 'Appearance'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
-  ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
+  ['search', 'Search'], ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
 
 function isDesktopConnectionClient() {
@@ -189,6 +189,63 @@ function browserServerStartHelp() {
   if(isDesktopConnectionClient())return '';
   return `<details class="settings-group" id="browser-server-start-help"><summary>How to start a server</summary><p>On the computer that will host your library, open a terminal with the Noctua server executable installed. Run these commands (or use the full path to the executable):</p><pre><code>noctua ensure
 noctua token</code></pre><p><code>ensure</code> starts a background server or reuses one already running, and prints its address. <code>token</code> shows the authentication token. Enter that address and token above. Keep the token private.</p><p>A localhost address works only on the computer running the server. To connect from another computer, configure an HTTPS proxy and add its exact origin to the server’s <code>server-config.json</code>.</p><p>Check the running address with <code>noctua status</code>. To stop the server after saving your work, run <code>noctua stop</code>. Closing the browser leaves the server running.</p><p>The browser cannot start a stopped server. If this page will not load, start the server from its computer’s terminal or the desktop app’s connection settings.</p></details>`;
+}
+
+function searchSettingsSection() {
+  return `<section data-step="search"><h2>Search Engines</h2>
+    <p>Drag engines to change their order in the search menu and Tab switching. The first engine is your default and is selected when you reopen or reload the app.</p>
+    <ol class="search-engine-order" aria-label="Search engine order"></ol>
+    <p class="setup-msg ok" data-search-order-status role="status">Changes save automatically for this browser and server.</p></section>`;
+}
+function mountSearchEngineOrder(section) {
+  const list = section.querySelector('.search-engine-order');
+  let dragged = null;
+  const grip = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
+  const render = () => {
+    list.innerHTML = searchEngines.map((engine, index) => `<li draggable="true" data-search-engine="${engine}">
+      <span class="search-order-grip">${grip}</span><span class="search-order-name">${esc(searchEngineNames[engine])}${engine === 'google-scholar' ? ' ↗' : ''}${index === 0 ? '<span class="search-order-default">Default</span>' : ''}</span>
+      </li>`).join('');
+  };
+  const clearDrag = () => {
+    dragged = null;
+    list.querySelectorAll('li').forEach(row => row.classList.remove('dragging', 'drop-before', 'drop-after'));
+  };
+  const save = order => {
+    setSearchEngineOrder(order);
+    clearDrag(); render();
+    section.querySelector('[data-search-order-status]').textContent = 'Search engine order saved.';
+  };
+  list.addEventListener('dragstart', event => {
+    const row = event.target.closest('[data-search-engine]');
+    if (!row || event.target.closest('button')) { event.preventDefault(); return; }
+    dragged = row.dataset.searchEngine;
+    event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragged);
+    row.classList.add('dragging');
+  });
+  list.addEventListener('dragover', event => {
+    if (!dragged) return;
+    const row = event.target.closest('[data-search-engine]');
+    if (!row) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    list.querySelectorAll('li').forEach(item => item.classList.remove('drop-before', 'drop-after'));
+    if (row.dataset.searchEngine !== dragged) row.classList.add(event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2 ? 'drop-before' : 'drop-after');
+  });
+  list.addEventListener('drop', event => {
+    if (!dragged) return;
+    const row = event.target.closest('[data-search-engine]');
+    if (!row) return;
+    event.preventDefault();
+    if (row.dataset.searchEngine === dragged) { clearDrag(); return; }
+    const after = event.clientY >= row.getBoundingClientRect().top + row.offsetHeight / 2;
+    const before = after ? row.nextElementSibling?.dataset.searchEngine : row.dataset.searchEngine;
+    // Dropping immediately before the dragged row leaves its order unchanged.
+    if (before === dragged) { clearDrag(); return; }
+    const engine = dragged, order = searchEngines.filter(item => item !== engine);
+    const index = before ? order.indexOf(before) : order.length;
+    order.splice(index, 0, engine); save(order);
+  });
+  list.addEventListener('dragend', clearDrag);
+  render();
 }
 
 function serverSection() {
@@ -915,13 +972,14 @@ function openSetup({ firstRun = false, tab } = {}) {
       return;
     }
     const panels = { appearance: appearanceSection(), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
-      connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
+      search: searchSettingsSection(), connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',skills:'sparkles',search:'search',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
     mountScholarSettings(card.querySelector('[data-step="scholar"]'));
+    mountSearchEngineOrder(card.querySelector('[data-step="search"]'));
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
   };

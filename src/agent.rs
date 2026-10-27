@@ -325,9 +325,11 @@ mod tests {
                 std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o700))?;
             }
             let settings = Settings { claude_path: Some(root.join("claude").to_string_lossy().into_owned()), codex_path: Some(root.join("codex").to_string_lossy().into_owned()), s2_key_skipped: true, zotero_disabled: true, ..Default::default() };
+            let search_cache = Arc::new(Cache::open(&root.join("cache.sqlite"))?);
             let app = Arc::new(App {
                 scholar: crate::scholar::Scholar::open(&root)?,
-                s2: S2::new(None, Arc::new(Cache::open(&root.join("cache.sqlite"))?)),
+                search_providers: crate::search_providers::SearchProviders::new(search_cache.clone()),
+                s2: S2::new(None, search_cache),
                 zotero: Zotero::new(None), library: crate::library::Library::open(root.join("library"))?, actions: tokio::sync::broadcast::channel(32).0,
                 base_url: "http://127.0.0.1:7878".into(), chat_dir: root.join("chat"),
                 history: History::open(&root.join("history.sqlite"))?, projects: Projects::open(&root.join("projects.sqlite"))?,

@@ -58,18 +58,43 @@ than the Library table.
 
 ## Explore a paper's neighborhood
 
-Use the always-visible search field in the top app header to search Semantic
-Scholar by keywords or paste a DOI, arXiv ID/link, or Semantic Scholar link,
-then press Enter. Keyword results open below the field; choose a result to open its graph.
-Press Escape or click outside to dismiss the results. There is no separate
-Search tab.
+Use the search field in the top app header. Choose **arXiv**, **Semantic Scholar**,
+or **OpenAlex** by clicking the engine name on its left. arXiv is the initial default. The first engine in
+**Settings → Search** is your saved default for this browser and server. Choosing
+another engine in the search menu changes the current search; reopening or
+reloading the app returns to the first engine.
+With the search field focused, **Tab** cycles arXiv → Semantic Scholar → OpenAlex
+→ Google Scholar → arXiv in the initial order while keeping your query. **Shift+Tab** leaves the field.
+In **Settings → Search**, drag engines to reorder the menu and Tab cycle. Changes save automatically for this browser
+and server. Moving an engine to the top makes it the default and selects it immediately.
+
+Results appear below the field after a brief pause in typing, aligned with its
+left edge and at least as wide as the field. Enter searches immediately when no result list is open; the search icon always
+runs a search. arXiv requests are spaced to respect its API limits. DOI and arXiv
+ID/link lookups show a result before opening a graph where the provider supports
+that identifier. Semantic Scholar links can be looked up directly with any inline engine.
+Use **↑/↓** to select a result. **Enter**, the **PDF** button beside **Graph**,
+or clicking the paper row saves the paper to the selected library
+folder, downloads its available PDF, and opens Reader. If a PDF is unavailable,
+the app shows an attachment/download notice; **Open paper** still opens its source.
+**Shift+Enter**, or the **Graph** button beside **Open paper**, opens its Semantic Scholar citation graph; other providers use
+DOI/arXiv identifiers, or a title match when no identifier is available. Some papers
+have no matching graph. Use **Open paper** to open the provider's source instead.
+arXiv does not supply citation counts, so its results omit them.
+
+**Google Scholar ↗** opens a new browser tab rather than an inline list. Choosing
+it from the menu with a query opens that search immediately. Switching to it with
+Tab keeps you in the field; press Enter, click the search icon, or follow the
+Google Scholar link below the field to launch the search. Typing alone never
+opens a new tab. Press Escape or click outside to dismiss inline results.
+There is no separate Search tab.
 The network shows a paper's references, citing papers, and similar recommendations.
 Edges represent citations; node size reflects citation count and color reflects
 year. A green ring marks papers already in your library.
 
 Click a paper for details, double-click to build a graph around it, or use
 **Expand here** to add its neighbors to the current graph. The **Top** selector
-controls how many neighbors appear. Searches and graphs use Semantic Scholar;
+controls how many neighbors appear. Citation graphs use Semantic Scholar;
 cached results reduce requests, but fresh results can be delayed by rate limits.
 
 ## Trace research over time
