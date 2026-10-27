@@ -383,6 +383,241 @@ function threadSummarySettings() {
     </div>`;
 }
 
+function scholarSection() {
+  return `<section data-step="scholar"><h2 class="settings-section-heading">Google Scholar Inbox<button type="button" data-scholar-help data-icon="circle-help" data-icon-only aria-label="How to Set Up Google Scholar Inbox" title="Setup guide"></button></h2>
+    <p class="hint">Read accessible Scholar papers and save those matching your research interests. Emails stay unchanged.</p>
+    <label class="setting-field"><span>Poll automatically</span><input type="checkbox" data-scholar-enabled></label>
+    <label class="setting-field"><span>Destination collection</span><select data-scholar-collection aria-label="Destination collection"><option value="scholar_inbox">scholar_inbox (create when saved)</option></select></label>
+    <p class="hint">Choose a current folder, or scholar_inbox to create it when you save.</p>
+    <label class="setting-field"><span>Polling interval (minutes)</span><input class="setup-input" data-scholar-interval type="number" min="15" max="1440" value="15"></label>
+    <div class="setting-field"><span>Scholar Agent</span><span class="setup-actions"><button type="button" data-scholar-prompt data-icon="pencil">Edit prompt</button><button type="button" data-scholar-log data-icon="history">Log</button></span></div>
+    <p class="hint" data-scholar-prompt-status>Set your Research Interest before collecting papers.</p>
+    <details data-scholar-credentials><summary>Google Connection</summary>
+    <p class="hint">Use a Google Desktop OAuth client with Gmail API enabled. <a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noopener">Setup guide</a>. Sign in on this computer; credentials stay on the server.</p>
+    <label class="setting-field"><span>Google OAuth client ID</span><input class="setup-input" data-scholar-client autocomplete="off" spellcheck="false"></label>
+    <label class="setting-field"><span>Client secret</span><input class="setup-input" data-scholar-secret type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret"></label>
+    </details>
+    <div class="setup-actions"><button class="primary" data-scholar-action="save" data-icon="save">Save changes</button><button data-scholar-action="check" data-icon="refresh-cw" hidden>Check now</button><button data-scholar-action="disconnect" data-icon="x" data-icon-only aria-label="Disconnect Gmail" title="Disconnect Gmail" hidden>Disconnect</button></div>
+    <p data-scholar-login></p><p data-scholar-status role="status" aria-live="polite">Loading plugin…</p>
+    <div data-scholar-outcomes></div></section>`;
+}
+function showScholarSetupHelp() {
+  if (document.querySelector('#scholar-setup-help')) return;
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'scholar-setup-help';
+  dialog.className = 'workspace-dialog scholar-setup-help';
+  dialog.setAttribute('aria-labelledby', 'scholar-help-title');
+  dialog.innerHTML = `<header><strong id="scholar-help-title">Set Up Google Scholar Inbox</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close setup guide" title="Close"></button></header>
+    <ol class="scholar-setup-steps">
+      <li><strong>Get Scholar Alerts</strong><p>In <a href="https://scholar.google.com/" target="_blank" rel="noopener">Google Scholar</a>, search a topic → Create alert → enter your Gmail address.</p></li>
+      <li><strong>Set Up Google Cloud</strong><p>Create a project in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, then configure:</p>
+        <dl><dt>API Library</dt><dd>Enable Gmail API.</dd><dt>Auth Platform</dt><dd>Complete branding and audience; add your Gmail as a test user in Testing.</dd><dt>Data Access</dt><dd>Add the <code>gmail.readonly</code> scope.</dd></dl></li>
+      <li><strong>Create OAuth Credentials</strong><p>Clients → Create client → <b>Desktop app</b>. Copy the client ID and client secret.</p></li>
+      <li><strong>Connect &amp; Collect</strong><p>In Noctua, expand <b>Google Connection</b>, paste both values, choose a folder → <b>Save &amp; connect</b>. Sign in on the computer running Noctua.</p><p>Use <b>Edit prompt</b> and replace <code>&lt;Research Interest&gt;</code> first. Then use <b>Check now</b> or <b>Poll automatically</b> (15 min minimum).</p></li>
+    </ol>
+    <details class="scholar-setup-notes"><summary>Access &amp; Troubleshooting</summary><p>Full Gmail scope: <code>https://www.googleapis.com/auth/gmail.readonly</code></p><p>Emails stay unchanged; credentials stay on your Noctua server. If access expires, choose Save &amp; reconnect. Apps in Testing may require frequent reauthorization.</p><p>Choose scholar_inbox to create it when you save. An existing folder is reused.</p></details>
+    <footer><a href="https://developers.google.com/workspace/gmail/api/quickstart/python#set-up-environment" target="_blank" rel="noopener">Gmail setup guide</a><a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noopener">OAuth guide</a></footer>`;
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    if (previousFocus?.isConnected) previousFocus.focus();
+  }, {once: true});
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  dialog.querySelector('[data-close]').focus();
+}
+async function showScholarPromptEditor(host, onSaved) {
+  if (document.querySelector('#scholar-prompt-editor')) return;
+  const selected = host.querySelector('[data-scholar-collection]');
+  const collection = selected.value, name = selected.selectedOptions[0]?.textContent.trim() || 'scholar_inbox';
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'scholar-prompt-editor'; dialog.className = 'workspace-dialog scholar-prompt-editor';
+  dialog.setAttribute('aria-labelledby', 'scholar-prompt-title');
+  dialog.innerHTML = `<header><strong id="scholar-prompt-title">Scholar Agent Prompt</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close prompt editor" title="Close"></button></header>
+    <p>Screening instructions for <strong>${esc(name)}</strong>. Replace <code>&lt;Research Interest&gt;</code> with your interests before the first sync.</p>
+    <p>The agent reads accessible PDF text and saves matching papers only. It uses the provider and model in Research Assistant. This prompt does not run scripts or other skill tools.</p>
+    <label for="scholar-prompt-text">System prompt</label><textarea id="scholar-prompt-text" rows="11" spellcheck="false" disabled></textarea>
+    <p data-prompt-error role="alert"></p><footer><button type="button" data-prompt-reset disabled>Use default</button><button type="button" data-prompt-cancel>Cancel</button><button type="button" class="primary" data-prompt-save data-icon="save" disabled>Save prompt</button></footer>`;
+  const textarea = dialog.querySelector('textarea'), error = dialog.querySelector('[data-prompt-error]');
+  const close = () => dialog.close();
+  dialog.querySelector('[data-close]').onclick = close; dialog.querySelector('[data-prompt-cancel]').onclick = close;
+  dialog.addEventListener('close', () => {dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus();}, {once:true});
+  document.body.appendChild(dialog); dialog.showModal();
+  let original;
+  try {
+    const result = await api('/api/scholar/prompt?collection=' + encodeURIComponent(collection));
+    if (!dialog.isConnected) return;
+    original = result.prompt; textarea.value = original; textarea.disabled = false;
+    dialog.querySelector('[data-prompt-reset]').disabled = false; dialog.querySelector('[data-prompt-save]').disabled = false;
+    dialog.querySelector('[data-prompt-reset]').onclick = () => {textarea.value = result.default_prompt; textarea.focus();};
+    textarea.focus();
+  } catch (e) { error.textContent = e.message; }
+  dialog.querySelector('[data-prompt-save]').onclick = async () => {
+    const prompt = textarea.value;
+    if (!prompt.trim()) {error.textContent = 'Enter your screening instructions.'; return;}
+    const button = dialog.querySelector('[data-prompt-save]'); button.disabled = true; error.textContent = '';
+    try {
+      const result = await api('/api/scholar/prompt', {collection, prompt, previous:original});
+      await onSaved(result); close();
+    } catch (e) {error.textContent = e.message; button.disabled = false;}
+  };
+}
+
+function scholarPhase(phase) {
+  return ({checking:'Checking Gmail',verifying:'Verifying',reading:'Reading PDF',analyzing:'Analyzing',saving:'Saving',cached:'Cached',imported:'Saved',duplicate:'Linked',excluded:'Excluded',retry:'Retry',completed:'Completed',error:'Error',interrupted:'Interrupted'})[phase] || phase;
+}
+async function showScholarLogs() {
+  if (document.querySelector('#scholar-agent-log')) return;
+  const previousFocus = document.activeElement, dialog = document.createElement('dialog');
+  dialog.id = 'scholar-agent-log'; dialog.className = 'workspace-dialog scholar-agent-log';
+  dialog.setAttribute('aria-labelledby', 'scholar-log-title');
+  dialog.innerHTML = `<header><strong id="scholar-log-title">Scholar Agent Log</strong><button type="button" data-close data-icon="x" data-icon-only aria-label="Close agent log" title="Close"></button></header>
+    <div class="scholar-log-toolbar"><span data-log-live role="status">Loading…</span><select data-log-mode aria-label="Log detail"><option value="results">Results</option><option value="all">All steps</option></select></div>
+    <p data-log-error role="alert"></p><div data-log-entries></div><footer><button type="button" data-log-older hidden>Older entries</button></footer>`;
+  let timer, loading = false, resetPending = false, cursor = null;
+  const entries = new Map(), mode = dialog.querySelector('[data-log-mode]');
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.addEventListener('close', () => {clearInterval(timer); dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus();}, {once:true});
+  document.body.appendChild(dialog); dialog.showModal(); dialog.querySelector('[data-close]').focus();
+  const refresh = async (older = false) => {
+    if (loading || !dialog.isConnected) return;
+    loading = true;
+    const selectedMode = mode.value;
+    try {
+      const result = await api('/api/scholar/logs?mode=' + selectedMode + (older && cursor ? '&before=' + cursor : ''));
+      if (!dialog.isConnected || mode.value !== selectedMode) return;
+      const live = result.activity;
+      dialog.querySelector('[data-log-live]').textContent = live ? `${scholarPhase(live.phase)}${live.provider ? ' · ' + live.provider : ''}${live.title ? ' · ' + live.title : ''}` : 'Idle';
+      const opened = new Set([...dialog.querySelectorAll('[data-log-entry][open]')].map(e => e.dataset.logEntry));
+      const first = entries.size === 0;
+      const priorNewest = Math.max(0, ...entries.keys());
+      for (const entry of result.entries) entries.set(entry.id, entry);
+      if (older || first || (result.next_before && result.next_before > priorNewest)) cursor = result.next_before;
+      dialog.querySelector('[data-log-entries]').innerHTML = [...entries.values()].sort((a,b) => b.id-a.id).map(entry => {
+        const date = new Date(entry.time * 1000), fullDate = date.toLocaleString();
+        return `<details data-log-entry="${entry.id}" ${opened.has(String(entry.id)) ? 'open' : ''}><summary title="Show reason and details"><span class="scholar-log-row"><time title="${esc(fullDate)}" datetime="${date.toISOString()}">${esc(date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}))}</time><span class="scholar-log-phase" data-phase="${esc(entry.phase)}">${esc(scholarPhase(entry.phase))}</span><span class="scholar-log-paper" title="${esc(entry.title)}">${esc(entry.title || 'Sync')}</span></span></summary><div class="scholar-log-detail"><p>${esc(entry.detail || 'No additional details.')}</p><small>${esc(fullDate)} · ${esc(entry.provider || 'Server')} · ${esc(entry.collection)}${entry.account ? ' · ' + esc(entry.account) : ''}</small></div></details>`;
+      }).join('') || '<p class="hint">No activity yet. Logs appear after a manual or automatic sync.</p>';
+      dialog.querySelector('[data-log-older]').hidden = !cursor;
+      dialog.querySelector('[data-log-error]').textContent = '';
+    } catch (e) {if (dialog.isConnected) dialog.querySelector('[data-log-error]').textContent = e.message;}
+    finally {loading = false; if (resetPending) {resetPending = false; refresh();}}
+  };
+  mode.onchange = () => {entries.clear(); cursor = null; if (loading) resetPending = true; else refresh();};
+  dialog.querySelector('[data-log-older]').onclick = () => refresh(true);
+  await refresh(); timer = setInterval(() => {if (!dialog.isConnected) clearInterval(timer); else refresh();}, 3000);
+}
+
+function mountScholarSettings(host) {
+  if (!host) return;
+  host.querySelector('[data-scholar-help]').addEventListener('click', showScholarSetupHelp);
+  host.querySelector('[data-scholar-log]').addEventListener('click', () => showScholarLogs());
+  let initial = true, loading = false, working = false, libraryStamp = null, saved = null;
+  const status = host.querySelector('[data-scholar-status]');
+  const needsConnection = () => !!host.querySelector('[data-scholar-client]').value.trim() &&
+    (!saved?.connected || saved.reauthorize || host.querySelector('[data-scholar-client]').value.trim() !== saved.client_id || !!host.querySelector('[data-scholar-secret]').value);
+  const renderActions = () => {
+    const save = host.querySelector('[data-scholar-action="save"]');
+    const connect = needsConnection();
+    save.textContent = working ? 'Working…' : connect ? saved?.connected ? 'Save & reconnect' : 'Save & connect' : 'Save changes';
+    save.dataset.icon = connect ? 'log-in' : 'save';
+    save.disabled = working || !saved || saved.running;
+    for (const action of ['check', 'disconnect']) {
+      const button = host.querySelector(`[data-scholar-action="${action}"]`);
+      button.hidden = !saved?.connected;
+      button.disabled = working || !saved?.connected || saved.running || (action === 'check' && (saved.reauthorize || !saved.prompt_ready));
+    }
+  };
+  host.querySelector('[data-scholar-prompt]').onclick = () => showScholarPromptEditor(host, async result => {
+    await refresh();
+    const select = host.querySelector('[data-scholar-collection]');
+    if (![...select.options].some(option => option.value === result.collection)) select.add(new Option('scholar_inbox', result.collection));
+    select.value = result.collection;
+    host.querySelector('[data-scholar-prompt-status]').textContent = result.ready ? 'Prompt saved for this collection. Save changes to use this destination.' : 'Replace <Research Interest> in the prompt before collecting papers.';
+  }).catch(e => {status.textContent = e.message;});
+  host.addEventListener('input', renderActions);
+  renderActions();
+  const refresh = async () => {
+    if (loading || !host.isConnected) return;
+    loading = true;
+    try {
+      const s = await api('/api/scholar');
+      if (!host.isConnected) return;
+      const destination = host.querySelector('[data-scholar-collection]');
+      const selected = initial ? s.collection : destination.value;
+      const folders = s.collections;
+      const inbox = folders.find(f => f.parent === 'L1' && f.name === 'scholar_inbox');
+      const options = folders.map(f => `<option value="${esc(f.id)}">${'　'.repeat(f.level || 0)}${esc(f.name)}</option>`).join('');
+      const extra = inbox ? '' : '<option value="scholar_inbox">scholar_inbox (create when saved)</option>';
+      const missing = selected !== 'scholar_inbox' && !folders.some(f => f.id === selected);
+      const markup = extra + options + (missing ? `<option value="${esc(selected)}" disabled>Unavailable folder — choose another</option>` : '');
+      if (destination.innerHTML !== markup) destination.innerHTML = markup;
+      destination.value = selected === 'scholar_inbox' && inbox ? inbox.id : selected;
+      if (initial) {
+        host.querySelector('[data-scholar-enabled]').checked = s.enabled;
+        host.querySelector('[data-scholar-interval]').value = s.interval_minutes;
+        host.querySelector('[data-scholar-client]').value = s.client_id;
+        host.querySelector('[data-scholar-credentials]').open = !s.connected;
+        initial = false;
+      }
+      const ready = !!s.prompt_ready_by_collection?.[destination.value];
+      host.querySelector('[data-scholar-prompt-status]').textContent = ready ? 'Papers are screened using this collection’s prompt.' : 'First setup: edit the prompt and replace <Research Interest> with your interests.';
+      const stamp = JSON.stringify([s.last_sync, s.counts.imported, s.counts.duplicate]);
+      if (libraryStamp !== null && libraryStamp !== stamp) loadCollections();
+      libraryStamp = stamp;
+      const date = value => value ? new Date(Number(value) * 1000).toLocaleString() : 'Never';
+      status.textContent = `${s.activity ? scholarPhase(s.activity.phase) + (s.activity.title ? ': ' + s.activity.title : '') : s.running ? 'Syncing…' : s.connected ? 'Connected: ' + s.account : 'Gmail is disconnected.'} Last completed sync: ${date(s.last_sync)}. Imported: ${s.counts.imported || 0}; duplicates: ${s.counts.duplicate || 0}; excluded: ${s.counts.excluded || 0}; retry: ${s.counts.retry || 0}.${s.reauthorize ? ' Reconnect Gmail to renew access.' : ''}${s.error ? ' ' + s.error : ''}`;
+      saved = s;
+      renderActions();
+      const outcomesOpen = !!host.querySelector('[data-scholar-outcomes] details')?.open;
+      host.querySelector('[data-scholar-outcomes]').innerHTML = s.message_errors.map(e => `<p class="settings-warning">Alert ${esc(e.message)}: ${esc(e.error)}</p>`).join('') + (s.items.length ? `<details ${outcomesOpen ? 'open' : ''}><summary>Recent Paper Outcomes</summary><ul>${s.items.map(i => `<li>${esc(i.title || 'Untitled link')}: ${esc(i.status)}${i.error ? ' — ' + esc(i.error) : ''}</li>`).join('')}</ul></details>` : '');
+    } catch (e) { status.textContent = e.message; }
+    finally { loading = false; }
+  };
+  host.addEventListener('click', async e => {
+    const button = e.target.closest('[data-scholar-action]');
+    if (!button) return;
+    e.preventDefault();
+    if (working) return;
+    working = true; renderActions();
+    try {
+      switch (button.dataset.scholarAction) {
+        case 'save': {
+          const interval = Number(host.querySelector('[data-scholar-interval]').value);
+          if (!Number.isInteger(interval) || interval < 15 || interval > 1440) throw Error('Polling interval must be between 15 and 1440 whole minutes.');
+          const connect = needsConnection();
+          const secret = host.querySelector('[data-scholar-secret]').value;
+          await api('/api/scholar', {enabled: host.querySelector('[data-scholar-enabled]').checked, collection: host.querySelector('[data-scholar-collection]').value, interval_minutes: interval, client_id: host.querySelector('[data-scholar-client]').value, ...(secret ? {client_secret: secret} : {})});
+          await loadCollections();
+          host.querySelector('[data-scholar-secret]').value = '';
+          host.querySelector('[data-scholar-login]').replaceChildren();
+          if (connect) {
+            const result = await api('/api/scholar/connect', {});
+            const link = document.createElement('a');
+            link.href = result.url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Continue Google sign-in';
+            host.querySelector('[data-scholar-login]').replaceChildren(link);
+            if (settings?.desktop) await api('/api/desktop/open', {url: result.url});
+            else link.click();
+          } else toast('Scholar plugin settings saved.');
+          break;
+        }
+        case 'check': await api('/api/scholar/check', {}); break;
+        case 'disconnect': {
+          const r = await fetch('/api/scholar', {method: 'DELETE'});
+          if (!r.ok) throw Error('Could not disconnect Gmail. Try again after sync finishes.');
+          host.querySelector('[data-scholar-enabled]').checked = false;
+          host.querySelector('[data-scholar-login]').replaceChildren(); break;
+        }
+      }
+      await refresh();
+    } catch (error) { status.textContent = error.message; }
+    finally { working = false; renderActions(); }
+  });
+  refresh();
+  const timer = setInterval(() => { if (!host.isConnected) clearInterval(timer); else refresh(); }, 3000);
+}
+
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
   return `<section data-step="data"><h2>Data & Storage</h2>
@@ -655,12 +890,13 @@ function openSetup({ firstRun = false, tab } = {}) {
       return;
     }
     const panels = { appearance: appearanceSection(), agent: agentSection(settings), skills: skillSettingsSection(),
-      connections: keySection(settings, false) + zoteroSection(settings, false), data: dataSection(settings), about: aboutSection(settings) };
+      connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
         ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',agent:'bot',skills:'sparkles',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
+    mountScholarSettings(card.querySelector('[data-step="scholar"]'));
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
   };

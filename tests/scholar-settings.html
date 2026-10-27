@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body><main class="setup-card"></main><script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let libraryRefreshes=0;function loadCollections(){libraryRefreshes++;}
+const settings={desktop:true},calls=[],toasts=[];function toast(s){toasts.push(s);}
+let state={enabled:false,collection:'scholar_inbox',interval_minutes:15,client_id:'client',connected:false,account:'',running:false,last_sync:'',prompt_ready:true,prompt_ready_by_collection:{C1:true,C2:true,CInbox:true},collections:[{id:'L1',name:'Noctua Library',level:0,parent:null},{id:'C1',name:'Reading',level:1,parent:'L1'},{id:'C2',name:'Nested',level:2,parent:'C1'}],counts:{},error:'',items:[],message_errors:[]},fail=false,refreshTick;
+const promptDefault="<Research Interest>\n\nRead the paper and save only relevant papers.",prompts={};let promptFail=false,logFail=false;
+let logState={activity:{phase:'analyzing',provider:'codex',title:'Current paper'},entries:[{id:3,time:1700000000,phase:'imported',title:'Saved paper',detail:'Matches research interests',provider:'codex',collection:'C1',account:'test@example.org'},{id:2,time:1700000000,phase:'excluded',title:'<img src=x onerror=alert(1)>',detail:'Unrelated to interests',provider:'codex',collection:'C1'}],next_before:2};
+window.setInterval=fn=>{refreshTick=fn;return 1;};window.clearInterval=()=>{};
+async function api(path,body){calls.push({path,body});if(fail)throw Error('Plugin unavailable');if(path.startsWith('/api/scholar/logs?')){if(logFail)throw Error('Log unavailable');return structuredClone(path.includes('before=')?{activity:null,entries:[{id:1,time:1699999900,phase:'retry',title:'Earlier paper',detail:'PDF inaccessible',collection:'C1'}],next_before:null}:logState);}if(path.startsWith('/api/scholar/prompt?')){const id=new URLSearchParams(path.split('?')[1]).get('collection');return {collection:id,prompt:prompts[id]||promptDefault,default_prompt:promptDefault};}if(path==='/api/scholar/prompt'){if(promptFail)throw Error('Prompt changed in another window');prompts[body.collection]=body.prompt;return {collection:body.collection,ready:!body.prompt.includes('<Research Interest>')};}if(path==='/api/scholar'){if(body){Object.assign(state,body);if(body.collection==='scholar_inbox'){state.collections.push({id:'CInbox',name:'scholar_inbox',parent:'L1',level:1});state.collection='CInbox';}}return structuredClone(state);}if(path==='/api/scholar/connect')return {url:'https://accounts.google.com/o/oauth2/v2/auth?state=test'};if(path==='/api/scholar/check'){state.running=true;return {ok:true};}if(path==='/api/desktop/open')return {ok:true};throw Error(path);}
+window.fetch=async(path,opts)=>{calls.push({path,opts});state.connected=false;state.enabled=false;return {ok:true};};
+function assert(ok,msg){if(!ok)throw Error(msg);}async function settle(){for(let i=0;i<30;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
+window.addEventListener('load',()=>{(async()=>{
+ const main=document.querySelector('main');main.innerHTML=scholarSection();const host=main.querySelector('section'),$=s=>host.querySelector(s);mountScholarSettings(host);await settle();
+ const hostTick=refreshTick;
+ $('[data-scholar-log]').focus();$('[data-scholar-log]').click();await settle();
+ const logDialog=document.querySelector('#scholar-agent-log');assert(logDialog?.open&&logDialog.querySelector('[data-log-live]').textContent.includes('Analyzing'),'live agent state');
+ assert(logDialog.querySelectorAll('[data-log-entry]').length===2&&!logDialog.querySelector('[data-log-entry]').open,'compact collapsed result rows');
+ assert(!logDialog.querySelector('img')&&logDialog.textContent.includes('<img'),'escape logged titles');
+ const resultRow=logDialog.querySelector('[data-log-entry="3"]');resultRow.open=true;assert(resultRow.textContent.includes('Matches research interests'),'expand decision reason');
+ const logTick=refreshTick;await logTick();await settle();assert(logDialog.querySelector('[data-log-entry="3"]').open,'refresh keeps expanded row');
+ logDialog.querySelector('[data-log-older]').click();await settle();assert(logDialog.querySelectorAll('[data-log-entry]').length===3&&logDialog.querySelector('[data-log-older]').hidden,'older history loaded');
+ logDialog.querySelector('[data-log-mode]').value='all';logDialog.querySelector('[data-log-mode]').dispatchEvent(new Event('change'));await settle();assert(calls.some(c=>c.path==='/api/scholar/logs?mode=all'),'all steps filter');
+ logFail=true;await logTick();await settle();assert(logDialog.querySelector('[data-log-error]').textContent==='Log unavailable'&&logDialog.querySelectorAll('[data-log-entry]').length,'failure preserves visible history');logFail=false;
+ logDialog.querySelector('[data-close]').click();await settle();assert(!document.querySelector('#scholar-agent-log')&&document.activeElement===$('[data-scholar-log]'),'log closes with focus restored');refreshTick=hostTick;
+ const help=$('[data-scholar-help]');help.focus();help.click();await settle();
+ let dialog=document.querySelector('#scholar-setup-help');
+ assert(dialog?.open&&dialog.getAttribute('aria-labelledby')==='scholar-help-title','help opens accessible modal');
+ assert(dialog.querySelectorAll('.scholar-setup-steps > li').length===4&&dialog.textContent.includes('Desktop app')&&dialog.textContent.includes('test user')&&dialog.textContent.includes('gmail.readonly')&&dialog.textContent.includes('Save & connect'),'compact registration instructions retain required setup');assert(!dialog.querySelector('.scholar-setup-notes').open&&dialog.querySelectorAll('dt').length===3,'secondary guidance collapsed and Cloud settings scannable');
+ assert([...dialog.querySelectorAll('a')].every(a=>a.protocol==='https:'&&a.rel==='noopener'),'official external links');
+ const draft=$('[data-scholar-collection]').value;
+ dialog.querySelector('[data-close]').click();await settle();
+ assert(!document.querySelector('#scholar-setup-help')&&document.activeElement===help&&$('[data-scholar-collection]').value===draft,'close restores focus and draft');
+ help.click();await settle();dialog=document.querySelector('#scholar-setup-help');dialog.dispatchEvent(new Event('cancel',{cancelable:true}));dialog.close();await settle();
+ assert(!document.querySelector('#scholar-setup-help'),'cancel can close help');
+ $('[data-scholar-collection]').value='C1';$('[data-scholar-prompt]').focus();$('[data-scholar-prompt]').click();await settle();
+ let editor=document.querySelector('#scholar-prompt-editor');assert(editor?.open,'prompt editor opens');
+ const promptInput=editor.querySelector('textarea');assert(promptInput.value.includes('<Research Interest>')&&editor.textContent.includes('before the first sync'),'first setup template and guidance');
+ promptInput.value='Research interests: neural networks';promptFail=true;editor.querySelector('[data-prompt-save]').click();await settle();
+ assert(editor.isConnected&&editor.querySelector('[data-prompt-error]').textContent.includes('another window')&&promptInput.value==='Research interests: neural networks','failed prompt save retains draft');
+ promptFail=false;editor.querySelector('[data-prompt-save]').click();await settle();
+ assert(!document.querySelector('#scholar-prompt-editor')&&prompts.C1==='Research interests: neural networks','collection prompt saved');
+ $('[data-scholar-prompt]').click();await settle();editor=document.querySelector('#scholar-prompt-editor');assert(editor.querySelector('textarea').value===prompts.C1,'saved prompt loaded');
+ editor.querySelector('[data-prompt-reset]').click();assert(editor.querySelector('textarea').value===promptDefault,'reset template is explicit');
+ editor.querySelector('[data-prompt-cancel]').click();await settle();assert(prompts.C1==='Research interests: neural networks','cancel leaves prompt unchanged');
+ $('[data-scholar-collection]').value='scholar_inbox';
+ assert($('[data-scholar-collection]').tagName==='SELECT'&&$('[data-scholar-collection]').options.length===4,'existing nested folders and virtual inbox listed');
+ assert($('[data-scholar-collection]').value==='scholar_inbox','virtual inbox selected without creation');
+ assert($('[data-scholar-interval]').value==='15'&&!$('[data-scholar-enabled]').checked,'defaults');
+ assert($('[data-scholar-action=check]').hidden&&$('[data-scholar-action=disconnect]').hidden,'disconnected hides unavailable actions');assert(!$('[data-scholar-action=connect]')&&$('[data-scholar-action=save]').textContent==='Save & connect','save and connection share one button');
+ for(const button of host.querySelectorAll('[data-icon]'))assert(getComputedStyle(button).getPropertyValue('--button-icon').includes('data:image/svg+xml'),'all action icons bundled');
+ assert($('[data-scholar-interval]').min==='15','minimum interval');
+ for(const invalid of ['14','1','15.5','']) {
+   const before=calls.filter(c=>c.path==='/api/scholar'&&c.body).length;
+   $('[data-scholar-interval]').value=invalid;$('[data-scholar-action=save]').click();await settle();
+   assert($('[data-scholar-status]').textContent.includes('between 15 and 1440'),'invalid interval displays error');
+   assert(calls.filter(c=>c.path==='/api/scholar'&&c.body).length===before,'invalid interval is not saved');
+ }
+ $('[data-scholar-interval]').value='15';
+
+ $('[data-scholar-secret]').value='private';$('[data-scholar-enabled]').checked=true;$('[data-scholar-collection]').value='C2';$('[data-scholar-action=save]').click();await settle();
+ const save=calls.find(c=>c.path==='/api/scholar'&&c.body);assert(save.body.client_secret==='private'&&save.body.collection==='C2'&&save.body.enabled,'save payload');assert(!$('[data-scholar-secret]').value,'clear secret field');
+ $('[data-scholar-action=save]').click();await settle();assert(!Object.hasOwn(calls.filter(c=>c.path==='/api/scholar'&&c.body).at(-1).body,'client_secret'),'blank secret retains stored secret');
+ $('[data-scholar-collection]').value='scholar_inbox';$('[data-scholar-action=save]').click();await settle();assert($('[data-scholar-collection]').value==='CInbox'&&[...$('[data-scholar-collection]').options].filter(o=>o.textContent.includes('scholar_inbox')).length===1,'saved inbox becomes existing folder without duplicate choice');
+ $('[data-scholar-action=save]').click();await settle();assert(calls.some(c=>c.path==='/api/desktop/open'&&c.body.url.startsWith('https://accounts.google.com/')),'system browser OAuth');assert($('[data-scholar-login] a').rel==='noopener','safe fallback login link');
+ state.connected=true;state.account='test@example.org';state.last_sync='1700000000';state.counts={imported:2,duplicate:1,retry:1};state.reauthorize=true;state.items=[{title:'<img src=x onerror=alert(1)>',status:'retry',error:'No exact title match'}];state.message_errors=[{message:'m1',error:'Unsupported alert'}];await refreshTick();await settle();
+ assert($('[data-scholar-action=save]').textContent==='Save & reconnect','reauthorization');assert(libraryRefreshes>0,'refresh imported Library papers');assert($('[data-scholar-status]').textContent.includes('Imported: 2'),'counts');assert(!$('[data-scholar-outcomes] img')&&$('[data-scholar-outcomes]').textContent.includes('<img'),'escape outcomes');assert($('[data-scholar-outcomes]').textContent.includes('Unsupported alert'),'message errors');
+ $('[data-scholar-outcomes] details').open=true;$('[data-scholar-collection]').value='C1';await refreshTick();await settle();assert($('[data-scholar-collection]').value==='C1','polling preserves draft');assert($('[data-scholar-outcomes] details').open,'polling preserves disclosure');
+ state.reauthorize=false;await refreshTick();await settle();assert($('[data-scholar-action=save]').textContent==='Save changes'&&!$('[data-scholar-action=check]').hidden&&!$('[data-scholar-action=disconnect]').hidden,'connected compact actions');
+ $('[data-scholar-action=check]').click();await settle();assert(calls.some(c=>c.path==='/api/scholar/check')&&$('[data-scholar-status]').textContent.includes('Syncing'),'manual sync');
+ state.running=false;await refreshTick();await settle();$('[data-scholar-action=disconnect]').click();await settle();assert(calls.some(c=>c.opts?.method==='DELETE')&&!$('[data-scholar-enabled]').checked,'disconnect');assert($('[data-scholar-action=check]').hidden&&$('[data-scholar-action=disconnect]').hidden,'disconnected actions removed');
+ fail=true;$('[data-scholar-action=save]').click();await settle();assert($('[data-scholar-status]').textContent==='Plugin unavailable'&&!$('[data-scholar-action=save]').disabled,'error recovery');
+ window.webkit.messageHandlers.result.postMessage('PASS: Scholar compact actions and bundled icons, defaults, save/secret retention, system OAuth, manual sync, counts/errors, escaped outcomes, preserved drafts/disclosures, disconnect and failures');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));});
+</script></body></html>

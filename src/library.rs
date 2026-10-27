@@ -76,6 +76,19 @@ impl Library {
         self.conn.lock().unwrap().execute("INSERT INTO collections VALUES (?1,?2,?3,?1)",params![key,name,parent])?;
         Ok(key)
     }
+    /// Resolve the plugin's destination under Library without creating duplicate folders.
+    pub fn scholar_collection(&self, name: &str) -> Result<String> {
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction()?;
+        let existing: Option<String> = tx.query_row("SELECT id FROM collections WHERE parent='L1' AND name=?1 ORDER BY rowid LIMIT 1", [name], |r|r.get(0)).optional()?;
+        let key = if let Some(key) = existing { key } else {
+            let key = id("C");
+            tx.execute("INSERT INTO collections VALUES(?1,?2,'L1',?1)", params![key,name])?;
+            key
+        };
+        tx.commit()?;
+        Ok(key)
+    }
     pub fn rename(&self, target: &str, name: &str) -> Result<()> {
         let name=name.trim(); if name.is_empty() || name.len()>200 { return Err(bad("Choose a collection name (1–200 characters)")); }
         if self.conn.lock().unwrap().execute("UPDATE collections SET name=?1 WHERE id=?2",params![name,target])?==0 { return Err(missing()); }

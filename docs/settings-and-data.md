@@ -17,12 +17,98 @@ You can also adjust interface, note, and chat fonts and highlight colors.
 Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
-**Connections** holds the Semantic Scholar key and optional Zotero source;
+**Connections** holds the Semantic Scholar key and optional Zotero source and Google Scholar Inbox;
 **Research Assistant** holds provider and model settings. Its **Lineage** group
 contains **Summarize threads automatically** (enabled by default). This preference
 is remembered in this browser and takes effect immediately; turning it off cancels
 pending automatic summaries, while an already running request may finish. Manual
 **Summarize threads** remains available in Lineage.
+
+## Google Scholar Inbox
+
+Open **Settings → Connections → Google Scholar Inbox** to import Google Scholar
+alerts from Gmail. The **?** button beside the heading opens a setup guide for
+Scholar alerts, Google Cloud, OAuth credentials, and Gmail connection in four
+short steps. Expand **Access & Troubleshooting** for the full scope, reconnect
+guidance, and inbox creation details. Close it
+with the close button or Esc to return to your unchanged settings.
+This is optional and off by default. In Google Cloud, enable
+Gmail API, configure the OAuth consent screen (add your account as a test user
+when using Testing), and create an OAuth client of type **Desktop app**. Save its
+client ID and client secret under **Google Connection**, then choose
+**Save & connect** to save settings and
+approve read-only Gmail access. Sign in using the system browser on the computer
+running the Noctua server; the callback uses that computer's loopback address.
+See Google's [Desktop OAuth guide](https://developers.google.com/identity/protocols/oauth2/native-app)
+and [Gmail API setup](https://developers.google.com/workspace/gmail/api/quickstart/python#set-up-environment).
+Google may require verification for wider distribution; external apps in Testing
+can require frequent reauthorization.
+
+Choose **Check now** to collect alerts immediately, or enable **Poll automatically**
+and save. Polling defaults to every 15 minutes; the minimum is 15 minutes (maximum: 1440).
+Saving a shorter interval shows an error. Previously saved shorter intervals
+use 15 minutes after restart. Polling runs only while the Noctua
+server is running. Check now also works with automatic polling turned off.
+The first scan considers all available messages from
+`scholaralerts-noreply@google.com`, including already-read alerts; subsequent
+scans skip completed messages. Mail is never marked read, labeled, moved, deleted,
+or sent. Gmail grants read access to the mailbox; Noctua searches only Scholar
+alerts. Refresh tokens and OAuth client credentials stay in the server's data
+folder and are never returned to the browser. Keep data-folder backups private.
+
+### Scholar Agent Prompt
+
+Choose **Destination collection**, then **Edit prompt**. The popup edits the
+screening instructions for that collection. Replace the literal
+`<Research Interest>` placeholder with your research interests during first setup,
+then choose **Save prompt**. Until you replace it, collection is paused and no
+papers are saved. The default instruction saves only papers with a clear,
+substantive match. Each folder has its own prompt; renaming it keeps its prompt.
+**Use default** restores the editable template; **Cancel** keeps the saved prompt.
+A conflicting save or an active sync leaves the editor open so you can retry.
+
+Save the destination settings, connect Gmail, and use **Check now** or automatic
+polling. Scholar verifies each alert's paper against Semantic Scholar, downloads
+its available open-access PDF, and extracts text on the server. The Scholar agent
+uses the provider, model, and reasoning settings under **Research Assistant**.
+Set up and sign into that provider first. Text is sent to your selected AI provider
+for screening. Noctua checks the decision, explanation, and quoted evidence before
+saving a matching paper and its PDF to the selected collection. Unrelated papers
+are marked **excluded** and stay out of Library; existing papers are deduplicated
+and linked only when accepted. No per-paper approval is required.
+
+The prompt controls save/exclude decisions. It does not execute skill scripts,
+edit notes, link other projects, or enable agent tools. Emails remain unchanged;
+Gmail tokens and OAuth secrets are not sent to the agent. Background reading works
+without an open Reader tab. Automatic reading currently supports text-based PDFs
+from Semantic Scholar's open-access link, arXiv, or a matching Library PDF, up to 20 MB, 400 pages, and
+240,000 bytes of extracted text. HTML-only articles, paywalled links, encrypted
+PDFs, and scans without readable text need manual review. Noctua does not bypass
+access controls or decide from an abstract alone. Inaccessible papers, invalid
+analysis, and provider failures are not saved and are retried on later polls.
+
+Choose **Log** next to **Edit prompt** to see the Scholar agent’s activity.
+The header shows Idle or the current step and paper (Reading PDF, Analyzing,
+or Saving). The list stays compact: time, result, and paper title on one line.
+Expand a row for the decision reason or error, full date, provider, destination,
+and account. **Results** shows saved, linked, excluded, retry, and sync outcomes;
+**All steps** also shows Gmail checks, verification, PDF reading, analysis, and
+cached decisions. The open log updates every three seconds. **Older entries**
+loads earlier history. Logs survive restarts and prompt changes; unfinished runs
+are marked Interrupted after restart. Disconnecting keeps the local history.
+Logs contain operational events and decision reasons, not raw agent transcripts,
+full paper text, prompts, or OAuth secrets.
+
+Recent outcomes show imported, duplicate, excluded, and retry counts with reasons.
+Progress and completed screening decisions survive restart. Duplicate alerts reuse
+a completed decision for the same prompt and destination. Editing the prompt or
+changing destination reconsiders earlier alerts on the next sync; existing Library
+papers are kept. Selecting **scholar_inbox** creates it when you save; other
+existing folders, including nested folders, can be selected from the list.
+
+**Save & reconnect** renews expired Gmail access. **Disconnect Gmail** stops
+polling and removes the local refresh token while keeping papers and prompts.
+To revoke Google's grant too, remove the app from your Google Account connections.
 
 ## Skills
 

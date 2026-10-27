@@ -27,6 +27,7 @@ pub mod paths;
 mod project;
 mod s2;
 mod settings;
+mod scholar;
 mod storage;
 mod threads;
 mod zotero;
@@ -90,6 +91,7 @@ impl std::error::Error for Status {}
 
 struct App {
     s2: S2,
+    scholar: scholar::Scholar,
     zotero: Zotero,
     library: library::Library,
     /// UI commands from the chat assistant's tools, forwarded to the browser.
@@ -541,7 +543,12 @@ async fn desktop_update(State(app): Shared, Json(body): Json<UpdateBody>) -> Api
 /// page must come from our own origin (stops other websites posting to it).
 async fn guard(State(hosts): State<Arc<Vec<String>>>, req: Request, next: Next) -> Response {
     if env::var_os("NOCTUA_DEBUG").is_some() {
-        eprintln!("{} {}", req.method(), req.uri());
+        // OAuth codes and state must never appear in debug logs.
+        if req.uri().path() == "/api/scholar/callback" {
+            eprintln!("{} {}", req.method(), req.uri().path());
+        } else {
+            eprintln!("{} {}", req.method(), req.uri());
+        }
     }
     let host = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("");
     if !hosts.iter().any(|h| h == host) {
@@ -586,6 +593,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     let cache = Arc::new(Cache::open(&data.join("noctua-cache.sqlite"))?);
     let app = Arc::new(App {
         s2: S2::new(key, cache),
+        scholar: scholar::Scholar::open(&data)?,
         zotero: Zotero::new(settings::zotero_dir(&settings)),
         library: library::Library::open(data.join("library"))?,
         actions: broadcast::channel(32).0,
@@ -607,6 +615,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
         let icon = app.settings.lock().unwrap().app_icon;
         let _ = desktop.send(DesktopCmd::SetAppIcon(icon, None));
     }
+    scholar::poll(&app);
     Ok((url, axum::serve(listener, router(app, hosts)).into_future()))
 }
 
@@ -702,6 +711,12 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/mcp", post(mcp_endpoint))
         .route("/app-icons/dark.svg", get(|| async { asset(include_str!("../app/icons/icon-dark.svg"), "image/svg+xml") }))
         .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))
+        .route("/api/scholar", get(scholar::get).post(scholar::configure).delete(scholar::disconnect))
+        .route("/api/scholar/logs", get(scholar::logs))
+        .route("/api/scholar/prompt", get(scholar::get_prompt).post(scholar::save_prompt))
+        .route("/api/scholar/connect", post(scholar::connect))
+        .route("/api/scholar/callback", get(scholar::callback))
+        .route("/api/scholar/check", post(scholar::check))
         .route("/api/settings", get(settings::get))
         .route("/api/settings/app-icon", post(settings::set_app_icon))
         .route("/api/settings/library", post(settings::set_library))

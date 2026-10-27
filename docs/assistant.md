@@ -158,6 +158,19 @@ reports completion, and conflicting edits require resolution.
 Prompts live in [`src/prompts/`](../src/prompts/). Runtime context is added
 separately. Prompt instructions work alongside tool permissions and validation.
 
+### Scholar Inbox Screening
+
+**Settings → Connections → Google Scholar Inbox → Edit prompt** configures a
+separate, collection-specific Scholar worker. Replace `<Research Interest>` before
+first use. It reads accessible PDF text and uses your selected Research Assistant
+provider and model to recommend saving or excluding each paper. It has no tools;
+only validated decisions can add matching papers to the destination collection.
+The default prompt is in [`scholar-default.md`](../src/prompts/scholar-default.md),
+with fixed evidence and document-handling rules in
+[`scholar-agent.md`](../src/prompts/scholar-agent.md). See
+[Google Scholar Inbox](settings-and-data.md#google-scholar-inbox) for activation,
+background polling, retries, and supported documents.
+
 ### Shared chat instructions
 
 Chat combines all three prompts:
