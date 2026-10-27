@@ -780,6 +780,7 @@ body.chat-resizing { cursor: row-resize; user-select: none; }
   border: 0; border-radius: 6px; background: transparent; color: var(--muted);
 }
 #chat-send:hover { background: var(--panel); color: var(--accent); }
+#chat-attach { margin-left: auto; flex: none; }
 .chat-mode { min-height: var(--control-dense); padding: 3px 9px; }
 
 .settings-header { padding: 16px 22px; }
