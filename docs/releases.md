@@ -211,6 +211,10 @@ does not configure the bundler. The variable must contain the complete encoded
 `.pub` file produced by Tauri, including its encoded comment line. This step
 uses the selected workflow, so a manual run from updated `main` can rebuild an
 older draft without moving its version tag.
+For tags bundling the independent server, this step also pins the build hook
+working directory to `app/`. Tauri otherwise runs hooks from the frontend root.
+This packaging override lets updated workflows recover older drafts with a
+relative server-script path while preserving their tagged application source.
 
 The release-only `app/tauri.release.conf.json` enables updater artifact signing.
 The updater disables legacy ZIP support to avoid the vulnerable `zip` dependency.

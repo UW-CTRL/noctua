@@ -29,8 +29,9 @@ cargo tauri build
 ```
 
 Installers appear under `target/release/bundle/`. The bundled local connection
-screen opens without starting a data server. `app/prepare-server.py` runs from
-the build hook, builds the requested server target and puts it in the bundle's
+screen opens without starting a data server. The build hook explicitly uses the
+native app directory (`cwd: "."`); its default frontend-root working directory
+is outside `app/`. `app/prepare-server.py` builds the requested server target and puts it in the bundle's
 `binaries/` resources. Universal macOS builds combine both architectures with
 lipo. Tauri supplies the target through its [build hook environment](https://v2.tauri.app/reference/config/#buildconfig).
 The desktop stages a version/content-addressed durable copy before ensure, so
