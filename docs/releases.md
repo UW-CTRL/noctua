@@ -386,3 +386,10 @@ upstream Universal binaries. Compilers resolve from app
 resources at runtime: users need no separate TeX installation. The TeX distribution
 increases installer size; package files, fonts, formats, and license notices must
 ship together with the executables. Local packaging requires both setup scripts.
+
+Release jobs restore the Rust build cache before restoring managed paper compilers.
+Rust cache cleanup removes non-Cargo files under `target/`, so reversing this order
+can silently empty compiler resource trees. Before publication, each platform job
+checks its actual Debian package, macOS updater archive, or Windows NSIS installer
+for the bundled server, Tectonic, pdfLaTeX, BibTeX, TeX packages, and license notices.
+A missing resource fails the build and leaves the release unpublished.

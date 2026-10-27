@@ -22,7 +22,7 @@ automatically after every platform build and installer verification succeeds.
 | Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for the Apple Silicon target. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
-| Release and workflow checks | Ubuntu | Python and Node release-script tests, workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
+| Release and workflow checks | Ubuntu | Python and Node release-script tests (including package-resource verification and cache ordering), workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
 | Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, manual runs, and weekly on Mondays at 09:17 UTC. |
 
 WebKit tests that exercise real timers, such as search debouncing, attach the
