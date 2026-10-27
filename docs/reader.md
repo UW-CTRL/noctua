@@ -61,6 +61,17 @@ To discuss a passage, select it and choose **Add to chat**. You can also click a
 detected figure, table, or algorithm to attach its source region. See
 [Chat attachments](assistant.md#chat-attachments).
 
+Detected boxes include the object and its caption while keeping neighboring
+columns, running headers, author notes, and body paragraphs separate. Figures
+can float beside prose or have captions beside their drawings; stacked panels
+stay together. Tables can span columns and include rotated headings, outlined
+lettering, or rows below an internal divider without a bottom border. References
+inside table cells stay within their table. Ruled algorithm boxes stop at the
+listing's closing border. Fully transparent drawing objects are excluded.
+
+Detection requires selectable caption text and PDF drawing information; scanned
+captions and unusual layouts may still need a text selection instead.
+
 See [AI prompts](assistant.md#dedicated-ai-features) for how the outline and
 auto-highlight tasks are instructed, with links to their source prompts.
 

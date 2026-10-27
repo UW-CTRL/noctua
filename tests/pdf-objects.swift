@@ -189,11 +189,170 @@ const unconnectedChannel=NoctuaPDFObjects.detect(channelLabels.filter(item=>!ite
 assert(unconnectedChannel.length===1&&unconnectedChannel[0].rect[1]>.4,'large gaps without a bridging panel heading must not absorb unrelated graphics');
 const interruptedChannel=NoctuaPDFObjects.detect([...channelLabels,text('A full prose paragraph separates these drawings and must prevent them from being combined into one figure.',.147,.42,.706,.0126)],channelGraphics);
 assert(interruptedChannel.length===1&&interruptedChannel[0].rect[1]>.43,'a panel heading must not bridge across an intervening body paragraph');
+// Random-paper audit: short captions can belong to a spanning table even
+// when the surrounding body establishes two text columns.
+const spanningShortTable=NoctuaPDFObjects.detect([...twoColumns.filter(t=>!/^Figure|^Table/.test(t.text)),
+ text('Table 1',.0857,.7243,.045,.0107),text('Return trip effect per condition',.135,.7243,.249,.0107),text('Initial trip',.369,.751,.13,.0107),text('Return trip',.541,.751,.14,.0107),...Array.from({length:6},(_,i)=>text('4.34',.4,.77+i*.017,.04,.0107)),text('Final right-hand result',.719,.855,.19,.0107)
+],[[.0857,.742,.8286,.001],[.0857,.884,.8286,.001]]);
+assert(spanningShortTable.length===1&&spanningShortTable[0].rect[2]>.82&&spanningShortTable[0].text.includes('Final right-hand result'),'a short left-aligned caption must retain every column of a spanning table');
+const unnumberedHeader=NoctuaPDFObjects.detect([
+ text('Planning with Diffusion for Flexible Behavior Synthesis',.314,.057,.347,.0113),
+ text('Figure 6. Guided sampling of complete trajectories.',.09,.33,.383,.0113),text('The left caption continues here.',.09,.345,.38,.0113),
+ text('Figure 7. Fast planning performance.',.502,.308,.383,.0113),text('The right caption continues here.',.502,.323,.38,.0113),
+ text('A body paragraph in the left column.',.09,.43,.38,.0126),text('Another left-column body line.',.09,.45,.38,.0126),
+ text('A body paragraph in the right column.',.502,.43,.38,.0126),text('Another right-column body line.',.502,.45,.38,.0126)
+],[[.09,.0727,.794,.001],[.09,.084,.38,.21],[.502,.084,.38,.19]]);
+assert(unnumberedHeader.length===2&&unnumberedHeader.every(r=>r.rect[1]>.075&&!r.text.includes('Planning with Diffusion'))&&unnumberedHeader.find(r=>r.label==='Figure 6').rect[0]+unnumberedHeader.find(r=>r.label==='Figure 6').rect[2]<.49,'a small running title without a top page number must not merge neighboring figures');
+const topOfPageTable=NoctuaPDFObjects.detect([
+ text('Planning Horizon Method Safety Rate Average Distance and Planning Time',.088,.067,.87,.0088),text('Trial 1 80% 0.32 33.8',.088,.086,.87,.0088),text('Trial 2 90% 0.42 44.2',.088,.12,.87,.0088),text('TABLE II',.473,.269,.054,.0101)
+],[[.088,.0637,.8695,.001],[.088,.0806,.8695,.001],[.088,.15,.8695,.001],[.088,.2646,.8695,.001]]);
+assert(topOfPageTable.length===1&&topOfPageTable[0].rect[1]<.064&&topOfPageTable[0].text.includes('Planning Horizon'),'a small table header between two top-of-page rules is content, not a running title');
+const floatedPictureTexts=[text('Figure 1:',.424,.655,.07,.0138),text('A robot reasons about traversability.',.501,.656,.381,.0126),text('The caption continues across the image lane.',.424,.6715,.459,.0126),text('and finishes here.',.424,.6866,.30,.0126)];
+for(let i=0;i<14;i++)floatedPictureTexts.push(text('The surrounding prose must remain outside this picture.',.117,.39+i*.02,.28,.0138));
+const floatedPicture=NoctuaPDFObjects.detect(floatedPictureTexts,[[.117,.345,.766,.294]]);
+assert(floatedPicture.length===1&&floatedPicture[0].rect[0]>.41&&floatedPicture[0].rect[1]+floatedPicture[0].rect[3]>.699&&floatedPicture[0].text.includes('finishes here')&&!floatedPicture[0].text.includes('surrounding prose'),'a floating picture crossing the page midpoint must keep its caption separate from adjacent body text');
+const besideCaptionTexts=[text('Figure 1: A policy avoids the obstacles.',.533,.105,.291,.0126),text('The policy changes when the safety criterion triggers.',.533,.12,.291,.0126),text('This caption describes the first diagram.',.533,.135,.291,.0126),text('Figure 2: Exploration and expansion sets.',.176,.433,.647,.0126)];
+const besideCaption=NoctuaPDFObjects.detect(besideCaptionTexts,[[.193,.133,.326,.156],[.205,.303,.58,.115]]);
+assert(besideCaption.length===2&&besideCaption[0].label==='Figure 1'&&besideCaption[0].rect[0]<.2&&besideCaption[0].rect[1]+besideCaption[0].rect[3]<.31&&besideCaption[1].rect[1]>.29,'a side caption must attach its neighboring drawing without consuming the next figure, even when their graphics cluster together');
+const vectorTable=NoctuaPDFObjects.detect([
+ text('TABLE I',.693,.08,.05,.01),text('NOMENCLATURE',.673,.091,.09,.01)
+],[[.5075,.1167,.4206,.001],[.5075,.135,.4206,.001],[.5075,.3417,.4206,.001],[.5075,.4251,.4206,.001],...Array.from({length:25},(_,i)=>[.648,.137+i*.0113,.24,.009])]);
+assert(vectorTable.length===1&&vectorTable[0].rect[1]+vectorTable[0].rect[3]>.425,'outlined lettering must bridge wide gaps between table rules even without selectable cell text');
+const vectorTableWithProse=NoctuaPDFObjects.detect([
+ text('TABLE II',.691,.08,.054,.01),text('CALIBRATION LEVELS',.528,.091,.37,.01),
+ text('N',.783,.1702,.0106,.0088),text('Compute the conformal scores as prediction errors.',.5066,.171,.4226,.0126)
+],[[.5058,.1186,.4227,.001],[.5058,.1487,.4227,.001]]);
+assert(vectorTableWithProse.length===1&&vectorTableWithProse[0].rect[1]+vectorTableWithProse[0].rect[3]<.16&&!vectorTableWithProse[0].text.includes('Compute'),'a superscript before a larger-font paragraph must not pull the paragraph into a table');
+const descriptiveHeaderRows=[text('Table I: Generalization benchmark results.',.088,.061,.824,.0126)];
+for(const y of [.124,.19])for(let i=0;i<6;i++)descriptiveHeaderRows.push(text('Descriptive method heading '+i,.12+i*.125,y,.10,y<.15?.0126:.0088));
+descriptiveHeaderRows.push(text('Model score 92.5',.12,.235,.75,.0088),text('Figure 6: Separate learning curves.',.088,.52,.824,.0126));
+const descriptiveHeaderTable=NoctuaPDFObjects.detect(descriptiveHeaderRows,[[.117,.113,.757,.001],[.117,.142,.757,.001],[.117,.259,.757,.001],[.105,.27,.8,.23]]);
+assert(descriptiveHeaderTable.length===2&&descriptiveHeaderTable[0].rect[1]+descriptiveHeaderTable[0].rect[3]<.27&&descriptiveHeaderTable[1].label==='Figure 6','long text-only table headings in separate cells must not be mistaken for prose and merge the following plot');
+const authorSuperscript=NoctuaPDFObjects.detect([
+ text('A broad paper title on the first page',.1,.087,.8,.0201),text('First Author, Second Author',.369,.133,.254,.0138),text('∗',.623,.132,.007,.0101),
+ text('Figure 1. Generalization in reinforcement learning.',.512,.412,.4,.0126),text('The complete caption stays with the images.',.512,.427,.4,.0126),
+ text('An abstract paragraph in the left column.',.088,.2,.4,.0113),text('Another abstract paragraph in the left column.',.088,.22,.4,.0113),text('Right-column body text below the figure.',.512,.6,.4,.0126),text('Another right-column body line.',.512,.62,.4,.0126)
+],[[.53,.184,.36,.21]]);
+assert(authorSuperscript.length===1&&authorSuperscript[0].rect[1]>.17&&!authorSuperscript[0].text.includes('Author'),'an isolated author superscript must not extend the figure into the author row');
+const journalHeader=NoctuaPDFObjects.detect([text('IEEE TRANSACTIONS ON ROBOTICS, VOL. 42, 2026',.4,.04,.53,.0088),text('554',.065,.04,.018,.0088),text('Figure 4: A robot trajectory.',.07,.19,.86,.01)],[[.07,.085,.86,.09]]);
+assert(journalHeader.length===1&&journalHeader[0].rect[1]>.07&&!journalHeader[0].text.includes('IEEE TRANSACTIONS')&&!journalHeader[0].text.includes('554'),'a running title with a left page number must be excluded even without a header rule');
+const captionThenBody=NoctuaPDFObjects.detect([
+ text('Figure 2. A complete multi-line caption.',.1,.3,.8,.0113),text('The caption ends with this description.',.1,.315,.8,.0113),text('A larger-font body paragraph must be excluded.',.1,.34,.8,.0126)
+],[[.1,.1,.8,.18]]);
+assert(captionThenBody.length===1&&!captionThenBody[0].text.includes('larger-font body')&&captionThenBody[0].rect[1]+captionThenBody[0].rect[3]<.34,'a slightly larger body font must end caption continuation');
+// FlashAttention: tables often end without a bottom rule; internal dividers
+// must not truncate later row groups or the final model scores.
+const openTableRows=[text('Preceding prose must stay outside the box.',.117,.1244,.765,.0126),text('Table 2: Training time for small and medium models.',.117,.139,.765,.0113),text('Implementation',.214,.182,.23,.0113),text('Time',.64,.182,.1,.0113)];
+for(let i=0;i<6;i++)openTableRows.push(text('GPT model group '+i,.214,.194+i*.014,.23,.0113),text('14.3 6.9 days',.52,.194+i*.014,.23,.0113));
+openTableRows.push(text('Long-range Arena. Following body paragraph outside the table.',.117,.293,.765,.0126));
+const openTable=NoctuaPDFObjects.detect(openTableRows,[[.214,.1953,.563,.001],[.214,.2373,.563,.001]]);
+assert(openTable.length===1&&openTable[0].rect[1]>.137&&openTable[0].rect[1]+openTable[0].rect[3]>.275&&openTable[0].text.includes('model group 5')&&!openTable[0].text.includes('Following body'),'tables without bottom borders must continue past internal separators through their final rows');
+// A table of pointers contains bare Table N labels in its cells, followed by
+// the actual Table 9 caption. References cannot steal its label or drawings.
+const pointerRows=[text('Table 8: Pointers to results tables.',.377,.09,.246,.0126),text('Dropout',.273,.122,.07,.0126),text('Pass',.531,.122,.036,.0126),text('Table',.674,.122,.045,.0126)];
+for(let i=0;i<13;i++)pointerRows.push(text('Yes',.295,.138+i*.0151,.025,.0126),text('Forward',.519,.138+i*.0151,.06,.0126),text('Table '+(9+i),.666,.138+i*.0151,.061,.0126));
+pointerRows.push(text('Table 9: Forward pass runtime for attention mechanisms.',.117,.354,.765,.0113),text('Attention method',.22,.40,.14,.009),text('First score 0.36',.36,.416,.4,.009),text('Final score 13.34',.36,.523,.4,.009));
+const pointerTables=NoctuaPDFObjects.detect(pointerRows,[[.263,.1202,.474,.001],[.263,.1395,.474,.001],[.263,.3365,.474,.001],[.143,.3964,.71,.001],[.143,.4107,.71,.001],[.143,.5359,.71,.001]]);
+assert(pointerTables.length===2&&pointerTables[0].label==='Table 8'&&pointerTables[1].label==='Table 9'&&pointerTables[1].rect[1]>.34&&pointerTables[1].text.includes('Final score 13.34'),'table-cell references must not create phantom tables or replace the real caption below');
+// Ruled algorithms stop at the listing border, before following theorems;
+// long code must not be discarded by the generic text-only height cap.
+for(const [number,top,bottom,count] of [[1,.416,.7584,16],[4,.138,.7333,26]]){
+ const codeRows=[text('Algorithm '+number,.117,top,.1,.0126),text('FlashAttention',.222,top,.13,.01),text('Require: matrices and on-chip memory.',.117,top+.022,.765,.0126)];
+ for(let i=1;i<=count;i++)codeRows.push(text(i+': '+(i===count?'Return the final output.':'Compute the next block using the input matrices.'),.125,top+.045+(i-1)*(bottom-top-.061)/(count-1),.75,.0126));
+ codeRows.push(text('We show correctness and memory requirements in the following theorem.',.14,bottom+.013,.74,.0126),text('Theorem 1. Following proof must stay outside the algorithm.',.117,bottom+.04,.765,.0126));
+ const listing=NoctuaPDFObjects.detect(codeRows,[[.1176,top+.001,.7647,.001],[.1176,top+.0178,.7647,.001],[.1176,bottom,.7647,.001]]);
+ assert(listing.length===1&&listing[0].label==='Algorithm '+number&&listing[0].rect[1]+listing[0].rect[3]<bottom+.01&&listing[0].text.includes('Return the final output.')&&!listing[0].text.includes('Following proof')&&!listing[0].text.includes('We show correctness'),'framed algorithms must include every step and stop at their closing border');
+}
+// LpWM: Figure 3 follows a captioned table, then contains stacked panels.
+const tableThenFigure=NoctuaPDFObjects.detect([
+ text('Table 2: Predictor parameter counts.',.176,.097,.648,.0126),
+ text('Predictor',.245,.143,.08,.0126),text('25.8M 62.2M 166.9M',.405,.163,.35,.0126),
+ text('0.30M 1.18M 4.72M',.405,.232,.35,.0126),
+ text('Open-Loop',.329,.275,.07,.0097),text('Open-Loop',.661,.272,.074,.0104),
+ text('Closed-Loop',.329,.363,.08,.0097),text('Closed-Loop',.661,.371,.084,.0104),
+ text('(a) Wall Environment. LeWM vs. LpWM',.218,.502,.28,.0113),
+ text('(b) PushT Environment. VICReg vs. LpWM',.54,.502,.29,.0113),
+ text('Figure 3: Linear predictor is sufficient for the wall environment.',.176,.521,.648,.0126),
+ text('Both open-loop and closed-loop results are reported.',.176,.535,.648,.0126)
+],[[.235,.1415,.53,.001],[.235,.1621,.53,.001],[.235,.2515,.53,.001],[.1765,.2744,.3308,.2191],[.525,.272,.3,.222]]);
+const predictorTable=tableThenFigure.find(r=>r.label==='Table 2'),wallFigure=tableThenFigure.find(r=>r.label==='Figure 3');
+assert(tableThenFigure.length===2&&wallFigure.rect[1]>predictorTable.rect[1]+predictorTable.rect[3]&&wallFigure.rect[1]<.272,'a stacked figure must not expand upward into the preceding captioned table');
+assert(wallFigure.text.includes('Open-Loop')&&wallFigure.text.includes('Closed-Loop')&&wallFigure.text.includes('(a)')&&wallFigure.text.includes('(b)')&&!/25.8M|0.30M/.test(wallFigure.text),'figure labels and both panels must remain without the preceding table values');
+const configRows=[text('Table 5: Experimental configurations for Section 3 and Section 4.',.176,.097,.648,.0126),text('Pipelines in the following table.',.176,.1106,.21,.0126),text('Section 3',.417,.1294,.057,.0113),text('Section 4',.671,.1294,.057,.0113),text('Wall',.331,.1483,.03,.0113),text('OGBench-Cube',.69,.1483,.10,.0113)];
+const configLabels=['Encoder','Predictor','Dimension','History','Frameskip','Batch size','Epochs','Optimizer','Base LR','Grad. clip','Reg. weight','Number of projections','Parameter','Temporal Jaccard'];
+for(let i=0;i<configLabels.length;i++){
+ const y=.1675+i*.0126;
+ configRows.push(text(configLabels[i],.184,y,.14,.0113),text(i===0?'from-scratch ViT, 12 layers, width 384':'128',.34,y,.22,.0113),text(i===0?'from-scratch ViT-Tiny, width 192':'0.01',.60,y,.20,.0113));
+}
+configRows.push(text('Experimental Details for Section 4. Following body paragraph.',.176,.383,.648,.0126));
+const configTable=NoctuaPDFObjects.detect(configRows,[[.1765,.1278,.6553,.001],[.332,.147,.2265,.001],[.5747,.147,.2489,.001],[.1765,.166,.6553,.001],[.1765,.3497,.6553,.001]]);
+assert(configTable.length===1&&configTable[0].rect[1]+configTable[0].rect[3]>.35&&configTable[0].text.includes('Frameskip')&&configTable[0].text.includes('Temporal Jaccard')&&!configTable[0].text.includes('Following body'),'configuration tables with a long span between rules must include their final row and exclude the following paragraph');
+// CLIP: a numbered running header sits lower than the usual header band.
+const clipHeader=[text('Learning Transferable Visual Models From Natural Language Supervision',.0906,.0579,.4678,.0113),text('10',.8684,.0566,.0163,.0126)];
+const clipPlots=NoctuaPDFObjects.detect([...clipHeader,
+ text('Figure 7. Data efficiency of zero-shot transfer.',.0906,.355,.3824,.0113),
+ text('Figure 8. Zero-shot and linear-probe performance.',.5024,.36,.3824,.0113),
+ text('Left-column body paragraph below the figure.',.0906,.51,.3824,.0126),text('Another line of the left-column paragraph.',.0906,.528,.3824,.0126),
+ text('Right-column body paragraph below the figure.',.5024,.47,.3824,.0126),text('Another line of the right-column paragraph.',.5024,.488,.3824,.0126)
+],[[.0906,.074,.7941,.001],[.0906,.0847,.3824,.2517],[.5024,.0847,.3824,.2563]]);
+assert(clipPlots.length===2&&clipPlots[0].rect[0]+clipPlots[0].rect[2]<.49&&clipPlots[1].rect[0]>.49,'a lower running-header rule must not join side-by-side CLIP plots');
+assert(clipPlots.every(r=>r.rect[1]>.07&&!r.text.includes('Learning Transferable')&&!r.text.includes('body paragraph')),'running titles and adjacent prose must stay outside plot attachments');
+const headerAndChartRule=NoctuaPDFObjects.detect([...clipHeader,text('Figure 23. A full-width plot below the header.',.09,.31,.79,.0113)],[[.09,.074,.794,.001],[.09,.085,.794,.001],[.1,.105,.78,.18]]);
+assert(headerAndChartRule.length===1&&headerAndChartRule[0].rect[1]<.085&&headerAndChartRule[0].rect[1]>.075,'only the nearest rule below the running title is a header; the plot top border must remain');
+const clipCodeTexts=[...clipHeader,
+ text('Figure 3. Numpy-like pseudocode for the implementation.',.09,.373,.3856,.0113),text('of CLIP.',.09,.387,.07,.0113),
+ text('# image_encoder - ResNet or Vision Transformer',.09,.085,.35,.0095),text('logits = scale * image_features @ text_features.T',.09,.285,.38,.0095)
+];
+for(let i=0;i<9;i++)clipCodeTexts.push(text('An ordinary body paragraph in the neighboring column.',.5024,.085+i*.018,.3824,.0126));
+const clipCode=NoctuaPDFObjects.detect(clipCodeTexts,[[.0906,.074,.7941,.001],[.0852,.0791,.6447,.2802]]);
+assert(clipCode.length===1&&clipCode[0].rect[1]>.076&&clipCode[0].rect[0]+clipCode[0].rect[2]<.5&&clipCode[0].text.includes('logits =')&&clipCode[0].text.includes('of CLIP.')&&!clipCode[0].text.includes('neighboring column'),'blank embedded-image bounds must not pull adjacent prose into a code figure');
+// Dense, page-height tables and rotated headers must remain separate from plots.
+const denseRows=[...clipHeader,text('Dataset headers',.2,.09,.6,.04),text('Table 10. Linear probe performance over all datasets.',.09,.90,.8,.0113)];
+for(let i=0;i<65;i++)denseRows.push(text('RN50 '+Array.from({length:27},(_,j)=>String(70+(i+j)%20)+'.5').join(' '),.11,.15+i*.0113,.75,.008));
+const denseTable=NoctuaPDFObjects.detect(denseRows,[[.09,.074,.794,.001],[.197,.078,.001,.055],...[.1366,.1523,.35,.588,.88].map(y=>[.104,y,.765,.001])]);
+assert(denseTable.length===1&&denseTable[0].rect[1]<.079&&denseTable[0].rect[1]+denseTable[0].rect[3]>.91&&denseTable[0].text.includes('Dataset headers'),'page-height numeric tables must retain their rotated headers and all rule groups');
+const rotatedTable=NoctuaPDFObjects.detect([
+ text('Food101',.211,.13,.008,.05),text('CIFAR10',.239,.13,.008,.05),
+ text('RN50 '+Array(28).fill('81.5').join(' '),.14,.2,.72,.008),
+ text('ViT '+Array(28).fill('85.5').join(' '),.14,.26,.72,.008),
+ text('Table 11. Model performance over datasets.',.29,.302,.39,.0113),
+ text('Figure 22. Performance compared to linear probes.',.23,.841,.52,.0113)
+],[[.197,.127,.001,.059],...[.1888,.2448,.2909].map(y=>[.104,y,.765,.001]),[.09,.339,.794,.477]]);
+assert(rotatedTable.length===2&&rotatedTable[0].rect[1]<.13&&rotatedTable[0].rect[1]+rotatedTable[0].rect[3]<.33&&rotatedTable[1].rect[1]>.33,'a dense table with rotated headings must not attach the following figure');
+// Flow Policy Gradients: the teaser image follows smaller affiliation notes.
+const teaser=NoctuaPDFObjects.detect([
+ text('1',.2732,.189,.0065,.0101),text('Amazon FAR',.2809,.191,.1005,.0138),
+ text('2',.3993,.189,.0065,.0101),text('UC Berkeley',.407,.191,.0954,.0138),
+ text('*Equal Contribution',.2135,.2129,.1229,.0113),text('†',.351,.2109,.0054,.0075),
+ text('Work done as an intern at Amazon FAR',.3574,.2129,.2413,.0113),
+ text('‡',.6133,.2109,.0054,.0075),text('Amazon FAR team co-lead',.6197,.2129,.1602,.0113),
+ text('Fig. 1: Flow policies for robot control.',.08,.4718,.84,.0126),
+ text('The caption continues below the robot photographs.',.08,.4869,.56,.0126)
+],[[.08,.2367,.84,.2264]]);
+assert(teaser.length===1&&teaser[0].rect[1]>.23&&teaser[0].rect[1]<.237&&teaser[0].rect[1]+teaser[0].rect[3]>.499,'a teaser box must cover the image and caption without the smaller author notes above it');
+assert(!/Amazon|Berkeley|Contribution|co-lead/.test(teaser[0].text),'front-matter text must not become figure attachment text');
+// DOM font bounds put the bottom caption closer to the following table than
+// PDF text-item bounds do. Neither representation may swap the two tables.
+for(const shift of [0,-.003]){
+ const rows=[];
+ for(const [label,x,width,y] of [['A.1',.2356,.5288,.0687],['A.2',.2564,.4872,.3152]]){
+  rows.push(text('Hyperparameter category',x,y+.002,.1338,.0101),text('Used value',.4752,y+.002,.0592,.0101));
+  rows.push(text('Flow integration steps for '+label,x,y+.038,.18,.0101),text(label==='A.1'?'64':'50',.4979,y+.038,.02,.0101));
+  rows.push(text('Running observation normalization',x,y+.179,.19,.0101));
+  rows.push(text('TABLE '+label+': FPO++ and training hyperparameters.',.08,y+.2015+shift,.84,.0126),text('Experiments and the values we performed sweeps over.',.08,y+.2166+shift,.37,.0126));
+ }
+ const rules=[...[[.2356,.5288,.0687],[.2564,.4872,.3152]].flatMap(([x,w,y])=>[0,.0181,.036,.0765,.0944,.1927].map(offset=>[x,y+offset,w,.001]))];
+ const tables=NoctuaPDFObjects.detect(rows,rules),first=tables.find(r=>r.label==='Table A.1'),second=tables.find(r=>r.label==='Table A.2');
+ assert(tables.length===2&&first.rect[1]<.069&&first.rect[1]+first.rect[3]<.31&&second.rect[1]>.30&&second.rect[1]<.316,'adjacent bottom-captioned appendix tables must retain their own complete rule groups');
+ assert(first.text.includes('steps for A.1')&&!first.text.includes('steps for A.2')&&second.text.includes('steps for A.2')&&!second.text.includes('steps for A.1'),'each table attachment must contain only its own data');
+}
 const raster={width:100,height:100,data:new Uint8ClampedArray(40000)};
 for(let y=0;y<75;y++)for(let x=10;x<90;x++)raster.data.set([255,255,255,255],(y*100+x)*4);
 for(let y=20;y<60;y++)for(let x=20;x<80;x++)raster.data.set([20,30,40,255],(y*100+x)*4);
 const tight=NoctuaPDFObjects.tightenRect([.1,0,.8,.75],raster);
 assert(tight[0]>.18&&tight[1]>.18&&tight[0]+tight[2]<.82&&tight[1]+tight[3]<.62,'invisible and white container padding must be trimmed to visible figure pixels');
+const constrained=NoctuaPDFObjects.tightenRect([.2,.2,.6,.4],raster);
+assert(constrained[0]>=.2&&constrained[1]>=.2&&constrained[0]+constrained[2]<=.8&&constrained[1]+constrained[3]<=.6+.00001,'raster padding must stay inside the geometric box so excluded headers and columns cannot return');
 const dark={width:100,height:100,data:new Uint8ClampedArray(40000)};for(let y=20;y<60;y++)for(let x=20;x<80;x++)dark.data.set([232,234,237,255],(y*100+x)*4);
 assert(NoctuaPDFObjects.tightenRect([.1,0,.8,.75],dark,[32,33,36])[1]>.18,'light ink on a dark Reader page must retain tight bounds');
 const palePanel={width:100,height:100,data:new Uint8ClampedArray(40000)};
@@ -216,6 +375,11 @@ const boxes=NoctuaPDFObjects.graphicRects({fnArray:[1,2,3,4],argsArray:[[],[300,
 assert(boxes.length===1&&Math.abs(boxes[0][0]-.1)<1e-9&&Math.abs(boxes[0][1]-.175)<1e-9&&Math.abs(boxes[0][2]-.5)<1e-9,'image bounds must honor PDF graphics transforms and viewport coordinates');
 const clips=NoctuaPDFObjects.graphicRects({fnArray:[5,5],argsArray:[[28,[],[60,400,540,800]],[20,[],[100,500,500,700]]]},{...ops,endPath:28},{width:600,height:800,transform:[1,0,0,-1,0,800]});assert(clips.length===1&&Math.abs(clips[0][1]-.125)<1e-9,'unpainted clipping paths must not enlarge figure bounds');
 const forms=NoctuaPDFObjects.graphicRects({fnArray:[6,5,7],argsArray:[[[1,0,0,1,0,0],[60,400,540,800]],[0,[],[100,500,500,700]],[]]},{...ops,paintFormXObjectBegin:6,paintFormXObjectEnd:7},{width:600,height:800,transform:[1,0,0,-1,0,800]});assert(forms.length===1&&Math.abs(forms[0][1]-.125)<1e-9&&Math.abs(forms[0][3]-.25)<1e-9,'blank form-container margins must not enlarge actual painted figure bounds');
+const alphaOps={...ops,setGState:10,fill:23,stroke:20};
+const transparent=NoctuaPDFObjects.graphicRects({fnArray:[1,10,5,3,4,5],argsArray:[[],[[['ca',0],['CA',0]]],[23,[],[0,0,600,800]],['hidden'],[],[23,[],[100,500,500,700]]]},alphaOps,{width:600,height:800,transform:[1,0,0,-1,0,800]});
+assert(transparent.length===1&&Math.abs(transparent[0][1]-.125)<1e-9,'fully transparent paths and images must not enlarge drawing bounds; restoring state must restore opacity');
+const separateAlpha=NoctuaPDFObjects.graphicRects({fnArray:[10,5,5,5],argsArray:[[[['ca',0],['CA',1]]],[23,[],[0,0,600,800]],[20,[],[100,500,500,700]],[20,[],[NaN,0,100,100]]]},alphaOps,{width:600,height:800,transform:[1,0,0,-1,0,800]});
+assert(separateAlpha.length===1&&separateAlpha[0].every(Number.isFinite),'invisible fills must not hide visible strokes, and malformed bounds must be ignored');
 const clippedOps={...ops,clip:8,eoClip:9,endPath:28,paintFormXObjectBegin:6,paintFormXObjectEnd:7};
 const clippedList={fnArray:[1,8,5,1,2,3,4,4,2,3],argsArray:[[],[],[28,[],[60,500,540,700]],[],[480,0,0,500,60,200],['cropped'],[],[],[480,0,0,160,60,100],['next']]};
 const clippedImages=NoctuaPDFObjects.graphicRects(clippedList,clippedOps,{width:600,height:800,transform:[1,0,0,-1,0,800]});
@@ -225,4 +389,4 @@ const separate=NoctuaPDFObjects.detect([text('Figure 8: Cropped images',.1,.4,.8
 assert(separate.length===2&&separate[0].rect[1]+separate[0].rect[3]<separate[1].rect[1],'adjacent figures with oversized clipped images must retain separate boxes');
 
 """#)
-print("PASS: captioned objects, complete long captions, two-column objects and spanning figures, stacked panels, ruled tables, prose exclusion and clipped image bounds")
+print("PASS: captioned objects, long captions, column separation, numbered headers, padded code images, dense tables, rotated headings, prose exclusion and clipped image bounds")
