@@ -97,7 +97,7 @@ pending automatic summaries, while an already running request may finish. Manual
 
 ## Google Scholar Inbox
 
-Open **Settings → Connections → Google Scholar Inbox** to import Google Scholar
+Open **Settings → Integrations → Google Scholar Inbox** to import Google Scholar
 alerts from Gmail. The **?** button beside the heading opens a setup guide for
 Scholar alerts, Google Cloud, OAuth credentials, and Gmail connection in four
 short steps. Expand **Access & Troubleshooting** for the full scope, reconnect

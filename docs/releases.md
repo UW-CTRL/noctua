@@ -223,26 +223,26 @@ variables and set `plugins.updater.pubkey` to the same public key in your local
 release configuration. Then run
 `cargo tauri build --config tauri.release.conf.json` in `app/`.
 
-In the desktop app, **Settings → About & shortcuts → Check for updates** checks
-for a strictly newer version. **Update to …** asks the user to save work and
-confirm installation, then downloads and verifies the signed bundle before
-replacing the app. Windows exits and relaunches through its installer; macOS and
-Linux show **Restart Noctua** after installation. All windows share the pending
-update and only one operation can run at a time. Network and installation errors
-are shown in Settings and allow another check. On startup, one window checks for
-updates after first-run setup is complete. A newer release opens a modal showing
-the installed and offered versions, short categorized highlights, and **Update
-to …** / **Not now** buttons. Opening more tabs or windows does not repeat the
-prompt within the same process. **Not now** dismisses it until the next launch;
-Settings remains available. Startup failures and current-version results do not
-interrupt the user. Installation always requires confirmation; there are no
-background installations. Linux supports in-app updates only for AppImage;
-package-manager installations must update through their package manager.
+In the desktop app, open the local connection manager and choose **Desktop →
+Check desktop update** to check for a strictly newer version. **Install offered
+update** opens an in-app confirmation with **Install update** and **Cancel**.
+Cancel or Esc sends no installation request. Confirming downloads and verifies
+the signed bundle before replacing the app. Windows exits and relaunches through
+its installer; macOS and Linux show **Restart Noctua** after installation.
+Server-hosted pages do not control the native updater.
 
-Settings uses an in-app confirmation dialog, with **Install update** and **Cancel**
-buttons, rather than relying on the browser confirmation dialog inside desktop
-tabs. Cancel or Esc sends no installation request. The startup update prompt's
-own Update button remains its confirmation and does not open a second dialog.
+All windows share the pending update and only one operation can run at a time.
+Network and installation errors appear in the local connection manager and allow
+another check. On startup, one window checks after restoring or retrying a saved
+connection. A newer release opens a modal showing the installed and offered
+versions, categorized release history, and **Install update** / **Not now** buttons.
+The startup dialog's Install update button confirms installation directly.
+Opening more tabs or windows does not repeat the prompt within the same process.
+**Not now** dismisses it until the next launch; the local Desktop controls remain
+available. Startup failures and current-version results do not interrupt the user.
+Installation always requires confirmation; there are no background installations.
+Linux supports in-app updates only for AppImage; package-manager installations
+must update through their package manager.
 
 Users of an older release without the updater must manually install a build
 containing this feature once. Test updates between two signed packaged versions

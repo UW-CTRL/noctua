@@ -2645,15 +2645,15 @@ dependencies = [
 
 [[package]]
 name = "noctua"
-version = "0.2.8"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
  "dirs 5.0.1",
- "pdf-extract",
  "html5ever",
  "libc",
+ "pdf-extract",
  "reqwest 0.12.28",
  "roxmltree",
  "rusqlite",
@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "noctua-app"
-version = "0.2.8"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "noctua",
