@@ -55,7 +55,7 @@ document.addEventListener('pointerdown',e=>{NoteUndo.gesture=e.target.closest('.
 document.addEventListener('focusin',()=>{NoteUndo.group=null;},true);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-history] button');if(!b)return;const redo=b.hasAttribute('data-redo'),kind=b.closest('[data-history]').dataset.history;if(kind==='note')undoNote(redo);else if(kind==='reader')undoReader(redo);else if(typeof workspaceUndo==='function')workspaceUndo(redo,kind==='file');});
 document.addEventListener('keydown',e=>{
- if(!(e.metaKey||e.ctrlKey)||e.altKey||e.key.toLowerCase()!=='z')return;
+ if(e.defaultPrevented||e.isComposing||e.repeat||!(e.metaKey||e.ctrlKey)||e.altKey||e.key.toLowerCase()!=='z')return;
  const el=e.target;if(el.closest('#chat, #chat-box, #setup')||el.matches('input[type="search"]'))return;
  if(el.closest('#workspace-editor,#workspace-tree')){e.preventDefault();e.stopImmediatePropagation();workspaceUndo(e.shiftKey,!!el.closest('#workspace-editor'));}
  else if(document.body.classList.contains('notes-mode')&&(el.closest('#notes-stage')||!el.matches('input,textarea,[contenteditable]'))){e.preventDefault();e.stopImmediatePropagation();undoNote(e.shiftKey);}

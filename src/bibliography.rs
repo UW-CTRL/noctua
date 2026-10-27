@@ -151,8 +151,8 @@ pub fn parse(source:&str)->Result<Vec<Value>>{
 pub fn index(app:&crate::App,target:&str,m:&Value)->Result<Vec<Value>>{
  let library=app.library.items(target)?;
  let mut result=Vec::new();
- for id in m["bibliographies"].as_array().context("Invalid bibliography selection")?{
-  let e=m["entries"].as_array().unwrap().iter().find(|e|e["id"]==*id&&e["deleted"]!=true).context("An enabled bibliography is missing")?;
+ for e in m["entries"].as_array().context("Invalid project entries")?.iter().filter(|e|e["kind"]=="file"&&e["deleted"]!=true&&e["name"].as_str().unwrap_or("").to_ascii_lowercase().ends_with(".bib")){
+  let id=&e["id"];
   let bytes=crate::workspace::bytes(app,target,e)?;let source=std::str::from_utf8(&bytes).context("Bibliography must be UTF-8")?;
   for mut entry in parse(source).with_context(||format!("{}",e["name"].as_str().unwrap_or("Bibliography")))?{
    entry["file_id"]=id.clone();entry["file_name"]=e["name"].clone();

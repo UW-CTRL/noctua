@@ -3,11 +3,20 @@
 [Documentation](README.md) · [Project README](../README.md)
 
 Paper action icons in the details pane reveal labels below after a short hover.
-Keyboard focus shows the labels immediately. Buttons with visible text, such as
+Keyboard focus shows the labels immediately and uses color feedback without a surrounding focus box. Buttons with visible text, such as
 Read PDF, keep hover emphasis without repeating their text below. Icon labels
 cover opening a new tab/window, building a graph, and editing paper details.
 
 ## Choose a view
+
+Use the tall arrow buttons centered on the left and right dividers to hide or
+show the navigation and details panes. Drag a divider to resize its pane.
+Toggle the left pane with **⌘B** on macOS or **Ctrl+B** on Windows/Linux;
+use **⌘⌥B** or **Ctrl+Alt+B** for the right pane. While typing, these keys keep
+their editor behavior. Press **Esc** to leave the input, then use a pane shortcut.
+An open suggestion menu may consume Esc first. The original **⌘⌥1 / 2**
+(**Ctrl+Alt+1 / 2**) shortcuts also work while editing. Open dialogs suspend
+pane shortcuts.
 
 The top-level **Library** tab has three visualizations: **Library**, **Graph**, and
 **Lineage**, selected at the top of the left sidebar. Library is the initial
@@ -19,9 +28,9 @@ Scholar cannot match. Use the magnifying glass beside the title in the compact t
 to filter by title, author, or publication. Hover or focus it to expand the field; it stays
 expanded while it contains text. Filtering updates the table as you type,
 and Escape clears the filter. Click the Title or Year column heading to sort (click Year again to reverse the order).
-Titles stay plain on hover; click one to inspect or edit its details. Use the PDF button or double-click
-a paper with an attached PDF to open Reader. The network button opens that
-paper's citation graph.
+Titles stay plain on hover; click one to inspect or edit its details. Double-click
+a paper with an attached PDF to open Reader in a new tab. Papers without a PDF
+only show details. Use the details pane to open a PDF or build a citation graph.
 
 Switching to Graph or Lineage with no graph open builds a graph for the
 selected library or collection. Graph and Lineage share a single sidebar: a

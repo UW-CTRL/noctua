@@ -876,21 +876,17 @@ function renderLibraryTable(items) {
     <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
-    <td><div class="paper-row-actions">${it.has_pdf ? '<button data-read data-icon="file-text" data-icon-only title="Read PDF" aria-label="Read PDF"></button>' : ''}<button data-network data-icon="network" data-icon-only title="Build citation graph" aria-label="Build citation graph"></button></div></td>
   </tr>`).join('');
   const byKey = new Map(items.map(it => [it.key, it]));
   rows.querySelectorAll('tr').forEach(row => {
     const it = byKey.get(row.dataset.key);
     row.addEventListener('click', (e) => {
-      if (e.target.closest('[data-read], [data-network]')) return;
       showLibItem(it);
     });
     row.querySelector('[data-select-paper]').addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showLibItem(it); $('#library-rows').querySelector(`[data-key="${CSS.escape(it.key)}"] [data-select-paper]`)?.focus(); }
     });
-    row.addEventListener('dblclick', (e) => { if (it.has_pdf && !e.target.closest('[data-read], [data-network]')) openPaperView(it.key); });
-    row.querySelector('[data-read]')?.addEventListener('click', e => openPaperView(it.key, e.metaKey || e.ctrlKey ? 'tab' : 'here'));
-    row.querySelector('[data-network]').addEventListener('click', () => { showLibItem(it); graphFromLibrary(it); });
+    row.addEventListener('dblclick', () => { if (it.has_pdf) openPaperView(it.key, 'tab'); });
   });
 }
 

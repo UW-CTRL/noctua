@@ -1,5 +1,7 @@
 # Repository conventions
 
+Write all changes in English.
+
 Use [Lucide](https://lucide.dev/icons/) as the reference for icons.
 
 Before editing a folder, read its applicable `AGENTS.md` files for local rules

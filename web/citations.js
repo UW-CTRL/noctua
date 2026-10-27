@@ -102,7 +102,7 @@ cp.addEventListener('mousedown', (e) => {
   if (d && cp._ta) pickCite(cp._ta, picker.matches[Number(d.dataset.i)]);
 });
 
-function paperCitationInput(ta){return ta?.matches('.workspace-source')&&/\.tex$/i.test(W.manifest?.entries.find(e=>e.id===W.file)?.name||'');}
+function paperCitationInput(ta){return ta?.matches('.workspace-source')&&!ta.dataset.paperCompletion&&/\.tex$/i.test(W.manifest?.entries.find(e=>e.id===W.file)?.name||'');}
 document.addEventListener('input',e=>{if(paperCitationInput(e.target))updatePicker(e.target);});
 document.addEventListener('click',e=>{if(paperCitationInput(e.target))updatePicker(e.target);else if(!e.target.closest('#cite-picker,.nb-src'))closePicker();});
 document.addEventListener('keydown',e=>{if(paperCitationInput(e.target)&&picker.open&&$('#cite-picker')._ta===e.target&&pickerKey(e,e.target))e.stopImmediatePropagation();},true);

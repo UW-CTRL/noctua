@@ -118,7 +118,7 @@ pub fn catalog(list: &mut Value) {
                 props.insert("include_trashed".into(), boolean());
                 props.insert("include_bibliography".into(), boolean());
                 props.insert("query".into(), string());
-                t["description"]=json!("Read a bounded workspace snapshot without auto-organizing it. Returns stable file/note IDs, paths, revision, enabled bibliography IDs/counts and skills. include_bibliography adds paged citation metadata; default omits full indexes and internal blob/history fields.");
+                t["description"]=json!("Read a bounded workspace snapshot without auto-organizing it. Returns stable file/note IDs, paths, revision, automatically indexed bibliography IDs/counts and skills. include_bibliography adds paged citation metadata; default omits full indexes and internal blob/history fields.");
             }
             "read_project_file" | "read_skill" => {
                 props.insert("char_offset".into(), integer(0, u32::MAX as u64));

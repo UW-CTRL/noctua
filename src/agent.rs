@@ -431,6 +431,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_bibliographies_index_automatically() -> Result<()> {
+        let f=Fixture::new()?;let m=crate::workspace::list(&f.app,"L1")?;
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"create","name":"refs.BIB","text":"@book{automatic,title={Automatic}}","revision":m["revision"]}),None)?;
+        assert_eq!(m["bib_index"][0]["key"],"automatic");let id=m["bibliographies"][0].clone();
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"rename","id":id,"name":"refs.txt","revision":m["revision"]}),None)?;assert_eq!(m["bib_index"],json!([]));
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"rename","id":id,"name":"refs.bib","revision":m["revision"]}),None)?;assert_eq!(m["bib_index"][0]["key"],"automatic");
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"delete","id":id,"revision":m["revision"]}),None)?;assert_eq!(m["bib_index"],json!([]));
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"restore","id":id,"revision":m["revision"]}),None)?;assert_eq!(m["bib_index"][0]["key"],"automatic");Ok(())
+    }
+
+    #[tokio::test]
+    async fn workspace_transfer_preserves_subtree_and_rejects_conflicts() -> Result<()> {
+        let f=Fixture::new()?;
+        let destination=f.app.library.create_collection("L1","Destination")?;
+        let m=crate::workspace::list(&f.app,"L1")?;
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"folder","name":"Drafts","revision":m["revision"]}),None)?;
+        let folder=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="Drafts").unwrap()["id"].clone();
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"create","name":"main.tex","parent":folder,"text":"test source","revision":m["revision"]}),None)?;
+        let file=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="main.tex").unwrap()["id"].clone();
+        let dest=crate::workspace::list(&f.app,&destination)?;
+        let request=json!({"op":"transfer","id":folder,"destination":destination,"revision":m["revision"],"destination_revision":dest["revision"]});
+        let mut stale=request.clone();stale["destination_revision"]=json!(999);
+        assert!(crate::workspace::change(&f.app,"L1",&stale,None).is_err());
+        let source=crate::workspace::change(&f.app,"L1",&request,None)?;
+        assert!(source["entries"].as_array().unwrap().iter().all(|e|e["deleted"]==true));
+        let moved=crate::workspace::read(&f.app,&destination,file.as_str().unwrap())?;
+        assert_eq!(moved["text"],"test source");assert_eq!(moved["entry"]["parent"],folder);
+        let dest=crate::workspace::list(&f.app,&destination)?;
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"folder","name":"Drafts","revision":source["revision"]}),None)?;
+        let id=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="Drafts"&&e["deleted"]!=true).unwrap()["id"].clone();
+        assert!(crate::workspace::change(&f.app,"L1",&json!({"op":"transfer","id":id,"destination":destination,"revision":m["revision"],"destination_revision":dest["revision"]}),None).is_err());
+        let request=json!({"op":"transfer","id":id,"destination":destination,"revision":m["revision"],"destination_revision":dest["revision"],"conflict":"skip"});
+        let skipped=crate::workspace::change(&f.app,"L1",&request,None)?;assert_eq!(skipped["revision"],m["revision"]);
+        let mut numbered=request.clone();numbered["conflict"]=json!("number");
+        let m=crate::workspace::change(&f.app,"L1",&numbered,None)?;
+        let dest=crate::workspace::list(&f.app,&destination)?;assert!(dest["entries"].as_array().unwrap().iter().any(|e|e["name"]=="Drafts (2)"&&e["deleted"]!=true));
+        let m=crate::workspace::change(&f.app,"L1",&json!({"op":"folder","name":"Drafts","revision":m["revision"]}),None)?;
+        let replacement=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="Drafts"&&e["deleted"]!=true).unwrap()["id"].clone();
+        crate::workspace::change(&f.app,"L1",&json!({"op":"transfer","id":replacement,"destination":destination,"revision":m["revision"],"destination_revision":dest["revision"],"conflict":"overwrite"}),None)?;
+        let dest=crate::workspace::list(&f.app,&destination)?;
+        assert!(dest["entries"].as_array().unwrap().iter().any(|e|e["id"]==file&&e["deleted"]==true));
+        assert!(dest["entries"].as_array().unwrap().iter().any(|e|e["id"]==replacement&&e["deleted"]!=true));
+        let folder_id=f.app.library.folder_id("L1")?;
+        let note=f.app.notes.create(&folder_id,"Transfer note")?;
+        let source=crate::workspace::list(&f.app,"L1")?;
+        let entry=source["entries"].as_array().unwrap().iter().find(|e|e["note"]==note["id"]).unwrap()["id"].clone();
+        let dest=crate::workspace::list(&f.app,&destination)?;
+        crate::workspace::change(&f.app,"L1",&json!({"op":"transfer","id":entry,"destination":destination,"revision":source["revision"],"destination_revision":dest["revision"]}),None)?;
+        let path=crate::workspace::dir(&f.app,&destination)?.join(format!("{}.json",note["id"].as_str().unwrap()));
+        let copied:Value=serde_json::from_slice(&std::fs::read(path)?)?;
+        assert_eq!(copied["title"],"Transfer note");
+        let current=crate::workspace::list(&f.app,&destination)?;
+        assert!(crate::workspace::change(&f.app,&destination,&json!({"op":"purge","ids":[entry],"revision":current["revision"]}),None).is_err());
+        let trashed=crate::workspace::change(&f.app,&destination,&json!({"op":"delete","id":entry,"revision":current["revision"]}),None)?;
+        let purged=crate::workspace::change(&f.app,&destination,&json!({"op":"purge","ids":[entry],"revision":trashed["revision"]}),None)?;
+        assert!(!crate::workspace::dir(&f.app,&destination)?.join(format!("{}.json",note["id"].as_str().unwrap())).exists());
+        assert!(crate::workspace::change(&f.app,&destination,&json!({"op":"restore","id":entry,"revision":purged["revision"]}),None).is_err());
+        assert!(crate::workspace::history(&f.app,&destination,&json!({"revision":purged["revision"]})).is_err());
+        let m=crate::workspace::change(&f.app,&destination,&json!({"op":"create","name":"shared.txt","text":"test source","revision":purged["revision"]}),None)?;
+        let shared=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="shared.txt").unwrap().clone();
+        let data_path=crate::workspace::file_path(&f.app,&destination,&shared)?;
+        let m=crate::workspace::change(&f.app,&destination,&json!({"op":"purge","ids":[file],"revision":m["revision"]}),None)?;assert!(data_path.exists(),"shared active blob must survive");
+        let m=crate::workspace::change(&f.app,&destination,&json!({"op":"delete","id":shared["id"],"revision":m["revision"]}),None)?;
+        crate::workspace::change(&f.app,&destination,&json!({"op":"purge","ids":[shared["id"]],"revision":m["revision"]}),None)?;assert!(!data_path.exists(),"unshared blob must be removed");
+
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn inspect_workspace_reads_logs_in_all_modes_and_rejects_escape() -> Result<()> {
         let f=Fixture::new()?;
         let root=crate::workspace::dir(&f.app,"L1")?.join(".workspace");
