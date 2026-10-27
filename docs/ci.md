@@ -166,6 +166,10 @@ If a runner or download fails transiently, use **Re-run failed jobs** in Actions
 If a test or workflow fails consistently, inspect its log and correct the cause
 rather than bypassing the check.
 
+Linux desktop and release jobs use the official Ubuntu archive over HTTPS instead
+of the Azure package mirror, with bounded request timeouts and retries. Package
+signature verification remains enabled.
+
 ## Independent server regression
 
 After `cargo build --locked -p noctua`, run `python3 tests/server-lifecycle.py` and
