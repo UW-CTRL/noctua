@@ -1458,3 +1458,37 @@ button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent);
 .paper-source[hidden],#paper-pages[hidden] { display:none; }
 .paper-divider .paper-pane-toggle[data-paper-pane="source"] { top:calc(50% - 46px); }
 .paper-divider .paper-pane-toggle[data-paper-pane="preview"] { top:calc(50% + 2px); }
+
+/* Settings section help shares the existing Lucide buttons and modal styling. */
+.settings-section-heading { display: flex; align-items: center; gap: 8px; }
+.settings-section-heading > button { flex: none; }
+.scholar-setup-steps { margin: 0; padding-left: 22px; }
+.scholar-setup-steps > li + li { margin-top: 14px; }
+.scholar-setup-steps p { margin: 3px 0 0; }
+.scholar-setup-steps dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 6px 0 0; }
+.scholar-setup-steps dt { color: var(--ink); }
+.scholar-setup-steps dd { margin: 0; color: var(--muted); }
+.scholar-setup-notes { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+.scholar-setup-help footer { margin-top: 10px; }
+.scholar-setup-help code { overflow-wrap: anywhere; }
+
+.scholar-prompt-editor textarea { display: block; width: 100%; resize: vertical; min-height: 180px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: 13px/1.5 var(--font-mono, monospace); }
+.scholar-prompt-editor [data-prompt-error] { color: var(--danger); }
+.scholar-prompt-editor code { overflow-wrap: anywhere; }
+
+.scholar-agent-log { width: min(660px, calc(100vw - 32px)); }
+.scholar-log-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.scholar-log-toolbar [data-log-live] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scholar-agent-log [data-log-error]:empty { display: none; }
+.scholar-agent-log [data-log-error] { color: var(--danger); }
+.scholar-agent-log [data-log-entry] { border-top: 1px solid var(--line); }
+.scholar-agent-log [data-log-entry] > summary { padding: 7px 0; cursor: pointer; font-size: 12px; list-style-position: inside; }
+.scholar-log-row { display: inline-grid; grid-template-columns: 42px 92px minmax(0, 1fr); align-items: center; gap: 8px; width: calc(100% - 18px); vertical-align: middle; }
+.scholar-agent-log time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.scholar-log-phase { color: var(--muted); }
+.scholar-log-phase[data-phase="imported"] { color: var(--accent); }
+.scholar-log-phase:is([data-phase="error"],[data-phase="retry"]) { color: var(--danger); }
+.scholar-log-paper { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scholar-log-detail { padding: 0 0 10px 50px; overflow-wrap: anywhere; }
+.scholar-log-detail p { margin: 0 0 4px; }
+.scholar-log-detail small { color: var(--muted); }

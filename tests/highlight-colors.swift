@@ -32,7 +32,7 @@ context.evaluateScript(#"""
  }
  applyPDFHighlightColors(settings.highlight_colors,settings.highlight_palette);
  const html=highlightColorSettings();assert((html.match(/type="color"/g)||[]).length===6,'palette needs exactly six color pickers');assert((html.match(/<summary /g)||[]).length===4&&(html.match(/data-highlight-color=/g)||[]).length===24&&!html.includes('<select'),'AI categories need round triggers and six palette swatches each');
- assert(html.includes('>Highlight colors</h3>')&&html.includes('settings-highlight-rows')&&!html.includes('<code')&&!html.includes('<p')&&!html.includes('Reset palette'),'palette needs a small heading and shared row width without hex labels, descriptions or reset text');
+ assert(html.includes('>Highlight Colors</h3>')&&html.includes('settings-highlight-rows')&&!html.includes('<code')&&!html.includes('<p')&&!html.includes('Reset palette'),'palette needs a small heading and shared row width without hex labels, descriptions or reset text');
  applyPDFHighlightColors(settings.highlight_colors);
  const novelty=$('#setup-highlight-novelty');novelty.value='#abcdef';await change({target:novelty});
  assert(calls[0].path==='/api/settings/highlight-colors'&&Object.keys(calls[0].patch).length===1,'save must update only the changed category');

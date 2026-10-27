@@ -6,6 +6,7 @@ let active='L1',fail=false,importFail=false,projectFail=false,pendingProject=nul
 let config={location:'/home/test/.agents/skills',default_location:'/home/test/.agents/skills',projects:[]};
 let skills=[{id:'s1',name:'Review',description:'Review research',source:'local'},{id:'s2',name:'Writing',description:'Write clearly'}],manifests={L1:{revision:1,skills:['s1']},L2:{revision:1,skills:[]}};
 function chatProjectTarget(){return active;} function renderWorkspaceTree(){} async function saveWorkspaceFile(){saveCount++;}
+function scholarSection(){return '';}function mountScholarSettings(){}
 function appearanceSection(){return '<section>Appearance</section>';}function agentSection(){return '<section>Assistant</section>';}function keySection(){return '';}function zoteroSection(){return '';}function dataSection(){return '<section>Data</section>';}function aboutSection(){return '<section>About</section>';}
 function toast(s){errors.push(s);}
 async function api(path,body){
