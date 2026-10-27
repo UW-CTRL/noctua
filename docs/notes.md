@@ -14,42 +14,61 @@ content. The **Note guide** question-mark icon at the far right of the note head
 
 ## Project files, bibliographies, and skills
 
+Refreshing Notes reopens the last viewed file or note in the selected collection.
+TeX and text files restore their cursor selection and source scroll position.
+If the saved file was removed, Noctua falls back to the last available note.
+
 The collection menu uses consistent indentation for nested folders and highlights the selected collection without a checkmark.
 
 The project sidebar has one header row with the collection selector and New note
 or file, New folder, and Import files icons. Hover or focus one of these icons
 to reveal its label underneath without moving the file list. To create a note, choose Note in
-the New note or file form; Text file creates a project text file instead. Both
+the New note or file form; File creates an empty file and LaTeX (.tex) creates a starter paper. All three
 use the name and destination folder in the form. Creation forms use compact aligned fields. Import files opens a compact queue: choose or drop files, remove unwanted selections, then click Import. Each file is limited to 32 MB. Failed uploads keep the remaining files available for retry.
 
 Each collection now has a **Project files** tree alongside the existing block note
 editor. Images and videos are grouped in a collapsed Media folder by default; click a
 folder to expand it. Files already placed in custom folders stay there, and later manual
 moves are preserved. The **New note or file** and **New folder** icons above the tree open an in-app form for the name
-and destination folder. Create folders and text files, import files, use the entry menu
-to rename/move/remove them, or preview their contents. Removal is recoverable with Undo
+and destination folder. Create folders and text files, import files, hover or focus a row to rename it or move it to trash, and drag entries
+to move them, or preview their contents. Removal is recoverable with Undo
 or the project Trash, including after a restart. Files use stable IDs, so moves and
 renames preserve references. Existing notes and `images/` / `media/` attachments retain
 their original storage. General imports support 32 MB; UTF-8 text editing supports 2 MB.
-Note media uploads keep their existing larger video limit. This is a file workspace, not
-a LaTeX compiler.
+Note media uploads keep their existing larger video limit.
 
-**New note or file → Text file** creates an empty text file, using the filename exactly as entered. No
+**New note or file → File** creates an empty text file, using the filename exactly as entered. No
 extension is added automatically. For example, use `reading-plan.md`, `draft.tex`,
 `references.bib`, or `ideas.txt`. Text files open in the source editor; `.tex` files
-do not become block notes or compile to PDF. Select **Note** in the same form for Noctua's block
+use the Paper editor for PDF compilation instead of becoming block notes. Select **Note** in the same form for Noctua's block
 editor, or **Import** to bring in existing files, including images and videos.
 
-Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. Cross-project moves and moving a folder into itself or its descendants are rejected.
+**New note or file → LaTeX (.tex)** inserts an 11pt article template with a title,
+Introduction, and a numbered equation. It includes Korean support, common math
+packages, figures, tables, and optional bibliography setup. The name gains `.tex` when needed.
+The first paper becomes the project’s main document; an existing main document is preserved.
 
-To remove a file or folder, open its **⋯** menu, choose **Move to trash**, then
+With the file list focused, **⌘Z / Ctrl+Z** undoes project file operations and
+**⇧⌘Z / Ctrl+Shift+Z** redoes them; the Undo/Redo buttons remain available.
+
+Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. To move to another project, drag an entry over the project selector above the tree, then drop it on a project in the revealed list. Folders bring their descendants. If a name already exists, choose Overwrite, Skip, or Add number. Overwrite sends the existing entry and its descendants to Trash; Add number preserves the extension, such as draft (2).tex. Closing the dialog skips the move. Move a note together with its referenced files in a folder. The source remains recoverable in its project Trash. Moving a folder into itself or its descendants is rejected.
+
+To remove a file or folder, hover or focus its row and choose **Trash**, then
 confirm in the in-app dialog. Folders include their contents; any removed document
 closes in the editor. Cancel leaves the project unchanged. Use **Undo** to reverse
 the operation, or **Trash** to restore entries later. When restoring individually,
-restore the parent folder before its children to preserve their placement.
+restore the parent folder before its children to preserve their placement. In Trash,
+newly deleted entries appear first and long lists scroll inside the dialog.
+Click anywhere in each row to select entries and choose **Restore** to restore several entries;
+**⌘A / Ctrl+A** selects all entries. Bulk restoration restores selected folders
+before their contents. **Delete permanently** removes selected trashed entries
+and folder contents after confirmation; they cannot be restored or undone.
+Permanent deletion clears the project undo history to prevent deleted entries
+from returning; unrelated files retain their own edit history.
 
-Import or create a `.bib`, then select the **Bibliographies** icon below the tree to enable it for this
-collection. Its keys become available in the normal citation picker alongside library
+Import or create a `.bib` file anywhere in the project; its citation keys are
+automatically available. Renaming, editing, trashing, and restoring files updates
+the citation index. Its keys become available in the normal citation picker alongside library
 keys, using the existing author/year display. Suggestions list collection and bibliography sources separately, including duplicates. Invalid
 source remains editable; a visible error marks the retained citation index as out of
 date. Clicking an imported citation shows its reference details and DOI/URL when
@@ -123,7 +142,7 @@ We minimize the cost in \eqref{eq:cost}.
 ```
 
 Use `\label`, `\ref`, and `\eqref` to link within a note. Type `\cite{` to pick
-a paper from the collection or an enabled imported bibliography, or `[[` to link another note. The gear at the far right of the note header
+a paper from the collection or an automatically indexed project bibliography, or `[[` to link another note. The gear at the far right of the note header
 opens a preamble for shared commands and page layout.
 
 This is not a full TeX installation: arbitrary packages and TikZ are unsupported.
@@ -171,12 +190,14 @@ Press **Cmd/Ctrl+F** to search the current text file, including `.bib` and `.tex
 In block notes, Find searches the active cell's source while editing; otherwise it
 searches rendered note text, including text across inline formatting. Hidden math
 accessibility representations are excluded so they do not duplicate results.
-Enter/Shift+Enter or the arrow buttons navigate matches; Escape closes Find.
+Use **Match case**, **Regular expression**, and **Whole word** in the Find bar
+to refine results. Whole word respects Unicode letters and numbers; invalid
+regular expressions show an inline error. Enter/Shift+Enter or the arrow buttons navigate matches; Escape closes Find.
 
-Typing `\cite{` searches both collection papers and enabled bibliographies.
+Typing `\cite{` searches both collection papers and project bibliographies.
 Suggestions render title math and identify **Collection** or **Bib: filename**.
 The same paper may appear in both sources. If sources reuse an identical key,
-rendered note citations retain collection-first, then first-enabled-bibliography
+rendered note citations retain collection-first, then first-project-bibliography
 resolution; use distinct keys when you need to distinguish entries.
 
 ### Chat approval for project files

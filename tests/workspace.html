@@ -12,37 +12,53 @@
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
-const chat={id:'chat',mode:'direct'},store={get:()=>null,set(){}};
+const chat={id:'chat',mode:'direct'},store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
 let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const approvals=[];
-async function api(path,body){if(path.startsWith('/api/chat-edit-approvals/')){approvals.push({path,...body});return {approved:body.approve};}if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,deleted:false});}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
+async function api(path,body){if(path.startsWith('/api/chat-edit-approvals/')){approvals.push({path,...body});return {approved:body.approve};}if(path.includes('/files/')&&!path.endsWith('/history'))return {entry:server.entries[1],text:source,revision:server.revision,history:server.history};if(path.endsWith('/history'))return {};if(path==='/api/workspaces/L1'){if(body){if(body.revision!==server.revision)throw Error('Project changed');if(body.op==='create'||body.op==='folder'){server.entries.push({id:'created'+server.revision,kind:body.op==='folder'?'folder':'file',name:body.name,parent:body.parent,text:body.text,deleted:false});}else if(body.op==='purge'){for(const e of server.entries)if(body.ids.includes(e.id))e.purged=true;}else if(body.op==='rename'){server.entries.find(e=>e.id===body.id).name=body.name;}else if(body.op==='config'){server.paper={...server.paper,...body.paper};}else if(body.op==='move'){if(rejectMove)throw Error('Move failed');server.entries.find(e=>e.id===body.id).parent=body.parent;}else if(body.op==='delete'){if(rejectDelete)throw Error('Unable to move to trash');const ids=new Set([body.id]);for(let i=0;i<server.entries.length;i++)for(const e of server.entries)if(ids.has(e.parent))ids.add(e.id);for(const e of server.entries)if(ids.has(e.id))e.deleted=true;}else if(body.op==='restore'){server.entries.find(e=>e.id===body.id).deleted=false;}else source=body.text;server.revision++;server.history={undo:'Edit file'};}return clone(server);}throw Error('Unexpected API '+path);}
 async function createNote(title){const doc={id:'new-note',title};N.doc=doc;N.list.push(doc);W.file=null;server.entries.push({id:'new-note-entry',kind:'note',note:doc.id,name:title,parent:'',deleted:false});await loadWorkspace('L1');return doc;}
 function typeset(){} function renderEditor(){$('#notes-stage').textContent='No document open';} function stopEdit(){} async function saveNow(){} function toast(s){errors.push(s)}
 window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used');};
 // Drain mocked API promises, then allow one task for dialog close events.
 // MessageChannel yields a task without background WebKit timer throttling.
 async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
+async function restoreTrashEntry(id){$(`dialog [data-trash-select="${id}"]`).click();$('dialog [data-restore-selected]').click();await settle();}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
 <script src="../web/ink.js"></script>
 <script src="../web/select.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
- await loadWorkspace('L1');assert($('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'paper actions and durable assistant proposals remain available together');assert($('#note-list').hidden,'original list replaced');assert(!$('[data-skills]'),'skill management moved out of the project tree');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
- assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
+ await loadWorkspace('L1');assert(!$('[data-new-paper]')&&$('[data-latex-settings]')&&$('[data-agent-edits]'),'LaTeX creation is unified while settings and assistant changes remain');assert($('#note-list').hidden,'original list replaced');assert(!$('[data-skills]'),'skill management moved out of the project tree');assert($('#workspace-tree').textContent.includes('Sources'),'folder rendered');
+ assert(!$('[data-bibliographies]'),'bibliographies are automatic without a toolbar button');assert(!$('#workspace-tree [data-file="f1"]'),'folders start collapsed');assert(getComputedStyle($('.workspace-root-drop')).display==='none','root drop target hidden when idle');
  $('#workspace-tree [data-file="folder"]').click();await settle();assert($('#workspace-tree [data-file="f1"]'),'folder expands');
+ const visibleIds=[...document.querySelectorAll('#workspace-tree [data-entry]')].map(row=>row.dataset.entry);
+ selectWorkspaceEntry(visibleIds[0]);$(`[data-file="${visibleIds[2]}"]`).dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));assert(W.selected.size===2&&W.selected.has(visibleIds[0])&&W.selected.has(visibleIds[2]),'Ctrl click adds selection without opening');
+ $(`[data-file="${visibleIds[2]}"]`).dispatchEvent(new MouseEvent('click',{bubbles:true,metaKey:true}));assert(W.selected.size===1,'Command click toggles selected row');
+ selectWorkspaceEntry(visibleIds[0]);$(`[data-file="${visibleIds[2]}"]`).dispatchEvent(new MouseEvent('click',{bubbles:true,shiftKey:true}));assert(W.selected.size===3&&document.querySelectorAll('.workspace-entry.selected').length===3,'Shift click selects visible range');
+ assert(workspaceDragIds({ids:['folder','f1']}).join(',')==='folder','selected descendants are moved with their parent only once');W.selected.clear();W.anchor=null;
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
  for(const folder of [true,false]){
   $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');assert(dialog.getBoundingClientRect().width<=420&&dialog.getBoundingClientRect().height<320,'creation form is not compact');
+  if(!folder){assert([...dialog.querySelector('[data-kind]').options].map(o=>o.value).join(',')==='note,tex,file','creation types ordered Note, LaTeX, File');dialog.querySelector('[data-kind]').value='file';}
   dialog.querySelector('[data-name]').value=folder?'Drafts':'new.bib';dialog.querySelector('[data-parent]').value='folder';dialog.querySelector('form').requestSubmit();await settle();
   assert(!$('dialog'),'successful creation closes dialog');assert(server.entries.some(e=>e.name===(folder?'Drafts':'new.bib')&&e.parent==='folder'),'entry created in selected folder');
   if(!folder)assert(W.file.startsWith('created')&&$('#workspace-editor textarea'),'new file opens');
  }
- $('[data-new-file]').click();let noteDialog=$('dialog');noteDialog.querySelector('[data-kind]').value='note';noteDialog.querySelector('[data-name]').value='Research note';noteDialog.querySelector('[data-parent]').value='folder';noteDialog.querySelector('form').requestSubmit();await settle();
+ for(const [name,expected] of [['draft','draft.tex'],['appendix.TEX','appendix.TEX']]){
+  $('[data-new-file]').click();const dialog=$('dialog');dialog.querySelector('[data-kind]').value='tex';dialog.querySelector('[data-name]').value=name;dialog.querySelector('[data-parent]').value='folder';dialog.querySelector('form').requestSubmit();await settle();
+  const entry=server.entries.find(e=>e.name===expected);assert(entry&&entry.parent==='folder'&&entry.text.includes('\\documentclass[11pt,notitlepage]{article}')&&entry.text.includes('\\begin{document}')&&entry.text.includes('\\end{document}'),'LaTeX type creates a starter article in the selected folder');
+  assert(entry.text.includes('\\usepackage{kotex}')&&entry.text.includes('% \\bibliography{refs}')&&!entry.text.includes('\\input{'),'starter supports Korean and has no required companion files');
+  assert(server.entries.find(e=>e.id===server.paper.main_file).name==='draft.tex','first LaTeX document becomes main and later creation preserves it');
+ }
+ $('[data-new-file]').click();let noteDialog=$('dialog');assert(noteDialog.querySelector('[data-name]').placeholder===''&&noteDialog.querySelector('[data-kind] option[value="file"]').textContent==='File','generic file label and no filename example');noteDialog.querySelector('[data-kind]').value='note';noteDialog.querySelector('[data-name]').value='Research note';noteDialog.querySelector('[data-parent]').value='folder';noteDialog.querySelector('form').requestSubmit();await settle();
  assert(!$('dialog')&&N.doc.title==='Research note','combined create control creates notes');
  assert(server.entries.find(e=>e.note==='new-note').parent==='folder','note created in chosen folder');
  await openWorkspaceFile('f1');let ta=$('#workspace-editor textarea');assert(ta.value===source,'file editor loaded');
+ ta.setSelectionRange(2,5);rememberWorkspaceView();W.file=null;
+ assert(await restoreWorkspaceFile('L1'),'last viewed file restores');ta=$('#workspace-editor textarea');assert(ta.selectionStart===2&&ta.selectionEnd===5,'file cursor selection restores');
+ store.set('noctua.openFile.L1','missing');assert(!await restoreWorkspaceFile('L1'),'removed file falls back');store.set('noctua.openFile.L1','f1');
  ta.value='@book{k,title={New}}';ta.dispatchEvent(new Event('input'));assert(W.dirty,'typing marks pending changes');await saveWorkspaceFile();assert(source.includes('New')&&!W.dirty,'typing saves');
  assert(!$('#workspace-editor [data-undo]').disabled,'undo enabled after save');
  server.revision++;await loadWorkspace('L1');ta=$('#workspace-editor textarea');ta.value='keep this draft';ta.dispatchEvent(new Event('input'));
@@ -50,21 +66,21 @@ function assert(ok,message){if(!ok)throw Error(message)}
  assert(rejected&&W.dirty&&W.text==='keep this draft','external revisions cannot overwrite unsaved files');
  assert($('#workspace-editor [data-file-status]').textContent.includes('Save failed'),'save conflict visible');clearTimeout(W.timer);W.dirty=false;
  await openWorkspaceFile('f1');
- workspaceFileMenu('f1');$('dialog [data-delete]').click();await settle();
+ confirmWorkspaceTrash('f1');await settle();
  assert($('dialog [data-confirm-trash]'),'in-app trash confirmation opens');
  $('dialog [data-cancel]').click();await settle();assert(!server.entries[1].deleted&&W.file==='f1','cancel keeps file open');
- workspaceFileMenu('f1');$('dialog [data-delete]').click();await settle();
+ confirmWorkspaceTrash('f1');await settle();
  rejectDelete=true;$('dialog [data-confirm-trash]').click();await settle();
  assert($('dialog [data-error]').textContent.includes('Unable'),'trash errors visible inside dialog');
  assert(!server.entries[1].deleted&&!$('dialog [data-confirm-trash]').disabled,'failed delete leaves entry intact and allows retry');
  rejectDelete=false;$('dialog [data-confirm-trash]').click();await settle();
  assert(server.entries[1].deleted&&W.file===null,'trashing open file closes it');
- showWorkspaceTrash();$('dialog [data-restore="f1"]').click();await settle();assert(!server.entries[1].deleted,'file restored from trash');$('dialog').close();await settle();
+ showWorkspaceTrash();assert($('dialog.workspace-compact.workspace-trash .workspace-trash-list'),'trash shares compact dialog styling');assert([...document.querySelectorAll('.workspace-trash-list li')].every(row=>row.querySelector('.workspace-trash-name')&&row.hasAttribute('data-trash-select')&&!row.querySelector('button,input')),'trash uses aligned name/action rows');await restoreTrashEntry('f1');assert(!server.entries[1].deleted,'file restored from trash');$('dialog').close();await settle();
  await openWorkspaceFile('f1');server.entries.find(e=>e.id==='n').parent='folder';await loadWorkspace('L1');
- workspaceFileMenu('folder');$('dialog [data-delete]').click();await settle();$('dialog [data-confirm-trash]').click();await settle();
+ confirmWorkspaceTrash('folder');await settle();$('dialog [data-confirm-trash]').click();await settle();
  assert(server.entries.filter(e=>e.id==='folder'||e.parent==='folder').every(e=>e.deleted),'folder deletion includes descendants');
  assert(W.file===null&&N.doc===null&&!N.list.length,'deleted descendants close file and note state');
- showWorkspaceTrash();$('dialog [data-restore="folder"]').click();await settle();$('dialog [data-restore="f1"]').click();await settle();
+ showWorkspaceTrash();await restoreTrashEntry('folder');await restoreTrashEntry('f1');
  assert(!server.entries[0].deleted&&!server.entries[1].deleted&&server.entries[1].parent==='folder','folder and child restored in place');
  $('dialog').close();await settle();
  async function dragEntry(id,destination,override){
@@ -76,8 +92,14 @@ function assert(ok,message){if(!ok)throw Error(message)}
   target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));
   target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));await settle();
  }
- assert($('[data-file-menu]').dataset.icon==='ellipsis'&&$('[data-trash]').dataset.icon==='trash-2','workspace uses Lucide icons');
- assert(getComputedStyle($('[data-file-menu]'),'::before').webkitMaskImage!=='none','Lucide menu icon renders');
+ assert(!$('[data-file-menu]')&&$('[data-file-rename]').dataset.icon==='pencil'&&$('[data-trash]').dataset.icon==='trash-2','workspace uses Lucide icons');
+ assert(getComputedStyle($('[data-file-rename]'),'::before').webkitMaskImage!=='none','Lucide menu icon renders');
+ $('[data-file-rename="f1"]').click();assert($('dialog').classList.contains('workspace-compact')&&!$('dialog [data-move]'),'rename uses compact form without Move');
+ $('dialog [data-name]').value='renamed.bib';$('dialog form').requestSubmit();await settle();assert(server.entries.find(e=>e.id==='f1').name==='renamed.bib','inline rename action updates name');
+ const selector=document.createElement('select');selector.id='notes-target';selector.innerHTML='<option value="L1">Current</option><option value="C2">Other project</option>';$('.workspace-tools').prepend(selector);await settle();bindProjectDrop();
+ const projectTransfer=new DataTransfer();projectTransfer.setData(workspaceDragType,JSON.stringify({target:'L1',id:'f1'}));W.drag={target:'L1',id:'f1'};
+ const projectHost=selector.closest('.web-select')||selector.parentElement;projectHost.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:projectTransfer}));
+ assert($('[data-project-drop="C2"]')&&!$('[data-project-drop="L1"]'),'dragging onto project selector reveals other destinations');document.dispatchEvent(new Event('dragend'));assert(!$('.workspace-project-drop'),'project list closes after drag');W.drag=null;
  await openWorkspaceFile('f1');const demoSource=$('#workspace-editor textarea');
  demoSource.value='saved before moving';demoSource.dispatchEvent(new Event('input'));
  await dragEntry('f1','[data-drop-folder=""]');assert(server.entries[1].parent===''&&source==='saved before moving'&&!W.dirty,'drop at root moves entry and saves draft');
@@ -126,6 +148,24 @@ function assert(ok,message){if(!ok)throw Error(message)}
  const drawing={strokes:[{p:[[20,30,1],[80,60,0.7]],w:2,c:'#000000'}]},unchanged=JSON.stringify(drawing);
  assert(Ink.preview(drawing).startsWith('data:image/png;base64,'),'standalone drawing preview is not PNG');assert(JSON.stringify(drawing)===unchanged,'drawing preview changed strokes');
 
+ server.entries.push({id:'batch1',kind:'file',name:'batch1.txt',parent:'',deleted:false},{id:'batch2',kind:'file',name:'batch2.txt',parent:'',deleted:false});await loadWorkspace('L1');
+ selectWorkspaceEntry('batch1');selectWorkspaceEntry('batch2',{ctrlKey:true});await dragEntry('batch1','[data-drop-folder="folder"]');assert(server.entries.filter(e=>e.id==='batch1'||e.id==='batch2').every(e=>e.parent==='folder'),'selected files drag together');selectWorkspaceEntry('f1');
+ N.conflict=false;N.dirty=false;const tree=$('#workspace-tree');tree.focus();const all=new KeyboardEvent('keydown',{key:'a',metaKey:true,bubbles:true,cancelable:true});tree.dispatchEvent(all);
+ assert(all.defaultPrevented&&W.selected.size===tree.querySelectorAll('[data-entry]').length,'Command A selects all visible rows');
+ const editor=$('#workspace-editor textarea');if(editor){const typing=new KeyboardEvent('keydown',{key:'a',metaKey:true,bubbles:true,cancelable:true});editor.dispatchEvent(typing);assert(!typing.defaultPrevented,'editor select all remains untouched');}
+ tree.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));assert($('dialog [data-confirm-trash]'),'Mac Delete opens one batch trash confirmation');$('dialog [data-cancel]').click();await settle();
+ selectWorkspaceEntry('batch1');selectWorkspaceEntry('batch2',{ctrlKey:true});tree.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));$('dialog [data-confirm-trash]').click();await settle();assert(server.entries.filter(e=>['batch1','batch2'].includes(e.id)).every(e=>e.deleted),'Delete trashes selected entries: '+($('dialog [data-error]')?.textContent||JSON.stringify(server.entries.filter(e=>['batch1','batch2'].includes(e.id)))));
+ server.entries.find(e=>e.id==='batch1').deleted_at=200;server.entries.find(e=>e.id==='batch2').deleted_at=100;await loadWorkspace('L1');showWorkspaceTrash();let trash=$('dialog');assert(trash.querySelector('[data-trash-select]').dataset.trashSelect==='batch1','trash sorts newest deletions first');assert(getComputedStyle(trash.querySelector('.workspace-trash-list')).overflowY==='auto','trash list scrolls');trash.querySelector('[data-trash-select="batch1"]').click();trash.querySelector('[data-trash-select="batch2"]').click();assert(trash.querySelector('[data-selected-count]').textContent==='2 selected','trash supports selecting multiple entries');
+ trash.dispatchEvent(new KeyboardEvent('keydown',{key:'a',metaKey:true,bubbles:true,cancelable:true}));assert([...trash.querySelectorAll('[data-trash-select]')].every(row=>row.getAttribute('aria-selected')==='true'),'Command A selects entire trash');
+ const trashedIds=server.entries.filter(e=>e.deleted).map(e=>e.id);trash.querySelector('[data-restore-selected]').click();for(let i=0;i<10;i++)await settle();assert(server.entries.filter(e=>trashedIds.includes(e.id)).every(e=>!e.deleted),'bulk restore restores selection');$('dialog').close();await settle();
+ const incoming={id:'incoming',name:'draft.tex'},existing=[{id:'old',name:'draft.tex',parent:''}];
+ for(const choice of ['skip','number','overwrite']){
+  const pending=chooseMoveConflict(incoming,existing);assert($('dialog [data-choice="overwrite"]')&&$('dialog [data-choice="number"]')&&$('dialog [data-choice="skip"]'),'move conflict offers all three choices');
+  $(`dialog [data-choice="${choice}"]`).click();await settle();assert(await pending===choice,'conflict returns selected choice');
+ }
+ const cancelled=chooseMoveConflict(incoming,existing);$('dialog [data-close]').click();await settle();assert(await cancelled==='skip','closing conflict dialog skips move');
+ assert(await chooseMoveConflict(incoming,[])===null,'unique name needs no dialog');
+ server.entries.find(e=>e.id==='batch1').deleted=true;await loadWorkspace('L1');showWorkspaceTrash();trash=$('dialog');trash.querySelector('[data-trash-select="batch1"]').click();trash.querySelector('[data-purge]').click();let confirmation=document.querySelector('dialog:last-of-type');assert(confirmation.querySelector('[data-confirm-purge]'),'permanent delete requires confirmation');confirmation.querySelector('[data-cancel]').click();await settle();assert(!server.entries.find(e=>e.id==='batch1').purged,'cancel preserves trash');trash.querySelector('[data-purge]').click();document.querySelector('[data-confirm-purge]').click();await settle();assert(server.entries.find(e=>e.id==='batch1').purged&&!$('[data-trash-select="batch1"]'),'permanently deleted row disappears');$('dialog').close();await settle();
  const proposal={turn_id:'turn-one',approval_id:'file-one',chat_id:'chat',changes:[{op:'edit',name:'main.tex',target:'L1',before:'Keep\nOld\nEnd',after:'Keep\nNew <tag>\nEnd'}]};
  showFileEditApproval(proposal);showFileEditApproval(proposal);
  assert(document.querySelectorAll('.chat-edit-approval').length===1&&!$('dialog'),'same file has one inline request and no modal');
@@ -140,6 +180,10 @@ function assert(ok,message){if(!ok)throw Error(message)}
  closeFileEditApprovals();showFileEditApproval({...proposal,turn_id:'turn-stop',approval_id:'file-stop'});closeFileEditApprovals();await settle();assert(approvals.length===2&&!$('dialog'),'Stop never grants permission or opens a modal');
  assert([...document.querySelectorAll('.chat-edit-approval button')].every(b=>b.disabled),'expired requests cannot be approved');
  assert(editDiffLines('a\n'+('same\n'.repeat(20))+'z','b\n'+('same\n'.repeat(20))+'y').some(r=>r.kind==='gap'),'long unchanged sections collapsed');
+ const originalWorkspaceUndo=workspaceUndo,historyCalls=[];workspaceUndo=(redo,fileOnly)=>historyCalls.push({redo,fileOnly});
+ for(const modifier of ['metaKey','ctrlKey'])for(const redo of [false,true]){$('#workspace-tree').focus();const event=new KeyboardEvent('keydown',{key:'z',[modifier]:true,shiftKey:redo,bubbles:true,cancelable:true});$('#workspace-tree').dispatchEvent(event);assert(event.defaultPrevented,'file-list history shortcut handled');}
+ assert(historyCalls.length===4&&historyCalls.every(call=>!call.fileOnly)&&historyCalls[0].redo===false&&historyCalls[1].redo===true,'Command/Ctrl Z and Shift Z route to project history');workspaceUndo=originalWorkspaceUndo;
+ assert($('[data-history="workspace"] [data-undo]')&&$('[data-history="workspace"] [data-redo]'),'history buttons remain available');
  window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, and drag-to-trash');
-})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
 </script></body></html>

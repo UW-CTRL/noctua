@@ -56,7 +56,7 @@ pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
 fn manifest_path(app:&App,target:&str)->Result<PathBuf>{Ok(dir(app,target)?.join(".workspace").join("manifest.json"))}
 fn load(app:&App,target:&str)->Result<Value>{let p=manifest_path(app,target)?;if p.exists(){Ok(serde_json::from_slice(&std::fs::read(p)?)?)}else{Ok(json!({"revision":0,"entries":[],"bibliographies":[],"skills":[]}))}}
 /// Agent reads discover legacy entries in memory, without organizing or saving them.
-pub fn snapshot(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;discover(app,target,&mut m)?;Ok(m)}
+pub fn snapshot(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;discover(app,target,&mut m)?;auto_bibliographies(&mut m);Ok(m)}
 pub fn create_note(app:&App,target:&str,b:&Value)->Result<Value>{
  let _g=GATE.lock().unwrap();let mut m=load(app,target)?;
  if b["revision"]!=m["revision"]{return Err(crate::Status(StatusCode::CONFLICT,"Project changed. Refresh before creating a note.".into()).into());}
@@ -118,7 +118,8 @@ fn organize_media(m:&mut Value) {
  for e in entries.iter_mut(){if media(e){e["media_organized"]=json!(true);}}
  m["media_layout"]=json!(1);
 }
-pub fn list(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let old=m.clone();discover(app,target,&mut m)?;organize_media(&mut m);if old!=m {m["revision"]=json!(m["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;if old["revision"].as_u64().unwrap_or(0)>0&&old["media_layout"]==1{crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().record(history_content(old),history_content(m.clone()),"Import notes or media");}}m["history"]=crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().status();
+fn auto_bibliographies(m:&mut Value){m["bibliographies"]=json!(m["entries"].as_array().unwrap().iter().filter(|e|e["kind"]=="file"&&e["deleted"]!=true&&e["name"].as_str().unwrap_or("").to_ascii_lowercase().ends_with(".bib")).map(|e|e["id"].clone()).collect::<Vec<_>>());}
+pub fn list(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let old=m.clone();discover(app,target,&mut m)?;organize_media(&mut m);auto_bibliographies(&mut m);if old!=m {m["revision"]=json!(m["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;if old["revision"].as_u64().unwrap_or(0)>0&&old["media_layout"]==1{crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().record(history_content(old),history_content(m.clone()),"Import notes or media");}}m["history"]=crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().status();
  match crate::bibliography::index(app,target,&m){Ok(index)=>{m["bib_index"]=json!(index);m["bib_error"]=Value::Null;},Err(e)=>m["bib_error"]=json!(format!("{e:#}"))}
  let folder=app.library.folder_id(target)?;let mut notes=Vec::new();
  for n in app.notes.list(&folder)?.as_array().unwrap(){if let Some(id)=n["id"].as_str(){if let Some(doc)=app.notes.get(&folder,id)?{let text=doc["blocks"].as_array().map(|a|a.iter().filter_map(|b|b["src"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();notes.push((id.to_owned(),n["title"].clone(),text));}}}
@@ -133,14 +134,113 @@ fn validate(m:&Value)->Result<()> {
   if entries.iter().any(|p|p["deleted"]!=true&&p["id"]!=e["id"]&&p["name"]==e["name"]&&p["parent"]==e["parent"]){bail!("A file with that name already exists in this folder");}
  } Ok(())
 }
+fn stamp_deletions(previous:&Value,next:&mut Value){
+ let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+ let last=previous["entries"].as_array().unwrap().iter().filter_map(|e|e["deleted_at"].as_u64()).max().unwrap_or(0);
+ let timestamp=now.max(last.saturating_add(1));
+ for e in next["entries"].as_array_mut().unwrap(){
+  if e["deleted"]==true&& !previous["entries"].as_array().unwrap().iter().any(|old|old["id"]==e["id"]&&old["deleted"]==true){e["deleted_at"]=json!(timestamp);}
+  else if e["deleted"]!=true{e.as_object_mut().unwrap().remove("deleted_at");}
+ }
+}
+// Resolve only sibling-name collisions. Replacements stay recoverable in Trash.
+fn resolve_move_name(m:&mut Value,entry:&Value,parent:&str,choice:&str)->Result<Option<String>>{
+ let name=entry["name"].as_str().context("Name required")?;
+ let conflict=m["entries"].as_array().unwrap().iter().find(|e|e["deleted"]!=true&&e["id"]!=entry["id"]&&e["name"]==name&&e["parent"].as_str().unwrap_or("")==parent).cloned();
+ let Some(conflict)=conflict else{return Ok(Some(name.to_owned()));};
+ match choice{
+  "skip"=>Ok(None),
+  "number"=>{
+   let split=if entry["kind"]!="file"{None}else{name.rfind('.').filter(|i|*i>0)};
+   let (stem,ext)=split.map(|i|(&name[..i],&name[i..])).unwrap_or((name,""));
+   for n in 2.. {let candidate=format!("{stem} ({n}){ext}");if !m["entries"].as_array().unwrap().iter().any(|e|e["deleted"]!=true&&e["name"]==candidate&&e["parent"].as_str().unwrap_or("")==parent){return Ok(Some(candidate));}}
+   unreachable!()
+  },
+  "overwrite"=>{
+   let mut ids=std::collections::HashSet::from([conflict["id"].as_str().unwrap().to_owned()]);
+   loop{let old=ids.len();for e in m["entries"].as_array().unwrap(){if ids.contains(e["parent"].as_str().unwrap_or("")){ids.insert(e["id"].as_str().unwrap().to_owned());}}if ids.len()==old{break;}}
+   anyhow::ensure!(!ids.contains(entry["id"].as_str().unwrap()),"Cannot replace a folder containing the entry being moved");
+   for e in m["entries"].as_array_mut().unwrap(){if ids.contains(e["id"].as_str().unwrap()){e["deleted"]=json!(true);}}
+   Ok(Some(name.to_owned()))
+  },
+  _=>bail!("A file with that name already exists in this folder"),
+ }
+}
+// Cross-project moves publish the destination before hiding the source. Immutable
+// source data remains available to Trash; failures never discard the source.
+fn transfer(app:&App,target:&str,b:&Value,mut source:Value)->Result<Value>{
+ let destination=b["destination"].as_str().context("Destination required")?;
+ anyhow::ensure!(dir(app,target)?!=dir(app,destination)?,"Choose another project");
+ let mut dest=load(app,destination)?;discover(app,destination,&mut dest)?;let previous_dest=dest.clone();let previous_source=source.clone();
+ anyhow::ensure!(b["destination_revision"]==dest["revision"],"Destination changed. Retry the move");
+ let id=b["id"].as_str().context("Entry required")?;
+ let entries=source["entries"].as_array().unwrap();
+ anyhow::ensure!(entries.iter().any(|e|e["id"]==id&&e["deleted"]!=true),"Entry not found");
+ let mut ids=std::collections::HashSet::from([id.to_owned()]);
+ loop{let old=ids.len();for e in entries.iter().filter(|e|e["deleted"]!=true){if ids.contains(e["parent"].as_str().unwrap_or("")){ids.insert(e["id"].as_str().unwrap().to_owned());}}if ids.len()==old{break;}}
+ let mut moved:Vec<Value>=entries.iter().filter(|e|e["deleted"]!=true&&ids.contains(e["id"].as_str().unwrap())).cloned().collect();
+ for e in &mut moved{
+  anyhow::ensure!(!dest["entries"].as_array().unwrap().iter().any(|d|d["id"]==e["id"]),"This entry already exists in the destination");
+  if e["id"]==id{e["parent"]=json!("");}
+ }
+ let root=moved.iter_mut().find(|e|e["id"]==id).unwrap();
+ let Some(name)=resolve_move_name(&mut dest,root,"",b["conflict"].as_str().unwrap_or(""))? else{return Ok(source);};if root["name"]!=name{root["renamed"]=json!(true);}root["name"]=json!(name);
+ dest["entries"].as_array_mut().unwrap().extend(moved.clone());validate(&dest)?;
+ // Copy content before either manifest is committed.
+ let mut notes_to_write=Vec::new();
+ for e in &mut moved{
+  if e["kind"]=="file"{let data=bytes(app,target,e)?;let hash=blob(app,destination,&data)?;
+   let copied=dest["entries"].as_array_mut().unwrap().iter_mut().find(|d|d["id"]==e["id"]).unwrap();copied["blob"]=json!(hash);copied.as_object_mut().unwrap().remove("legacy");
+  }else if e["kind"]=="note"{
+   let note=e["note"].as_str().context("Note id missing")?;crate::notes::check_id(note)?;
+   let doc=std::fs::read_to_string(dir(app,target)?.join(format!("{note}.json")))?;
+   // File-ID references need their target entries, not just the note JSON.
+   for dependency in source["entries"].as_array().unwrap().iter().filter(|d|d["kind"]=="file"&&d["deleted"]!=true){
+    let key=format!("files/{}",dependency["id"].as_str().unwrap());
+    anyhow::ensure!(!doc.contains(&key)||ids.contains(dependency["id"].as_str().unwrap()),"Move the note and its referenced files together in a folder");
+   }
+   for prefix in ["images","media"]{let root=dir(app,target)?.join(prefix);if root.exists(){for file in std::fs::read_dir(root)?{let file=file?;if !file.file_type()?.is_file(){continue;}let name=file.file_name();let relative=format!("{prefix}/{}",name.to_string_lossy());if !doc.contains(&relative){continue;}let out=dir(app,destination)?.join(prefix).join(&name);let data=std::fs::read(file.path())?;if out.exists(){anyhow::ensure!(std::fs::read(&out)?==data,"An attachment with the same name exists in the destination");}else{std::fs::create_dir_all(out.parent().unwrap())?;std::fs::write(out,data)?;}}}}
+   let out=dir(app,destination)?.join(format!("{note}.json"));anyhow::ensure!(!out.exists(),"Note already exists in destination");std::fs::create_dir_all(out.parent().unwrap())?;notes_to_write.push((out,doc));
+  }
+ }
+ for e in source["entries"].as_array_mut().unwrap(){if ids.contains(e["id"].as_str().unwrap()){e["deleted"]=json!(true);}}
+ stamp_deletions(&previous_dest,&mut dest);stamp_deletions(&previous_source,&mut source);
+ dest["revision"]=json!(dest["revision"].as_u64().unwrap_or(0)+1);source["revision"]=json!(source["revision"].as_u64().unwrap_or(0)+1);
+ let published=(||->Result<()>{for (path,doc) in &notes_to_write{crate::notes::write_atomic(path,doc)?;}save(app,destination,&dest)})();
+ if let Err(error)=published{for (path,_) in &notes_to_write{let _=std::fs::remove_file(path);}return Err(error);}
+ save(app,target,&source)?;
+ Ok(source)
+}
 pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>{
  let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let rev=m["revision"].as_u64().unwrap_or(0);
  if b["revision"].as_u64()!=Some(rev){return Err(crate::Status(StatusCode::CONFLICT,"Project files changed. Refresh and retry.".into()).into());}
  discover(app,target,&mut m)?;
  let before=history_content(m.clone());let op=b["op"].as_str().unwrap_or("");
+ if op=="transfer"{return transfer(app,target,b,m);}
+ if op=="purge"{
+  let requested=b["ids"].as_array().context("Choose entries to delete")?;
+  anyhow::ensure!(!requested.is_empty(),"Choose entries to delete");
+  let mut ids:std::collections::HashSet<String>=requested.iter().map(|id|id.as_str().map(str::to_owned).context("Invalid entry id")).collect::<Result<_>>()?;
+  for id in &ids{anyhow::ensure!(m["entries"].as_array().unwrap().iter().any(|e|e["id"]==*id&&e["deleted"]==true&&e["purged"]!=true),"Only trashed entries can be permanently deleted");}
+  loop{let old=ids.len();for e in m["entries"].as_array().unwrap(){if ids.contains(e["parent"].as_str().unwrap_or("")){anyhow::ensure!(e["deleted"]==true,"Restore or move active children before deleting this folder");ids.insert(e["id"].as_str().unwrap().to_owned());}}if ids.len()==old{break;}}
+  for e in m["entries"].as_array_mut().unwrap(){if ids.contains(e["id"].as_str().unwrap()){e["purged"]=json!(true);}}
+  m["revision"]=json!(rev+1);save(app,target,&m)?;
+  let project_key=key(app,target);let file_keys:std::collections::HashSet<String>=ids.iter().map(|id|file_key(app,target,id)).collect();crate::editing::journals().lock().unwrap().retain(|k,_|k!=&project_key&&!file_keys.contains(k));
+  for e in m["entries"].as_array().unwrap().iter().filter(|e|ids.contains(e["id"].as_str().unwrap())){
+   let path=if let Some(note)=e["note"].as_str(){crate::notes::check_id(note)?;Some(dir(app,target)?.join(format!("{note}.json")))}else if e["kind"]=="file"&&!m["entries"].as_array().unwrap().iter().any(|other|other["purged"]!=true&&other["id"]!=e["id"]&&((e["blob"].is_string()&&other["blob"]==e["blob"])||(e["legacy"].is_string()&&other["legacy"]==e["legacy"]))){Some(file_path(app,target,e)?)}else{None};
+   if let Some(path)=path{if path.exists(){std::fs::remove_file(path)?;}}
+  }
+  return Ok(m);
+ }
+
+ if op=="move"{
+  let entry=m["entries"].as_array().unwrap().iter().find(|e|e["id"]==b["id"]&&e["deleted"]!=true).context("Entry not found")?.clone();
+  let Some(name)=resolve_move_name(&mut m,&entry,b["parent"].as_str().unwrap_or(""),b["conflict"].as_str().unwrap_or(""))? else{return Ok(m);};
+  let e=m["entries"].as_array_mut().unwrap().iter_mut().find(|e|e["id"]==entry["id"]).unwrap();if e["name"]!=name{e["renamed"]=json!(true);}e["name"]=json!(name);
+ }
  match op {
   "create"|"folder"=>{let id=crate::library::id("f");let name=b["name"].as_str().context("Name required")?;let mut e=json!({"id":id,"name":name,"parent":b["parent"].as_str().unwrap_or(""),"kind":if op=="folder"{"folder"}else{"file"},"source_name":name,"deleted":false});if op=="create"{let data=upload.unwrap_or_else(||b["text"].as_str().unwrap_or("").as_bytes());e["blob"]=json!(blob(app,target,data)?);e["size"]=json!(data.len());}m["entries"].as_array_mut().unwrap().push(e);},
-  "restore"=>{let id=b["id"].as_str().context("File id required")?;let entries=m["entries"].as_array_mut().unwrap();let parent=entries.iter().find(|e|e["id"]==id&&e["deleted"]==true).context("Trashed entry not found")?["parent"].as_str().unwrap_or("").to_owned();let parent_active=parent.is_empty()||entries.iter().any(|e|e["id"]==parent&&e["deleted"]!=true);let e=entries.iter_mut().find(|e|e["id"]==id).unwrap();e["deleted"]=json!(false);if !parent_active{e["parent"]=json!("");}},
+  "restore"=>{let id=b["id"].as_str().context("File id required")?;let entries=m["entries"].as_array_mut().unwrap();let parent=entries.iter().find(|e|e["id"]==id&&e["deleted"]==true&&e["purged"]!=true).context("Trashed entry not found")?["parent"].as_str().unwrap_or("").to_owned();let parent_active=parent.is_empty()||entries.iter().any(|e|e["id"]==parent&&e["deleted"]!=true);let e=entries.iter_mut().find(|e|e["id"]==id).unwrap();e["deleted"]=json!(false);if !parent_active{e["parent"]=json!("");}},
   "edit"|"rename"|"move"|"delete"=>{
    let id=b["id"].as_str().context("File id required")?;
    let e=m["entries"].as_array_mut().unwrap().iter_mut().find(|e|e["id"]==id&&e["deleted"]!=true).context("File not found")?;
@@ -151,14 +251,15 @@ pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>
   _=>bail!("Unknown file operation"),
  }
  if op=="create"{organize_media(&mut m);}
- validate(&m)?;
+ validate(&m)?;auto_bibliographies(&mut m);
  match crate::bibliography::index(app,target,&m){Ok(index)=>{m["bib_index"]=json!(index);m["bib_error"]=Value::Null;},Err(e)=>{if op=="config"&&b.get("bibliographies").is_some(){return Err(e);}m["bib_error"]=json!(format!("{e:#}"));}}
+ stamp_deletions(&load(app,target)?,&mut m);
  m["revision"]=json!(rev+1);save(app,target,&m)?;
  let mut hs=crate::editing::journals().lock().unwrap();record_file_changes(app,target,&before,&m,&mut hs);let h=hs.entry(key(app,target)).or_default();h.record(before,history_content(m.clone()),&format!("{op} project file"));m["history"]=h.status();Ok(m)
 }
 pub fn history(app:&App,target:&str,b:&Value)->Result<Value>{let _g=GATE.lock().unwrap();let current=load(app,target)?;if b["revision"]!=current["revision"]{bail!("Project changed. Refresh before undoing");}let mut hs=crate::editing::journals().lock().unwrap();let h=hs.entry(key(app,target)).or_default();let redo=b["redo"]==true;let mut m=h.pending(redo,&history_content(current.clone()))?;
  for e in current["entries"].as_array().unwrap(){if !m["entries"].as_array().unwrap().iter().any(|a|a["id"]==e["id"]){let mut tombstone=e.clone();tombstone["deleted"]=json!(true);m["entries"].as_array_mut().unwrap().push(tombstone);}}
- m["revision"]=json!(current["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;h.finish(redo);m["history"]=h.status();record_file_changes(app,target,&current,&m,&mut hs);Ok(m)}
+ stamp_deletions(&current,&mut m);m["revision"]=json!(current["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;h.finish(redo);m["history"]=h.status();record_file_changes(app,target,&current,&m,&mut hs);Ok(m)}
 pub async fn get(State(app):Shared,Path(target):Path<String>)->ApiResult{Ok(Json(list(&app,&target)?))}
 pub async fn edit(State(app):Shared,Path(target):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(change(&app,&target,&b,None)?))}
 pub async fn undo(State(app):Shared,Path(target):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(history(&app,&target,&b)?))}
@@ -204,6 +305,22 @@ pub async fn file_undo(State(app):Shared,Path((target,id)):Path<(String,String)>
 #[cfg(test)]
 mod media_layout_tests {
  use super::*;
+ #[test]
+ fn deletion_times_preserve_old_entries_and_advance_on_redelete(){
+  let before=json!({"entries":[{"id":"old","deleted":true,"deleted_at":12},{"id":"new","deleted":false}]});
+  let mut after=before.clone();after["entries"][1]["deleted"]=json!(true);stamp_deletions(&before,&mut after);
+  assert_eq!(after["entries"][0]["deleted_at"],12);let first=after["entries"][1]["deleted_at"].as_u64().unwrap();assert!(first>12);
+  let mut restored=after.clone();restored["entries"][1]["deleted"]=json!(false);stamp_deletions(&after,&mut restored);assert!(restored["entries"][1].get("deleted_at").is_none());
+  restored["entries"][0]["deleted_at"]=json!(first+10);let mut again=restored.clone();again["entries"][1]["deleted"]=json!(true);stamp_deletions(&restored,&mut again);assert!(again["entries"][1]["deleted_at"].as_u64().unwrap()>first+10);
+ }
+ #[test]
+ fn move_conflicts_keep_extensions_and_trash_subtrees(){
+  let entry=json!({"id":"incoming","kind":"file","name":"draft.tex","parent":"elsewhere"});
+  let mut m=json!({"entries":[{"id":"old","kind":"folder","name":"draft.tex","parent":""},{"id":"child","kind":"file","name":"data.txt","parent":"old"},{"id":"taken","kind":"file","name":"draft (2).tex","parent":""}]});
+  let original=m.clone();assert_eq!(resolve_move_name(&mut m,&entry,"","skip").unwrap(),None);assert_eq!(m,original);
+  assert_eq!(resolve_move_name(&mut m,&entry,"","number").unwrap(),Some("draft (3).tex".into()));assert_eq!(m,original);
+  assert_eq!(resolve_move_name(&mut m,&entry,"","overwrite").unwrap(),Some("draft.tex".into()));assert_eq!(m["entries"][0]["deleted"],true);assert_eq!(m["entries"][1]["deleted"],true);assert_ne!(m["entries"][2]["deleted"],true);
+ }
  #[test]
  fn media_grouping_preserves_references_and_manual_moves(){
   let mut m=json!({"entries":[

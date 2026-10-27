@@ -15,8 +15,28 @@ const assert=(v,m)=>{if(!v)throw Error(m)};
   const center=$(mode==='pdf-mode'?'#pdf-stage':mode==='notes-mode'?'#notes-stage':'#stage');assert(center.getBoundingClientRect().width>1000,'center receives released space');
   $('#gutter-left button').click();$('#gutter-right button').click();assert(!paneCollapsed('left')&&!paneCollapsed('right'),'both arrows reopen');
  }
+ for(const modifier of ['metaKey','ctrlKey'])for(const [code,side] of [['Digit1','left'],['Digit2','right']]){
+  const before=paneCollapsed(side),event=new KeyboardEvent('keydown',{code,altKey:true,[modifier]:true,bubbles:true,cancelable:true});
+  document.dispatchEvent(event);assert(event.defaultPrevented&&paneCollapsed(side)!==before,'shortcut toggles '+side+' with '+modifier);
+  document.dispatchEvent(new KeyboardEvent('keydown',{code,altKey:true,[modifier]:true,repeat:true,bubbles:true}));assert(paneCollapsed(side)!==before,'held key does not repeatedly toggle');
+  document.dispatchEvent(new KeyboardEvent('keydown',{code,[modifier]:true,bubbles:true}));assert(paneCollapsed(side)!==before,'tab number shortcuts remain untouched');
+  setPaneCollapsed(side,before);
+ }
+ setPaneCollapsed('left',false);$('#left input').focus();
+ document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'b',code:'KeyB',metaKey:true,bubbles:true,cancelable:true}));assert(!paneCollapsed('left'),'Cmd B preserves editor behavior');
+ document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert(document.activeElement!==$('#left input'),'Escape leaves input');
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'b',code:'KeyB',metaKey:true,bubbles:true,cancelable:true}));assert(paneCollapsed('left'),'Cmd B toggles left after Escape');
+ setPaneCollapsed('right',false);document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyB',key:'∫',metaKey:true,altKey:true,bubbles:true,cancelable:true}));assert(paneCollapsed('right'),'Cmd Option B toggles right using physical key');
+ setPaneCollapsed('right',false);
+ for(const mode of ['notes-mode','pdf-mode'])for(const tag of ['input','textarea','div']){
+  document.body.className=mode;const editor=document.createElement(tag);if(tag==='div')editor.contentEditable='true';document.body.append(editor);editor.focus();
+  editor.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert(document.activeElement!==editor,'Escape leaves '+tag+' in '+mode);editor.remove();
+ }
+ document.body.className='';
+ const modal=document.createElement('dialog');document.body.append(modal);modal.showModal();const beforeModal=paneCollapsed('left');
+ document.dispatchEvent(new KeyboardEvent('keydown',{code:'Digit1',metaKey:true,altKey:true,bubbles:true}));assert(paneCollapsed('left')===beforeModal,'modal suspends pane shortcut');modal.close();modal.remove();
  assert($('#left input').value==='Draft'&&$('#right textarea').value==='Chat draft','hidden panels preserve drafts');
- $('#left input').focus();setPaneCollapsed('left',true);assert(document.activeElement===$('#gutter-left button'),'focus leaves hidden pane');
+ setPaneCollapsed('left',false);$('#left input').focus();setPaneCollapsed('left',true);assert(document.activeElement===$('#gutter-left button'),'focus leaves hidden pane');
  setPaneWidth('right',420);assert(store.get('noctua.pane.right')==='420','width persists separately from collapsed state');
  setPaneCollapsed('right',true);setPaneCollapsed('right',false);assert($('#right').getBoundingClientRect().width===420,'toggle restores resized width');
  assert($('#gutter-right button').dataset.icon==='chevron-right','Lucide direction reflects expanded state');

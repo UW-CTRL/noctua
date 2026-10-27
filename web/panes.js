@@ -8,7 +8,9 @@ function setPaneCollapsed(side,collapsed,save=true){
  main.classList.toggle(`${side}-collapsed`,collapsed);pane.inert=collapsed;
  pane.setAttribute('aria-hidden',String(collapsed));
  button.setAttribute('aria-expanded',String(!collapsed));
- button.title=button.ariaLabel=`${collapsed?'Show':'Hide'} ${side==='left'?'navigation pane':'chat and details pane'}`;
+ button.ariaLabel=`${collapsed?'Show':'Hide'} ${side==='left'?'navigation pane':'chat and details pane'}`;
+ button.title=`${button.ariaLabel} (${side==='left'?'⌘B / Ctrl+B':'⌘⌥B / Ctrl+Alt+B'})`;
+ button.setAttribute('aria-keyshortcuts',side==='left'?'Meta+B Control+B':'Meta+Alt+B Control+Alt+B');
  button.dataset.icon=(side==='left')!==collapsed?'chevron-left':'chevron-right';
  if(collapsed&&pane.contains(document.activeElement))button.focus();
  if(save)store.set(`noctua.pane.${side}.collapsed`,String(collapsed));
@@ -41,3 +43,17 @@ for(const side of ['left','right']){
 
 // Restore widths after both visibility flags, so a hidden neighbor takes no space.
 for(const side of ["left","right"]){const saved=Number(store.get(`noctua.pane.${side}`));if(saved)setPaneWidth(side,saved,false);}
+
+// Let editors and popups handle their own keys before the global shortcuts.
+document.addEventListener('keydown',e=>{
+ if(e.defaultPrevented||e.isComposing||e.repeat||document.querySelector('dialog[open]'))return;
+ const active=document.activeElement;
+ const editing=active?.matches('input,textarea')||active?.isContentEditable;
+ if(e.key==='Escape'&&editing){e.preventDefault();active.blur();return;}
+ if(e.shiftKey||!(e.metaKey||e.ctrlKey))return;
+ // Keep the original number shortcuts available while editing.
+ const numbered=e.altKey&&(e.code==='Digit1'?'left':e.code==='Digit2'?'right':null);
+ const side=numbered||(!editing&&(e.code==='KeyB'||e.key.toLowerCase()==='b')?(e.altKey?'right':'left'):null);
+ if(!side)return;
+ e.preventDefault();setPaneCollapsed(side,!paneCollapsed(side));
+});
