@@ -4,7 +4,10 @@
   "identifier": "app.noctua.desktop",
   "build": {
     "frontendDist": "dist",
-    "beforeBuildCommand": "python3 prepare-server.py"
+    "beforeBuildCommand": {
+      "script": "python3 prepare-server.py",
+      "cwd": "."
+    }
   },
   "plugins": {
     "updater": {
