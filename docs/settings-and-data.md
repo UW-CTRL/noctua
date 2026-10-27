@@ -42,7 +42,7 @@ You can also adjust interface, note, and chat fonts and highlight colors.
 Changing AI category colors recolors matching assistant highlights; existing
 user highlights keep their colors.
 
-**Connections** holds the Semantic Scholar key and optional Zotero source;
+**Integrations** holds the Semantic Scholar key and optional Zotero source;
 choose the Zotero data folder containing `zotero.sqlite`. **Default PDF storage**
 defaults to **Link original**, which reads PDFs from their source paths without
 copying them. Choose **Copy to Noctua** and **Save default** for independent copies.

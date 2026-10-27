@@ -142,7 +142,7 @@ function agentSection(s) {
 
 const SETTINGS_TABS = [
   ['appearance', 'Appearance'], ['server', 'Server & connection'], ['agent', 'Research assistant'], ['skills', 'Skills'],
-  ['connections', 'Connections'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
+  ['connections', 'Integrations'], ['data', 'Data & storage'], ['about', 'About & shortcuts'],
 ];
 
 function serverSection() {

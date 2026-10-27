@@ -42,7 +42,7 @@ For more, see [Research](research.md), [PDF reader](reader.md), and [Notes](note
 
 ### Add a Semantic Scholar API key
 
-Enter a key in **Settings → Connections** for your own API access. Without one,
+Enter a key in **Settings → Integrations** for your own API access. Without one,
 online search uses a slower shared pool and may encounter rate limits.
 
 ### Connect an assistant (optional)
@@ -59,7 +59,7 @@ See [Research assistant](assistant.md) for capabilities, edit modes, and prompts
 
 ### Import from Zotero (optional)
 
-Set the Zotero data folder on the **server computer** in **Settings → Connections**, then choose
+Set the Zotero data folder on the **server computer** in **Settings → Integrations**, then choose
 **Library → Import from Zotero**. Close Zotero first for the freshest snapshot.
 The dialog lets you choose detailed bibliography, tags, local PDFs, notes, and PDF
 annotations. Collections and basic paper information are always copied. Cancel
