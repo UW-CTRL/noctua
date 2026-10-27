@@ -22,13 +22,14 @@ localStorage.clear();localStorage.setItem('noctua.threadsAuto','0');
 const settings={};let openedPDF=[];
 function openPaperView(key,where){openedPDF.push([key,where]);}
 const fixtureItems=[
- {key:'a',tags:['control','<method>'],title:'Zebra networks',creators:['Ada Lovelace'],year:2024,venue:'Journal A',has_pdf:true,abstractNote:'Local abstract',s2:'s1'},
- {key:'b',title:'Alpha lineage',creators:['Grace Hopper'],year:2020,venue:'Journal B',has_pdf:false,abstractNote:'Unmatched local paper'}
+ {key:'a',revision:1,tags:['control','<method>'],title:'Zebra networks',creators:['Ada Lovelace'],year:2024,venue:'Journal A',has_pdf:true,abstractNote:'Local abstract',s2:'s1'},
+ {key:'b',tags:['other collection'],revision:1,title:'Alpha lineage',creators:['Grace Hopper'],year:2020,venue:'Journal B',has_pdf:false,abstractNote:'Unmatched local paper'}
 ];
 const fixturePaper={paperId:'s1',title:'Zebra networks',authors:[{name:'Ada Lovelace'}],year:2024,citationCount:5,abstract:'Abstract'};
-window.requests=[];window.pendingPDF=null;window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;
+window.requests=[];window.pendingPDF=null;window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;window.tagSaveFailure=false;window.tagWrites=0;
 window.fetch=async(path,opts)=>{
  requests.push(path);let data={};
+ if(path.match(/^\/api\/library\/papers\/[ab]$/)){const item=fixtureItems.find(p=>p.key===path.split('/').pop());if(opts?.method==='PUT'){tagWrites++;if(tagSaveFailure)return {ok:false,json:async()=>({error:'Save failed'})};const body=JSON.parse(opts.body);if(body.revision!==item.revision)return {ok:false,json:async()=>({error:'Conflict'})};item.tags=body.tags;item.revision++;}return {ok:true,json:async()=>({...item})};}
  if(path==='/api/library/manage')return {ok:true,json:async()=>({revision:1,trash:[],undo:null})};
  if(path.endsWith('/membership')&&!opts?.body)return {ok:true,json:async()=>({targets:[{id:'L1',name:'My Library'},{id:'C3',name:'Subfolder',parent:'C1'}]})};
  if(path.match(/^\/api\/collections\/[^/]+\/research$/))return {ok:true,json:async()=>({version:1,revision:0,goal:'',progress:0,dates:[]})};
@@ -95,7 +96,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert($('#library-tags [data-library-tag-list]').querySelectorAll('button').length===1&&$('#library-rows').children.length===2,'tag name search must not filter papers');
  $('#library-tags [data-library-tag="control"]').click();assert(lib.tag==='control'&&$('#library-rows').children.length===1,'sidebar tag click did not filter papers');
  $('#library-tags [data-clear-tag]').click();assert(!lib.tag&&$('#library-rows').children.length===2,'clear tag filter did not restore papers');
- tagSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!tagSearch.value&&$('#library-tags [data-library-tag-list]').querySelectorAll('button').length===2,'Escape must clear tag search');
+ tagSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!tagSearch.value&&$('#library-tags [data-library-tag-list]').querySelectorAll('button').length===3,'Escape must clear tag search');
  assert(libraryTagCounts([{tags:['a','a']},{tags:['a','b']}]).get('a')===2,'tag counts must count papers, not repeated values');
  document.body.classList.add('notes-mode');assert(!visible($('#library-tags')),'Library tags must hide in Notes');document.body.classList.remove('notes-mode');
 
@@ -113,6 +114,14 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert($('#details .paper-info-tags summary').textContent.includes('2 Tags')&&$('#details .paper-info-tags li svg'),'counted tag rows need icons');
  assert($('#details .paper-info-libraries').compareDocumentPosition($('#details .paper-info-tags'))&Node.DOCUMENT_POSITION_FOLLOWING,'libraries should appear before tags');
  assert($('#details .paper-info-tags').textContent.includes('control')&&$('#details .paper-info-tags').textContent.includes('<method>')&&!$('#details .paper-info-tags method'),'Paper tags missing or not safely rendered');
+ const tagInput=$('#details .paper-tag-editor input');tagInput.focus();await settle();tagInput.value='OTHER';tagInput.dispatchEvent(new Event('input',{bubbles:true}));
+ assert($('#details .paper-tag-suggestions').textContent.includes('other collection')&&!$('#details .paper-tag-suggestions').textContent.includes('control'),'tag suggestions should search the whole library and omit assigned tags');
+ tagInput.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));assert(document.activeElement===$('#details .paper-tag-suggestions button'),'arrow down should focus the matching tag');
+ document.activeElement.click();await settle();assert(fixtureItems[0].tags.includes('other collection')&&$('#details .paper-info-tags').textContent.includes('other collection'),'suggested tag should save and refresh paper info');
+ const newTag=$('#details .paper-tag-editor input');newTag.value='new tag';newTag.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await settle();assert(fixtureItems[0].tags.includes('new tag'),'new tag should be saved');
+ const duplicate=$('#details .paper-tag-editor input'),writesBeforeDuplicate=tagWrites;duplicate.value='new tag';duplicate.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await settle();assert(tagWrites===writesBeforeDuplicate&&fixtureItems[0].tags.filter(tag=>tag==='new tag').length===1,'existing tag should not be duplicated or written again');
+ const failedTag=$('#details .paper-tag-editor input');tagSaveFailure=true;failedTag.value='failure';failedTag.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await settle();assert($('#details .paper-tag-error').textContent==='Save failed'&&!fixtureItems[0].tags.includes('failure')&&!$('#details .paper-tag-editor button').disabled,'save failure should be visible and allow retry');tagSaveFailure=false;
+ fixtureItems[0].tags=['control','<method>'];fixtureItems[1].tags=[];await loadLibItems();showLibItem(lib.items.find(item=>item.key==='a'));await settle();
  const infoDelete=$('#details [aria-label="Delete paper"]');
  assert(infoDelete&&infoDelete.dataset.icon==='trash-2','Paper info delete action missing');
  infoDelete.click();await settle();
