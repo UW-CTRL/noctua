@@ -25,6 +25,11 @@ automatically after every platform build and installer verification succeeds.
 | Release and workflow checks | Ubuntu | Python and Node release-script tests, workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
 | Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, manual runs, and weekly on Mondays at 09:17 UTC. |
 
+WebKit tests that exercise real timers, such as search debouncing, attach the
+WebView to a visible window without taking focus or accepting mouse input.
+Detached WebViews may throttle timers on CI. Research test timeouts report the
+active check phase; native spellchecking is disabled in that fixture.
+
 Desktop checks type-check the desktop package and compile its build scripts and
 required dependencies. They do not link the final application, package installers,
 launch the app, or test installation. The macOS check covers the Apple Silicon architecture

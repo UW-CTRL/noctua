@@ -61,7 +61,11 @@ const assert=(v,m)=>{if(!v)throw Error(m);};
 // Mocked requests and MutationObserver callbacks settle in microtasks; avoid offscreen WebKit timer throttling.
 const settle=async()=>{for(let i=0;i<80;i++)await Promise.resolve();};
 const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length>0;
+const markPhase=name=>window.webkit.messageHandlers.result.postMessage('PHASE: '+name);
+// Native spelling services are not part of these deterministic UI checks.
+document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=false);
 (async()=>{
+ markPhase('library and layout');
  await collectionsReady;await settle();
  assert(document.querySelector('[data-mode="graph"]').textContent==='Library','top-level mode named Library');
  assert(!document.querySelector('[data-tab="results"]'),'Search tab removed');
@@ -203,6 +207,7 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
  $('[data-graph-list="nodes"]').click();assert(visible($('#tab-nodes'))&&!visible($('#tab-threads')),'Papers switch restores filter and paper list');
  $('[data-layout="library"]').click();assert(visible($('#library-view'))&&$('#tab-library').classList.contains('hidden')===false,'return to Library');
 
+ markPhase('search engine ordering');
  assert(searchEngine==='arxiv'&&$('#search-engine').value==='arxiv','arXiv is the initial default engine');
  assert(normalizeSearchEngineOrder(['openalex','bad','openalex']).join(',')==='openalex,arxiv,semantic-scholar,google-scholar','saved engine order filters unknown/duplicate engines and restores missing choices');
  const orderHost=document.createElement('div');orderHost.innerHTML=searchSettingsSection();document.body.append(orderHost);mountSearchEngineOrder(orderHost.querySelector('section'));
@@ -294,6 +299,7 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
  assert(searchActiveIndex===-1&&$('#search').getAttribute('aria-expanded')==='false','editing query resets keyboard selection');
 
  $('#search-form > button[type="submit"]').click();assert(document.activeElement===$('#search'),'search icon focuses field');
+ markPhase('live search debounce and cancellation');
  const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const beforeLive=requests.filter(p=>p.startsWith('/api/search')).length;
  const originalCenter=G.centerId,originalLayout=G.layout;
@@ -319,6 +325,7 @@ const visible=e=>getComputedStyle(e).display!=='none'&&e.getClientRects().length
  $('#search').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert($('#tab-results').classList.contains('hidden'),'Escape dismisses results');
  $('#search').focus();$('#search').dispatchEvent(new FocusEvent('focus'));assert(!$('#tab-results').classList.contains('hidden'),'focus restores matching results');
  $('#library-title').dispatchEvent(new Event('pointerdown',{bubbles:true}));assert($('#tab-results').classList.contains('hidden'),'outside click dismisses results');
+ markPhase('search result actions and graph views');
  // A response to an edited query must not replace newer results.
  let resolveSearch;pendingSearch=new Promise(r=>resolveSearch=r);const old=search('old');
  $('#search').value='new';$('#search').dispatchEvent(new Event('input'));
@@ -401,7 +408,12 @@ try html.write(to:fixture,atomically:true,encoding:.utf8)
 let app=NSApplication.shared
 class Handler:NSObject,WKScriptMessageHandler,WKNavigationDelegate {
  var result:String?
- func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){result=String(describing:m.body)}
+ var phase="page load"
+ func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){
+  let message=String(describing:m.body)
+  if message.hasPrefix("PHASE: "){phase=String(message.dropFirst(7));return}
+  result=message
+ }
  func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error){result="FAIL: \(error)"}
 }
 let handler=Handler(),config=WKWebViewConfiguration()
@@ -410,10 +422,17 @@ config.preferences.setValue(true,forKey:"allowFileAccessFromFileURLs")
 config.userContentController.add(handler,name:"result")
 let web=WKWebView(frame:NSRect(x:0,y:0,width:1440,height:900),configuration:config)
 web.navigationDelegate=handler
+// A detached WebView can throttle the debounce timers on CI indefinitely.
+// Keep it visible without activating it or accepting the user's mouse input.
+let window=NSWindow(contentRect:web.frame,styleMask:[.titled],backing:.buffered,defer:false)
+window.title="Noctua research regression"
+window.contentView=web
+window.ignoresMouseEvents=true
+window.orderFront(nil)
 web.loadFileURL(fixture,allowingReadAccessTo:root)
 let deadline=Date().addingTimeInterval(35)
 while handler.result==nil && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.05))}
-let result=handler.result ?? "FAIL: WebKit research test timed out"
+let result=handler.result ?? "FAIL: WebKit research test timed out during \(handler.phase)"
 print(result)
 if !result.hasPrefix("PASS:"){exit(1)}
 var captured=false
