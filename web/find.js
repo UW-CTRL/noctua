@@ -1,10 +1,15 @@
 'use strict';
 // View-local Find. Search never edits notes or creates PDF annotations.
-const DocFind={scope:null,hits:[],index:-1,sequence:0,timer:null,range:null,textHit:null,observers:[]};
-function findOccurrences(text,query,limit=1000){
- const normalize=value=>{let result='',starts=[],ends=[],space=false;for(let i=0;i<value.length;i++){const c=value[i],white=/\s/.test(c);if(white&&space){ends[ends.length-1]=i+1;continue;}const lowered=white?' ':c.toLowerCase();for(const char of lowered){result+=char;starts.push(i);ends.push(i+1);}space=white;}return {text:result,starts,ends};};
+const DocFind={options:{matchCase:false,regex:false,wholeWord:false},scope:null,hits:[],index:-1,sequence:0,timer:null,range:null,textHit:null,observers:[]};
+function findOccurrences(text,query,limit=1000,options={}){
+ const boundary=(start,end)=>!options.wholeWord||(!/[\p{L}\p{N}\p{M}_]$/u.test(text.slice(Math.max(0,start-2),start))&&!/^[\p{L}\p{N}\p{M}_]/u.test(text.slice(end,end+2)));
+ if(options.regex){
+  let expression;try{expression=new RegExp(query,options.matchCase?'gu':'giu');}catch{throw Error('Invalid regular expression');}
+  const hits=[];let match;while(hits.length<limit&&(match=expression.exec(text))){if(!match[0].length){expression.lastIndex=match.index+(text.codePointAt(match.index)>0xffff?2:1);continue;}if(boundary(match.index,match.index+match[0].length))hits.push({start:match.index,end:match.index+match[0].length});}return hits;
+ }
+ const normalize=value=>{let result='',starts=[],ends=[],space=false;for(let i=0;i<value.length;i++){const c=value[i],white=/\s/.test(c);if(white&&space){ends[ends.length-1]=i+1;continue;}const lowered=white?' ':options.matchCase?c:c.toLowerCase();for(const char of lowered){result+=char;starts.push(i);ends.push(i+1);}space=white;}return {text:result,starts,ends};};
  const input=normalize(text),needle=normalize(query).text.trim(),hits=[];if(!needle)return hits;
- let offset=0;while(hits.length<limit){const at=input.text.indexOf(needle,offset);if(at<0)break;hits.push({start:input.starts[at],end:input.ends[at+needle.length-1]});offset=at+needle.length;}return hits;
+ let offset=0;while(hits.length<limit){const at=input.text.indexOf(needle,offset);if(at<0)break;const start=input.starts[at],end=input.ends[at+needle.length-1];if(boundary(start,end))hits.push({start,end});offset=at+needle.length;}return hits;
 }
 function findCurrentScope(){
  if(document.body.classList.contains('pdf-mode')&&PDF.key)return {kind:'reader',id:PDF.key,label:'PDF + user comments'};
@@ -23,8 +28,9 @@ function closeDocumentFind(restore=true){
 function openDocumentFind(){
  if($('#document-find')&&findScopeValid()){$('#document-find input').focus();$('#document-find input').select();return;}
  closeDocumentFind(false);const scope=findCurrentScope();if(!scope)return;DocFind.scope=scope;
- const bar=document.createElement('div');bar.id='document-find';bar.setAttribute('role','search');bar.innerHTML=`<span>${esc(scope.label)}</span><input type="search" aria-label="Find in ${esc(scope.label)}" placeholder="Find…" autocomplete="off"><span data-find-count role="status">0 / 0</span><button data-find-prev data-icon="arrow-up" data-icon-only aria-label="Previous match"></button><button data-find-next data-icon="arrow-down" data-icon-only aria-label="Next match"></button><button data-find-close data-icon="x" data-icon-only aria-label="Close find"></button>`;
+ const bar=document.createElement('div');bar.id='document-find';bar.setAttribute('role','search');bar.innerHTML=`<span>${esc(scope.label)}</span><input type="search" aria-label="Find in ${esc(scope.label)}" placeholder="Find…" autocomplete="off">${[['matchCase','Aa','Match case'],['regex','.*','Regular expression'],['wholeWord','W','Whole word']].map(([key,text,label])=>`<button data-find-option="${key}" aria-label="${label}" title="${label}" aria-pressed="${DocFind.options[key]}">${text}</button>`).join('')}<span data-find-count role="status">0 / 0</span><button data-find-prev data-icon="arrow-up" data-icon-only aria-label="Previous match"></button><button data-find-next data-icon="arrow-down" data-icon-only aria-label="Next match"></button><button data-find-close data-icon="x" data-icon-only aria-label="Close find"></button>`;
  document.body.appendChild(bar);const input=bar.querySelector('input');
+ bar.querySelectorAll('[data-find-option]').forEach(button=>button.onclick=()=>{const key=button.dataset.findOption;DocFind.options[key]=!DocFind.options[key];button.setAttribute('aria-pressed',String(DocFind.options[key]));clearTimeout(DocFind.timer);refreshDocumentFind();});
  input.oninput=()=>{clearTimeout(DocFind.timer);DocFind.timer=setTimeout(()=>refreshDocumentFind(),100);};
  input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();moveDocumentFind(e.shiftKey?-1:1);}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeDocumentFind();}};
  bar.querySelector('[data-find-prev]').onclick=()=>moveDocumentFind(-1);bar.querySelector('[data-find-next]').onclick=()=>moveDocumentFind(1);bar.querySelector('[data-find-close]').onclick=()=>closeDocumentFind();
@@ -55,7 +61,7 @@ function readerCommentSources(){
 async function refreshDocumentFind(){
  if(!findScopeValid()){closeDocumentFind(false);return;}
  const sequence=++DocFind.sequence,scope=DocFind.scope,query=$('#document-find input').value;DocFind.hits=[];DocFind.index=-1;DocFind.range=null;DocFind.textHit=null;paintDocumentFind();
- if(!query.trim()){findCount();return;}const hits=[];const add=(text,details)=>{for(const match of findOccurrences(text,query,1000-hits.length))hits.push({...details,...match});};
+ if(!query.trim()){findCount();return;}const hits=[];const add=(text,details)=>{for(const match of findOccurrences(text,query,1000-hits.length,DocFind.options))hits.push({...details,...match});};
  try{
   if(scope.ta)add(scope.ta.value,{kind:'textarea',ta:scope.ta,label:scope.label});
   else if(scope.kind==='note')for(const root of document.querySelectorAll('#notes-stage .nb-view')){const rendered=findRenderedText(root);add(rendered.text,{kind:'dom',rendered,label:'Rendered note'});}

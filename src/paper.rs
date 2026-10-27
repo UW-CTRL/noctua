@@ -37,6 +37,7 @@ pub(crate) fn merge_settings(current:&Value,patch:&Value,entries:&[Value])->Resu
         match name.as_str(){
             "main_file"=>{let id=value.as_str().context("Choose a main .tex file")?;anyhow::ensure!(entries.iter().any(|e|e["id"]==id&&e["kind"]=="file"&&e["deleted"]!=true&&e["name"].as_str().unwrap_or("").to_lowercase().ends_with(".tex")),"Choose an existing .tex file");},
             "compiler"=>{anyhow::ensure!(value.as_str().is_some_and(|s|["tectonic","pdflatex"].contains(&s)),"Choose Tectonic or pdfLaTeX");},
+            "bibliographies"=>{anyhow::ensure!(value=="all"||value.as_array().is_some_and(|ids|ids.iter().all(|id|id.as_str().is_some_and(|id|entries.iter().any(|e|e["id"]==id&&e["kind"]=="file"&&e["deleted"]!=true&&e["name"].as_str().unwrap_or("").to_lowercase().ends_with(".bib"))))),"Choose all project bibliographies or existing .bib files");},
             "auto_compile"=>{anyhow::ensure!(value.is_boolean(),"Auto compile must be true or false");},
             _=>bail!("Unknown LaTeX setting: {name}"),
         }
@@ -62,7 +63,7 @@ pub(crate) async fn compilers()->ApiResult{
 #[derive(Clone)]
 struct Input { path: String, source: PathBuf, id: String, blob: String }
 #[derive(Clone)]
-struct Snapshot { compiler: Compiler, files: Vec<Input>, main: String, main_id: String, fingerprint: String, revision: Value }
+struct Snapshot { compiler: Compiler, files: Vec<Input>, bibliographies:Vec<String>, main: String, main_id: String, fingerprint: String, revision: Value }
 fn logical_path(entries: &[Value], entry: &Value) -> Result<String> {
     let mut parts = vec![entry["name"].as_str().context("File name missing")?.to_owned()];
     let mut parent = entry["parent"].as_str().unwrap_or("");
@@ -83,7 +84,7 @@ fn snapshot(app: &App, target: &str, manifest: &Value) -> Result<Snapshot> {
     anyhow::ensure!(main["name"].as_str().unwrap_or("").to_lowercase().ends_with(".tex"),"The main document must be a .tex file");
     let main_path=logical_path(entries,main)?;
     let mut files=Vec::new(); let mut names=HashSet::new(); let mut total=0u64;
-    let mut hash=Sha256::new();hash.update(kind.id());hash.update(kind.version());hash.update("paper-pipeline-v3-synctex");hash.update(id);hash.update(&main_path);
+    let mut hash=Sha256::new();hash.update(kind.id());hash.update(kind.version());hash.update("paper-pipeline-v4-auto-bibliography");hash.update(manifest["paper"]["bibliographies"].to_string());hash.update(id);hash.update(&main_path);
     let mut active:Vec<_>=entries.iter().filter(|e|e["kind"]=="file" && e["deleted"]!=true).collect();
     active.sort_by_key(|e|e["id"].as_str().unwrap_or(""));
     for e in active {
@@ -100,7 +101,9 @@ fn snapshot(app: &App, target: &str, manifest: &Value) -> Result<Snapshot> {
         }
         files.push(Input{path,source,id:e["id"].as_str().unwrap_or("").into(),blob:e["blob"].as_str().unwrap_or("").into()});
     }
-    Ok(Snapshot{compiler:kind,files,main:main_path,main_id:id.into(),fingerprint:format!("{:x}",hash.finalize()),revision:manifest["revision"].clone()})
+    let selection=manifest["paper"]["bibliographies"].as_array();
+    let bibliographies=files.iter().filter(|f|f.path.to_lowercase().ends_with(".bib")&&selection.is_none_or(|ids|ids.iter().any(|id|id==&f.id))).map(|f|f.path.clone()).collect();
+    Ok(Snapshot{compiler:kind,files,bibliographies,main:main_path,main_id:id.into(),fingerprint:format!("{:x}",hash.finalize()),revision:manifest["revision"].clone()})
 }
 struct Job { status: Value, pending: Option<Snapshot>, running: bool, cancel: Arc<AtomicBool>, last: Option<Value> }
 impl Default for Job { fn default()->Self {Self{status:json!({"state":"idle"}),pending:None,running:false,cancel:Arc::new(AtomicBool::new(false)),last:None}} }
@@ -180,6 +183,19 @@ fn read_log(path:&FsPath)->String {
     let mut bytes=Vec::new();let _=file.take(128*1024).read_to_end(&mut bytes);String::from_utf8_lossy(&bytes).into_owned()
 }
 fn directory_size(path:&FsPath)->u64 {std::fs::read_dir(path).into_iter().flatten().flatten().map(|e|e.metadata().map(|m|if m.is_dir(){directory_size(&e.path())}else{m.len()}).unwrap_or(0)).sum()}
+fn automatic_bibliography_source(source:&str)->String{
+    // Keep line numbers intact for SyncTeX. Only the disposable build input changes.
+    let prefix=concat!(
+        r"\newif\ifnoctuabibused\newif\ifnoctuabibstyle",
+        r"\let\noctuaoriginalstyle\bibliographystyle",
+        r"\renewcommand{\bibliographystyle}[1]{\global\noctuabibstyletrue\noctuaoriginalstyle{#1}}",
+        r"\AtBeginDocument{\let\noctuaoriginalbib\bibliography",
+        r"\renewcommand{\bibliography}[1]{\ifnoctuabibused\else\global\noctuabibusedtrue",
+        r"\ifnoctuabibstyle\else\bibliographystyle{plain}\fi\noctuaoriginalbib{.noctua-project-references}\fi}}",
+        r"\AtEndDocument{\ifnoctuabibused\else\bibliography{}\fi}"
+    );
+    format!("{prefix}{source}")
+}
 async fn compile(root:&FsPath,s:&Snapshot,cancel:&AtomicBool)->Result<String>{
     let executable=compiler(s.compiler)?;
     let work=root.join("work");let out=root.join("out");
@@ -204,7 +220,13 @@ async fn compile(root:&FsPath,s:&Snapshot,cancel:&AtomicBool)->Result<String>{
     }
     // Tectonic anchors its input provider at the primary file's directory.
     // A private root copy gives every main file the same project-root semantics.
-    std::fs::copy(work.join(&s.main),work.join(".noctua-paper.tex"))?;
+    if s.bibliographies.is_empty(){std::fs::copy(work.join(&s.main),work.join(".noctua-paper.tex"))?;}else{
+        let mut bibliography=String::new();for path in &s.bibliographies{bibliography.push_str(&std::fs::read_to_string(work.join(path)).with_context(||format!("Bibliography must be UTF-8: {path}"))?);bibliography.push('\n');}
+        std::fs::write(work.join(".noctua-project-references.bib"),bibliography)?;
+        let source=std::fs::read_to_string(work.join(&s.main))?;
+        anyhow::ensure!(!source.contains("{biblatex}"),"Automatic project bibliographies support BibTeX/natbib, not biblatex");
+        std::fs::write(work.join(".noctua-paper.tex"),automatic_bibliography_source(&source))?;
+    }
     // Never let an empty successful run reuse an earlier engine output.
     let native_pdf=out.join("noctua-paper.pdf");if native_pdf.exists(){std::fs::remove_file(native_pdf)?;}
     for name in ["noctua-paper.synctex.gz","noctua-paper.synctex",".noctua-paper.synctex.gz",".noctua-paper.synctex"]{let _=std::fs::remove_file(out.join(name));}
@@ -299,8 +321,12 @@ mod tests {
         }
     }
     #[test] fn project_settings_merge_without_resetting_other_choices(){
-        let entries=vec![json!({"id":"main","kind":"file","name":"main.tex"})];
+        let entries=vec![json!({"id":"main","kind":"file","name":"main.tex"}),json!({"id":"bib","kind":"file","name":"refs.bib"})];
         let original=json!({"main_file":"main","compiler":"pdflatex","auto_compile":false});
+        assert_eq!(merge_settings(&json!({}),&json!({"bibliographies":"all"}),&entries).unwrap()["bibliographies"],"all");
+        assert_eq!(merge_settings(&json!({}),&json!({"bibliographies":["bib"]}),&entries).unwrap()["bibliographies"],json!(["bib"]));
+        assert!(merge_settings(&json!({}),&json!({"bibliographies":["main"]}),&entries).is_err());
+
         assert_eq!(merge_settings(&original,&json!({"main_file":"main"}),&entries).unwrap(),original);
         let changed=merge_settings(&original,&json!({"compiler":"tectonic"}),&entries).unwrap();
         assert_eq!(changed["main_file"],"main");assert_eq!(changed["auto_compile"],false);

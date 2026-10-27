@@ -198,9 +198,29 @@ def run(engine):
             print('PASS: @string venue spacing preserved; original bibliography unchanged')
             print('PASS: custom class, nested input, dotted filename, BibTeX, PDF retrieval;', result['last_success']['elapsed_ms'], 'ms')
             assert build()['last_success']==result['last_success'], 'Unchanged build should reuse artifact'
+            # Automatic bibliography selection only rewrites disposable build inputs.
+            extra = create('extra.bib', '@article{second,author={Grace Hopper},title={Second reference},year={2025}}', folder)
+            two_citations = source.replace('\\end{document}', '\\cite{second}\n\\end{document}')
+            change(op='edit', id=main, text=two_citations)
+            assert build()['state']=='success'
+            bbl_path = next((data/'notes').glob('*/.workspace/paper/out/*.bbl'))
+            assert 'Hopper' in bbl_path.read_text() and 'Lovelace' in bbl_path.read_text()
+            assert api(url+'/files/'+main)['text']==two_citations
+            implicit = two_citations.replace('\\bibliographystyle{plain}', '').replace('\\bibliography{references}', '')
+            change(op='edit', id=main, text=implicit)
+            assert build()['state']=='success' and 'Hopper' in bbl_path.read_text()
+            change(op='config', paper={'bibliographies':[bib_entry['id']]})
+            assert build()['state']=='success' and 'Hopper' not in bbl_path.read_text()
+            change(op='edit', id=main, text=source)
+            change(op='config', paper={'bibliographies':[]})
+            assert build()['state']=='success' and 'Lovelace' in bbl_path.read_text()
+            change(op='config', paper={'bibliographies':'all'})
+            change(op='delete', id=extra)
+            print('PASS: all/selected/disabled bibliography integration, implicit references and unchanged stored source')
             warm = build(True)
             assert warm['state']=='success',warm
             print('PASS: forced warm rebuild;',warm['last_success']['elapsed_ms'],'ms')
+            point = source_point(warm, 'sections/intro.tex', 1)
             change(op='edit',id=included,text=r'Updated included source. \cite{key}.')
             try:
                 api(url+'/paper/source',point)

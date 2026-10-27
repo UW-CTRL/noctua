@@ -1,15 +1,16 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><link rel="stylesheet" href="../web/pdf.css"></head><body>
-<div id="notes-stage" style="height:650px;width:1050px"></div>
+<div id="notes-stage" style="height:650px;width:1050px;display:flex"></div>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
 const W={target:'L1',file:'main',dirty:false,manifest:{revision:1,paper:{main_file:'main'},entries:[{id:'main',kind:'file',name:'main.tex',parent:''},{id:'bib',kind:'file',name:'references.bib',parent:''}]}};
+let settingsFail=false,configWrites=0;
 let requests=[],status={state:'idle',current_revision:1,current_fingerprint:'first',stale:true},saveFails=false,refreshed=0,destroyed=0;
 async function api(path,body){requests.push({path,body});if(path.endsWith('/source'))return {file_id:'main',line:101,blob:W.manifest.entries[0].blob};if(path==='/api/paper-compilers')return {compilers:[{id:'tectonic',available:true,version:'0.17.0'},{id:'pdflatex',available:true,version:'TeX Live 2026'}]};if(path.endsWith('/cancel')){status.state='cancelled';return status;}if(body){if(W.dirty)throw Error('Compile preceded save');status={state:'success',current_revision:W.manifest.revision,current_fingerprint:'new',fingerprint:'new',stale:false,last_success:{fingerprint:'new',main_file:'main',elapsed_ms:250}};}return JSON.parse(JSON.stringify(status));}
 async function saveWorkspaceFile(){if(saveFails)throw Error('Save conflict');W.dirty=false;}
 async function refreshWorkspaceView(){refreshed++;}
-function toast(){} function workspaceDialog(title,html){const d=document.createElement('dialog');d.innerHTML=html;document.body.append(d);d.addEventListener('close',()=>d.remove());d.showModal();return d;}
-async function workspaceChange(body){W.manifest.paper={...W.manifest.paper,...body.paper};return W.manifest;}
+function toast(){} function workspaceDialog(title,html){const d=document.createElement('dialog');d.innerHTML='<header><button data-close aria-label="Close">×</button></header>'+html;document.body.append(d);d.addEventListener('close',()=>d.remove());d.showModal();return d;}
+async function workspaceChange(body){configWrites++;if(settingsFail)throw Error('Settings conflict');W.manifest.paper={...W.manifest.paper,...body.paper};return W.manifest;}
 async function openWorkspaceFile(id){W.file=id;mount();$('#workspace-editor textarea').value=Array.from({length:200},(_,i)=>'Source line '+(i+1)).join('\n');}
 const doc={numPages:2,async getPage(number){return {pageNumber:number,userUnit:1,view:[0,0,400,500],getViewport:({scale})=>({width:400*scale,height:500*scale,scale,convertToPdfPoint:(x,y)=>[x/scale,500-y/scale]}),render:()=>({promise:Promise.resolve(),cancel(){}}),getTextContent:async()=>({items:[]})};},async destroy(){destroyed++;}};
 async function pdfjs(){return {getDocument:()=>({promise:Promise.resolve(doc)}),TextLayer:class{constructor(o){this.container=o.container;}async render(){this.container.textContent='Selectable PDF text';}}};}
@@ -18,14 +19,31 @@ function assert(value,message){if(!value)throw Error(message);}
 function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-editor"><textarea class="workspace-source"></textarea></div>';paperMount(W.manifest.entries.find(e=>e.id===W.file));}
 </script><script src="../web/paper.js"></script><script>
 (async()=>{
- store.set('noctua.paper.auto','false');mount();await delay(100);
+ store.set('noctua.paper.auto','false');mount();await delay(100);assert($('.paper-logs summary [data-paper-status]')&&!$('.paper-toolbar [data-paper-status]'),'changing status sits beside Compiler log');assert($('.paper-toolbar.pdf-toolbar')&&$('.paper-reader-tools .pdf-tool-group'),'paper toolbar shares Reader grouping');assert(getComputedStyle($('.paper-auto-toggle'),'::before').webkitMaskImage!=='none','automatic compilation has a visible Lucide icon');for(const key of ['compile','stop','fit'])assert($('[data-paper-'+key+']').hasAttribute('data-icon-only')&&$('[data-paper-'+key+']').getAttribute('aria-label'),'paper action has icon and accessible label: '+key);
  assert($('#paper-split')&&$('#paper-pages'),'split editor created');assert(!requests.some(r=>r.body),'manual mode does not compile');
  W.dirty=true;await paperCompile();await delay(100);
  assert(requests.some(r=>r.body)&&!W.dirty,'compile saves source first');assert($('#paper-pages .paper-page'),'PDF pages mounted');assert(!$('[data-paper-download]').hidden,'successful PDF downloadable');
  assert($('[data-paper-status]').textContent.includes('up to date'),'success state visible');
+ assert(!$('[data-paper-settings]')&&!$('[data-paper-help]'),'toolbar omits duplicate settings and help');
  const initial=Paper.scale;$('[data-paper-plus]').click();await delay(100);assert(Paper.scale>initial,'zoom changes rendering scale');
  const divider=$('.paper-divider');divider.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));assert(parseFloat($('#paper-split').style.getPropertyValue('--paper-source-width'))===52,'divider keyboard resize');
- const source=$('.paper-source textarea');source.value='Unsaved source';const previewDoc=Paper.doc;
+ const source=$('.paper-source textarea');
+ const typeTex=(value,caret=value.length)=>{source.focus();source.value=value;source.setSelectionRange(caret,caret);source.dispatchEvent(new Event('input',{bubbles:true}));};
+ const keyTex=key=>source.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+ let inserted=0;source.addEventListener('input',()=>inserted++);
+ typeTex('\\');assert(!$('#paper-tex-completion').hidden,'backslash opens command list');
+ typeTex('before \\fra after',11);assert($('#paper-tex-completion code').textContent==='\\frac','command prefix filters suggestions');
+ const beforeInsert=inserted;keyTex('Tab');assert(source.value==='before \\frac{}{} after'&&source.selectionStart===13,'snippet preserves surrounding text and puts caret in first argument');assert(inserted===beforeInsert+1&&$('#paper-tex-completion').hidden,'completion dispatches input for save and compile');
+ typeTex('\\begin{ali} suffix',10);assert([...$('#paper-tex-completion').children].some(row=>row.textContent.includes('begin{align}')),'environment prefix suggestions');
+ const align=[...$('#paper-tex-completion').children].find(row=>row.querySelector('code').textContent==='\\begin{align}');align.click();assert(source.value==='\\begin{align}\n\n\\end{align} suffix','environment inserts matching end without duplicate brace');assert(source.selectionStart===14,'environment caret is in body');
+ typeTex('\\alp');keyTex('ArrowDown');assert(source.getAttribute('aria-activedescendant')==='paper-tex-option-0','single suggestion arrow wraps');keyTex('Enter');assert(source.value==='\\alpha','Enter inserts command');
+ typeTex('\\s');const activeBefore=source.getAttribute('aria-activedescendant');keyTex('ArrowDown');assert(source.getAttribute('aria-activedescendant')!==activeBefore,'arrows move selection');keyTex('Escape');assert($('#paper-tex-completion').hidden&&document.activeElement===source,'Escape closes menu while keeping editor focus');
+ typeTex('\\\\');assert($('#paper-tex-completion').hidden,'line break does not trigger commands');
+ typeTex('% comment \\fra');assert($('#paper-tex-completion').hidden,'comments do not trigger commands');
+ typeTex('\\% \\fra');assert(!$('#paper-tex-completion').hidden,'escaped percent is not a comment');
+ typeTex('\\newcommand{\\myvector}[2]{#1+#2}\n\\myv');assert($('#paper-tex-completion code').textContent==='\\myvector','local macro suggested');keyTex('Tab');assert(source.value.endsWith('\\myvector{}{}'),'local macro arguments inserted');
+ typeTex('\\alp');source.dispatchEvent(new CompositionEvent('compositionstart'));assert($('#paper-tex-completion').hidden,'composition hides suggestions');source.dispatchEvent(new CompositionEvent('compositionend'));
+ source.dispatchEvent(new Event('blur'));assert($('#paper-tex-completion').hidden,'blur dismisses suggestions');source.value='Unsaved source';const previewDoc=Paper.doc;
  $('[data-paper-pane="source"]').click();await delay(150);assert($('.paper-source').hidden&&!$('#paper-pages').hidden,'source fully collapses');assert(source.value==='Unsaved source'&&Paper.doc===previewDoc,'collapse retains editor and PDF');
  $('[data-paper-pane="preview"]').click();assert(!$('.paper-source').hidden&&$('#paper-pages').hidden,'hiding preview restores source instead of hiding both');
  assert($('#paper-split').style.getPropertyValue('--paper-source-width')==='52%','collapse preserves divider ratio');
@@ -33,8 +51,25 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  $('[data-paper-pane="source"]').click();mount();await delay(100);assert($('.paper-source').hidden,'collapsed state survives remount');$('[data-paper-pane="source"]').click();await delay(100);
  const calls=requests.filter(r=>r.body).length;W.dirty=true;saveFails=true;await paperCompile();assert(requests.filter(r=>r.body).length===calls,'save failure prevents compile');assert($('[data-paper-status]').textContent==='Save conflict','save failure explained');saveFails=false;W.dirty=false;
  status.state='error';status.stale=true;status.message='Broken source';status.log='main.tex:7: undefined command';await paperPoll(Paper.generation);
- assert(Paper.doc&&$('[data-paper-status]').textContent.includes('last successful'),'failed build preserves preview');assert($('.paper-logs').open&&$('[data-paper-errors] button'),'errors and source navigation shown');
- W.file='bib';mount();await delay(100);assert($('#paper-split'),'supporting bibliography keeps preview');
+ assert(Paper.doc&&$('[data-paper-status]').textContent.includes('last successful'),'failed build preserves preview');assert(!$('.paper-logs').open&&$('[data-paper-errors] button'),'errors keep logs collapsed with source navigation available');assert($('[data-paper-diagnostics]').textContent==='1 error'&&!$('[data-paper-diagnostics]').hidden,'collapsed footer shows error count');
+ status.log+='\nLaTeX Warning: Reference undefined.\nPackage hyperref Warning: Token not allowed.\nLaTeX Warning: Reference undefined.';await paperPoll(Paper.generation);assert(!$('.paper-logs').open&&$('[data-paper-diagnostics]').textContent==='1 error · 2 warnings','warnings counted without reopening logs or duplicating repeated messages');$('.paper-logs').open=true;await paperPoll(Paper.generation);assert($('.paper-logs').open,'polling preserves manually expanded log');$('.paper-logs').open=false;await paperPoll(Paper.generation);assert(!$('.paper-logs').open,'polling preserves manually collapsed log');
+ paperDiagnosticSummary({state:'success',log:''});assert($('[data-paper-diagnostics]').hidden,'clean builds clear diagnostic counts');paperDiagnosticSummary({state:'success',log:'LaTeX Warning: A warning.'});assert($('[data-paper-diagnostics]').textContent==='1 warning','successful build still shows warnings');
+ const parsed=paperParseDiagnostics({state:'error',log:'(./main.tex\n! Undefined control sequence.\nl.42 \\badcommand\nLaTeX Warning: Reference undefined on input line 51.\n)\nwarning: No source location.'});assert(parsed[0].file==='main'&&parsed[0].line===42&&parsed[1].line===51&&!parsed[2].line,'native TeX errors and warnings resolve file and line without inventing missing locations');
+ W.manifest.entries.push({id:'included',kind:'file',name:'detail.tex',parent:''});const nested=paperParseDiagnostics({log:'(./main.tex\n(./detail.tex\n! Undefined control sequence.\nl.8 \\badcommand\n)\nLaTeX Warning: Undefined reference on input line 22.'});assert(nested[0].file==='included'&&nested[0].line===8&&nested[1].file==='main'&&nested[1].line===22,'native log file stack distinguishes included source and main source');W.manifest.entries.pop();
+ paperDiagnosticSummary({state:'error',log:'main.tex:42: Undefined command\nmain.tex:51: LaTeX Warning: Reference undefined.\nwarning: No source location.'});
+ $('[data-diagnostic-level="warning"]').click();const warningList=$('dialog[open]');assert(warningList&&warningList.querySelectorAll('.paper-diagnostic-row').length===2&&!$('.paper-logs').open,'warning count opens filtered list without expanding full log');assert(warningList.querySelectorAll('button.paper-diagnostic-row').length===1,'warning without a source location stays readable without a misleading jump');
+ await warningList.querySelector('button.paper-diagnostic-row').onclick();assert(!warningList.open&&$('#workspace-editor textarea').value.slice($('#workspace-editor textarea').selectionStart,$('#workspace-editor textarea').selectionEnd)==='Source line 51','warning click opens and selects source line');
+ paperDiagnosticSummary({state:'error',log:'.noctua-paper.tex:42: Undefined command\nLaTeX Warning: A warning.'});$('[data-diagnostic-level="error"]').click();const errorList=$('dialog[open]');assert(errorList.querySelectorAll('.paper-diagnostic-row').length===1,'error list excludes warnings');await errorList.querySelector('button.paper-diagnostic-row').onclick();assert($('#workspace-editor textarea').value.slice($('#workspace-editor textarea').selectionStart,$('#workspace-editor textarea').selectionEnd)==='Source line 42','temporary main source diagnostics navigate to project main source');
+ await paperPoll(Paper.generation);clearTimeout(Paper.poll);
+ const markedSource=$('#workspace-editor textarea');markedSource.value=['First line','x '.repeat(180),'Third line',...Array(80).fill('More source')].join('\n');markedSource.setSelectionRange(0,0);markedSource.scrollTop=0;
+ const markerStatus={state:'error',fingerprint:'marked',log:'main.tex:2: Undefined command\nmain.tex:3: LaTeX Warning: Reference undefined.\nreferences.bib:1: LaTeX Warning: Another file.'};paperDiagnosticSummary(markerStatus);
+ assert(document.querySelectorAll('.paper-source-diagnostic').length===2&&$('.paper-source-diagnostic[data-line="2"]').dataset.level==='error'&&$('.paper-source-diagnostic[data-line="3"]').dataset.level==='warning','source marks only diagnostics in the active file with severity');
+ const markerTop=parseFloat($('.paper-source-diagnostic[data-line="3"]').style.top);assert(markerTop>parseFloat($('.paper-source-diagnostic[data-line="2"]').style.top)+40,'markers account for wrapped source lines');
+ markedSource.scrollTop=20;markedSource.dispatchEvent(new Event('scroll'));assert(Math.abs(parseFloat($('.paper-source-diagnostic[data-line="3"]').style.top)-(markerTop-20))<1,'markers follow editor scrolling');
+ $('.paper-source-diagnostic[data-line="3"] button').click();const lineList=$('dialog[open]');assert(lineList.querySelectorAll('.paper-diagnostic-row').length===1&&lineList.textContent.includes('Reference undefined'),'source marker opens that line diagnostics');lineList.close();
+ markedSource.dispatchEvent(new Event('input',{bubbles:true}));assert(!$('.paper-source-diagnostic'),'editing clears outdated source markers');paperDiagnosticSummary(markerStatus);assert(!$('.paper-source-diagnostic'),'unchanged old log cannot restore stale markers');
+ paperDiagnosticSummary({...markerStatus,fingerprint:'rebuilt'});assert($('.paper-source-diagnostic'),'new compiler result restores source markers');paperDiagnosticSummary({state:'success',log:''});assert(!$('.paper-source-diagnostic'),'clean builds remove source markers');
+ W.file='bib';mount();await delay(100);assert($('#paper-split'),'supporting bibliography keeps preview');assert(!$('#paper-tex-completion'),'switching to bibliography disposes TeX suggestions');
  status.state='success';status.stale=false;store.set('noctua.paper.auto','true');
  const before=requests.filter(r=>r.body).length;W.dirty=true;paperEdited();paperEdited();paperEdited();await delay(1200);
  assert(requests.filter(r=>r.body).length===before+1,'rapid edits debounce to one saved build');
@@ -42,13 +77,15 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  const originalEngine=pdfjs,pending={};let oldDisposed=false;const newest={...doc};const older={...doc,destroy:async()=>{oldDisposed=true;}};
  pdfjs=async()=>({...await originalEngine(),getDocument:({url})=>({promise:new Promise(resolve=>pending[url]=resolve)})});
  const olderLoad=paperLoadPDF('old',Paper.generation);await delay(0);const newerLoad=paperLoadPDF('new',Paper.generation);await delay(0);pending.new(newest);await newerLoad;pending.old(older);await olderLoad;assert(Paper.doc===newest&&oldDisposed,'late old PDF cannot replace newer preview');pdfjs=originalEngine;
- await showPaperSettings();await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');
+ await showPaperSettings();await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');assert(settings.querySelector('[data-latex-bib-mode]').value==='all'&&settings.querySelector('[data-latex-bib-files]').hidden,'bibliographies default to all in project');const bibMode=settings.querySelector('[data-latex-bib-mode]');bibMode.value='selected';bibMode.dispatchEvent(new Event('change'));assert(!settings.querySelector('[data-latex-bib-files]').hidden,'custom selection reveals bibliography files');
  settings.querySelector('[data-latex-compiler]').value='pdflatex';settings.querySelector('[data-latex-compiler]').dispatchEvent(new Event('change'));
  assert(settings.querySelector('[data-compiler-info]').textContent.includes('TeX Live'),'bundled compiler version displayed');
- settings.querySelector('[data-latex-auto]').checked=false;settings.querySelector('form').dispatchEvent(new Event('submit',{cancelable:true}));await delay(50);
- assert(W.manifest.paper.compiler==='pdflatex'&&W.manifest.paper.main_file==='main'&&!paperAuto(),'project compiler and auto settings saved without losing main');
+ settings.querySelector('[data-latex-auto]').checked=false;assert(!settings.querySelector('footer')&&!settings.querySelector('[data-cancel]'),'settings has only close control');settingsFail=true;await settings.querySelector('[data-close]').onclick();assert(settings.open&&settings.querySelector('[data-error]').textContent==='Settings conflict'&&!settings.querySelector('[data-close]').disabled,'failed close keeps settings open for retry');settingsFail=false;await settings.querySelector('[data-close]').onclick();assert(!settings.open,'successful close saves before dismissing');
+ assert(W.manifest.paper.bibliographies.join(',')==='bib','selected bibliography IDs saved');assert(W.manifest.paper.compiler==='pdflatex'&&W.manifest.paper.main_file==='main'&&!paperAuto(),'project compiler and auto settings saved without losing main');
+ const writes=configWrites;await showPaperSettings();const unchanged=$('dialog[open]');await unchanged.querySelector('[data-close]').onclick();assert(!unchanged.open&&configWrites===writes,'unchanged settings close without a write');
+ await showPaperSettings();const escapeSettings=$('dialog[open]');escapeSettings.querySelector('[data-latex-auto]').checked=true;escapeSettings.dispatchEvent(new Event('cancel',{cancelable:true}));await delay(50);assert(!escapeSettings.open&&W.manifest.paper.auto_compile,'Escape also saves settings');
  W.manifest.paper={main_file:'main',compiler:'tectonic',auto_compile:true};assert(paperCompiler()==='tectonic'&&paperAuto(),'next project uses its own settings');
  const generation=Paper.generation;paperUnmount();await paperPoll(generation);assert(!Paper.target&&!Paper.doc,'leaving editor disposes PDF and polling');
- window.webkit.messageHandlers.result.postMessage('PASS: paper split view, manual/automatic builds, save conflicts, last-good PDF, diagnostics, zoom, resizing, supporting files, cancellation, and cleanup');
+ window.webkit.messageHandlers.result.postMessage('PASS: TeX completion, paper split view, manual/automatic builds, save conflicts, last-good PDF, diagnostics, zoom, resizing, supporting files, cancellation, and cleanup');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+' '+e.stack));
 </script></body></html>
