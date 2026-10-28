@@ -52,7 +52,7 @@ let checks=#"""
  globalThis.result='PASS: comment selection, outlined highlights, subdued dark backgrounds, non-stacking opacity, continuous line geometry, page navigation and agent annotation visibility';
 })().catch(e=>globalThis.result='FAIL: '+e.stack);
 """#
-context.evaluateScript(mocks+section("function inkSVG", "async function addPDFAnnotation")+section("async function pdfAction", "function pdfRoute")+checks)
+context.evaluateScript(mocks+section("function inkSVG", "async function addPDFAnnotation")+section("async function pdfAction", "const splitPaperBar=")+checks)
 let deadline=Date().addingTimeInterval(5)
 while context.objectForKeyedSubscript("result").isUndefined && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.01))}
 let result=context.objectForKeyedSubscript("result").toString() ?? "FAIL: timeout"

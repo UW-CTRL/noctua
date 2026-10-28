@@ -7,6 +7,7 @@ const N={target:'L1',doc:{id:'note'},editing:null,items:new Map([['same',{key:'s
 const bib={key:'same',title:'Energy $E=mc^2$',fields:{title:'Energy $E=mc^2$'},bib:true,file_id:'bib',file_name:'references.bib',creators:['Ada Lovelace'],year:1843};
 const W={target:'L1',file:'tex',manifest:{entries:[{id:'tex',name:'main.tex'},{id:'bib',name:'references.bib',blob:'1'}],bib_index:[bib]}};
 let pending=null,labelFiles={},labelRequests=[];async function api(path){if(path?.includes('/files/')){const id=decodeURIComponent(path.split('/').pop());labelRequests.push(id);return {text:labelFiles[id]||''};}if(pending)return new Promise(resolve=>pending.resolve=resolve);return {entries:[bib],errors:[]};}
+const lastSplitSide=()=>null,isNotesMode=()=>document.body.classList.contains('notes-mode');
 const PDF={key:'paper',annotations:[]},pdfCommentEdits=new Map(),pdfPageEntries=[];
 async function indexPDF(){return {pages:[{page:1,text:'Alpha\nBeta and alpha',words:[{start:0,end:5,rect:[.1,.1,.1,.03]},{start:6,end:10,rect:[.2,.1,.1,.03]},{start:15,end:20,rect:[.3,.1,.1,.03]}]}]};}
 let jumped=null;async function pdfNavigate(page){jumped=page;}

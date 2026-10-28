@@ -15,6 +15,7 @@ const document={body:{classList:{contains:k=>modes.has(k),toggle(k,v){if(v)modes
 const $=()=>({classList:{add(){}}});
 const store={set(){}};
 function renderLibDetails(paper){shown.push(paper.key);}
+const isNotesMode=()=>modes.has('notes-mode');function showNotes(){}
 function updateChatContext(){}function saveNow(){}function draw(){}function requestAnimationFrame(fn){fn();}
 function assert(v,m){if(!v)throw Error(m);}
 """#
@@ -26,5 +27,5 @@ assert(G.selected==='original-selection'&&lib.detail.key==='previous','reader sy
 setMode('graph');assert(shown.at(-1)==='previous','leaving Reader did not restore selected-paper info');
 setMode('pdf');assert(shown.at(-1)==='reader-b','returning to Reader did not restore PDF info');
 """#
-context.evaluateScript(mocks+section(app,"function renderDetails()","async function saveToLibrary(")+section(notes,"function setMode(","// Called by app.js")+checks)
+context.evaluateScript(mocks+section(app,"function renderDetails()","async function saveToLibrary(")+section(notes,"function setMode(","function showNotes()")+checks)
 print("PASS: reader paper info follows PDFs and mode switches, survives refresh, and preserves graph/library selection")

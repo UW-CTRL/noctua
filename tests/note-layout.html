@@ -16,7 +16,7 @@
 <script>
 const $=s=>document.querySelector(s), enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get:()=>null,set(){}},collections={targets:[{id:'L1',name:'Research'}]},chat={id:'chat'};
-const noteRefHtml=()=>'',noteImageUrl=()=>'',captureVideos=()=>[],restoreVideos=()=>{},applyImgSel=()=>{};
+const collectionOptions=()=>'',noteRefHtml=()=>'',noteImageUrl=()=>'',captureVideos=()=>[],restoreVideos=()=>{},applyImgSel=()=>{};
 function toast(s){throw Error(s)} function updateChatContext(){}
 async function api(){return {undo:'Edit note',redo:null}}
 function assert(ok,message){if(!ok)throw Error(message)}

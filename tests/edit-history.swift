@@ -9,6 +9,7 @@ const document={querySelectorAll:()=>[],addEventListener:(name,fn)=>handlers[nam
 const N={target:'L1',doc:{id:'n1',title:'Note',blocks:[{id:'b1',type:'text',src:''}]}};
 const enc=encodeURIComponent;
 async function api(){return {undo:null,redo:null}}
+function lastSplitSide(){return null}
 function assert(ok,msg){if(!ok)throw Error(msg)}
 """#)
 js.evaluateScript(try String(contentsOfFile:"web/edit-history.js",encoding:.utf8))
