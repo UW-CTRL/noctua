@@ -51,6 +51,8 @@ Connect an [assistant](assistant.md) to enable:
   section tree. The default **Document** view uses embedded PDF bookmarks.
 - **Auto-highlight paper:** click the toolbar sparkle icon to identify Novelty,
   Method, Results, and Limitations, with source highlights and explanations.
+  Suggested passages that cannot be matched to the PDF text are skipped; the
+  run fails only when none can be matched.
 
 Results are saved locally. You can regenerate the outline, and repeated
 highlight runs reuse saved analysis without duplicating annotations. These

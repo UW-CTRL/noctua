@@ -27,12 +27,21 @@ pub async fn delete(app:&App,key:&str)->Result<()> {
     app.library.delete_outline(key)
 }
 
+// Collapse whitespace and fold typographic variants that models often retype as plain text.
 pub(crate) fn normalized(text:&str)->(String,Vec<usize>) {
     let (mut out,mut offsets)=(String::new(),Vec::new());
     for (offset,c) in text.char_indices() {
         if c.is_whitespace() {
             if !out.is_empty()&&!out.ends_with(' ') {out.push(' ');offsets.push(offset);}
-        }else{out.push(c);offsets.extend(std::iter::repeat_n(offset,c.len_utf8()));}
+            continue;
+        }
+        let folded=match c {
+            '\u{00ad}'=>"",'\u{2018}'|'\u{2019}'|'\u{201a}'|'\u{2032}'=>"'",'\u{201c}'|'\u{201d}'|'\u{201e}'|'\u{2033}'=>"\"",
+            '\u{2010}'|'\u{2011}'|'\u{2012}'|'\u{2013}'|'\u{2014}'|'\u{2212}'=>"-",
+            '\u{fb00}'=>"ff",'\u{fb01}'=>"fi",'\u{fb02}'=>"fl",'\u{fb03}'=>"ffi",'\u{fb04}'=>"ffl",'\u{2026}'=>"...",
+            _=>{out.push(c);offsets.extend(std::iter::repeat_n(offset,c.len_utf8()));continue;}
+        };
+        out.push_str(folded);offsets.extend(std::iter::repeat_n(offset,folded.len()));
     }
     (out.trim_end().to_string(),offsets)
 }

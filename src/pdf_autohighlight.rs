@@ -35,19 +35,30 @@ fn validate(output:&str,index:&Value)->Result<Vec<Value>> {
         let comment=entry["comment"].as_str().unwrap_or("").trim();
         if comment.chars().count()>600 {bail!("An auto-highlight explanation is too long");}
         let occurrence=entry.get("occurrence").map(|v|v.as_u64().filter(|n|*n<10000).context("Invalid quote occurrence")).transpose()?.unwrap_or(0) as usize;
+        // Skip a passage that cannot be grounded rather than discarding the whole analysis.
+        let Some((page,start))=locate(pages,page,&quote,occurrence) else {continue};
         let source=&pages[page as usize-1];let raw=source["text"].as_str().unwrap_or("");
-        let (content,offsets)=normalized(raw);
-        let start=content.match_indices(&quote).nth(occurrence).map(|(i,_)|i).context("An auto-highlight quote was not found on its stated page. Try again.")?;
+        let offsets=normalized(raw).1;
         let end=start+quote.len();
         if ranges.iter().any(|(p,a,b)|*p==page&&start<*b&&end>*a) {continue;}
         let raw_start=offsets[start];let last=offsets[end-1];let raw_end=last+raw[last..].chars().next().unwrap().len_utf8();
         let exact=&raw[raw_start..raw_end];
         let exact_occurrence=raw[..raw_start].match_indices(exact).count();
-        let rects=library::quote_rects(source,exact,exact_occurrence)?;
+        let Ok(rects)=library::quote_rects(source,exact,exact_occurrence) else {continue};
         result.push(json!({"kind":"highlight","category":category,"color":color,"page":page,"quote":exact,"occurrence":exact_occurrence,"rects":rects,"comment":comment,"source":"auto-highlight"}));
         ranges.push((page,start,end));
     }
+    if result.is_empty()&&!entries.is_empty() {bail!("The auto-highlight quotes could not be found in the PDF text. Try again.");}
     Ok(result)
+}
+
+/// Finds a quote at its stated occurrence, then its first occurrence, then on a neighboring page.
+fn locate(pages:&[Value],page:u64,quote:&str,occurrence:usize)->Option<(u64,usize)> {
+    let find=|page:u64,nth:usize|{
+        let text=pages.get((page as usize).checked_sub(1)?)?["text"].as_str().unwrap_or("");
+        normalized(text).0.match_indices(quote).nth(nth).map(|(i,_)|(page,i))
+    };
+    find(page,occurrence).or_else(||find(page,0)).or_else(||find(page-1,0)).or_else(||find(page+1,0))
 }
 
 #[cfg(test)]
@@ -66,5 +77,19 @@ mod tests {
         assert_eq!(validate(&duplicate.to_string(),&index).unwrap().len(),1);
         let multiline=json!({"highlights":[{"category":"novelty","page":1,"quote":"α Novel method.","comment":"Contribution."}]});
         assert_eq!(validate(&multiline.to_string(),&index).unwrap()[0]["quote"],"α\nNovel method.");
+    }
+    #[test]
+    fn skips_ungrounded_quotes_and_tolerates_minor_location_and_typography_errors() {
+        let words=|n:usize|(0..n).map(|i|json!({"start":i,"end":i+1,"rect":[0.1,0.1,0.1,0.03]})).collect::<Vec<_>>();
+        let index=json!({"pages":[{"text":"First page.","words":words(11)},{"text":"An e\u{fb03}cient \u{201c}new\u{201d} model \u{2014} fast.","words":words(30)}]});
+        let response=json!({"highlights":[
+            {"category":"method","page":1,"quote":"An efficient \"new\" model - fast.","comment":"Neighboring page and typography."},
+            {"category":"results","page":1,"quote":"First page.","occurrence":3,"comment":"Wrong occurrence."},
+            {"category":"novelty","page":2,"quote":"A fabricated passage","comment":"Ungrounded."}
+        ]});
+        let result=validate(&response.to_string(),&index).unwrap();
+        assert_eq!(result.len(),2);
+        assert_eq!(result[0]["page"],2);assert_eq!(result[0]["quote"],"An e\u{fb03}cient \u{201c}new\u{201d} model \u{2014} fast.");
+        assert_eq!(result[1]["page"],1);assert_eq!(result[1]["occurrence"],0);
     }
 }
