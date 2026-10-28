@@ -164,7 +164,9 @@ The [transcription prompt](../src/prompts/handwriting.md) specifies supported
 LaTeX and how diagrams are represented. See
 [AI prompts](assistant.md#dedicated-ai-features) for the task's input and output.
 
-Paste or drop images and videos, or choose **Image / Video** between blocks.
+Paste or drop images and videos, or choose **Image / Video** between blocks. With
+the note open beside a paper, you can also drag quotes and figures in from the PDF;
+see [Take notes beside the paper](reader.md#take-notes-beside-the-paper).
 Media supports captions, labels, and side-by-side layouts. A YouTube URL alone
 on a source line embeds a player. Local video uses Noctua's `\includevideo`
 command; playback is not standard LaTeX export behavior.

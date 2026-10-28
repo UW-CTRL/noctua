@@ -452,6 +452,7 @@ async function renderPDF(anchor=null){
         </details>
       </div>
       <button class="pdf-standalone-tool" data-auto-highlight title="Auto-highlight paper" data-icon="sparkles" aria-label="Auto-highlight paper" data-icon-only></button>
+      <button class="pdf-standalone-tool" data-split title="${document.body.classList.contains('split-view')?'Close':'Open'} notes beside the paper" data-icon="columns-2" aria-label="${document.body.classList.contains('split-view')?'Close':'Open'} notes beside the paper" aria-pressed="${document.body.classList.contains('split-view')}" data-icon-only></button>
       <details class="pdf-more-menu">
         <summary title="More document actions" aria-label="More document actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></summary>
         <div class="pdf-more-options">
@@ -462,11 +463,12 @@ async function renderPDF(anchor=null){
       </details>
     </div>
   </div><div class="pdf-scroll" tabindex="0" aria-label="PDF pages"><div class="pdf-document"></div></div>`;
+  renderSplitPaperBar().catch(()=>{});
   const stage=$('#pdf-stage'),on=(s,fn)=>stage.querySelector(s).onclick=()=>Promise.resolve().then(fn).catch(e=>toast(e.message));
   const pageInput=stage.querySelector('[data-page]');sizePDFPageInput(pageInput);
   pageInput.oninput=()=>sizePDFPageInput(pageInput);pageInput.onchange=e=>pdfNavigate(+e.target.value);
   on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));
-  on('[data-auto-highlight]',autoHighlightPDF);updatePDFAutoHighlightUI();
+  on('[data-auto-highlight]',autoHighlightPDF);on('[data-split]',()=>setSplitView(!document.body.classList.contains('split-view')));updatePDFAutoHighlightUI();
   on('[data-highlight]',()=>addPDFAnnotation('highlight'));on('[data-comment]',()=>addPDFAnnotation(PDF.selection?'highlight':'comment'));
   const closeMenus=()=>stage.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>menu.open=false);
   on('[data-dark]',()=>{closeMenus();return setPDFPageTheme(PDF.dark?'light':'dark');});
@@ -1146,6 +1148,24 @@ async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar()
 }
 function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab defaults to Document outline; choosing its AI-generated outline tab starts or loads a separate AI outline; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating, regenerating, or deleting the AI outline are UI-only controls, with no MCP outline-editing tool.'};}
 async function pdfAction(a){if(a.action==='pdf_index')return indexPDF(a.key);if(a.action==='pdf_page')return pdfPageImage(a.key,a.page);if(a.action==='pdf_show')return openPDF(a.key,{page:a.page});if(a.action==='pdf_annotations'){if(PDF.key!==a.key)await openPDF(a.key,{page:a.page,annotation:a.id});else {setMode('pdf');await refreshPDFAnnotations();await selectPDFAnnotation(a.id,{scrollComment:true});}}}
+// Switch papers from the bar above the PDF while a note is open beside it.
+const splitPaperBar=document.createElement('div');
+Object.assign(splitPaperBar,{id:'split-paper-bar',className:'split-bar'});splitPaperBar.setAttribute('role','toolbar');splitPaperBar.setAttribute('aria-label','Paper beside the note');
+splitPaperBar.innerHTML='<select data-split-folder aria-label="Papers folder" title="Papers folder"></select><select data-split-paper aria-label="Paper beside the note" title="Paper beside the note"></select>';
+$('#pdf-stage').before(splitPaperBar);
+const splitPapers={target:null,items:[]};
+async function renderSplitPaperBar(reload=false){
+  if(!splitViewActive())return;
+  const target=splitPapers.target||store.get('noctua.pane.split.paperFolder')||collections.targets[0]?.id;if(!target)return;
+  if(reload||target!==splitPapers.target){const items=await api(`/api/library/items?target=${enc(target)}`);Object.assign(splitPapers,{target,items:items.filter(i=>i.has_pdf)});}
+  const folder=splitPaperBar.querySelector('[data-split-folder]'),paper=splitPaperBar.querySelector('[data-split-paper]'),list=splitPapers.items,open=list.some(i=>i.key===PDF.key);
+  folder.innerHTML=collectionOptions(target);
+  paper.innerHTML=(open?'':`<option value="" selected disabled>${list.length?'Choose a paper':'No PDFs in this folder'}</option>`)+list.map(i=>`<option value="${esc(i.key)}"${i.key===PDF.key?' selected':''}>${esc(i.title||'Untitled paper')}</option>`).join('');
+  paper.disabled=!list.length;
+}
+splitPaperBar.querySelector('[data-split-folder]').addEventListener('change',e=>{splitPapers.target=e.target.value;store.set('noctua.pane.split.paperFolder',e.target.value);renderSplitPaperBar(true).catch(e=>toast(e.message));});
+splitPaperBar.querySelector('[data-split-paper]').addEventListener('change',e=>{if(e.target.value&&e.target.value!==PDF.key)openPDF(e.target.value).catch(e=>toast(e.message));});
+document.addEventListener('noctua-split-change',()=>{renderSplitPaperBar(true).catch(e=>toast(e.message));});
 function pdfRoute(){if(!location.hash.startsWith('#pdf='))return;const q=new URLSearchParams(location.hash.slice(1));openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>toast(e.message));}
 setReaderTheme(store.get('noctua.readerTheme')||store.get('noctua.pdfPageTheme'));
 pdfSystemTheme.addEventListener('change',()=>{if(PDF.theme==='system')Promise.resolve(applyReaderTheme()).catch(e=>toast(e.message));});

@@ -44,6 +44,56 @@ for(const side of ['left','right']){
 // Restore widths after both visibility flags, so a hidden neighbor takes no space.
 for(const side of ["left","right"]){const saved=Number(store.get(`noctua.pane.${side}`));if(saved)setPaneWidth(side,saved,false);}
 
+// Reader split view: the open note sits beside the PDF in the center column.
+// The ratio is the PDF's share of that column; each side keeps a usable minimum.
+const SPLIT={def:.5,min:240,step:.02};
+const splitViewActive=()=>document.body.classList.contains('pdf-mode')&&document.body.classList.contains('split-view');
+let splitSide='pdf';
+// Ambiguous keys (undo, Find) go to whichever side was used last.
+const lastSplitSide=()=>splitViewActive()?splitSide:null;
+for(const side of ['pdf','notes'])for(const type of ['pointerdown','focusin'])$(`#${side}-stage`).addEventListener(type,()=>{splitSide=side;},true);
+function splitRatio(){return parseFloat($('main').style.getPropertyValue('--split'))/100||SPLIT.def;}
+function setSplitRatio(r,save=true){
+ // Hidden panes cannot be measured; keep any reasonable saved ratio until shown.
+ const w=splitViewActive()?$('#notes-stage').getBoundingClientRect().right-$('#pdf-stage').getBoundingClientRect().left:0;
+ const lo=w>0?Math.min(.5,SPLIT.min/w):.2;
+ r=Math.max(lo,Math.min(1-lo,r||SPLIT.def));
+ $('main').style.setProperty('--split',(r*100).toFixed(2)+'%');
+ const d=$('#split-divider');if(d){d.setAttribute('aria-valuenow',String(Math.round(r*100)));d.setAttribute('aria-valuetext',`Reader ${Math.round(r*100)}%, note ${100-Math.round(r*100)}%`);}
+ if(save)store.set('noctua.pane.split.ratio',r.toFixed(4));
+}
+function setSplitView(on,save=true){
+ document.body.classList.toggle('split-view',on);
+ for(const b of document.querySelectorAll('[data-split]')){b.setAttribute('aria-pressed',String(on));b.title=b.ariaLabel=`${on?'Close':'Open'} notes beside the paper`;}
+ if(!on&&$('#notes-stage').contains(document.activeElement))$('#pdf-stage .pdf-scroll')?.focus();
+ if(save)store.set('noctua.pane.split',String(on));
+ if(on)requestAnimationFrame(()=>setSplitRatio(splitRatio(),false));
+ document.dispatchEvent(new Event('noctua-split-change'));
+ window.dispatchEvent(new Event('resize'));
+}
+{
+ const d=document.createElement('div');
+ Object.assign(d,{id:'split-divider',tabIndex:0,title:'Drag to resize the paper and note; double-click to reset'});
+ d.setAttribute('role','separator');d.setAttribute('aria-orientation','vertical');d.setAttribute('aria-label','Resize paper and note');
+ d.setAttribute('aria-controls','pdf-stage notes-stage');d.setAttribute('aria-valuemin','0');d.setAttribute('aria-valuemax','100');
+ $('#pdf-stage').after(d);
+ d.addEventListener('pointerdown',e=>{
+  if(e.button!==0)return;
+  e.preventDefault();d.setPointerCapture(e.pointerId);d.classList.add('dragging');document.body.classList.add('resizing');
+  const move=ev=>{const a=$('#pdf-stage').getBoundingClientRect(),b=$('#notes-stage').getBoundingClientRect(),w=b.right-a.left;if(w>0)setSplitRatio((ev.clientX-a.left)/w,false);};
+  const up=ev=>{d.removeEventListener('pointermove',move);d.removeEventListener('pointerup',up);d.removeEventListener('pointercancel',up);d.classList.remove('dragging');document.body.classList.remove('resizing');if(d.hasPointerCapture(ev.pointerId))d.releasePointerCapture(ev.pointerId);setSplitRatio(splitRatio());window.dispatchEvent(new Event('resize'));};
+  d.addEventListener('pointermove',move);d.addEventListener('pointerup',up);d.addEventListener('pointercancel',up);
+ });
+ d.addEventListener('dblclick',()=>setSplitRatio(SPLIT.def));
+ d.addEventListener('keydown',e=>{
+  const step={ArrowLeft:-SPLIT.step,ArrowRight:SPLIT.step}[e.key];
+  if(step){e.preventDefault();setSplitRatio(splitRatio()+step);}
+  else if(e.key==='Home'||e.key==='End'){e.preventDefault();setSplitRatio(e.key==='Home'?0:1);}
+ });
+ setSplitRatio(Number(store.get('noctua.pane.split.ratio'))||SPLIT.def,false);
+ setSplitView(store.get('noctua.pane.split')==='true',false);
+}
+
 // Let editors and popups handle their own keys before the global shortcuts.
 document.addEventListener('keydown',e=>{
  if(e.defaultPrevented||e.isComposing||e.repeat||document.querySelector('dialog[open]'))return;

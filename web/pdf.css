@@ -21,7 +21,7 @@
 .pdf-tool-group{display:flex;align-items:center;padding:2px;border:1px solid var(--line);border-radius:20px;background:var(--bg)}
 .pdf-toolbar .pdf-tool-group>button,.pdf-toolbar .pdf-standalone-tool,.pdf-toolbar summary{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;flex:none}
 .pdf-toolbar .pdf-tool-group>button:hover,.pdf-toolbar .pdf-standalone-tool:hover,.pdf-toolbar summary:hover{background:color-mix(in srgb,var(--muted) 12%,transparent)}
-.pdf-toolbar button[aria-pressed="true"][data-tool]{background:var(--panel);color:var(--accent);box-shadow:0 1px 3px #0001}
+.pdf-toolbar button[aria-pressed="true"]:is([data-tool],[data-split]){background:var(--panel);color:var(--accent);box-shadow:0 1px 3px #0001}
 .pdf-zoom-level{min-width:38px;text-align:center;font-size:calc(10px * var(--ui-font-scale,1));color:var(--muted);font-variant-numeric:tabular-nums}
 .pdf-tool-divider{height:16px;width:1px;background:var(--line);margin:0 3px}
 .pdf-toolbar details{position:relative;flex:none}

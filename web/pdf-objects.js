@@ -330,11 +330,15 @@ window.NoctuaPDFObjects=(()=>{
     const texts=textRects(items||(await page.getTextContent()).items,page.getViewport({scale:1}));
     return detect(texts,await cache.get(page));
   }
-  async function mount(entry,page,engine,active){
+  // Painted graphics per page, shared by detection and region crops.
+  function graphics(page,engine){
     if(!cache.has(page))cache.set(page,page.getOperatorList().then(list=>graphicRects(list,engine.OPS,page.getViewport({scale:1}))).catch(()=>[]));
-    const graphics=await cache.get(page);if(!active())return;
+    return cache.get(page);
+  }
+  async function mount(entry,page,engine,active){
+    const painted=await graphics(page,engine);if(!active())return;
     const bounds=entry.box.getBoundingClientRect(),texts=[...entry.box.querySelectorAll('.textLayer span')].filter(span=>span.textContent.trim()&&!span.querySelector('span')).map(span=>({text:span.textContent,rect:normalizedRect(span.getBoundingClientRect(),bounds)}));
-    entry.objects=detect(texts,graphics);
+    entry.objects=detect(texts,painted);
     const canvas=entry.box.querySelector('canvas');
     if(entry.objects.length&&canvas?.width&&canvas.height){
       // Drawing bounds can contain invisible padding; crop to visible ink in a bounded raster.
@@ -350,13 +354,23 @@ window.NoctuaPDFObjects=(()=>{
     const layer=document.createElement('div');layer.className='pdf-object-regions';
     for(const object of entry.objects){
       const button=document.createElement('button');button.type='button';button.className='pdf-object-target';button.setAttribute('aria-label',`Add ${object.label} to chat`);button.style.cssText=`left:${object.rect[0]*100}%;top:${object.rect[1]*100}%;width:${object.rect[2]*100}%;height:${object.rect[3]*100}%`;object.button=button;
-      button.onfocus=()=>button.classList.add('hovered');button.onblur=()=>button.classList.remove('hovered');button.onclick=event=>{event.preventDefault();attach(entry,object);};layer.append(button);
+      button.onfocus=()=>button.classList.add('hovered');button.onblur=()=>button.classList.remove('hovered');button.onclick=event=>{event.preventDefault();attach(entry,object);};
+      // Shown beside a note in split view; split-drag.js handles dragging and clicks.
+      const handle=document.createElement('button');handle.type='button';handle.className='pdf-object-drag';handle.dataset.object=String(entry.objects.indexOf(object));handle.dataset.icon='grip-vertical';handle.dataset.iconOnly='';
+      handle.title=handle.ariaLabel=`Drag ${object.label} into the note, or click to add it`;// Anchor on the painted figure, not text the region may include around it.
+      const [rx,ry,rw,rh]=object.rect,inside=painted.filter(g=>g[0]<rx+rw&&g[0]+g[2]>rx&&g[1]<ry+rh&&g[1]+g[3]>ry&&g[2]*g[3]>1e-4);
+      const hx=inside.length?Math.max(rx,Math.min(...inside.map(g=>g[0]))):rx,hy=inside.length?Math.max(ry,Math.min(...inside.map(g=>g[1]))):ry;
+      const ex=inside.length?Math.min(rx+rw,Math.max(...inside.map(g=>g[0]+g[2]))):rx+rw,ey=inside.length?Math.min(ry+rh,Math.max(...inside.map(g=>g[1]+g[3]))):ry+rh;
+      object.graphic=[hx,hy,ex-hx,ey-hy];object.handle=handle;
+      handle.style.cssText=`left:calc(${hx*100}% + 4px);top:calc(${hy*100}% + 4px)`;
+      layer.append(button,handle);
     }
     entry.box.querySelector('.pdf-object-regions')?.remove();entry.box.append(layer);
   }
   function hit(entry,x,y){return (entry.objects||[]).filter(object=>pdfPointInRect(x,y,object.rect)).sort((a,b)=>a.rect[2]*a.rect[3]-b.rect[2]*b.rect[3])[0];}
-  function clear(entry){for(const object of entry.objects||[])object.button?.classList.remove('hovered');entry.box.classList.remove('over-pdf-object');}
-  function hover(entry,x,y){const object=hit(entry,x,y);for(const item of entry.objects||[])item.button?.classList.toggle('hovered',item===object);entry.box.classList.toggle('over-pdf-object',!!object);}
+  function clear(entry){for(const object of entry.objects||[]){object.button?.classList.remove('hovered');object.handle?.classList.remove('visible');}entry.box.classList.remove('over-pdf-object');}
+  // The note drag handle appears only over the figure's graphics, not its caption or nearby text.
+  function hover(entry,x,y){const object=hit(entry,x,y);for(const item of entry.objects||[]){item.button?.classList.toggle('hovered',item===object);item.handle?.classList.toggle('visible',item===object&&pdfPointInRect(x,y,item.graphic||item.rect));}entry.box.classList.toggle('over-pdf-object',!!object);}
   function attach(entry,object){
     if(!window.NoctuaChatSelections?.add)return false;
     const rect=[...object.rect],page=entry.number;PDF.selection=null;updateChatContext();
@@ -364,5 +378,5 @@ window.NoctuaPDFObjects=(()=>{
     clear(entry);
     return true;
   }
-  return {detect,graphicRects,tightenRect,textRects,regions,columnGutter,linesOf,mount,hit,hover,clear,attach};
+  return {detect,graphics,graphicRects,tightenRect,textRects,regions,columnGutter,linesOf,mount,hit,hover,clear,attach};
 })();

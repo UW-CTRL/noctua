@@ -1177,7 +1177,12 @@ const paperLine = (p) =>
 // What the assistant sees each turn. The full paper list is only resent when
 // the graph changed, to keep the conversation small.
 function chatContext() {
-  if (document.body.classList.contains('pdf-mode') && typeof pdfContext === 'function') return { context: JSON.stringify(pdfContext()), key: 'pdf:' + PDF.key, noteKey: null };
+  if (document.body.classList.contains('pdf-mode') && typeof pdfContext === 'function') {
+    // A note open beside the Reader is part of what the user is looking at.
+    const nc = notesContext(chat.sentNoteKey);
+    const context = nc.lines.length ? { ...pdfContext(), side_note: nc.lines.join('\n') } : pdfContext();
+    return { context: JSON.stringify(context), key: 'pdf:' + PDF.key, noteKey: nc.key };
+  }
   const L = [];
   const c = G.nodes.get(G.centerId);
   const P = G.project;

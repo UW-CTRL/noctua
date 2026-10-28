@@ -251,7 +251,10 @@ scopes for file source, active cells, rendered notes, PDF text, and user comment
 titles, unsaved excerpts, scoped listings, binary references, and project-switch races.
 
 `tests/panes.html` verifies collapsed rails across graph, notes, and reader modes,
-restored widths, retained drafts, and focus. Paper checks also cover collapsing
+restored widths, retained drafts, and focus, plus the Reader/note split
+layout, dragging, keyboard resizing, minimum widths, and persistence.
+`tests/split-drag.html` checks PDF-to-note drops: LaTeX escaping of selected text,
+cited quote and figure insertion, empty-block reuse, and refusal outside notes. Paper checks also cover collapsing
 source/preview and restoring the layout across editor remounts.
 
 Paper integration checks prepare both bundled compilers, then exercise Tectonic

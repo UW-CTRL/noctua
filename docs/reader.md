@@ -75,6 +75,34 @@ captions and unusual layouts may still need a text selection instead.
 See [AI prompts](assistant.md#dedicated-ai-features) for how the outline and
 auto-highlight tasks are instructed, with links to their source prompts.
 
+## Take notes beside the paper
+
+Click the **Notes beside the paper** button (two columns) in the Reader toolbar
+to open a note to the right of the PDF. Drag the divider between them to resize,
+double-click it to return to an even split, or focus it and use the arrow keys.
+Each side keeps a minimum width. Bars above each side switch documents without
+leaving the Reader: above the PDF, choose a folder (the whole library by default)
+and any paper with a PDF; above the note, choose a folder, choose a note, or
+create one with **New note**. The navigation
+pane also lists the folder's project files below the Reader outline and
+annotations; choose one there to open it beside the paper. Click the button again to give the PDF the full width; the note stays
+saved and open in Notes. The split, its width, and the side-pane rails are
+remembered on this device.
+
+To copy from the paper into the note, select text in the PDF, then press inside
+the selection and drag it onto the note. It is added below the block you drop on
+as a `quote` followed by a `\cite` of the paper and its page. For a detected
+figure, table, or algorithm, hover it and drag the grip handle at its top-left
+corner. It is added as a sharp image cropped to the figure and its labels, captioned
+with the paper's own caption text followed by the paper, page, and figure number.
+Embedded images and drawn charts both work. Click the handle instead to add it below the note's current block.
+Dropping on an empty text block fills it. Citations link when the paper is in the
+note's folder. Uncaptioned regions such as standalone equations are not detected;
+press Esc to cancel a drag.
+
+Undo/Redo shortcuts and Find apply to the side you clicked or focused last. Chat
+treats the PDF as the main view and also sees the open note.
+
 ## Undo and redo
 
 The Reader Undo/Redo icons sit to the right of Page … of …, below the paper

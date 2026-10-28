@@ -12,8 +12,8 @@ function findOccurrences(text,query,limit=1000,options={}){
  let offset=0;while(hits.length<limit){const at=input.text.indexOf(needle,offset);if(at<0)break;const start=input.starts[at],end=input.ends[at+needle.length-1];if(boundary(start,end))hits.push({start,end});offset=at+needle.length;}return hits;
 }
 function findCurrentScope(){
- if(document.body.classList.contains('pdf-mode')&&PDF.key)return {kind:'reader',id:PDF.key,label:'PDF + user comments'};
- if(!document.body.classList.contains('notes-mode'))return null;
+ if(document.body.classList.contains('pdf-mode')&&PDF.key&&lastSplitSide()!=='notes')return {kind:'reader',id:PDF.key,label:'PDF + user comments'};
+ if(!isNotesMode())return null;
  const source=$('#workspace-editor textarea');if(W.file&&source)return {kind:'source',id:W.target+':'+W.file,ta:source,label:'File source'};
  if(!N.doc)return null;
  const ta=N.editing?document.querySelector(`#notes-stage .nb[data-id="${CSS.escape(N.editing)}"] textarea`):null;

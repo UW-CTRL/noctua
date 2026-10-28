@@ -1,0 +1,43 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<main><section id="pdf-stage"></section><section id="notes-stage"></section></main>
+<script>
+const $=s=>document.querySelector(s),assert=(v,m)=>{if(!v)throw Error(m)};
+const PDF={key:'pkey',paper:{cite_keys:['smith2024']},mode:'select',doc:null},W={file:null},pdfPageEntries=[];
+const N={doc:{blocks:[{id:'a',type:'text',src:'Intro'},{id:'b',type:'text',src:'  '}]},focusBlock:null};
+let imported=null,rendered=0,dirty=0;
+const splitViewActive=()=>true,toast=m=>{throw Error(m)},clearDrop=()=>{},stopEdit=()=>{},markDirty=()=>dirty++,renderEditor=()=>rendered++;
+const newId=p=>p+'new',blockIndex=id=>N.doc.blocks.findIndex(b=>b.id===id);
+const importMediaFiles=async(files,opts)=>{imported={name:files[0].name,type:files[0].type,...opts};};
+</script><script src="../web/split-drag.js"></script><script>
+(async()=>{
+ assert(splitDragTeX('a\\b {c} $5 & 10% #1 x_2 ^ ~')==='a\\textbackslash{}b \\{c\\} \\$5 \\& 10\\% \\#1 x\\_2 \\^{} \\~{}','LaTeX specials are escaped');
+ assert(splitDragTeX(' two\n  lines ')==='two lines','PDF line breaks collapse to spaces');
+ await insertFromPDF({kind:'text',text:'Quoted 50%',page:3},'a');
+ assert(N.doc.blocks.length===3&&N.doc.blocks[1].id==='bnew','text goes below the drop block');
+ assert(N.doc.blocks[1].src==='\\begin{quote}\nQuoted 50\\%\n\\end{quote}\n\\cite{smith2024}, p. 3','quote cites the paper and page');
+ assert(dirty===1&&rendered===1,'insertion saves and re-renders the note');
+ await insertFromPDF({kind:'text',text:'Fills it',page:1},'b');
+ assert(N.doc.blocks.length===3&&N.doc.blocks[2].src.includes('Fills it'),'an empty text block is filled instead of adding one');
+ PDF.paper={};await insertFromPDF({kind:'text',text:'End',page:2},null);
+ assert(N.doc.blocks.at(-1).src.endsWith('\\cite{pkey}, p. 2'),'papers without a citation key cite the paper key, at the end');
+ PDF.doc={getPage:async()=>({getViewport:({scale})=>({width:600*scale,height:800*scale}),render:({canvasContext})=>{canvasContext.fillRect(0,0,1,1);return {promise:Promise.resolve()};}})};
+ await insertFromPDF({kind:'figure',label:'Figure 2',rect:[.1,.2,.5,.3],page:4},'a');
+ assert(imported.name==='Figure 2.png'&&imported.type==='image/png'&&imported.blockId==='a'&&imported.forceNew,'figure becomes a new PNG media cell below the block');
+ assert(imported.captions[0]==='From \\cite{pkey}, p. 4, Figure 2.','figure caption cites the paper, page, and label');
+ await insertFromPDF({kind:'figure',label:'Table 1',caption:'Error rates (%) by model',rect:[.1,.2,.5,.3],page:2},'a');
+ assert(imported.captions[0]==='Error rates (\\%) by model. From \\cite{pkey}, p. 2, Table 1.','the paper caption leads the note caption');
+ // Crops keep painted graphics plus label margins, and drop the caption line and distant body text.
+ window.NoctuaPDFObjects={graphics:async()=>[[.2,.3,.4,.2],[0,0,1,1e-4]]};window.pdfjs=async()=>({});
+ const crop=await splitDragCrop({rect:[.1,.2,.6,.45],captionRect:[.15,.56,.4,.015],page:1});
+ assert(Math.abs(crop[0]-.14)<1e-9&&Math.abs(crop[1]-.27)<1e-9&&Math.abs(crop[0]+crop[2]-.66)<1e-9&&Math.abs(crop[1]+crop[3]-.53)<1e-9,'crop wraps graphics with label margins: '+crop);
+ const below=await splitDragCrop({rect:[.1,.2,.6,.45],captionRect:[.15,.515,.4,.015],page:1});
+ assert(Math.abs(below[1]+below[3]-.512)<1e-9,'a caption just below the graphics trims the crop');
+ const above=await splitDragCrop({rect:[.1,.2,.6,.45],captionRect:[.15,.275,.4,.015],page:1});
+ assert(Math.abs(above[1]-.293)<1e-9,'a caption above the graphics (tables) trims the top');
+ window.NoctuaPDFObjects={graphics:async()=>[]};const plain=[.1,.2,.6,.45];
+ assert((await splitDragCrop({rect:plain,page:1}))===plain,'regions without graphics are kept whole');
+ W.file='f1';let refused=false;try{await insertFromPDF({kind:'text',text:'x',page:1},null);}catch{refused=true;}
+ assert(refused,'project files are not edited as notes');
+ window.webkit.messageHandlers.result.postMessage('PASS: PDF-to-note drag escaping, quote and figure insertion, citations, and refusal outside notes');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script></body></html>

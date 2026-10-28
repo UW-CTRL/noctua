@@ -1472,6 +1472,29 @@ main.left-collapsed { --left-track:0px; }
 main.right-collapsed { --right-track:0px; }
 main.left-collapsed > #left,main.right-collapsed > #right { visibility:hidden; overflow:hidden; border:0; }
 .gutter::after { pointer-events:none; }
+/* Reader split view: the PDF and note share the center column around a divider. */
+#split-divider { display:none; }
+body.pdf-mode.split-view main > #pdf-stage { justify-self:start; width:calc(var(--split,50%) - 4px); margin-top:40px; }
+body.pdf-mode.split-view main > #notes-stage { display:block !important; justify-self:end; width:calc(100% - var(--split,50%) - 4px); margin-top:40px; }
+/* Each side has a bar to switch its folder and document without leaving the split. */
+.split-bar { display:none; }
+body.pdf-mode.split-view main > .split-bar { display:flex; align-items:center; gap:6px; grid-column:3; grid-row:1; align-self:start; box-sizing:border-box; height:40px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line); }
+body.pdf-mode.split-view main > #split-paper-bar { justify-self:start; width:calc(var(--split,50%) - 4px); }
+body.pdf-mode.split-view main > #split-note-bar { justify-self:end; width:calc(100% - var(--split,50%) - 4px); }
+.split-bar select { flex:1 1 0; min-width:0; }
+.split-bar select[data-split-folder] { flex:0 1 35%; }
+/* Dragging selected text or a detected figure from the paper into the note. */
+.pdf-object-regions > .pdf-object-drag { display:none; position:absolute; width:28px; height:28px; min-height:0; padding:0; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); box-shadow:0 1px 4px #0002; cursor:grab; pointer-events:auto; }
+body.pdf-mode.split-view .pdf-object-regions > .pdf-object-drag:is(.visible, :focus-visible) { display:flex; align-items:center; justify-content:center; }
+body.split-dragging, body.split-dragging * { cursor:grabbing !important; user-select:none; }
+.split-drag-ghost { position:fixed; left:0; top:0; z-index:2000; max-width:260px; padding:6px 10px; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); box-shadow:0 4px 14px #0003; font:calc(12px * var(--ui-font-scale)) var(--font-ui); white-space:nowrap; text-overflow:ellipsis; opacity:.92; pointer-events:none; }
+.split-drag-ghost.over-note { border-color:var(--accent); }
+body.pdf-mode.split-view main > #split-divider { display:block; position:relative; grid-column:3; grid-row:1; justify-self:start; width:8px; margin-left:calc(var(--split,50%) - 4px); background:var(--panel); cursor:col-resize; touch-action:none; z-index:10; }
+#split-divider::after { content:""; position:absolute; top:0; bottom:0; left:3px; width:2px; background:var(--line); pointer-events:none; transition:background .12s .08s; }
+#split-divider:hover::after, #split-divider.dragging::after, #split-divider:focus-visible::after { background:var(--accent); }
+/* Keep reader navigation and add the note list below it to pick the side note. */
+body.pdf-mode.split-view #pdf-sidebar { flex:1 1 55%; height:auto; min-height:0; }
+body.pdf-mode.split-view #notes-side { display:flex !important; flex-direction:column; flex:1 1 45%; min-height:0; border-top:1px solid var(--line); }
 button.pane-toggle { position:absolute; top:calc(50% - 36px); left:0; width:16px; min-width:0; height:72px; padding:0; margin:0; border:0; border-radius:3px; z-index:1; display:flex; align-items:center; justify-content:center; color:var(--muted); background:var(--panel); cursor:pointer; }
 button.pane-toggle::before { width:14px; height:14px; margin:0; }
 button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent); background:var(--bg); }

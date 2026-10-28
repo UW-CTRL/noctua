@@ -17,7 +17,8 @@ const N = {
   imgSel: null,        // selected image: { block, k } (figures.js)
 };
 
-const isNotesMode = () => document.body.classList.contains('notes-mode');
+// True whenever the note editor is on screen, including beside the Reader.
+const isNotesMode = () => document.body.classList.contains('notes-mode') || splitViewActive();
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // ---------------------------------------------------------------- mode & folders
@@ -29,16 +30,52 @@ function setMode(mode) {
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   store.set('noctua.mode', mode);
   $('#tooltip').classList.add('hidden');
-  if (notes) {
-    notesRefreshFolders();  // also loads the folder's notes the first time
-    loadRefs(true).then(typeset);  // note titles for \noteref links
-  } else {
+  if (isNotesMode()) showNotes();
+  else {
     saveNow();
     requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
   }
   renderDetails();
   updateChatContext();
 }
+
+function showNotes() {
+  notesRefreshFolders();  // also loads the folder's notes the first time
+  loadRefs(true).then(typeset);  // note titles for \noteref links
+}
+
+// Opening or closing the note beside the Reader keeps the PDF as the main view.
+document.addEventListener('noctua-split-change', () => {
+  if (!document.body.classList.contains('pdf-mode')) return;
+  if (isNotesMode()) showNotes(); else saveNow();
+  updateChatContext();
+});
+
+// Switch folders and notes from the side note itself, without leaving the Reader.
+const splitNoteBar = document.createElement('div');
+splitNoteBar.id = 'split-note-bar';
+splitNoteBar.className = 'split-bar';
+splitNoteBar.setAttribute('role', 'toolbar');
+splitNoteBar.setAttribute('aria-label', 'Note beside the paper');
+splitNoteBar.innerHTML = `<select data-split-folder aria-label="Notes folder" title="Notes folder"></select>
+  <select data-split-note aria-label="Note beside the paper" title="Note beside the paper"></select>
+  <button data-split-new data-icon="file-plus" data-icon-only title="New note" aria-label="New note"></button>`;
+$('#notes-stage').before(splitNoteBar);
+
+function renderSplitNoteBar() {
+  const folder = splitNoteBar.querySelector('[data-split-folder]'), note = splitNoteBar.querySelector('[data-split-note]');
+  if (document.activeElement === folder || document.activeElement === note) return;  // keep an open picker stable
+  folder.innerHTML = collectionOptions(N.target);
+  const open = !W.file && N.list.some((n) => n.id === N.doc?.id);
+  const placeholder = open ? '' : `<option value="" selected disabled>${W.file ? 'Project file open' : N.list.length ? 'Choose a note' : 'No notes in this folder'}</option>`;
+  note.innerHTML = placeholder + N.list.map((n) => `<option value="${esc(n.id)}"${open && n.id === N.doc.id ? ' selected' : ''}>${esc(n.title || 'Untitled note')}</option>`).join('');
+  note.disabled = !N.list.length;
+  splitNoteBar.querySelector('[data-split-new]').disabled = !N.target;
+}
+splitNoteBar.addEventListener('pointerdown', (e) => { if (e.target.matches('select')) renderSplitNoteBar(); }, true);
+splitNoteBar.querySelector('[data-split-folder]').addEventListener('change', (e) => { loadNoteFolder(e.target.value); e.target.blur(); });
+splitNoteBar.querySelector('[data-split-note]').addEventListener('change', (e) => { W.file = null; openNote(e.target.value); e.target.blur(); });
+splitNoteBar.querySelector('[data-split-new]').addEventListener('click', () => createNote());
 
 // Called by app.js whenever the Noctua folder list (re)loads.
 function notesRefreshFolders() {
@@ -78,6 +115,7 @@ async function loadNoteFolder(target) {
 
 function renderNoteList() {
   if(W.manifest&&W.target===N.target)renderWorkspaceTree();
+  renderSplitNoteBar();
   const el = $('#note-list');
   if (!N.list.length) {
     el.innerHTML = '<p class="hint">No notes in this folder yet.</p>';
@@ -331,6 +369,7 @@ function renderEditor() {
   for (const p of N.pads.values()) p.destroy();
   N.pads.clear();
   const stage = $('#notes-stage');
+  renderSplitNoteBar();
   const media = stage.dataset.mediaNote === N.doc?.id ? captureVideos(stage) : [];
   stage.dataset.mediaNote = N.doc?.id || '';
   if (!N.doc) {
@@ -397,7 +436,7 @@ function showNoteHelp() {
 \textbf{Bold} and \emph{emphasis}`)}</section>
       <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear at the far right of the sticky note header opens the preamble for page layout and custom LaTeX commands.</p></section>
       <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Note font applies to the title, body, collection/save metadata, and empty-block writing hint; Title size defaults to 28 px. Collection and save-status text stay at 14 px. Title size and Body size are separate controls in Settings → Appearance → Fonts. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
-      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
+      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
       <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
 See Section \ref{sec:intro}.

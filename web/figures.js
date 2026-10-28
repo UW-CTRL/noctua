@@ -270,7 +270,7 @@ async function addImages(files, opts = {}) {
   }
 }
 
-async function importMediaFiles(files, { blockId = null, index = null, forceNew = false } = {}) {
+async function importMediaFiles(files, { blockId = null, index = null, forceNew = false, captions = null } = {}) {
   files = [...files].filter(isMediaFile);
   if (!N.doc) return toast('Open a note before adding images or videos.', { error: true });
   if (!files.length) return toast('Choose an image (PNG, JPEG, GIF, WebP) or video (MP4, MOV, WebM).', { error: true });
@@ -284,7 +284,7 @@ async function importMediaFiles(files, { blockId = null, index = null, forceNew 
   }
   if (N.doc !== doc || N.target !== targetFolder) return toast('The note changed during upload. Return to the intended note and add the files again.', { error: true });
   const labels = usedLabels();
-  const items = paths.map(({ path, kind }, i) => ({ path, command: kind === 'video' ? 'includevideo' : 'includegraphics', ...imageNames(files[i].name || '', labels) }));
+  const items = paths.map(({ path, kind }, i) => ({ path, command: kind === 'video' ? 'includevideo' : 'includegraphics', ...imageNames(files[i].name || '', labels), ...(captions?.[i] ? { caption: captions[i] } : {}) }));
   const b = index == null && blockId ? N.doc.blocks.find((x) => x.id === blockId) : null;
   const spans = b?.type === 'text' && !forceNew ? figureSpans(b.src) : [];
   if (spans.length) {
