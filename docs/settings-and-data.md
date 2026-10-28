@@ -72,8 +72,8 @@ Read [Server and connections](server.md) for operations, backup and recovery.
 ## Personalize the workspace
 
 In **Settings → Appearance**, choose App, Notes, and Reader themes independently.
-The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in **Settings → Appearance → App Icon**; Light is the default. The device-local choice applies immediately and
-is restored on launch, independently of the connected server.
+The three theme selectors have the same width. All default to System. Choose Light or Dark app artwork in **Settings → Appearance → App Icon**; Light is the default. The device-local choice applies immediately, also updates the Linux AppImage's
+app menu entry, and is restored on launch, independently of the connected server.
 
 Checkboxes and selected graph filters follow the app theme's accent color:
 brown in Light and purple in Dark, including when System changes appearance.

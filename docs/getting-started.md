@@ -19,7 +19,9 @@ See [Server and connections](server.md) for browser login, CLI and Tailscale Ser
 
 Download the installer for your OS from
 [GitHub Releases](https://github.com/UW-CTRL/noctua/releases/latest), install it,
-and open Noctua. On Linux, make the AppImage executable before opening it.
+and open Noctua. On Linux, make the AppImage executable before opening it. Each
+launch adds a Noctua entry to your app menu so the dock shows the Noctua icon;
+reopen the AppImage after moving it to update that entry.
 
 You can continue without a Semantic Scholar API key. AI and Zotero are optional;
 you do not need them to read local PDFs or write notes.
