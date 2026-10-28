@@ -42,7 +42,7 @@ const assert=(v,m)=>{if(!v)throw Error(m)};
  assert($('#gutter-right button').dataset.icon==='chevron-right','Lucide direction reflects expanded state');
  setPaneCollapsed('left',false);$('#left input').focus();assert(getComputedStyle($('#left input')).outlineStyle==='none','app input focus remains ring-free with shared UI styles');$('#gutter-right button').focus();assert(getComputedStyle($('#gutter-right button')).outlineStyle==='none','pane controls use color feedback without focus boxes');
  document.body.className='pdf-mode';setPaneCollapsed('left',false);setPaneCollapsed('right',true);
- const divider=$('#split-divider'),toggle=document.createElement('button'),frame=()=>new Promise(requestAnimationFrame),box=s=>$(s).getBoundingClientRect();
+ const divider=$('#split-divider'),toggle=document.createElement('button'),frame=()=>new Promise(r=>{requestAnimationFrame(r);setTimeout(r,50);}),/* CI windows may pause animation frames */box=s=>$(s).getBoundingClientRect();
  toggle.dataset.split='';document.body.append(toggle);
  assert(getComputedStyle(divider).display==='none'&&getComputedStyle($('#notes-stage')).display==='none','reader starts without a side note');
  setSplitView(true);await frame();

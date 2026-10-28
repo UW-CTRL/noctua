@@ -27,7 +27,8 @@ automatically after every platform build and installer verification succeeds.
 
 WebKit tests that exercise real timers, such as search debouncing, attach the
 WebView to a visible window without taking focus or accepting mouse input.
-Detached WebViews may throttle timers on CI. Research test timeouts report the
+Detached WebViews may throttle timers on CI. CI windows may also pause animation
+frames, so fixtures that wait for a frame fall back to a short timer. Research test timeouts report the
 active check phase; native spellchecking is disabled in that fixture.
 
 Desktop checks type-check the desktop package and compile its build scripts and
