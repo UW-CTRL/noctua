@@ -167,6 +167,8 @@ ul.papers li.graphed { border-left-color: var(--accent); background: var(--bg); 
   position: fixed; z-index: 1000; inset: auto 14px 14px auto; margin: 0;
   display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 10px; row-gap: 4px;
   width: max-content; max-width: min(420px, calc(100vw - 28px));
+  /* WebKitGTK stretches the popover's fit-content height from the top edge. */
+  height: auto;
   padding: 12px 14px; border: 1px solid var(--toast-bg);
   border-radius: 10px; background: var(--toast-bg); color: var(--toast-ink);
   font: calc(12px * var(--ui-font-scale))/1.5 var(--font-ui); overflow-wrap: anywhere;
@@ -1303,10 +1305,10 @@ body:not(.library-view) #research-sidebar { display: flex; flex-direction: colum
 body:not(.library-view) #research-sidebar #tab-library { flex: 0 0 auto; height: min(var(--folder-height, 440px), 65%); min-height: 60px; box-sizing: border-box; overflow: auto; }
 body:not(.library-view) #lib-tree { max-height: none; border-bottom: 0; }
 body.library-view #folder-divider { display: none; }
-#folder-divider { flex: none; height: 7px; cursor: row-resize; touch-action: none; position: relative; }
-#folder-divider::after { content: ''; position: absolute; inset: 3px 12px; background: var(--line); }
-#folder-divider:is(:hover, :focus-visible, .dragging)::after { background: var(--accent); height: 2px; }
-#folder-divider:focus-visible {outline:none;   }
+#folder-divider, #tags-divider { flex: none; height: 7px; cursor: row-resize; touch-action: none; position: relative; }
+#folder-divider::after, #tags-divider::after { content: ''; position: absolute; inset: 3px 12px; background: var(--line); }
+#folder-divider:is(:hover, :focus-visible, .dragging)::after, #tags-divider:is(:hover, :focus-visible, .dragging)::after { background: var(--accent); height: 2px; }
+#folder-divider:focus-visible, #tags-divider:focus-visible {outline:none;   }
 #research-sidebar #tab-nodes { flex: 1; min-height: 70px; overflow: auto; }
 #research-sidebar #tab-threads { flex: 1; min-height: 0; overflow: auto; }
 .graph-papers-heading { display: flex; align-items: center; gap: 6px; position: sticky; top: 0; z-index: 3; padding: 7px 0; background: var(--panel); }
@@ -1517,6 +1519,8 @@ button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent);
 /* Focus uses color feedback instead of enclosing rings. */
 :focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:none; }
 button:focus-visible, a:focus-visible, summary:focus-visible { color:var(--accent); }
+/* Filled buttons keep their ink and shift their fill instead, so the label stays readable. */
+:is(button.primary, .seg button.active):focus-visible { color:var(--accent-ink); background:color-mix(in srgb, var(--accent) 82%, var(--ink)); }
 
 .workspace-trash-hint { margin:0 0 12px; font-size:calc(12px * var(--ui-font-scale)); }
 .workspace-trash-list { list-style:none; margin:0; padding:0; max-height:50vh; overflow:auto; }
@@ -1696,8 +1700,12 @@ body.library-dragging #library-root-drop { display:block; }
 .paper-info-tags ul { display:flex; flex-wrap:wrap; gap:6px; list-style:none; padding:0; margin:6px 0 0; }
 .paper-info-tags li { max-width:100%; padding:3px 8px; border:1px solid var(--line); border-radius:12px; color:var(--muted); background:var(--panel); font-size:calc(12px * var(--ui-font-scale)); overflow-wrap:anywhere; }
 
-#library-tags { display:none; flex:0 0 clamp(150px,32vh,340px); min-height:0; border-top:1px solid var(--line); background:var(--panel); flex-direction:column; overflow:hidden; }
+#library-tags { display:none; flex:0 0 var(--tags-height, clamp(150px,32vh,340px)); min-height:0; background:var(--panel); flex-direction:column; overflow:hidden; }
 body.library-view:not(.notes-mode):not(.pdf-mode) #library-tags { display:flex; }
+/* The Library folder tree fills the space above the resizable Tags panel. */
+body.library-view #lib-tree { max-height: none; }
+#tags-divider { display:none; }
+body.library-view:not(.notes-mode):not(.pdf-mode) #tags-divider { display:block; }
 #library-tags header { display:flex; align-items:center; gap:8px; flex:none; min-height:38px; padding:5px 12px; border:0; background:transparent; }
 #library-tags header strong { font-size:calc(12px * var(--ui-font-scale)); font-weight:600; }
 #library-tags [data-tag-count] { color:var(--muted); font-size:calc(11px * var(--ui-font-scale)); }

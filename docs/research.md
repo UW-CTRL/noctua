@@ -153,7 +153,9 @@ current collection. Paper info retains individual edit and collection actions. T
 from the selected collection with paper counts. **Filter tags** searches tag names
 without changing the paper search. Click a tag to filter papers; click it again or
 use **Clear tag filter** to show all tags. The list scrolls independently and
-respects the include-subfolders setting. Tag and paper text filters combine. Paper info
+respects the include-subfolders setting. Drag the boundary above it to resize the
+folder and tag areas; the height is remembered, the focused boundary supports
+Up/Down and Home/End, and double-click restores the default. Tag and paper text filters combine. Paper info
 **Edit details** also edits tags, one per line.
 
 Collections are links to papers; Library always contains every active paper.

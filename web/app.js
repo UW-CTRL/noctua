@@ -3,7 +3,7 @@
 const $ = (s) => document.querySelector(s);
 const enc = encodeURIComponent;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const clientPreference = k => ['noctua.theme','noctua.notesTheme','noctua.readerTheme','noctua.pdfPageTheme','noctua.folderHeight','noctua.chatInputHeight'].includes(k) || /^(noctua\.font\.|noctua\.pane\.|noctua\.pdfPreviewSize\.)/.test(k);
+const clientPreference = k => ['noctua.theme','noctua.notesTheme','noctua.readerTheme','noctua.pdfPageTheme','noctua.folderHeight','noctua.tagsHeight','noctua.chatInputHeight'].includes(k) || /^(noctua\.font\.|noctua\.pane\.|noctua\.pdfPreviewSize\.)/.test(k);
 const serverStoreKey = k => window.noctuaServerId && !clientPreference(k) ? `noctua.server.${window.noctuaServerId}.${k}` : k;
 const store = {
   get(k) { try { return localStorage.getItem(serverStoreKey(k)); } catch { return null; } },
@@ -2306,34 +2306,60 @@ function setFolderHeight(height, save = true) {
 }
 const savedFolderHeight = Number(store.get('noctua.folderHeight'));
 if (savedFolderHeight) setFolderHeight(savedFolderHeight, false);
-folderDivider.addEventListener('pointerdown', e => {
-  if (e.button !== 0) return;
-  e.preventDefault();
-  const startY = e.clientY, startHeight = $('#tab-library').getBoundingClientRect().height;
-  folderDivider.setPointerCapture(e.pointerId);
-  folderDivider.classList.add('dragging');
-  const move = ev => setFolderHeight(startHeight + ev.clientY - startY, false);
-  const end = ev => {
-    folderDivider.removeEventListener('pointermove', move);
-    folderDivider.removeEventListener('pointerup', end);
-    folderDivider.removeEventListener('pointercancel', end);
-    folderDivider.classList.remove('dragging');
-    setFolderHeight(startHeight + ev.clientY - startY);
-  };
-  folderDivider.addEventListener('pointermove', move);
-  folderDivider.addEventListener('pointerup', end);
-  folderDivider.addEventListener('pointercancel', end);
+// Dragging or Up/Down moves a divider; grow is 1 when the panel sits above it.
+function bindHeightDivider(divider, panel, setHeight, grow, reset) {
+  const height = () => panel().getBoundingClientRect().height;
+  divider.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startY = e.clientY, startHeight = height();
+    divider.setPointerCapture(e.pointerId);
+    divider.classList.add('dragging');
+    const move = ev => setHeight(startHeight + grow * (ev.clientY - startY), false);
+    const end = ev => {
+      divider.removeEventListener('pointermove', move);
+      divider.removeEventListener('pointerup', end);
+      divider.removeEventListener('pointercancel', end);
+      divider.classList.remove('dragging');
+      setHeight(startHeight + grow * (ev.clientY - startY));
+    };
+    divider.addEventListener('pointermove', move);
+    divider.addEventListener('pointerup', end);
+    divider.addEventListener('pointercancel', end);
+  });
+  divider.addEventListener('keydown', e => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const up = e.key === 'Home' || e.key === 'ArrowUp';
+    setHeight(['Home', 'End'].includes(e.key) ? (up === (grow > 0) ? 0 : Infinity) : height() + (up ? -20 : 20) * grow);
+  });
+  divider.addEventListener('dblclick', reset);
+}
+bindHeightDivider(folderDivider, () => $('#tab-library'), setFolderHeight, 1, () => setFolderHeight(defaultFolderHeight));
+
+// The Library view's folder/tag split, remembered locally like the folder height.
+const tagsDivider = $('#tags-divider');
+function setTagsHeight(height, save = true) {
+  const max = Math.max(80, Math.floor($('#left').clientHeight * .7));
+  const value = Math.round(Math.max(80, Math.min(max, height)));
+  $('#left').style.setProperty('--tags-height', value + 'px');
+  tagsDivider.setAttribute('aria-valuemax', String(max));
+  tagsDivider.setAttribute('aria-valuenow', String(value));
+  if (save) store.set('noctua.tagsHeight', String(value));
+}
+const savedTagsHeight = Number(store.get('noctua.tagsHeight'));
+if (savedTagsHeight) setTagsHeight(savedTagsHeight, false);
+bindHeightDivider(tagsDivider, () => $('#library-tags'), setTagsHeight, -1, () => {
+  $('#left').style.removeProperty('--tags-height');
+  store.remove('noctua.tagsHeight');
 });
-folderDivider.addEventListener('keydown', e => {
-  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
-  e.preventDefault();
-  const height = $('#tab-library').getBoundingClientRect().height;
-  setFolderHeight(e.key === 'Home' ? 60 : e.key === 'End' ? Infinity : height + (e.key === 'ArrowUp' ? -20 : 20));
-});
-folderDivider.addEventListener('dblclick', () => setFolderHeight(defaultFolderHeight));
 new ResizeObserver(() => {
   if (G.layout !== 'library') setFolderHeight(Number(store.get('noctua.folderHeight')) || defaultFolderHeight, false);
 }).observe($('#research-sidebar'));
+new ResizeObserver(() => {
+  const saved = Number(store.get('noctua.tagsHeight'));
+  if (saved && G.layout === 'library') setTagsHeight(saved, false);
+}).observe($('#left'));
 
 window.preserveChatDraft = () => { localStorage.setItem(serverStoreKey('noctua.chatDraft.' + chat.provider), $('#chat-input').value); };
 $('#chat-input').addEventListener('input', () => { try { window.preserveChatDraft(); } catch { toast('Chat draft storage unavailable; keep this window open.', {error:true}); } });

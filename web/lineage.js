@@ -1041,7 +1041,8 @@ function setLayout(mode, { user = false } = {}) {
   G.autoFit = true;
   renderDetails();
   kick(1);
-  if (user && G.layout !== 'library' && (!G.nodes.size || (previous === 'library' && G.project?.target !== lib.target))) openProject(lib.target);
+  // An empty folder graph is still loaded; reopening it would repeat its notices.
+  if (user && G.layout !== 'library' && G.project?.target !== lib.target && (!G.nodes.size || previous === 'library')) openProject(lib.target);
 }
 
 document.querySelectorAll('#layout button').forEach((b) => b.addEventListener('click', () => setLayout(b.dataset.layout, { user: true })));

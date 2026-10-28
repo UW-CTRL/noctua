@@ -372,7 +372,7 @@ function confirmDeleteLibraryFolder(target){
 function openLibraryFolderMenu(target,anchor,event={}){
   closeLibraryFolderMenu?.(false);
   if(!collections.targets.some(entry=>entry.id===target))return;
-  const menu=document.createElement('div');menu.className='library-folder-menu';menu.setAttribute('popover','auto');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Collection actions');
+  const menu=document.createElement('div');menu.className='library-folder-menu';menu.setAttribute('popover','manual');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Collection actions');
   menu.innerHTML=`<button type="button" role="menuitem" data-folder-action="edit" data-icon="pencil" ${target==='L1'?'disabled':''}>Edit collection</button><button type="button" role="menuitem" data-folder-action="new" data-icon="folder-plus">New folder</button><button type="button" role="menuitem" data-folder-action="delete" data-icon="trash-2" ${target==='L1'?'disabled':''}>Delete folder</button>`;
   const controller=new AbortController();
   const close=(restoreFocus=true)=>{if(!menu.isConnected)return;controller.abort();if(menu.matches(':popover-open'))menu.hidePopover();menu.remove();if(closeLibraryFolderMenu===close)closeLibraryFolderMenu=null;if(restoreFocus&&anchor?.isConnected)anchor.focus();};

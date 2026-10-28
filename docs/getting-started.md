@@ -159,5 +159,6 @@ Click the small arrow on either vertical rail to fully hide navigation or the
 chat/details pane. The thin rail stays visible so you can reopen it. This works
 in graph, notes, paper editor, and PDF reader views. Panes keep their previous
 width, selection, and drafts; visibility is remembered across restarts. Drag the
-rail to resize an open pane, or double-click outside the arrow to reset its width.
+rail to resize an open pane up to the space the center view needs, or double-click
+outside the arrow to reset its width.
 Arrow buttons are keyboard accessible with Tab and Enter/Space.

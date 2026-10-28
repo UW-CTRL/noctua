@@ -31,6 +31,7 @@ const tick=()=>new Promise(r=>setTimeout(r,30));const assert=(ok,msg)=>{if(!ok)t
  let edited=null,createdParent=null;window.openCollectionResearch=id=>{edited=id;};window.openCollectionCreate=id=>{createdParent=id;};
  const menuAnchor=$('#lib-tree [data-id="C1"]');openLibraryFolderMenu('C1',menuAnchor,{clientX:10,clientY:10});
  let menu=document.querySelector('.library-folder-menu');assert(menu.getAttribute('role')==='menu'&&menu.querySelectorAll('button').length===3&&!document.querySelector('dialog'),'folder right click should show three menu items without a dialog');
+ assert(menu.getAttribute('popover')!=='auto','folder menu must not light-dismiss when the right button is released (Linux opens it on press)');
  menu.querySelector('[data-folder-action="edit"]').click();assert(edited==='C1'&&!document.querySelector('.library-folder-menu'),'pencil menu action not connected');
  openLibraryFolderMenu('C1',menuAnchor);document.querySelector('[data-folder-action="new"]').click();assert(createdParent==='C1','new folder menu lost parent');
  openLibraryFolderMenu('C1',menuAnchor);document.querySelector('[data-folder-action="delete"]').click();d=document.querySelector('dialog');assert(d.open&&!requests.some(r=>r.body?.op==='folder_trash'),'delete must require confirmation');d.querySelector('[data-cancel]').click();await tick();

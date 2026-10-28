@@ -1,7 +1,8 @@
 'use strict';
 // Hide panes without unmounting editors or chat. Saved width and visibility are
 // independent so opening a pane restores its previous width and unsaved state.
-const PANES={left:{def:320,min:200,max:640},right:{def:360,min:260,max:760}};
+// Widths are bounded by the window; the center keeps its own minimum.
+const PANES={left:{def:320,min:180,max:Infinity},right:{def:360,min:240,max:Infinity}};
 function paneCollapsed(side){return $('main').classList.contains(`${side}-collapsed`);}
 function setPaneCollapsed(side,collapsed,save=true){
  const main=$('main'),pane=$('#'+side),button=$(`#gutter-${side} button`);
