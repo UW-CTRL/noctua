@@ -227,22 +227,22 @@ variables and set `plugins.updater.pubkey` to the same public key in your local
 release configuration. Then run
 `cargo tauri build --config tauri.release.conf.json` in `app/`.
 
-In the desktop app, open **Settings → About & Shortcuts → App updates**, then choose **Check desktop update** to check for a strictly newer version. **Install offered
-update** opens an in-app confirmation with **Install update** and **Cancel**.
-Cancel or Esc sends no installation request. Confirming downloads and verifies
-the signed bundle before replacing the app. Windows exits and relaunches through
-its installer; macOS and Linux show **Restart Noctua** after installation.
-Server-hosted pages do not control the native updater.
+In the desktop app, open **Settings → About & Shortcuts** and choose **Check for
+updates** under **App Updates**. An available release changes the button to
+**Update to …**; installing or restarting requires native confirmation.
+Confirming downloads and verifies the signed bundle before replacing the app.
+Windows exits and relaunches through its installer; macOS and Linux show
+**Restart Noctua** after installation. Server-hosted pages can request only the
+limited update actions; local installation and restart remain native operations.
 
 All windows share the pending update and only one operation can run at a time.
-Network and installation errors appear in the local connection manager and allow
-another check. On startup, one window checks after restoring or retrying a saved
-connection. A newer release opens a modal showing the installed and offered
+Network and installation errors appear in About and allow another check. On
+startup, one window checks after restoring or retrying a saved connection. A newer release opens a modal showing the installed and offered
 versions, categorized release history, and **Install update** / **Not now** buttons.
 The startup dialog's Install update button confirms installation directly.
 Opening more tabs or windows does not repeat the prompt within the same process.
-**Not now** dismisses it until the next launch; the local Desktop controls remain
-available. Startup failures and current-version results do not interrupt the user.
+**Not now** dismisses it until the next launch; update controls remain available
+in About. Startup failures and current-version results do not interrupt the user.
 Installation always requires confirmation; there are no background installations.
 Linux supports in-app updates only for AppImage; package-manager installations
 must update through their package manager.
