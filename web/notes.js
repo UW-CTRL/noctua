@@ -78,21 +78,22 @@ splitNoteBar.querySelector('[data-split-note]').addEventListener('change', (e) =
 splitNoteBar.querySelector('[data-split-new]').addEventListener('click', () => createNote());
 
 // Called by app.js whenever the Noctua folder list (re)loads.
+// Notes follow the collection selected in the shared tree.
 function notesRefreshFolders() {
   const ids = collections.targets.map((t) => t.id);
-  const want = N.target || store.get('noctua.notesTarget');
+  const selected = typeof lib !== 'undefined' && !lib.trash ? lib.target : null;
+  const want = ids.includes(selected) ? selected : N.target || store.get('noctua.notesTarget');
   const pick = ids.includes(want) ? want : ids.find((i) => i.startsWith('C')) || ids[0] || '';
-  $('#notes-target').innerHTML = collectionOptions(pick);
-  if (isNotesMode() && !N.target && pick) loadNoteFolder(pick);
+  if (pick && N.target !== pick) loadNoteFolder(pick);
 }
 
 async function loadNoteFolder(target) {
   if (!target) return;
-  try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});$('#notes-target').value=N.target||'';return;}
+  try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});return;}
   rememberWorkspaceView();W.file=null;
   N.target = target;
   store.set('noctua.notesTarget', target);
-  $('#notes-target').value = target;
+  if (typeof selectCollection === 'function') selectCollection(target);
   N.items = new Map();
   try {
     const [list, items] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`)]);
@@ -954,7 +955,6 @@ window.addEventListener('storage', (e) => {
 });
 
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-$('#notes-target').addEventListener('change', (e) => { loadNoteFolder(e.target.value); });
 
 $('#note-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');

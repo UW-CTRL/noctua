@@ -220,6 +220,12 @@ Folder counts align at the right edge. Hover a folder or focus its controls to
 replace its count with rename, new-folder, and available import actions.
 The library supports filtering, sorting, and metadata editing.
 
+The same tree appears in **Notes**, and the selection is shared between the two
+modes. The selected collection's notes and project files are listed under its
+row; click a note to open it in Notes. The **Collections** header above the tree
+creates notes, project folders, and imports in the selected collection. See
+[Notes](notes.md#project-files-bibliographies-and-skills).
+
 Select a collection in the folder tree and switch to **Graph** or **Lineage** to
 explore connections among its papers. **Papers** contains just the graph paper
 list with sorting and filtering. Colors distinguish citation-connected clusters;

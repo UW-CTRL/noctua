@@ -8,7 +8,11 @@ and failures also raise a notification.
 
 ## Write in a collection
 
-Select a collection, switch to **Notes**, and use **New note or file** and select **Note**. Notes combine
+Library and Notes share one collection tree in the left sidebar: selecting a
+collection in either mode selects it in both, and the collection's notes and
+files appear nested under its row. Select a collection and use **New note or
+file** (above the tree, in Library or Notes) and select **Note**; Noctua switches
+to Notes to open it. Notes combine
 text, drawing, and media blocks and save automatically. Click text to edit its
 source with a live preview; click away to finish. Hover between blocks to insert
 content. The **Note guide** question-mark icon at the far right of the note header opens the in-app syntax and editing guide.
@@ -26,18 +30,16 @@ Refreshing Notes reopens the last viewed file or note in the selected collection
 TeX and text files restore their cursor selection and source scroll position.
 If the saved file was removed, Noctua falls back to the last available note.
 
-The collection menu uses consistent indentation for nested folders and highlights the selected collection without a checkmark.
-
-The project sidebar has one header row with the collection selector and New note
-or file, New folder, and Import files icons. Hover or focus one of these icons
+The **Collections** header above the tree has New note or file, New folder, and
+Import files icons, which act on the selected collection. Hover or focus one of these icons
 to reveal its label underneath without moving the file list. To create a note, choose Note in
 the New note or file form; File creates an empty file and LaTeX (.tex) creates a starter paper. All three
 use the name and destination folder in the form. Creation forms use compact aligned fields. Import files opens a compact queue: choose or drop files, remove unwanted selections, then click Import. Each file is limited to 32 MB. Failed uploads keep the remaining files available for retry.
 
-Each collection now has a **Project files** tree alongside the existing block note
-editor. Images and videos are grouped in a collapsed Media folder by default; click a
+Each collection has a **Project files** tree, shown under the selected
+collection's row. Images and videos are grouped in a collapsed Media folder by default; click a
 folder to expand it. Files already placed in custom folders stay there, and later manual
-moves are preserved. The **New note or file** and **New folder** icons above the tree open an in-app form for the name
+moves are preserved. The **New note or file** and **New folder** icons in the Collections header open an in-app form for the name
 and destination folder. Create folders and text files, import files, hover or focus a row to rename it or move it to trash, and drag entries
 to move them, or preview their contents. Removal is recoverable with Undo
 or the project Trash, including after a restart. Files use stable IDs, so moves and
@@ -59,7 +61,7 @@ The first paper becomes the project’s main document; an existing main document
 With the file list focused, **⌘Z / Ctrl+Z** undoes project file operations and
 **⇧⌘Z / Ctrl+Shift+Z** redoes them; the Undo/Redo buttons remain available.
 
-Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. To move to another project, drag an entry over the project selector above the tree, then drop it on a project in the revealed list. Folders bring their descendants. If a name already exists, choose Overwrite, Skip, or Add number. Overwrite sends the existing entry and its descendants to Trash; Add number preserves the extension, such as draft (2).tex. Closing the dialog skips the move. Move a note together with its referenced files in a folder. The source remains recoverable in its project Trash. Moving a folder into itself or its descendants is rejected.
+Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag files, notes, or folders onto a folder to move them within the project, or onto Project root to move them out of a folder. Project root appears only while dragging project entries; it is hidden otherwise. Drop onto Trash to open the same in-app removal confirmation. Folder moves include their contents, preserve stable IDs and references, and can be undone. To move to another project, drop an entry on that collection's row in the tree. Folders bring their descendants. If a name already exists, choose Overwrite, Skip, or Add number. Overwrite sends the existing entry and its descendants to Trash; Add number preserves the extension, such as draft (2).tex. Closing the dialog skips the move. Move a note together with its referenced files in a folder. The source remains recoverable in its project Trash. Moving a folder into itself or its descendants is rejected.
 
 To remove a file or folder, hover or focus its row and choose **Trash**, then
 confirm in the in-app dialog. Folders include their contents; any removed document

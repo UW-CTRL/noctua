@@ -751,6 +751,36 @@ async function saveToLibrary(p, btn) {
 
 // ---------------------------------------------------------------- Noctua library browser
 
+// Library and Notes share one selected collection.
+function showCollection(id) {
+  lib.trash=false;document.body.classList.remove('library-trash-view');
+  lib.target = id;
+  store.set('noctua.libTarget', lib.target);
+  revealCollection(id);
+  renderDetails();
+  renderLibTree();
+  loadLibItems();
+  clearTimeout(projectFolderTimer);projectFolderTimer=null;
+  if (G.layout !== 'library') {
+    G.token++;
+    const target=lib.target;
+    projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
+  }
+}
+// Called when notes open another collection (Reader side note, @ mentions, moves).
+function selectCollection(id) {
+  if (lib.target === id && !lib.trash) { renderLibTree(); return; }
+  showCollection(id);
+}
+function revealCollection(id) {
+  const byId = new Map(collections.targets.map(t => [t.id, t]));
+  let changed = false;
+  for (let parent = byId.get(id)?.parent; parent; parent = byId.get(parent)?.parent) {
+    if (!lib.expanded.has(parent)) { lib.expanded.add(parent); changed = true; }
+  }
+  if (changed) store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
+}
+
 function renderLibTree() {
   const el = $('#lib-tree');
   if (!collections.targets.length) {
@@ -789,19 +819,9 @@ function renderLibTree() {
     li.addEventListener('contextmenu', event=>{event.preventDefault();event.stopPropagation();openLibraryFolderMenu(li.dataset.id,li,event);});
     li.addEventListener('click', () => {
       if (li.querySelector('input')) return;
-      lib.trash=false;document.body.classList.remove('library-trash-view');
-      lib.target = li.dataset.id;
-      store.set('noctua.libTarget', lib.target);
-      renderDetails();
-      renderLibTree();
-      loadLibItems();
-      clearTimeout(projectFolderTimer);projectFolderTimer=null;
-      if (G.layout !== 'library') {
-        G.token++;
-        const target=lib.target;
-        projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
-      }
-      el.querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
+      showCollection(li.dataset.id);
+      if (typeof loadNoteFolder === 'function' && N.target !== lib.target) loadNoteFolder(lib.target);
+      $('#lib-tree').querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
     });
     li.addEventListener('keydown', (e) => {
       if (e.target !== li || e.isComposing || e.key !== 'Enter' || !li.dataset.id.startsWith('C')) return;
@@ -827,6 +847,7 @@ function renderLibTree() {
     });
 
   });
+  if (typeof placeWorkspaceTree === 'function') placeWorkspaceTree();
 }
 
 function startRename(li) {

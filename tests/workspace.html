@@ -1,13 +1,14 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Workspace regression</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body class="notes-mode">
-<div id="chat-log"></div><div id="notes-side">        <div class="workspace-tools" aria-label="Project files">
-          <select id="notes-target" title="Project files collection" aria-label="Project files collection"><option value="L1">Research</option></select>
-          <div role="group" aria-label="Create and import files">
+<div id="chat-log"></div><div id="collection-tools" class="workspace-tools" aria-label="Collections">
+          <strong>Collections</strong>
+          <div role="group" aria-label="Create and import files in the selected collection">
             <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
-            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New folder"></button>
+            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New project folder"></button>
             <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
           </div>
         </div>
-<ul id="note-list"></ul></div><div id="notes-stage"></div>
+<ul id="lib-tree" class="tree"><li data-id="L1"><span class="t-name">Research</span></li><li data-id="C2"><span class="t-name">Other project</span></li></ul>
+<div id="notes-side"><ul id="note-list"></ul></div><div id="notes-stage"></div>
 <script>
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -99,10 +100,12 @@ function assert(ok,message){if(!ok)throw Error(message)}
  assert(getComputedStyle($('[data-file-rename]'),'::before').webkitMaskImage!=='none','Lucide menu icon renders');
  $('[data-file-rename="f1"]').click();assert($('dialog').classList.contains('workspace-compact')&&!$('dialog [data-move]'),'rename uses compact form without Move');
  $('dialog [data-name]').value='renamed.bib';$('dialog form').requestSubmit();await settle();assert(server.entries.find(e=>e.id==='f1').name==='renamed.bib','inline rename action updates name');
- const selector=document.createElement('select');selector.id='notes-target';selector.innerHTML='<option value="L1">Current</option><option value="C2">Other project</option>';$('.workspace-tools').prepend(selector);await settle();bindProjectDrop();
+ assert($('#lib-tree > li[data-id="L1"] + li.tree-files #workspace-tree'),'project files sit under the open collection');
  const projectTransfer=new DataTransfer();projectTransfer.setData(workspaceDragType,JSON.stringify({target:'L1',id:'f1'}));W.drag={target:'L1',id:'f1'};
- const projectHost=selector.closest('.web-select')||selector.parentElement;projectHost.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:projectTransfer}));
- assert($('[data-project-drop="C2"]')&&!$('[data-project-drop="L1"]'),'dragging onto project selector reveals other destinations');document.dispatchEvent(new Event('dragend'));assert(!$('.workspace-project-drop'),'project list closes after drag');W.drag=null;
+ const over=row=>{const e=new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:projectTransfer});row.dispatchEvent(e);return e.defaultPrevented;};
+ assert(over($('#lib-tree > li[data-id="C2"]'))&&$('#lib-tree > li[data-id="C2"]').classList.contains('workspace-project-target'),'dragging onto another collection offers a move');
+ assert(!over($('#lib-tree > li[data-id="L1"]')),'the current collection is not a move destination');
+ document.dispatchEvent(new Event('dragend'));assert(!$('.workspace-project-target'),'move highlight clears after drag');W.drag=null;
  await openWorkspaceFile('f1');const demoSource=$('#workspace-editor textarea');
  demoSource.value='saved before moving';demoSource.dispatchEvent(new Event('input'));
  await dragEntry('f1','[data-drop-folder=""]');assert(server.entries[1].parent===''&&source==='saved before moving'&&!W.dirty,'drop at root moves entry and saves draft');

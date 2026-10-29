@@ -41,14 +41,6 @@
     <aside id="left">
       <div id="pdf-sidebar"></div>
       <div id="notes-side">
-        <div class="workspace-tools" aria-label="Project files">
-          <select id="notes-target" title="Project files collection" aria-label="Project files collection"></select>
-          <div role="group" aria-label="Create and import files">
-            <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
-            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New folder"></button>
-            <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
-          </div>
-        </div>
         <ul id="note-list" class="note-list"></ul>
       </div>
       <div id="layout" class="visualization-tabs" role="group" aria-label="Visualization">
@@ -58,9 +50,18 @@
       </div>
       <div id="research-sidebar">
       <div id="tab-library" class="tab-body">
+        <div id="collection-tools" class="workspace-tools" aria-label="Collections">
+          <strong id="collection-tools-title">Collections</strong>
+          <div role="group" aria-label="Create and import files in the selected collection">
+            <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file" title="New note or file in the selected collection"></button>
+            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New project folder" title="New folder for notes and files in the selected collection"></button>
+            <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files" title="Import files into the selected collection"></button>
+          </div>
+        </div>
         <div id="graph-folders">
           <ul id="lib-tree" class="tree"></ul>
         </div>
+        <div id="workspace-footer-host"></div>
         <div class="list-tools">
           <div class="library-filter-control">
           <select id="lib-sort" data-select-icon="list-filter" data-open-on-hover aria-label="Sort library papers">
