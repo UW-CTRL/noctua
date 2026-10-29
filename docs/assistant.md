@@ -224,7 +224,7 @@ These use separate task prompts rather than the combined chat instructions.
 | --- | --- | --- |
 | [PDF outline](../src/prompts/pdf-outline.md) | Page text; ground headings in exact quotes and PDF page numbers. | Validated JSON section tree. |
 | [Auto-highlight](../src/prompts/pdf-autohighlight.md) | Page text; choose exact, non-overlapping quotes in four categories. | Validated highlights with brief English explanations. |
-| [Handwriting](../src/prompts/handwriting.md) | Drawing image; preserve wording, use supported LaTeX, mark diagrams. | LaTeX source inserted below the drawing. |
+| [Handwriting](../src/prompts/handwriting.md) | Drawing image; preserve wording, use supported LaTeX, redraw diagrams as SVG. | LaTeX source placed beside the drawing; SVG diagrams saved as note media and included as images. |
 | [Lineage](../src/prompts/lineage.md) | Titles, abstract excerpts, IDs, and citation steps; explain research threads. | JSON themes, key papers, and relationships. |
 
 ### Workers and maintenance

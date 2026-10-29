@@ -904,3 +904,20 @@ async fn note_edits_from_an_older_read_apply_when_their_blocks_are_unchanged() -
     assert_eq!((now["title"].as_str(), now["blocks"][0]["src"].as_str(), now["blocks"][1]["src"].as_str()), (Some("Reviewed"), Some("suggested"), Some("more user typing")));
     Ok(())
 }
+
+#[tokio::test]
+async fn transcribed_svg_diagrams_become_note_media() -> Result<()> {
+    let f = Fixture::new()?;
+    let text = "Intro $x$\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\" stroke=\"#000\"/></svg>\n```\nAfter\n```svg\nnot an svg\n```";
+    let out = crate::notes::place_diagrams(&f.app, Some("L1"), text)?;
+    let path = out.split("]{").nth(1).and_then(|s| s.split('}').next()).unwrap();
+    assert!(out.starts_with("Intro $x$\n\\includegraphics[width=0.7\\textwidth]{media/") && path.ends_with(".svg"), "{out}");
+    assert!(out.ends_with("After\n[diagram]"), "{out}");
+    let folder = f.app.library.folder_id("L1")?;
+    assert!(f.app.notes.root.join(&folder).join(path).exists());
+    let served = f.request(&format!("/api/note-media/L1/{}", path.trim_start_matches("media/")), None, None).await;
+    assert_eq!(served.headers()["content-type"], "image/svg+xml");
+    assert_eq!(served.headers()["content-security-policy"], "sandbox");
+    assert_eq!(crate::notes::place_diagrams(&f.app, None, "```svg\n<svg xmlns=\"x\"/>\n```")?, "[diagram]");
+    Ok(())
+}

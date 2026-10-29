@@ -789,7 +789,7 @@ async function blockAction(id, act, btn) {
     btn.dataset.icon = 'loader-circle';
     toast('Converting handwriting to LaTeX…');
     try {
-      const { latex } = await api('/api/ink-latex', { png, provider });
+      const { latex } = await api('/api/ink-latex', { png, provider, target });
       if (N.doc !== doc || N.target !== target || blockIndex(id) < 0) {
         toast('The note changed while transcribing. Reopen the drawing and try again.');
         return;

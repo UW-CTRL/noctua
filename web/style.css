@@ -371,6 +371,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   --np-link: #805536; --np-ref: #633b1c; --np-warn: #b12a44; --np-unknown: #8c5a12; --np-link-ink: #fff;
   --np-link-rgb: 128, 85, 54;
   --np-ink-filter: invert(1) hue-rotate(180deg);
+  --np-svg-filter: none;
   color-scheme: light;
   overflow: auto; background: var(--np-bg); color: var(--np-ink); min-height: 0;
 }
@@ -379,6 +380,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
   --np-link-rgb: 169, 184, 255;
   --np-ink-filter: none;
+  --np-svg-filter: invert(1) hue-rotate(180deg);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -387,6 +389,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
     --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
     --np-link-rgb: 169, 184, 255;
     --np-ink-filter: none;
+    --np-svg-filter: invert(1) hue-rotate(180deg);
     color-scheme: dark;
   }
 }
@@ -539,6 +542,8 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 #notes-stage.narrow .nb-pair { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .ink canvas.erasing { cursor: cell; }
 .ink:hover canvas, .ink:focus-within canvas { box-shadow: inset 0 0 0 1px var(--np-line); }
+/* SVG diagrams are dark-on-transparent; dark pages show them light, hues kept. */
+#notes-stage .tex-img img[src$=".svg"] { filter: var(--np-svg-filter); }
 .ink canvas.ink-live { position: absolute; left: 0; top: 0; pointer-events: none; box-shadow: none; }
 .ink-tools [data-color] { filter: var(--np-ink-filter); }
 .ink-tools {

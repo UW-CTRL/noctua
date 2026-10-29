@@ -177,7 +177,10 @@ or the window changes; older pads look as before.
 
 The pad's **TeX** button uses the selected assistant to transcribe the drawing
 into a LaTeX text block placed beside the drawing, so you can compare them; the
-drawing is preserved. In narrow panels the two stack. Use **Show below** /
+drawing is preserved. Diagrams, graphs, and sketches are redrawn as SVG images
+saved with the collection's media and included in the text; if one cannot be
+redrawn, a `[diagram]` placeholder marks it. SVG images are shown inverted
+(hues kept) on dark note pages so dark-on-transparent drawings stay visible. In narrow panels the two stack. Use **Show below** /
 **Show beside** on the text block to switch, or delete the drawing once you no
 longer need it.
 
