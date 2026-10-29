@@ -6,25 +6,28 @@ c.exceptionHandler={_,e in print(e?.toString() ?? "JavaScript error");exit(1)}
 let source=try String(contentsOfFile:"web/setup.js",encoding:.utf8)
 let a=source.range(of:"function isDesktopConnectionClient()")!.lowerBound
 let b=source.range(of:"function skillSettingsSection()")!.lowerBound
-let navStart=source.range(of:"    if (nav) {")!.lowerBound
-let navEnd=source.range(of:"    const t =",range:navStart..<source.endIndex)!.lowerBound
+let navStart=source.range(of:"  const selectTab = (id, focus = false) => {")!.lowerBound
+let navEnd=source.range(of:"  const render = () => {",range:navStart..<source.endIndex)!.lowerBound
 c.evaluateScript(#"""
-let window={top:{location:{href:''}}},location={origin:'http://localhost'},settings={version:'test'};
-const esc=s=>String(s);let selected='';const selectTab=id=>{selected=id;};
+let window={top:{}},location={origin:'http://localhost'},settings={version:'test'};
+const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('"','&quot;');
+let active=false,hiddenMessages=0;
+const card={querySelector:selector=>selector==='.settings-content'?{classList:{toggle:(_,value)=>{active=value}}}:selector==='.server-settings-frame'?{contentWindow:{postMessage:message=>{if(message.type==='noctua-manager-hidden')hiddenMessages++}}}:null,querySelectorAll:()=>[]};
+const store={set:()=>{}};const SETTINGS_TABS=[['appearance','Appearance'],['server','Server']];
 function assert(v,m){if(!v)throw Error(m);}
-"""# + String(source[a..<b]) + "\nfunction clickCategory(nav){" + String(source[navStart..<navEnd]) + "}")
+"""# + String(source[a..<b]) + String(source[navStart..<navEnd]))
 c.evaluateScript(#"""
-assert(!openServerConnectionSettings()&&window.top.location.href==='','browser must not navigate to native callback');
-assert(!serverSection().includes('data-act="open-server-connection"')&&serverSection().includes('browser-server-token'),'browser must offer address and token fields');
-assert(serverSection().includes('How to start a server')&&serverSection().includes('noctua ensure')&&serverSection().includes('noctua token')&&serverSection().includes('noctua status')&&serverSection().includes('noctua stop'),'browser startup guide must include executable commands');
+assert(serverSection().includes('browser-server-token'),'browser must offer address and token fields');
+assert(serverSection().includes('How to start a server')&&serverSection().includes('noctua ensure')&&serverSection().includes('noctua token'),'browser startup guide must include executable commands');
+selectTab('server');assert(!active,'browser must retain regular settings layout');
 window.top.noctuaDesktopClient=true;
-assert(serverSection().includes('data-client-section="local"')&&serverSection().includes('Change connection')&&!serverSection().includes('browser-server-start-help'),'desktop must offer native manager instead of browser startup guide');
-clickCategory({dataset:{settingsTab:'server'}});
-assert(selected==='server'&&!window.top.location.href,'desktop server category must stay in general settings');
-openServerConnectionSettings('local');assert(window.top.location.href==='https://noctua.invalid/settings?section=local','server management must open the local settings section');
-window.top.location.href='';clickCategory({dataset:{settingsTab:'appearance'}});
-assert(selected==='appearance'&&!window.top.location.href,'other categories must stay in settings');
-window.top={location:{href:''}};window.noctuaDesktopClient=true;
-assert(openServerConnectionSettings(),'top-level desktop marker must also work');
+assert(serverSection().includes('Reopen the app'),'missing manager endpoint must explain recovery');
+window.top.noctuaManagerUrl='http://127.0.0.1:1234/ticket/index.html?overlay=1';
+const html=serverSection();
+assert(html.includes('<iframe')&&html.includes(window.top.noctuaManagerUrl)&&html.includes('title="Server &amp; Connection"'),'desktop must embed the isolated endpoint directly in its settings panel');
+assert(!html.includes('browser-server-token')&&!html.includes('data-act='),'desktop must not show another launch button');
+selectTab('server');assert(active,'server panel must use its full allocated DOM bounds');
+selectTab('appearance');assert(!active&&hiddenMessages>=2,'leaving must restore normal tab layout and clear manager secrets');
 """#)
-print("PASS: general Settings navigation, separate connection/server management actions, scoped native callbacks and browser fallback")
+if source.contains("viewportHeight") || source.contains("close-manager") || source.contains("openServerConnectionSettings") { fatalError("Native geometry callbacks must be removed") }
+print("PASS: DOM-based isolated server settings, tab navigation, secret clearing and browser fallback")

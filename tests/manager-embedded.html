@@ -1,0 +1,65 @@
+<!doctype html><meta charset="utf-8"><title>Embedded server manager</title>
+<iframe src="../app/dist/index.html?overlay=1" style="width:700px;height:500px"></iframe><pre id="result">Checking…</pre>
+<script>
+const assert=(value,message)=>{if(!value)throw Error(message)};
+document.querySelector('iframe').onload=async()=>{try{
+ const w=document.querySelector('iframe').contentWindow,d=w.document,calls=[];let failedUpdate=false,cleanupPending=false,running=true,failStatus=false,failToken=false,failLogs=false,autoStart=false,current=null,savedMode='local';
+ w.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='local_server'&&args.action==='logs'){if(failLogs)throw Error('Log unavailable');return{log:'Log line <img src=x>'};}if(command==='local_server'&&['enable','disable'].includes(args.action)){autoStart=args.action==='enable';return{};}if(command==='local_server'&&['token','copy-token'].includes(args.action)){if(failToken)throw Error('Local token unavailable');return args.action==='token'?{token:'test-local-token'}:{copied:true};}if(command==='client_state'){if(failStatus)throw Error('Status unavailable');return{connection:{mode:savedMode,address:'https://remote.example'},current,service:{supported:true,enabled:autoStart},local:running?{}:null,server_update:failedUpdate?{phase:'interrupted',error:'Retry update'}:cleanupPending?{phase:'complete',cleanup_pending:['old file']}:{}};}return{}}};
+ await w.refresh({restoreSelection:true});
+ assert(d.documentElement.dataset.overlay==='true','embedded layout not enabled');
+ assert(d.querySelector('#connection-dialog').open&&!d.querySelector('#connection-dialog').matches(':modal'),'embedded manager must be inline');
+ assert(d.querySelector('#connection-dialog').contains(d.querySelector('#server-management')),'connection and local management must share the view');
+ assert(!d.querySelector('#embedded-connection-summary').hidden&&w.getComputedStyle(d.querySelector('#connection-wizard')).display==='none'&&d.querySelector('#close-connection').hidden,'settings must open on the connection overview without another Back button');
+ assert(d.querySelector('#server-management').open&&d.querySelector('#embedded-current-status').textContent.includes('No active connection'),'settings must show management and current status');
+ current={reachable:true,identity:{name:'Current server',url:'https://current.example',version:'1.0',secret_extra:'must not appear'}};await w.refresh();
+ assert(!d.querySelector('#embedded-current-info').hidden&&d.querySelector('#embedded-current-name').textContent==='Current server'&&d.querySelector('#embedded-current-address').textContent==='https://current.example'&&d.querySelector('#embedded-current-version').textContent==='1.0','settings must show only the current server summary');
+ assert(!d.querySelector('#embedded-connection-summary').textContent.includes('must not appear'),'settings must not display raw server fields');
+ await d.querySelector('#change').onclick();assert(calls.some(call=>call.command==='clear_connection')&&d.querySelector('#clear-connection-status').textContent.includes('Current connection remains open'),'clearing the saved connection must preserve the active connection');
+ assert(!d.querySelector('.connection-token').hidden&&d.querySelector('#local-token-help').textContent.includes('connecting from another computer'),'settings must explain and show the token control');
+ assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'local token must start masked');
+ await w.localTokenAction();assert(d.querySelector('#local-token').type==='text'&&d.querySelector('#local-token').value==='test-local-token','show must request the local token');
+ await w.localTokenAction();assert(d.querySelector('#local-token').type==='password'&&!d.querySelector('#local-token').value,'hide must discard the token');
+ await w.localTokenAction();
+ w.dispatchEvent(new w.MessageEvent('message',{data:{type:'noctua-manager-hidden'}}));
+ assert(d.querySelector('#local-token').value==='test-local-token','unrelated messages must not alter the manager');
+ w.dispatchEvent(new w.MessageEvent('message',{source:window,data:{type:'noctua-manager-hidden'}}));
+ assert(!d.querySelector('#local-token').value&&d.querySelector('#local-token').type==='password','leaving the parent settings tab must discard the displayed token');
+ await w.localTokenAction(true);assert(calls.at(-1).command==='local_server'&&calls.at(-1).args.action==='copy-token'&&!d.querySelector('#local-token').value,'copy must use the native clipboard without revealing the token');
+ await w.localTokenAction();failToken=true;await w.localTokenAction(true);failToken=false;assert(!d.querySelector('#local-token').value&&d.querySelector('#local-token-status').dataset.state==='error','token failure must clear displayed secret');
+ const logs=d.querySelector('#server-logs');
+ assert(!logs.open&&logs.parentElement.lastElementChild===logs&&!d.querySelector('#local-actions [data-action="logs"]'),'logs must begin collapsed at the end of server management');
+ assert(!calls.some(call=>call.command==='local_server'&&call.args.action==='logs'),'closed logs must not be fetched');
+ logs.open=true;for(let i=0;i<100&&!d.querySelector('#logs').textContent;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert(d.querySelector('#logs').textContent.includes('<img src=x>')&&!d.querySelector('#logs img'),'opening logs must load plain text');
+ const beforeLogs=calls.filter(call=>call.command==='local_server'&&call.args.action==='logs').length;
+ await d.querySelector('#refresh-logs').onclick();assert(calls.filter(call=>call.command==='local_server'&&call.args.action==='logs').length===beforeLogs+1,'refresh must reload logs');
+ failLogs=true;await d.querySelector('#refresh-logs').onclick();failLogs=false;assert(d.querySelector('#server-logs-status').textContent.includes('Log unavailable'),'log errors must remain visible in the expanded section');
+ logs.open=false;assert(!logs.open,'server logs must collapse');
+ const auto=d.querySelector('#autostart');assert(!auto.checked&&!auto.disabled&&auto.closest('#server-management'),'login auto-start must be available in settings');
+ auto.checked=true;await auto.onchange();assert(auto.checked&&calls.some(call=>call.command==='local_server'&&call.args.action==='enable'),'enabling must update the login service');
+ auto.checked=false;await auto.onchange();assert(!auto.checked&&calls.some(call=>call.command==='local_server'&&call.args.action==='disable'),'disabling must update the login service');
+ const action=name=>d.querySelector(`[data-action="${name}"]`);
+ assert(action('start').hidden&&!action('stop').hidden&&!action('restart').hidden,'running server must offer stop and restart');
+ running=false;await w.refresh();assert(!action('start').hidden&&action('stop').hidden&&action('restart').hidden,'stopped server must offer start only');
+ running=true;await w.refresh();assert(action('start').hidden&&!action('stop').hidden&&!action('restart').hidden,'running controls must return after status changes');
+ let finish;const pending=w.operation(()=>new Promise(resolve=>{finish=resolve}));assert(action('stop').disabled&&action('restart').disabled,'controls must be disabled during an operation');finish();await pending;assert(!action('stop').disabled&&!action('restart').disabled,'controls must re-enable after operation');
+ failStatus=true;try{await w.refresh()}catch{}assert(action('start').hidden&&action('stop').hidden&&action('restart').hidden,'unknown status must hide state-dependent actions');failStatus=false;await w.refresh();
+ assert(action('update').hidden,'normal settings must not show the update retry');
+ assert(d.querySelector('#open-running-server').hidden,'normal settings must not show update deferral');
+ failedUpdate=true;await w.refresh();assert(!action('update').hidden&&action('update').textContent==='Retry server update','failed update must offer a retry');assert(!d.querySelector('#open-running-server').hidden,'update recovery must offer deferral');
+ failedUpdate=false;cleanupPending=true;await w.refresh();assert(!action('update').hidden,'pending cleanup must offer a retry');
+ cleanupPending=false;await w.refresh();assert(action('update').hidden,'retry must disappear after recovery');
+ d.querySelector('#edit-connection').click();assert(w.getComputedStyle(d.querySelector('#connection-wizard')).display!=='none'&&d.querySelector('#server-management').closest('[data-step]').hidden,'Choose must hide management within the wizard');
+ d.querySelector('#secret').value='temporary secret';d.querySelector('#edit-connection').click();assert(w.getComputedStyle(d.querySelector('#connection-wizard')).display==='none'&&!d.querySelector('#secret').value&&!d.querySelector('#server-management').closest('#connection-wizard'),'cancel must restore the settings overview and clear the token');
+ savedMode='remote';await w.refresh({restoreSelection:true});assert(d.querySelector('#server-management').hidden,'a saved remote connection must hide local management');
+ d.querySelector('#edit-connection').click();d.querySelector('#mode').value='local';d.querySelector('#mode').dispatchEvent(new Event('change'));assert(!d.querySelector('#server-management').hidden&&d.querySelector('#server-management').closest('[data-step]').hidden,'Choose must keep management hidden');w.eval('showStep(1)');assert(!d.querySelector('#server-management').closest('[data-step]').hidden,'local Connect must show management');
+ d.querySelector('#edit-connection').click();assert(d.querySelector('#mode').value==='remote'&&d.querySelector('#server-management').hidden,'cancelling must restore the saved remote choice');
+ assert(!calls.some(call=>call.command==='connect_server'),'opening settings must not switch servers');
+ let closeRequested=false;window.addEventListener('message',event=>{if(event.source===w&&event.data?.type==='noctua-manager-close')closeRequested=true;});
+ w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape'}));
+ for(let i=0;i<50&&!closeRequested;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert(closeRequested,'Escape inside the isolated frame must close the parent settings');
+ await w.closeDialog();assert(calls.some(call=>call.command==='dismiss_connection'),'close must dismiss embedded manager');
+ const result='PASS: inline server manager preserves current connection and closes';document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);
+}catch(error){const result='FAIL: '+error.message+'\n'+error.stack;document.querySelector('#result').textContent=result;window.webkit?.messageHandlers.result.postMessage(result);}};
+</script>

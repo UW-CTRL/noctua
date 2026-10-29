@@ -9,41 +9,42 @@
 <div class="connection-modal-heading"><div><p class="connection-eyebrow">Noctua · Settings</p><h1 id="dialog-title">Server &amp; connection</h1></div><button id="close-connection">Close</button></div>
 
 <section id="panel-connection" class="connection-card" aria-label="Connection setup">
+<div id="embedded-connection-summary" hidden>
+  <h2>Current connection</h2>
+  <p id="embedded-current-status" class="connection-status" role="status">Checking connection…</p>
+  <dl id="embedded-current-info" class="connection-current-info" hidden><dt>Name</dt><dd id="embedded-current-name"></dd><dt>Address</dt><dd id="embedded-current-address"></dd><dt>Version</dt><dd id="embedded-current-version"></dd></dl>
+  <div class="connection-actions"><button id="edit-connection" type="button">Change connection</button><button id="change" type="button">Clear saved connection</button></div>
+  <p id="clear-connection-status" class="connection-status" role="status"></p>
+</div>
+<div id="connection-wizard">
 <ol class="connection-steps" aria-label="Connection setup"><li aria-current="step">Choose</li><li>Connect</li><li>Save</li></ol>
 <div data-step="0"><h2 tabindex="-1">Where do you want to work?</h2><p>Your library and AI tasks live on the connected server.</p>
-<label class="connection-field">Connection mode<select id="mode"><option value="local">Use this computer</option><option value="remote">Connect to another computer</option></select></label><small>Closing Noctua leaves the server and its tasks running.</small></div>
+<label class="connection-field">Connection mode<select id="mode"><option value="local">Use this computer as server</option><option value="remote">Connect to another computer</option></select></label><small>Closing Noctua leaves the server and its tasks running.</small></div>
 <div data-step="1" hidden><h2 tabindex="-1">Check your connection</h2>
 <p id="local-explanation">Noctua will reuse this computer’s server or start one in the background. This does not install login auto-start.</p>
 <div id="remote" hidden><label class="connection-field">Server HTTPS address<input id="address" type="url" placeholder="https://computer.tailnet-name.ts.net" autocomplete="url"></label><label class="connection-field">Authentication token<input id="secret" type="password" autocomplete="current-password" placeholder="Leave empty to use the OS keyring"></label><small>AI CLIs, API keys, Zotero paths and data folders belong to the server computer. Local AI setup is unnecessary for a remote connection.</small></div>
 <div class="connection-actions"><button id="test">Test connection</button></div></div>
-<div data-step="2" hidden><h2 tabindex="-1">Ready to connect</h2><p>Review the tested server before saving this device’s connection.</p><dl class="connection-review"><dt>Use</dt><dd id="review-mode"></dd><dt>Address</dt><dd id="review-address"></dd><dt>Server</dt><dd id="review-server"></dd><dt>Version</dt><dd id="review-version"></dd></dl><details id="server-details"><summary>Server details</summary><pre id="identity"></pre></details><small>Switching saves open edits first. Failed saves keep the current connection. Tasks stay on their original server.</small></div>
+<div data-step="2" hidden><h2 tabindex="-1">Ready to connect</h2><p>Review the server you want to connect to.</p><dl class="connection-review"><dt>Name</dt><dd id="review-server"></dd><dt>Address</dt><dd id="review-address"></dd><dt>Version</dt><dd id="review-version"></dd></dl><small>Switching saves open edits first. Failed saves keep the current connection. Tasks stay on their original server.</small></div>
 <aside class="server-recovery" id="connection-recovery" hidden aria-live="polite"><h3>Previous server detected</h3><p data-recovery-summary></p><p data-recovery-identity></p><ol data-recovery-steps></ol><button data-recovery-retry>Retry connection</button></aside>
 <p class="connection-status" role="status" id="status">Choose a connection to begin.</p>
 <footer class="connection-actions connection-wizard-actions"><button id="back" hidden>Back</button><button class="primary" id="next">Next</button><button class="primary" id="connect" hidden>Save &amp; connect</button></footer>
-<details class="connection-saved"><summary>Current &amp; saved connection</summary><p class="connection-status" role="status" id="connection-status">No active connection.</p><pre id="current-identity" aria-label="Current server details"></pre><button id="change">Clear saved connection</button></details>
+</div>
+<section id="popup-current-connection" class="connection-saved" aria-labelledby="popup-current-title" hidden><h2 id="popup-current-title">Current connection</h2><p id="connection-status" class="connection-status" role="status">No active connection.</p><dl id="popup-current-info" class="connection-current-info" hidden><dt>Name</dt><dd id="popup-current-name"></dd><dt>Address</dt><dd id="popup-current-address"></dd><dt>Version</dt><dd id="popup-current-version"></dd></dl></section>
 </section>
-</dialog>
-<dialog id="client-settings-dialog" class="connection-modal" aria-labelledby="client-settings-title">
-<div class="connection-modal-heading"><div><p class="connection-eyebrow">Noctua</p><h1 id="client-settings-title">Settings</h1></div><button id="close-settings">Close</button></div>
-<nav class="connection-tabs" role="tablist" aria-label="Settings categories">
-<button id="tab-connection" role="tab" aria-selected="true" aria-controls="panel-connection" data-panel="connection">Change connection</button>
-<button id="tab-local" role="tab" aria-selected="false" aria-controls="panel-local" data-panel="local" tabindex="-1">Server management</button>
-<button id="tab-desktop" role="tab" aria-selected="false" aria-controls="panel-desktop" data-panel="desktop" tabindex="-1">App updates</button>
-</nav><section id="panel-local" class="connection-card" role="tabpanel" aria-labelledby="tab-local" hidden>
-<h2>This computer’s server</h2><p>These controls manage this computer, even when you connect to a remote server. Switching connections leaves the local server running.</p><p id="local-status" class="connection-status" role="status"></p>
+<details class="connection-saved" id="server-management"><summary>Server management</summary>
+<section id="panel-local" class="connection-card" aria-label="Server management">
+<h2>Server management</h2><p>Manage the server on this computer. Switching connections leaves it running.</p><p id="local-status" class="connection-status" role="status"></p>
 <aside class="server-recovery" id="local-recovery" hidden aria-live="polite"><h3>Previous server detected</h3><p data-recovery-summary></p><p data-recovery-identity></p><ol data-recovery-steps></ol><button data-recovery-retry>Retry connection</button></aside>
-<div id="local-actions" class="connection-actions"><button data-action="start">Start</button><button data-action="stop">Stop safely</button><button data-action="restart">Restart safely</button><button data-action="update">Update server</button><button data-action="logs">Show server logs</button></div>
-<div class="connection-token">
+<div id="local-actions" class="connection-actions"><button data-action="start" hidden disabled>Start</button><button data-action="stop" hidden disabled>Stop safely</button><button data-action="restart" hidden disabled>Restart safely</button><button data-action="update" hidden>Retry server update</button></div>
+<div class="connection-token" hidden>
 <label class="connection-field" for="local-token">Authentication token</label>
 <div class="token-field"><input id="local-token" type="password" readonly autocomplete="off" spellcheck="false" placeholder="Hidden until requested" aria-describedby="local-token-help"><div class="token-field-actions"><button class="token-icon" id="show-local-token" type="button" aria-controls="local-token" aria-pressed="false" aria-label="Show token" title="Show token"><svg data-eye-open viewBox="0 0 24 24" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><svg data-eye-closed viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20M9.88 9.88a3 3 0 0 0 4.24 4.24M10.73 5.08A10.75 10.75 0 0 1 21.94 12a10.75 10.75 0 0 1-3.2 4.25M6.61 6.61A10.75 10.75 0 0 0 2.06 12a10.75 10.75 0 0 0 14.1 6.3"/></svg></button><button class="token-icon" id="copy-local-token" type="button" aria-label="Copy token" title="Copy token"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></div>
-<small id="local-token-help">Use this computer’s token to connect from another device. Anyone with it can access this server. Copying replaces your clipboard.</small>
+<small id="local-token-help">For connecting from another computer. Anyone with this token can access this server.</small>
 <p id="local-token-status" class="connection-status" role="status"></p>
 </div>
 <p id="server-update-status" class="connection-status" role="status"></p>
 <button id="open-running-server" hidden>Open running server · defer update</button>
-<label class="connection-check"><input type="checkbox" id="autostart"> Start at user login</label><p id="service" class="connection-status"></p><small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running.</small><pre id="logs" aria-label="Server logs"></pre>
-</section>
-<section id="panel-desktop" class="connection-card" role="tabpanel" aria-labelledby="tab-desktop" hidden><h2>App updates</h2>
-<div class="connection-actions"><button data-desktop="check">Check desktop update</button><button data-desktop="install" disabled>Install offered update</button><button data-desktop="restart" disabled>Restart updated app</button></div><pre id="update" role="status"></pre><small>After the updated app opens, an existing local server is updated separately: clients save edits, active tasks finish, then the new server starts. Unused old staged executables are removed after verification.</small></section>
+<label class="connection-check"><input type="checkbox" id="autostart"> Start at user login</label><p id="service" class="connection-status" role="status" hidden></p><small>Login auto-start is separate from starting a background server. Turning it off leaves the current server running.</small><details id="server-logs" class="server-logs"><summary>Server logs</summary><p id="server-logs-status" class="connection-status" role="status"></p><pre id="logs" aria-label="Server logs"></pre><button id="refresh-logs" type="button">Refresh logs</button></details>
+</section></details>
 <p id="management-status" class="connection-status" role="status" hidden></p>
-</dialog><script src="select.js"></script><script src="update-dialogs.js"></script><script src="client.js"></script></body></html>
+</dialog><script>if(new URLSearchParams(location.search).has("overlay")) document.documentElement.dataset.overlay="true";</script><script src="select.js"></script><script src="update-dialogs.js"></script><script src="client.js"></script></body></html>

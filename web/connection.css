@@ -87,3 +87,46 @@ summary { cursor: pointer; color: var(--muted); font-size: .93em; }
 .server-recovery [data-recovery-identity] { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.86em; }
 .server-recovery ol { padding-left:20px; color:var(--muted); font-size:.93em; }
 .server-recovery li+li { margin-top:8px; }
+
+/* Bundled manager displayed inside an existing desktop window. */
+html[data-overlay=true], html[data-overlay=true] body { background: var(--panel); height: 100%; overflow: hidden; }
+html[data-overlay=true] .connection-modal[open] { position: fixed; inset: 0; width: 100%; height: 100%; max-height: none; max-width: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+html[data-overlay=true] .connection-modal::backdrop { display: none; }
+html[data-overlay=true] .connection-welcome { display: none; }
+
+/* The connected Settings view is a page, not the first-run wizard. */
+html[data-overlay=true] .connection-modal[open] { padding: 22px 26px 28px; }
+html[data-overlay=true] .connection-modal-heading { align-items: center; margin-bottom: 26px; }
+html[data-overlay=true] .connection-modal-heading .connection-eyebrow { display: none; }
+html[data-overlay=true] .connection-modal-heading h1 { margin: 0; font-size: 1.45em; }
+html[data-overlay=true] .connection-modal-heading > button { padding: 6px 10px; }
+html[data-overlay=true] #panel-connection { padding: 0 0 24px; }
+html[data-overlay=true] #embedded-connection-summary h2,
+html[data-overlay=true] #panel-local h2 { margin: 0 0 8px; font-size: 1em; }
+html[data-overlay=true] #embedded-current-status { margin: 4px 0; }
+.connection-current-info { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 6px 16px; margin: 12px 0; font-size: .93em; }
+.connection-current-info dt { color: var(--muted); }
+.connection-current-info dd { margin: 0; overflow-wrap: anywhere; }
+html[data-overlay=true] #embedded-connection-summary .connection-actions { margin: 14px 0 0; }
+html[data-overlay=true] #clear-connection-status:empty { display: none; }
+html[data-overlay=true] #connection-wizard { display: none; }
+html[data-overlay=true] [data-editing=true] #connection-wizard { display: block; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+
+html[data-overlay=true] #server-management { margin: 0; padding: 24px 0 0; }
+html[data-overlay=true] #server-management > summary { display: none; }
+html[data-overlay=true] #panel-local { padding: 0; }
+html[data-overlay=true] #panel-local > p { max-width: 65ch; }
+html[data-overlay=true] #local-actions { margin: 16px 0 20px; }
+html[data-overlay=true] #management-status:empty, html[data-overlay=true] #logs:empty,
+html[data-overlay=true] #server-update-status:empty, html[data-overlay=true] #local-token-status:empty { display: none; }
+
+/* The local manager belongs to Connect in the setup wizard. */
+#connection-wizard #server-management { margin: 20px 0; padding-top: 18px; }
+#connection-wizard #server-management > summary { display: none; }
+#connection-wizard #panel-local { padding-top: 0; }
+
+.server-logs { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 16px; }
+.server-logs summary { cursor: pointer; font-weight: 600; }
+.server-logs pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.server-logs .connection-status:empty { display: none; }
+.server-logs button { margin-top: 8px; }

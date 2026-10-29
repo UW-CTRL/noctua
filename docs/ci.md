@@ -281,10 +281,10 @@ The independent-server fixtures also cover packaged paper compiler staging and
 compilation drain via `tests/server-paper-lifecycle.py`. Real compiler API tests
 start an authenticated foreground server with temporary client/profile paths.
 
-The offline native manager shares release history and confirmation helpers with
-server-hosted UI. `tests/client-updates.html` covers long-history scrolling,
-Cancel/Escape, focus return, explicit version-pinned installation, failure/retry
-and startup presentation without starting a data server.
+The desktop updater shares release history and confirmation helpers with the
+About settings UI. `tests/updates-ui.html` covers update actions and release
+history. `tests/client-updates.html` checks that server management omits app
+updates while the startup offer remains available.
 
 `python3 tests/server-detach.py` captures both `ensure` output streams and verifies
 that they close after the launcher exits while the isolated server stays ready.
@@ -305,3 +305,5 @@ Library management tests cover atomic bulk operations, stale edits, tag changes,
 Trash regressions additionally cover table-style selection, Restore actions, Delete confirmation, rejection of purging active items, irreversible paper/annotation removal, and cleanup of owned folder files while preserving other storage.
 
 Authentication tests cover stable 15-character token generation, replacement and rejection of older long credentials, and inline eye/copy controls in both browser and desktop connection fields, including containment inside the input border.
+
+Desktop server settings checks (`tests/server-settings.swift` and `tests/manager-embedded.html`) cover inline layout, category navigation, token clearing and local controls. The app’s `manager_frame` unit test rejects remote or missing origins, unexpected hosts and requests without the management header.

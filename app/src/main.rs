@@ -11,12 +11,13 @@ use std::sync::Mutex;
 use noctua::DesktopCmd;
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
-    AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
+    AppHandle, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
 };
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod appearance;
+mod manager_frame;
 mod icons;
 mod updater;
 
@@ -268,6 +269,7 @@ fn open_window(app: &AppHandle, open: Option<&str>) {
     let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(manager_path.into()))
         .initialization_script(&appearance::local_script())
         .title("Noctua")
+        .visible(false)
         .inner_size(1440.0, 900.0)
         .min_inner_size(820.0, 520.0)
         .disable_drag_drop_handler() // let the page receive dropped images
@@ -283,7 +285,7 @@ fn open_window(app: &AppHandle, open: Option<&str>) {
     }
 }
 
-fn local_only(window: &WebviewWindow) -> Result<(), String> {
+fn local_only(window: &Webview) -> Result<(), String> {
     if !window.label().starts_with('w') {
         return Err("Native management is restricted to the local connection screen".into());
     }
@@ -303,7 +305,7 @@ fn open_settings_section(app: &AppHandle, section: &str) {
         .into_values()
         .find(|w| w.label().starts_with('w'))
     {
-        let section = match section { "local" => "local", "desktop" => "desktop", _ => "connection" };
+        let section = match section { "local" => "local", _ => "connection" };
         let _ = w.eval(&format!("window.openClientSettings?.('{section}')"));
         let _ = w.show();
         let _ = w.set_focus();
@@ -311,6 +313,7 @@ fn open_settings_section(app: &AppHandle, section: &str) {
         open_window(app, None);
     }
 }
+
 fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let name = if cfg!(windows) {
         "noctua-server.exe"
@@ -332,27 +335,24 @@ fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     noctua::service::stage(&path)
 }
 #[tauri::command]
-fn present_client(window: WebviewWindow) -> Result<(), String> {
+fn present_client(window: Webview) -> Result<(), String> {
     local_only(&window)?;
+    window.window().show().map_err(|e|e.to_string())?;
     window.show().map_err(|e|e.to_string())?;
     window.set_focus().map_err(|e|e.to_string())
 }
 #[tauri::command]
-fn dismiss_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+fn dismiss_connection(app: AppHandle, window: Webview) -> Result<(), String> {
     local_only(&window)?;
-    if let Some(content) = app
-        .webview_windows()
-        .into_values()
-        .find(|w| w.label().starts_with("content"))
-    {
+    if let Some(content) = app.webview_windows().into_values().find(|w| w.label().starts_with("content")) {
         let _ = content.show();
         let _ = content.set_focus();
-        let _ = window.hide();
+        let _ = window.window().hide();
     }
     Ok(())
 }
 #[tauri::command]
-async fn clear_connection(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+async fn clear_connection(app: AppHandle, window: Webview) -> Result<(), String> {
     local_only(&window)?;
     let shell = app.state::<Shell>();
     let _gate = shell
@@ -362,7 +362,7 @@ async fn clear_connection(app: AppHandle, window: WebviewWindow) -> Result<(), S
     noctua::client::save(&noctua::client::Connection::default()).map_err(|e| e.to_string())
 }
 #[tauri::command]
-async fn client_state(app: AppHandle, window: WebviewWindow) -> Result<Value, String> {
+async fn client_state(app: AppHandle, window: Webview) -> Result<Value, String> {
     local_only(&window)?;
     let connection = noctua::client::load().map_err(|e| e.to_string())?;
     let local = match noctua::paths::existing_data_dir() {
@@ -379,7 +379,7 @@ async fn client_state(app: AppHandle, window: WebviewWindow) -> Result<Value, St
     let current = if let Some((address, id, secret)) = active {
         match noctua::server::probe(&address, &secret).await {
             Ok(identity) if identity["server_id"] == id => {
-                json!({"reachable":true,"identity":identity})
+                json!({"reachable":true,"identity":identity,"address":address})
             }
             Ok(_) => {
                 json!({"reachable":false,"error":"The server identity changed. Reconnect explicitly."})
@@ -486,7 +486,7 @@ fn verify_tested_server(identity: &Value, expected: Option<&str>) -> anyhow::Res
 #[tauri::command]
 async fn connect_server(
     app: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     mode: String,
     address: String,
     secret: String,
@@ -530,6 +530,8 @@ async fn connect_server(
             for old_window in app.webview_windows().into_values().filter(|w|w.label().starts_with("content")){old_window.set_cookie(cookie.clone())?;}
         }
         let label=format!("content{}",app.state::<Shell>().windows.fetch_add(1,Ordering::Relaxed));
+        let manager_url=manager_frame::start(&app,&label,window.label(),&address)?;
+        let manager_origin=tauri::Url::parse(&manager_url)?.origin().ascii_serialization();
         let callback_app=app.clone();
         let callback_label=label.clone();
         let navigation_origin=address.clone();
@@ -545,7 +547,8 @@ async fn connect_server(
         let mut provisional=ProvisionalWindow{app:app.clone(),label:label.clone(),ticket:ready_ticket.clone(),committed:false};
         let w=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("loading.html".into()))
             .initialization_script(appearance::CONTENT_SCRIPT)
-            .initialization_script(format!("window.noctuaAppIcon = {};",serde_json::to_string(&*app.state::<icons::Icons>().0.lock().unwrap()).unwrap()))
+            .initialization_script(format!("window.noctuaManagerUrl={};",serde_json::to_string(&manager_url)?))
+            .initialization_script(format!("window.noctuaAppIcon = {}; window.noctuaAppVersion = {};",serde_json::to_string(&*app.state::<icons::Icons>().0.lock().unwrap()).unwrap(),serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap()))
             .visible(false)
             .on_page_load(move |window,payload| {
                 if payload.event()==tauri::webview::PageLoadEvent::Finished && payload.url().origin().ascii_serialization()==ready_origin && !ready_once.swap(true,Ordering::SeqCst) {let _=window.eval(&ready_script);}
@@ -575,9 +578,23 @@ async fn connect_server(
                         }
                         return false;
                     }
-                    if url.path()=="/settings" {
-                        let section=url.query_pairs().find(|(key,_)|key=="section").map(|(_,value)|value.into_owned()).unwrap_or_else(||"connection".into());
-                        open_settings_section(&callback_app,&section);return false;
+                    if url.path()=="/desktop-update" {
+                        let fields: std::collections::HashMap<_,_> = url.query_pairs().into_owned().collect();
+                        let action = fields.get("action").cloned().unwrap_or_default();
+                        let request = fields.get("request").cloned().unwrap_or_default();
+                        let version = fields.get("version").cloned().filter(|v| !v.is_empty());
+                        if uuid::Uuid::parse_str(&request).is_ok() && matches!(action.as_str(), "check" | "install" | "restart") {
+                            let app=callback_app.clone();
+                            let label=callback_label.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let result=update_from_content(&app,&action,version).await;
+                                if let Some(window)=app.get_webview_window(&label) {
+                                    let detail=match result { Ok(result)=>json!({"request":request,"result":result}), Err(error)=>json!({"request":request,"error":error}) };
+                                    let _=window.eval(&format!("window.dispatchEvent(new CustomEvent('noctua-update-result',{{detail:{detail}}}));"));
+                                }
+                            });
+                        }
+                        return false;
                     }
                     let parts=url.path().split('/').collect::<Vec<_>>();
                     if parts.len()==4 {
@@ -588,7 +605,7 @@ async fn connect_server(
                     }return false
                 }
                 let loading=(url.scheme()=="tauri" && url.host_str()==Some("localhost") || matches!(url.scheme(),"http"|"https") && url.host_str()==Some("tauri.localhost")) && url.path()=="/loading.html";
-                loading || url.origin().ascii_serialization()==navigation_origin
+                loading || url.origin().ascii_serialization()==navigation_origin || url.origin().ascii_serialization()==manager_origin
             }).build()?;
 
         w.set_cookie(cookie)?;
@@ -607,7 +624,7 @@ async fn connect_server(
         if !keep_windows {for old_window in app.webview_windows().into_values().filter(|x|x.label().starts_with("content")&&x.label()!=w.label()){let _=old_window.close();}}
         *app.state::<Shell>().connected.lock().unwrap()=Some((address,identity["server_id"].as_str().unwrap().into(),secret));
         provisional.committed=true;
-        let _=window.hide();
+        let _=window.window().hide();
         Ok(identity)
     }.await;
     result.map_err(|e| format!("{e:#}"))
@@ -615,7 +632,7 @@ async fn connect_server(
 #[tauri::command]
 async fn local_server(
     app: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     action: String,
 ) -> Result<Value, String> {
     local_only(&window)?;
@@ -654,6 +671,29 @@ async fn local_server(
     }.await;
     result.map_err(|e| format!("{e:#}"))
 }
+// Server pages can request an update, but installation and restart require a
+// native confirmation so a remote server cannot silently control this app.
+async fn update_from_content(app: &AppHandle, action: &str, version: Option<String>) -> Result<Value, String> {
+    let replacing = matches!(action, "install" | "restart");
+    if action == "install" && version.as_deref().and_then(|v| semver::Version::parse(v).ok()).is_none() {
+        return Err("Check for an update before installing".into());
+    }
+    if replacing {
+        let text = if action == "install" { format!("Install Noctua {}? The app may close or restart.", version.as_deref().unwrap_or_default()) } else { "Restart Noctua now?".into() };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog().message(text).title("Noctua update")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel)
+            .show(move |confirmed| { let _ = tx.send(confirmed); });
+        if !rx.await.unwrap_or(false) { return Err("Update cancelled".into()); }
+    }
+    let shell=app.state::<Shell>();
+    let _gate=if replacing { Some(shell.connection_gate.try_lock().map_err(|_| "Another connection or server operation is in progress".to_string())?) } else { None };
+    let _guard=if replacing { Some(SwitchGuard(app.clone())) } else { None };
+    if replacing { flush_clients(app, "").await?; }
+    let action=serde_json::from_value(json!(action)).map_err(|_| "Unknown update action".to_string())?;
+    updater::run(app, action, version).await.map_err(|e| e.to_string())
+}
+
 async fn set_local_app_icon(app: &AppHandle, icon: noctua::AppIcon) -> Result<(), String> {
     let previous = *app.state::<icons::Icons>().0.lock().unwrap();
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -676,7 +716,7 @@ async fn set_local_app_icon(app: &AppHandle, icon: noctua::AppIcon) -> Result<()
 #[tauri::command]
 async fn desktop_action(
     app: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     action: String,
     version: Option<String>,
 ) -> Result<Value, String> {

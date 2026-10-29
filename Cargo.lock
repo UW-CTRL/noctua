@@ -2674,6 +2674,7 @@ name = "noctua-app"
 version = "0.3.3"
 dependencies = [
  "anyhow",
+ "axum",
  "noctua",
  "objc2",
  "objc2-app-kit",

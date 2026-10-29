@@ -1,5 +1,7 @@
 # Server and connections
 
+When the desktop app restores a saved connection, it opens the server connection screen if connecting takes longer or fails. A fast connection opens the workspace directly. First-time setup always shows the connection screen.
+
 [Documentation](README.md) · [Settings and data](settings-and-data.md)
 
 Noctua has one data server and any number of interfaces for one user. The server
@@ -12,17 +14,17 @@ outside this release.
 
 ## First launch and recovery
 
-The desktop opens a bundled **Server & connection** popup that needs no server.
+The desktop opens a bundled **Server & connection** popup that needs no server. In Settings, connection and local server management open together inside Settings.
 Setup shows one step at a time: **Choose → Connect → Save**. **Next** moves forward;
 **Back** returns without losing the selected mode, address or tested credential.
 Changing the mode, address or token requires another connection test. Only
 **Save & connect** commits a new connection; a failed test or save keeps the popup
 available. **Close** returns to the connected library, or leaves an **Open
 connection settings** button on the local launcher when no library is open.
-Server management and app updates are accessed separately from general Settings.
-The first-run wizard contains only connection setup.
+When this computer is selected, the **Connect** step contains its local **Server management** controls. The local connection does not require entering a token; the token for other computers is available in desktop Settings. App
+updates are in **Settings → About & Shortcuts**.
 
-Choose **Use this computer** to validate and reuse an existing server, or
+Choose **Use this computer as server** to validate and reuse an existing server, or
 start a detached background process when none owns the data. Validation checks
 product, persistent server identity, instance identity, API version, data folder
 and readiness; a listening port or PID is insufficient. Parallel clients share
@@ -49,7 +51,7 @@ Use the native **Settings** menu for general Settings while connected.
 When no library window is open, it opens local management so recovery remains available. Settings → **Server & connection** in the web UI shows the
 server origin, identifier and version, and offers a connection test. In a browser,
 connect to another server by opening that server's HTTPS address and signing in;
-OS service and process controls are restricted to the local desktop screen/CLI.
+OS service and process controls are restricted to the desktop app/CLI. Desktop Settings embeds its local controls in an isolated loopback frame; connected server pages have no access to its token, logs or native commands. It follows the settings panel layout without a separate window or native position calculations.
 
 Before a desktop connection switch, input is frozen in every existing content
 window, including the end of any in-progress drawing stroke. Every window must then flush its notes,
@@ -141,7 +143,9 @@ uses a Task Scheduler user-logon task with `InteractiveToken` and least privileg
 These are user-login registrations; pre-login machine services are not provided.
 Service paths may contain spaces, but control characters are rejected before any
 registration changes.
-The desktop checkbox changes registration explicitly. Normal launch and `ensure`
+The **Start at user login** checkbox reflects whether automatic start is enabled
+and changes registration explicitly. Extra status text appears only for errors or
+unavailable automatic start. Normal launch and `ensure`
 do not register anything. Registering login auto-start does not start a server on
 any platform; use Start/ensure explicitly or wait for the next user login. A running
 detached server continues to own the data, so a service cannot create a duplicate.
@@ -210,7 +214,8 @@ does not grant the server stop operation: that needs `server-control`, kept priv
 on the server computer and never returned by the identity API.
 
 Server content has no Tauri native management privilege. Its old desktop HTTP
-endpoints report unavailable. Same-server app links open native windows and preserve the requested app path;
+endpoints report unavailable. About can request a client app update; installation
+and restart require native confirmation and save open edits first. Same-server app links open native windows and preserve the requested app path;
 external links open the system browser. **Open in new window** saves first and
 keeps the source tab open. Windows/tabs, client file
 uploads, app icons and signed desktop updates remain client responsibilities.
@@ -239,8 +244,7 @@ server copy was fetched successfully. See [Notes](notes.md).
 After opening a new desktop release, an existing local server is upgraded by an
 independent worker. This also applies to a local server left running while the
 client uses a remote connection; remote servers are updated on their own computer.
-A remote-only client never starts a local data server. **Settings → Server & Connection → Server management → Update
-server** retries an update or deferred cleanup. Update progress/errors appear in
+A remote-only client never starts a local data server. **Retry server update** appears under **Server management** when an update fails or cleanup remains. Update progress/errors appear in
 the local connection popup, including while the data server is stopped.
 
 The worker stages the bundled executable outside the app bundle, checks its API,
@@ -301,7 +305,7 @@ completion manifest records the prior origin/version; preserve that port and pro
 address to recover origin-bound drafts. Never mix files from different generations.
 A worker crash leaves recoverable status;
 its maintenance lease expires so a still-running old owner can accept work again.
-Retrying **Update server** or `noctua update --server …` also handles a stopped
+Choosing **Retry server update** or `noctua update --server …` also handles a stopped
 failed replacement: ownership locks prove no server is alive, then the worker
 backs up the stopped data before starting the candidate again. Completed prior
 snapshots remain available; a partial new database is never opened by an old binary.
