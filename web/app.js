@@ -2283,12 +2283,16 @@ $('#chat-font-smaller').addEventListener('click', () => NoctuaFonts.setChatSize(
 $('#chat-font-larger').addEventListener('click', () => NoctuaFonts.setChatSize(NoctuaFonts.getChatSize() + 1));
 document.addEventListener('noctua-chat-text-change', syncChatFontSize);
 syncChatFontSize();
+// Linux reports Shift+Tab as ISO_Left_Tab; match on the physical key too.
+const isShiftTab = (e) => e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing && (e.key === 'Tab' || e.code === 'Tab' || e.keyCode === 9);
 $('#chat-mode').addEventListener('click', cycleChatMode);
+// The mode and effort badges keep the shortcut after being clicked.
+for (const id of ['#chat-mode', '#chat-effort']) $(id).addEventListener('keydown', (e) => { if (isShiftTab(e)) { e.preventDefault(); cycleChatMode(); } });
 $('#chat-effort').addEventListener('click', () => stepChatEffort(1, true));
 $('#chat-input').addEventListener('keydown', (e) => {
   if (window.NoctuaSkillPicker?.key(e)) return;
   if (mentionKey(e)) return;  // @-mention popup open
-  if (e.key === 'Tab' && e.shiftKey) {
+  if (isShiftTab(e)) {
     e.preventDefault();
     cycleChatMode();
     return;

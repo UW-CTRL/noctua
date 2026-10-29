@@ -39,8 +39,8 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 | Plan | Investigates and answers without writing changes |
 | Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
-Choose the mode with the badge below the composer, or press Shift+Tab in the
-chat box.
+Choose the mode with the badge below the composer, or press Shift+Tab while the
+chat box or the mode and effort badges have focus.
 
 ### Reasoning effort per message
 
