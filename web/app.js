@@ -1113,7 +1113,7 @@ async function activateAgent(provider, { persist = true } = {}) {
     if (chat.ready) store.set('noctua.chatDraft.' + chat.provider, $('#chat-input').value);
     chat.provider = provider;
     chat.ready = true;
-    renderChatEffort();
+    if (typeof renderChatEffort === 'function') renderChatEffort();
     chat.sentGraphKey = null; chat.sentNoteKey = null;
     $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
     toggleChatHistory(false);
@@ -1622,7 +1622,7 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, effort: chatEffort(), attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
+      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, effort: typeof chatEffort === 'function' ? chatEffort() : '', attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
