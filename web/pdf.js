@@ -1,5 +1,5 @@
 'use strict';
-const PDF={key:null,paper:null,page:1,scale:1.25,mode:'select',color:'#ffd400',annotations:[],selection:null,selected:null,token:0,dark:true};
+const PDF={key:null,paper:null,page:1,scale:1.25,fit:store.get('noctua.pdfFit')==='width',mode:'select',color:'#ffd400',annotations:[],selection:null,selected:null,token:0,dark:true};
 const pdfCategories={novelty:{label:'Novelty',color:'#ff6666'},method:{label:'Method',color:'#5fb236'},results:{label:'Results',color:'#a28ae5'},limitations:{label:'Limitations',color:'#ffd400'}};
 const pdfDefaultCategoryColors=Object.freeze(Object.fromEntries(Object.entries(pdfCategories).map(([key,value])=>[key,value.color])));
 const pdfDefaultColors=Object.freeze(['#ffd400','#5fb236','#2ea8e5','#e56eee','#a28ae5','#ff6666']);
@@ -292,26 +292,70 @@ function restorePDFZoomAnchor(anchor){
   scroll.scrollLeft+=page.left-outer.left+anchor.x*page.width-anchor.screenX;
   scroll.scrollTop+=page.top-outer.top+anchor.y*page.height-anchor.screenY;
 }
-async function zoomPDF(scale,anchor=pdfZoomAnchor()){
-  clearTimeout(pdfZoomTimer);pdfZoomTarget=null;
+async function zoomPDF(scale,anchor=pdfZoomAnchor(),{fit=false}={}){
+  clearTimeout(pdfZoomTimer);pdfZoomTarget=null;pdfZoomPreview=null;
+  if(!fit&&PDF.fit)setPDFFit(false,false);
   PDF.scale=Math.max(.4,Math.min(6,scale));await renderPDF(anchor);
 }
+// Scaled in place while zooming; see previewPDFZoom.
+let pdfZoomPreview=null;
 function schedulePDFZoom(scale,x,y){
   clearTimeout(pdfZoomTimer);pdfZoomTarget=Math.max(.4,Math.min(6,scale));
-  const anchor=pdfZoomAnchor(x,y),key=PDF.key,page=PDF.page;
-  pdfZoomTimer=setTimeout(()=>{const target=pdfZoomTarget;pdfZoomTarget=null;if(key===PDF.key&&page===PDF.page&&target!==null)zoomPDF(target,anchor).catch(e=>toast(e.message));},100);
+  if(typeof previewPDFZoom==='function')previewPDFZoom(pdfZoomTarget,x,y);
+  const anchor=pdfZoomPreview?.anchor||pdfZoomAnchor(x,y),key=PDF.key,page=PDF.page;
+  pdfZoomTimer=setTimeout(()=>{const target=pdfZoomTarget;pdfZoomTarget=null;pdfZoomPreview=null;if(key===PDF.key&&page===PDF.page&&target!==null)zoomPDF(target,anchor).catch(e=>toast(e.message));},180);
 }
 function pdfWheelZoom(event){
   if(!PDF.doc||!event.ctrlKey)return;
   event.preventDefault();if(pdfGestureStart!==null)return;
   const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?300:1);
-  schedulePDFZoom((pdfZoomTarget ?? PDF.scale)*Math.exp(-Math.max(-100,Math.min(100,delta))*.005),event.clientX,event.clientY);
+  // About 12% per mouse-wheel notch; trackpads zoom continuously.
+  schedulePDFZoom((pdfZoomTarget ?? PDF.scale)*Math.exp(-Math.max(-100,Math.min(100,delta))*.0012),event.clientX,event.clientY);
 }
+
 const pdfZoomStage=$('#pdf-stage');
 pdfZoomStage.addEventListener('wheel',pdfWheelZoom,{passive:false});
 pdfZoomStage.addEventListener('gesturestart',event=>{if(!PDF.doc)return;event.preventDefault();pdfGestureStart=PDF.scale;},{passive:false});
 pdfZoomStage.addEventListener('gesturechange',event=>{if(pdfGestureStart===null)return;event.preventDefault();schedulePDFZoom(pdfGestureStart*event.scale,event.clientX,event.clientY);},{passive:false});
 pdfZoomStage.addEventListener('gestureend',event=>{if(pdfGestureStart===null)return;event.preventDefault();pdfGestureStart=null;},{passive:false});
+// While zooming, the rendered pages are scaled in place around the pointer
+// (eased between wheel steps); pages re-render sharply once zooming pauses.
+function previewPDFZoom(scale,x,y){
+  const doc=$('#pdf-stage .pdf-document'),scroll=$('#pdf-stage .pdf-scroll');if(!doc||!scroll)return;
+  if(!pdfZoomPreview){
+    const box=doc.getBoundingClientRect(),outer=scroll.getBoundingClientRect();
+    const px=Number.isFinite(x)?x:outer.left+outer.width/2,py=Number.isFinite(y)?y:outer.top+outer.height/2;
+    pdfZoomPreview={anchor:pdfZoomAnchor(px,py)};
+    doc.style.transformOrigin=`${px-box.left}px ${py-box.top}px`;
+    doc.style.transition='transform 90ms ease-out';
+  }
+  doc.style.transform=`scale(${scale/PDF.scale})`;
+  const level=$('#pdf-stage .pdf-zoom-level');if(level)level.textContent=Math.round(scale*100)+'%';
+}
+// Fit width: the widest page fills the reading area, following window, pane
+// and split-view resizes. Zooming by hand turns it off.
+function pdfFitScale(sizes){
+  const scroll=$('#pdf-stage .pdf-scroll');if(!scroll||!sizes?.length)return null;
+  const style=getComputedStyle(scroll),room=scroll.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+  const widest=Math.max(...sizes.map(s=>s.width));
+  return room>50&&widest>0?Math.max(.4,Math.min(6,room/widest)):null;
+}
+function setPDFFit(on,apply=true){
+  PDF.fit=on;store.set('noctua.pdfFit',on?'width':'');
+  $('#pdf-stage [data-fit]')?.setAttribute('aria-pressed',String(on));
+  if(on&&apply&&PDF.doc)refitPDF(true);
+}
+let pdfFitTimer=null;
+function refitPDF(now=false){
+  clearTimeout(pdfFitTimer);
+  pdfFitTimer=setTimeout(async()=>{
+    if(!PDF.fit||!PDF.doc||!document.body.classList.contains('pdf-mode'))return;
+    const scale=pdfFitScale(await pdfPageLayout(PDF.doc));
+    if(scale&&Math.abs(scale-PDF.scale)>.005)zoomPDF(scale,pdfZoomAnchor(),{fit:true}).catch(e=>toast(e.message));
+  },now?0:120);
+}
+window.addEventListener('resize',()=>refitPDF());
+document.addEventListener('noctua-split-change',()=>refitPDF());
 let pdfDensityTimer=null;
 function pdfDensityChanged(){
   clearTimeout(pdfDensityTimer);
@@ -441,6 +485,7 @@ async function renderPDF(anchor=null){
         <button data-zoom="-" title="Zoom out" data-icon="zoom-out" aria-label="Zoom out" data-icon-only></button>
         <span class="pdf-zoom-level" aria-label="PDF zoom">${Math.round(PDF.scale*100)}%</span>
         <button data-zoom="+" title="Zoom in" data-icon="zoom-in" aria-label="Zoom in" data-icon-only></button>
+        <button data-fit title="Fit to width (follows the window and split view)" data-icon="move-horizontal" aria-label="Fit to width" aria-pressed="${PDF.fit}" data-icon-only></button>
       </div>
       <div class="pdf-tool-group" role="group" aria-label="Annotation tools">
         <button data-tool="select" title="Select text" data-icon="type" aria-label="Select text" aria-pressed="${PDF.mode==='select'}" data-icon-only></button>
@@ -471,7 +516,7 @@ async function renderPDF(anchor=null){
   const pageInput=stage.querySelector('[data-page]');sizePDFPageInput(pageInput);
   pageInput.oninput=()=>sizePDFPageInput(pageInput);pageInput.onchange=e=>pdfNavigate(+e.target.value);
   on('[data-new-note]',()=>{stage.querySelector('.pdf-more-menu').open=false;return createNoteIn(N.target,{beside:true});});
-  on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));
+  on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));on('[data-fit]',()=>setPDFFit(!PDF.fit));
   on('[data-auto-highlight]',autoHighlightPDF);on('[data-split]',()=>setSplitView(!document.body.classList.contains('split-view')));updatePDFAutoHighlightUI();
   on('[data-highlight]',()=>addPDFAnnotation('highlight'));on('[data-comment]',()=>addPDFAnnotation(PDF.selection?'highlight':'comment'));
   const closeMenus=()=>stage.querySelectorAll('.pdf-toolbar details[open]').forEach(menu=>menu.open=false);
@@ -493,7 +538,9 @@ async function renderPDF(anchor=null){
     menu.addEventListener('toggle',()=>{if(menu.open)stage.querySelectorAll('.pdf-toolbar details[open]').forEach(other=>{if(other!==menu)other.open=false;});});
     menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;menu.querySelector('summary').focus();}});
   });
-  const doc=PDF.doc,scale=PDF.scale,sizes=await pdfPageLayout(doc);if(token!==PDF.token)return;
+  const doc=PDF.doc,sizes=await pdfPageLayout(doc);if(token!==PDF.token)return;
+  if(PDF.fit){const fit=pdfFitScale(sizes);if(fit){PDF.scale=fit;const level=stage.querySelector('.pdf-zoom-level');if(level)level.textContent=Math.round(fit*100)+'%';}}
+  const scale=PDF.scale;
   pdfRenderDensity=pdfPixelDensity();
   const container=stage.querySelector('.pdf-document');
   pdfPageEntries=sizes.map((size,i)=>{

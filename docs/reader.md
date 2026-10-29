@@ -9,6 +9,13 @@ and the **Outline** sidebar. Zoom and page colors can be adjusted independently
 of the app's appearance. Pages are redrawn at each zoom level and at least twice
 the screen's resolution, so text stays sharp on standard and scaled displays.
 
+**Fit to width** (the double-arrow button beside the zoom controls) makes the
+pages fill the reading area and keeps them fitted as you resize the window,
+show or hide the side panes, or open and drag the note beside the paper; the
+choice is remembered. Zooming by hand turns it off. Ctrl+scroll (or a trackpad
+pinch) zooms smoothly around the pointer: the pages scale immediately and are
+redrawn sharply once you pause.
+
 To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
 The matching local PDF is required. Imported highlights, comments, area/text
 annotations, and drawings appear in the Reader; underlines display as highlights.
