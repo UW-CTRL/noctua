@@ -21,7 +21,7 @@ The preamble applies to the entire note. It supports custom commands (`\newcomma
 
 ### Images, videos, and figures
 
-Images use `\includegraphics[width=0.6\textwidth]{media/example.png}`. Local videos use Noctua's `\includevideo[width=0.6\textwidth]{media/example.mp4}`. Existing `images/` paths are valid. Managed project media can use `files/FILE_ID`. Preserve real paths and IDs; do not invent attachments. Figures support captions, labels, and side-by-side subfigures.
+Images (PNG, JPEG, GIF, WebP or SVG) use `\includegraphics[width=0.6\textwidth]{media/example.png}`. Local videos use Noctua's `\includevideo[width=0.6\textwidth]{media/example.mp4}`. Existing `images/` paths are valid. Managed project media can use `files/FILE_ID`. Preserve real paths and IDs; do not invent attachments. Figures support captions, labels, and side-by-side subfigures.
 
 A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be sharing links, Shorts, live links, and start timestamps are supported. `\href{URL}{Title}` produces a text link rather than a player. Local video playback is Noctua-specific, not standard LaTeX export behavior.
 

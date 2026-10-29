@@ -185,7 +185,10 @@ The [transcription prompt](../src/prompts/handwriting.md) specifies supported
 LaTeX and how diagrams are represented. See
 [AI prompts](assistant.md#dedicated-ai-features) for the task's input and output.
 
-Paste or drop images and videos, or choose **Image / Video** between blocks. With
+Paste or drop images (PNG, JPEG, GIF, WebP, or SVG) and videos, or choose
+**Image / Video** between blocks. SVG images, including SVG project files placed
+with `\includegraphics{files/…}`, are displayed as pictures; any scripts they
+contain do not run. With
 the note open beside a paper, you can also drag quotes and figures in from the PDF;
 see [Take notes beside the paper](reader.md#take-notes-beside-the-paper).
 Media supports captions, labels, and side-by-side layouts. A YouTube URL alone

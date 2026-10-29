@@ -10,7 +10,25 @@ use crate::{ApiResult, Shared};
 
 const MAX_BYTES: usize = 512 << 20;
 
+/// SVG is text: skip a BOM, whitespace, an XML declaration, comments and a
+/// doctype, then require the root `<svg` element.
+fn is_svg(b: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(&b[..b.len().min(4096)]).or_else(|e| std::str::from_utf8(&b[..e.valid_up_to()])) else { return false };
+    let mut rest = text.trim_start_matches('\u{feff}');
+    loop {
+        rest = rest.trim_start();
+        let skip = |rest: &str, open: &str, close: &str| rest.strip_prefix(open).and_then(|r| r.find(close).map(|i| r[i + close.len()..].to_owned()));
+        if let Some(r) = skip(rest, "<?xml", "?>").or_else(|| skip(rest, "<!--", "-->")).or_else(|| skip(rest, "<!DOCTYPE", ">")) {
+            let start = text.len() - r.len();
+            rest = &text[start..];
+            continue;
+        }
+        return rest.starts_with("<svg") && rest[4..].starts_with(|c: char| c.is_whitespace() || c == '>');
+    }
+}
+
 fn identify(b: &[u8]) -> Option<&'static str> {
+    if is_svg(b) { return Some("svg"); }
     if b.starts_with(b"\x89PNG\r\n\x1a\n") { return Some("png"); }
     if b.starts_with(b"\xff\xd8\xff") { return Some("jpg"); }
     if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") { return Some("gif"); }
@@ -29,7 +47,7 @@ pub(crate) fn path(root: &std::path::Path, folder: &str, file: &str) -> Result<(
     let (stem, ext) = file.rsplit_once('.').context("invalid media filename")?;
     if stem.len() != 64 || !stem.bytes().all(|b| b.is_ascii_hexdigit()) { bail!("invalid media filename"); }
     let mime = match ext {
-        "png" => "image/png", "jpg" => "image/jpeg", "gif" => "image/gif", "webp" => "image/webp",
+        "png" => "image/png", "jpg" => "image/jpeg", "gif" => "image/gif", "webp" => "image/webp", "svg" => "image/svg+xml",
         "mp4" => "video/mp4", "mov" => "video/quicktime", "webm" => "video/webm", _ => bail!("unsupported media"),
     };
     Ok((root.join(folder).join("media").join(file), mime))
@@ -38,6 +56,17 @@ pub(crate) fn path(root: &std::path::Path, folder: &str, file: &str) -> Result<(
 // Also cleans up if the request future is cancelled mid-upload.
 struct Temporary(PathBuf);
 impl Drop for Temporary { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
+
+/// Stores generated media (such as a diagram) and returns its note path.
+pub(crate) fn save(root: &std::path::Path, folder: &str, bytes: &[u8]) -> Result<String> {
+    crate::notes::check_id(folder)?;
+    let ext = identify(bytes).context("unsupported media")?;
+    let dir = root.join(folder).join("media");
+    std::fs::create_dir_all(&dir)?;
+    let file = format!("{:x}.{ext}", Sha256::digest(bytes));
+    crate::notes::write_atomic(&dir.join(&file), std::str::from_utf8(bytes).context("generated media must be text")?)?;
+    Ok(format!("media/{file}"))
+}
 
 pub(crate) async fn upload(State(app): Shared, Path(target): Path<String>, body: Body) -> ApiResult {
     let folder = app.library.folder_id(&target)?;
@@ -59,8 +88,8 @@ pub(crate) async fn upload(State(app): Shared, Path(target): Path<String>, body:
         hash.update(&chunk);
         output.write_all(&chunk).await?;
     }
-    let ext = identify(&head).ok_or_else(|| crate::Status(StatusCode::BAD_REQUEST, "Use PNG, JPEG, GIF, WebP, MP4, MOV or WebM media".into()))?;
-    if ["png", "jpg", "gif", "webp"].contains(&ext) && size > 32 << 20 {
+    let ext = identify(&head).ok_or_else(|| crate::Status(StatusCode::BAD_REQUEST, "Use PNG, JPEG, GIF, WebP, SVG, MP4, MOV or WebM media".into()))?;
+    if ["png", "jpg", "gif", "webp", "svg"].contains(&ext) && size > 32 << 20 {
         return Err(crate::Status(StatusCode::PAYLOAD_TOO_LARGE, "Images must be at most 32 MB".into()).into());
     }
     output.flush().await?;
@@ -93,6 +122,8 @@ pub(crate) async fn serve(path:PathBuf,mime:&'static str,headers:HeaderMap)->Res
     let Ok(meta) = file.metadata().await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     let size = meta.len();
     let mut builder = Response::builder().header("Content-Type", mime).header("X-Content-Type-Options", "nosniff")
+        // Opened directly, an SVG would run as a page; sandbox it like project files.
+        .header("Content-Security-Policy", "sandbox")
         .header("Accept-Ranges", "bytes").header("Cache-Control", "max-age=31536000, immutable");
     let (start, length) = if let Some(value) = headers.get("range") {
         let Some((start, end)) = value.to_str().ok().and_then(|v| range(v, size)) else {
@@ -131,6 +162,10 @@ mod tests {
         assert_eq!(identify(b"\0\0\0\x18ftypmp42"), Some("mp4"));
         assert_eq!(identify(b"\0\0\0\x18ftypavif"), None);
         assert_eq!(identify(b"<script>alert(1)</script>"), None);
+        assert_eq!(identify(b"\xef\xbb\xbf<?xml version=\"1.0\"?>\n<!-- d -->\n<!DOCTYPE svg>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>"), Some("svg"));
+        assert_eq!(identify(b"<svgx/>"), None);
+        assert_eq!(identify(b"<html><svg></svg></html>"), None);
+        assert_eq!(path(std::path::Path::new("/tmp"), "folder", &format!("{}.svg", "a".repeat(64))).unwrap().1, "image/svg+xml");
         assert!(path(std::path::Path::new("/tmp"), "../outside", &format!("{}.mp4", "a".repeat(64))).is_err());
         assert!(path(std::path::Path::new("/tmp"), "folder", "../secret.mp4").is_err());
     }
