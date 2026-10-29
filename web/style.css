@@ -567,6 +567,8 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 .chat-mode[data-mode="suggest"] { color: var(--accent); border-color: var(--accent); }
 .chat-mode[data-mode="plan"] { color: var(--muted); }
 .chat-mode[data-mode="direct"] { color: #fff; background: var(--cite); border-color: var(--cite); }
+.chat-effort { color: var(--muted); }
+.chat-effort:not([data-effort="default"]) { color: var(--ink); border-color: var(--muted); }
 
 .note-meta a { color: var(--np-link); }
 

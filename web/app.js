@@ -1113,6 +1113,7 @@ async function activateAgent(provider, { persist = true } = {}) {
     if (chat.ready) store.set('noctua.chatDraft.' + chat.provider, $('#chat-input').value);
     chat.provider = provider;
     chat.ready = true;
+    renderChatEffort();
     chat.sentGraphKey = null; chat.sentNoteKey = null;
     $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
     toggleChatHistory(false);
@@ -1164,6 +1165,37 @@ function setChatMode(mode) {
 function cycleChatMode() {
   const order = Object.keys(CHAT_MODES);
   setChatMode(order[(order.indexOf(chat.mode) + 1) % order.length]);
+}
+
+// Reasoning effort for the next messages, per provider; '' follows the saved
+// setting in Settings → Research assistant.
+const effortLabel = (id) => ({ xhigh: 'Extra high' })[id] || id[0].toUpperCase() + id.slice(1);
+function savedAssistantOptions() {
+  return (typeof settings !== 'undefined' && settings?.assistant?.[chat.provider]) || {};
+}
+function chatEfforts() {
+  return ['', ...(typeof assistantEfforts === 'function' ? assistantEfforts(chat.provider, savedAssistantOptions().model) : [])];
+}
+function chatEffort() {
+  const effort = store.get('noctua.chatEffort.' + chat.provider) || '';
+  return chatEfforts().includes(effort) ? effort : '';
+}
+function renderChatEffort() {
+  const b = $('#chat-effort');
+  if (!b) return;
+  const effort = chatEffort(), saved = savedAssistantOptions().reasoning;
+  b.textContent = effort ? `${effortLabel(effort)} effort` : 'Default effort';
+  b.dataset.effort = effort || 'default';
+  b.title = `Reasoning effort for your next messages: ${effort ? effortLabel(effort) : `saved setting${saved ? ` (${effortLabel(saved)})` : ''}`}. Click, or press Shift+← / Shift+→ in an empty chat box, to change.`;
+}
+function setChatEffort(effort) {
+  store.set('noctua.chatEffort.' + chat.provider, effort);
+  renderChatEffort();
+}
+// Click cycles through the levels; Shift+arrows step down or up and stop at the ends.
+function stepChatEffort(delta, wrap = false) {
+  const levels = chatEfforts(), i = levels.indexOf(chatEffort()) + delta;
+  setChatEffort(levels[wrap ? (i + levels.length) % levels.length : Math.max(0, Math.min(levels.length - 1, i))]);
 }
 
 const TOOL_LABEL = {
@@ -1590,7 +1622,7 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
+      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, effort: chatEffort(), attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
@@ -2252,12 +2284,19 @@ $('#chat-font-larger').addEventListener('click', () => NoctuaFonts.setChatSize(N
 document.addEventListener('noctua-chat-text-change', syncChatFontSize);
 syncChatFontSize();
 $('#chat-mode').addEventListener('click', cycleChatMode);
+$('#chat-effort').addEventListener('click', () => stepChatEffort(1, true));
 $('#chat-input').addEventListener('keydown', (e) => {
   if (window.NoctuaSkillPicker?.key(e)) return;
   if (mentionKey(e)) return;  // @-mention popup open
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();
     cycleChatMode();
+    return;
+  }
+  // With text in the box, Shift+arrows keep selecting it.
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.target.value) {
+    e.preventDefault();
+    stepChatEffort(e.key === 'ArrowRight' ? 1 : -1);
     return;
   }
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

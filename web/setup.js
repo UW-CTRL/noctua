@@ -907,6 +907,7 @@ function openSetup({ firstRun = false, tab } = {}) {
       const effort = $('#setup-reasoning').value;
       if (!catalog.error) {
         modelCatalogs[provider] = catalog.models;
+        if (typeof renderChatEffort === 'function') renderChatEffort();
         ASSISTANT_MODELS[provider] = catalog.models.map((m) => [m.id, m.label || m.id]);
       } else if (modelCatalogs[provider] === null) {
         modelCatalogs[provider] = [];
@@ -1209,6 +1210,7 @@ function openSetup({ firstRun = false, tab } = {}) {
         await api('/api/settings/agent', { provider, options });
         settings.assistant ||= {};
         settings.assistant[provider] = options;
+        if (typeof renderChatEffort === 'function') renderChatEffort();
         msg(section, 'Saved. Applies to the next request.', true);
       } catch (err) { msg(section, err.message); }
       finally {
@@ -1278,6 +1280,7 @@ function renderKeyBanner() {
 
 async function loadSettings() {
   settings = await api('/api/settings');
+  if (typeof renderChatEffort === 'function') renderChatEffort();
   applyPDFHighlightColors(settings.highlight_colors,settings.highlight_palette);
   return settings;
 }

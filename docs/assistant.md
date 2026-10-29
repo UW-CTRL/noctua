@@ -39,7 +39,17 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 | Plan | Investigates and answers without writing changes |
 | Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
-Choose the mode with the badge below the composer.
+Choose the mode with the badge below the composer, or press Shift+Tab in the
+chat box.
+
+### Reasoning effort per message
+
+The **effort** badge beside the mode sets the reasoning effort for your next
+messages: **Default effort** uses the level saved in **Settings → Research
+assistant**, and the other levels are those the selected model supports. Click
+the badge to cycle, or press Shift+← / Shift+→ while the chat box is empty to
+step down or up (with text in the box, these keys select text as usual). The
+choice is remembered per provider on this device.
 
 ## Chat attachments
 
