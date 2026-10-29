@@ -5,7 +5,9 @@
 //! Also turns handwriting (a PNG) into LaTeX with the selected CLI backend.
 
 use std::{
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -16,6 +18,11 @@ use crate::{agent::{self, Provider}, App};
 
 pub struct Notes {
     pub(crate) root: PathBuf,
+}
+
+fn seen_versions() -> &'static Mutex<HashMap<String, VecDeque<Value>>> {
+    static SEEN: OnceLock<Mutex<HashMap<String, VecDeque<Value>>>> = OnceLock::new();
+    SEEN.get_or_init(Default::default)
 }
 
 fn now_ms() -> u64 {
@@ -83,10 +90,41 @@ impl Notes {
 
     pub fn get(&self, folder: &str, id: &str) -> Result<Option<Value>> {
         match std::fs::read_to_string(self.path(folder, id)?) {
-            Ok(s) => Ok(Some(serde_json::from_str(&s)?)),
+            Ok(s) => {
+                let doc: Value = serde_json::from_str(&s)?;
+                self.remember(folder, id, &doc);
+                Ok(Some(doc))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Keeps recent versions handed to readers (session only), so an edit
+    /// based on one can still be checked block by block after later saves.
+    pub fn remember(&self, folder: &str, id: &str, doc: &Value) {
+        let Some(updated) = doc["updated"].as_u64() else { return };
+        let key = format!("{}:{folder}:{id}", self.root.display());
+        let mut seen = seen_versions().lock().unwrap();
+        if seen.len() >= 256 && !seen.contains_key(&key) {
+            if let Some(old) = seen.keys().next().cloned() {
+                seen.remove(&old);
+            }
+        }
+        let versions = seen.entry(key).or_default();
+        if versions.iter().any(|d| d["updated"].as_u64() == Some(updated)) {
+            return;
+        }
+        versions.push_back(doc.clone());
+        while versions.len() > 16 {
+            versions.pop_front();
+        }
+    }
+
+    /// A version previously returned by `get` or recorded with `remember`.
+    pub fn version(&self, folder: &str, id: &str, updated: u64) -> Option<Value> {
+        let key = format!("{}:{folder}:{id}", self.root.display());
+        seen_versions().lock().unwrap().get(&key)?.iter().find(|d| d["updated"].as_u64() == Some(updated)).cloned()
     }
 
     pub fn create(&self, folder: &str, title: &str) -> Result<Value> {

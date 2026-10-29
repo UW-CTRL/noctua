@@ -201,6 +201,7 @@ function chooseLocalDraft(candidates) {
 
 async function showNote(doc) {
   if (window.noctuaServer) await window.noctuaServer;
+  const server = doc;
   let recovered = false, conflict = false;
   N.draftSource = null; N.draftError = null;
   try {
@@ -219,6 +220,7 @@ async function showNote(doc) {
 
   if (N.doc?.id !== doc.id) { N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
+  N.base = conflict ? null : clone(server);  // the server copy local edits start from
   rememberWorkspaceView();
   store.set('noctua.openFile.'+N.target,'');
   W.file=null;
@@ -301,6 +303,7 @@ async function saveNow() {
   const historyFrames=NoteUndo.frames.splice(0);
   NoteUndo.group=null;
   let failed = false;
+  const sent = JSON.stringify(doc);
   try {
     const r = await fetch(`/api/notes/${enc(target)}/${enc(doc.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...doc,_history:historyFrames}),
@@ -309,6 +312,7 @@ async function saveNow() {
     if (r.status === 409 && N.doc === doc) {
       NoteUndo.frames.unshift(...historyFrames);
       N.dirty = true;
+      if (await mergeLatestNote(target, doc)) return;
       N.conflict = true;
       showConflict();
       return;
@@ -322,6 +326,7 @@ async function saveNow() {
       }
     } catch { toast('Server saved; local draft cleanup failed.', {error:true}); }
     doc.updated = j.updated;
+    if (N.doc === doc) N.base = { ...JSON.parse(sent), updated: j.updated };
     if (N.dirty && N.doc === doc) persistNoteDraft(target, doc);
     const entry = N.list.find((n) => n.id === doc.id);
     if (entry) { entry.updated = j.updated; entry.title = doc.title; }
@@ -344,6 +349,58 @@ async function saveNow() {
     clearTimeout(N.saveTimer);
     N.saveTimer = setTimeout(saveNow, failed ? 3000 : 800);
   }
+}
+
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Folds unsaved local edits into a newer server copy (usually an assistant
+// edit) when the two changed different blocks. Returns false, leaving the note
+// untouched, if both changed the same block, title or preamble, or if local
+// edits added, removed or reordered blocks.
+function mergeServerNote(server) {
+  const base = N.base, local = N.doc;
+  if (!base || !local || base.id !== server.id || local.id !== server.id) return false;
+  for (const pad of N.pads.values()) pad.finish();  // keep a stroke in progress
+  const ids = (d) => d.blocks.map((b) => b.id).join('\n');
+  if (ids(local) !== ids(base)) return false;
+  const was = new Map(base.blocks.map((b) => [b.id, b]));
+  const now = new Map(server.blocks.map((b) => [b.id, b]));
+  const mine = new Map(local.blocks.filter((b) => !sameJSON(b, was.get(b.id))).map((b) => [b.id, b]));
+  for (const id of mine.keys()) if (!sameJSON(now.get(id), was.get(id))) return false;
+  const merged = clone(server);
+  for (const f of ['title', 'preamble']) {
+    if ((local[f] || '') === (base[f] || '')) continue;
+    if ((server[f] || '') !== (base[f] || '')) return false;
+    merged[f] = local[f];
+  }
+  merged.blocks = merged.blocks.map((b) => mine.has(b.id) ? clone(mine.get(b.id)) : b);
+  // Re-render around the writer: keep the open block, title caret and place.
+  const active = document.activeElement, editing = N.editing;
+  const caret = active?.matches?.('textarea') ? [active.selectionStart, active.selectionEnd] : null;
+  const onTitle = active?.classList?.contains('note-title');
+  N.base = clone(server);
+  N.doc = merged;
+  N.editing = null;
+  NoteUndo.frames = []; NoteUndo.last = noteSnapshot(); NoteUndo.group = null;
+  renderEditor();
+  const field = onTitle ? $('#notes-stage .note-title') : editing && merged.blocks.some((b) => b.id === editing && b.type === 'text') ? (startEdit(editing), document.querySelector(`.nb[data-id="${editing}"] textarea`)) : null;
+  if (field && caret) { field.focus({ preventScroll: true }); field.setSelectionRange(...caret); }
+  const entry = N.list.find((n) => n.id === merged.id);
+  if (entry) { entry.title = merged.title; entry.updated = merged.updated; }
+  renderNoteList();
+  N.dirty = true;
+  persistNoteDraft();
+  clearTimeout(N.saveTimer);
+  N.saveTimer = setTimeout(saveNow, 300);
+  return true;
+}
+
+async function mergeLatestNote(target, doc) {
+  try {
+    const server = await api(`/api/notes/${enc(target)}/${enc(doc.id)}`);
+    return N.doc === doc && N.target === target && server.updated > (N.base?.updated || 0) && mergeServerNote(server);
+  } catch { return false; }
 }
 
 // ---------------------------------------------------------------- citations

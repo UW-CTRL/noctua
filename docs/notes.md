@@ -182,8 +182,10 @@ titles, preambles, and block order. Restore trashed notes before editing them.
 Use **Suggest** to review proposals in **Assistant changes** below the project
 tree, **Plan** for read-only discussion, or **Direct** to save changes immediately
 with note-edit undo. Pending proposals remain available after restarting Noctua.
-If you edit a note while the assistant works, conflicting changes are preserved
-for you to resolve. See [proposal review](assistant.md#assistant-reads-and-review).
+You can keep writing while the assistant works: its edits and yours combine when
+they touch different blocks. If both change the same block, title or preamble
+(or you add, remove or reorder blocks before your changes save), the assistant
+is asked to read the note again, or your changes are preserved for you to resolve. See [proposal review](assistant.md#assistant-reads-and-review).
 
 Chat can inspect saved drawings; keep a Noctua chat tab open when a preview is
 needed. The drawing pad's TeX action performs separate handwriting transcription.

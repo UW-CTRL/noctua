@@ -109,7 +109,7 @@ pub fn catalog(list: &mut Value) {
                 props.get_mut("edits").unwrap()["items"]["properties"]["after_block_id"] = json!({"type":"string","description":"For move: destination block ID, empty for first"});
                 props.get_mut("edits").unwrap()["items"]["additionalProperties"] = json!(false);
                 t["inputSchema"]["required"] = json!(["folder_id", "note_id", "updated"]);
-                t["description"]=json!("Apply targeted block edits and/or title/preamble with updated from read_note. replace/delete/move require block_id; insert_after may omit it for first. move requires after_block_id (empty for first). Replacing ink preserves it and inserts text below. Direct persists atomically before applied; Suggest stores a durable proposal for app review. Unknown blocks and stale versions fail.");
+                t["description"]=json!("Apply targeted block edits and/or title/preamble with updated from read_note. replace/delete/move require block_id; insert_after may omit it for first. move requires after_block_id (empty for first). Replacing ink preserves it and inserts text below. Direct persists atomically before applied; Suggest stores a durable proposal for app review. Unknown blocks fail. After a newer save, edits still apply if the blocks, title or preamble they touch are unchanged since that read; otherwise read again.");
             }
             "save_to_library" => {
                 props.insert("download_pdf".into(), json!({"type":"boolean","description":"Defaults to true. Set false to save metadata/membership without attempting a PDF download."}));
@@ -177,7 +177,7 @@ pub fn catalog(list: &mut Value) {
             ("limit","Maximum items in a result page; inspect has_more and continuation fields."),
             ("char_offset","Zero-based Unicode character offset within the current text, PDF page, or note block."),
             ("max_chars","Maximum Unicode characters per text range; use continuation metadata to read the remainder."),
-            ("updated","Saved note version from read_note. Required for edits; stale versions are rejected."),
+            ("updated","Saved note version from read_note. Required for edits; edits conflict only where that version differs from the latest save."),
             ("revision","Workspace version from list_project_files/read_project_file. Stale versions are rejected."),
         ] {
             if let Some(property)=props.get_mut(field){property["description"]=json!(description);}

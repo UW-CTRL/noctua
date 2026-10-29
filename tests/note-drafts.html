@@ -47,7 +47,22 @@
  assert(N.conflict&&N.dirty&&!rendered,'reload overwrote input typed during the request');
  assert(N.doc.blocks[0].src==='Typed after clicking reload','new input was replaced');
  window.fetch=realFetch;clearTimeout(N.saveTimer);
- const message='PASS: edits during save, base-version recovery, quota plus disconnection, failed deletion, and reload conflict race';
+
+ // Typing in one block while the assistant edits another merges both.
+ const clone=v=>JSON.parse(JSON.stringify(v));let renders=0;window.renderEditor=()=>renders++;window.renderNoteList=()=>{};window.startEdit=()=>{};window.noteSnapshot=()=>clone(N.doc);
+ N.pads=new Map();N.editing=null;N.conflict=false;N.dirty=true;
+ N.base={id:'note',title:'Draft',updated:20,blocks:[{id:'a',type:'text',src:'mine'},{id:'b',type:'text',src:'theirs'}]};
+ N.doc=clone(N.base);N.doc.blocks[0].src='mine, edited';
+ const agent={...clone(N.base),updated:21};agent.blocks[1].src='assistant edit';agent.blocks.push({id:'c',type:'text',src:'assistant block'});
+ assert(mergeServerNote(agent),'disjoint edits did not merge');clearTimeout(N.saveTimer);
+ assert(N.doc.updated===21&&N.doc.blocks.map(b=>b.src).join('|')==='mine, edited|assistant edit|assistant block','merge lost an edit');
+ assert(N.dirty&&N.base.updated===21&&renders===1,'merged note is not queued for saving');
+ const clash={...clone(N.base),updated:22};clash.blocks[0].src='assistant rewrote mine';
+ const before=JSON.stringify(N.doc);
+ assert(!mergeServerNote(clash)&&JSON.stringify(N.doc)===before,'overlapping edits merged or changed the note');
+ N.doc.blocks.push({id:'d',type:'text',src:'new local block'});
+ assert(!mergeServerNote({...clone(N.base),updated:23,title:'Renamed'}),'local block structure changes are merged');
+ const message='PASS: edits during save, base-version recovery, quota plus disconnection, failed deletion, reload conflict race, and block-level merges with assistant edits';
  $('#result').textContent=message;window.webkit?.messageHandlers.result.postMessage(message);
 }catch(error){window.webkit?.messageHandlers.result.postMessage('FAIL: '+error.stack);}})();
 </script>

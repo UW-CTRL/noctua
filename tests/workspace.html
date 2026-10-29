@@ -130,7 +130,7 @@ function assert(ok,message){if(!ok)throw Error(message)}
  // Assistant proposals use server persistence; local drafts survive background updates.
  const oldApi=api, saved={id:'agent-note',title:'Saved',updated:1,blocks:[{id:'b',type:'text',src:'source'}]};
  let accepted=0,proposalRejected=0,proposalState='proposed';
- window.showNote=doc=>{N.doc=doc;};window.showConflict=()=>{};
+ window.showNote=doc=>{N.doc=doc;};window.showConflict=()=>{};window.mergeServerNote=()=>false;
  N.target='L1';N.doc=clone(saved);N.dirty=false;N.saving=false;N.conflict=false;W.dirty=false;W.file=null;
  api=async(path,body)=>{
   if(path==='/api/agent-edits')return [{proposal_id:'proposal',tool:'edit_note',folder_id:'L1',status:proposalState}];

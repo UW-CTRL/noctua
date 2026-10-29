@@ -37,7 +37,7 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 | --- | --- |
 | Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization and downloads apply immediately. |
 | Plan | Investigates and answers without writing changes |
-| Direct | Saves supported changes before reporting completion; version checks protect concurrent edits and note edits can be undone |
+| Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
 Choose the mode with the badge below the composer.
 

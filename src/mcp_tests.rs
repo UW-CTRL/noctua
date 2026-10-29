@@ -865,3 +865,42 @@ async fn annotation_reply_views_share_bounded_text_and_geometry_options() -> Res
         .is_none());
     Ok(())
 }
+
+#[tokio::test]
+async fn note_edits_from_an_older_read_apply_when_their_blocks_are_unchanged() -> Result<()> {
+    let f = Fixture::new()?;
+    let mut doc = f.app.notes.create("L1", "Shared")?;
+    let id = doc["id"].as_str().unwrap().to_owned();
+    doc["blocks"] = json!([{"id":"a","type":"text","src":"assistant target"},{"id":"b","type":"text","src":"user target"}]);
+    f.app.notes.save("L1", &id, doc)?;
+    let read = mcp_value(&f, "read_note", json!({"folder_id":"L1","note_id":id}), "direct").await;
+    let seen = read["updated"].clone();
+    // The user keeps typing elsewhere in the note.
+    let mut mine = f.app.notes.get("L1", &id)?.unwrap();
+    mine["blocks"][1]["src"] = json!("user typing");
+    f.app.notes.save("L1", &id, mine.clone())?;
+    let edit = |block: &str, latex: &str| json!({"folder_id":"L1","note_id":id,"updated":seen,"edits":[{"op":"replace","block_id":block,"latex":latex}]});
+    let applied = mcp_value(&f, "edit_note", edit("a", "assistant edit"), "direct").await;
+    assert_eq!(applied["status"], "applied", "{applied}");
+    let now = f.app.notes.get("L1", &id)?.unwrap();
+    assert_eq!(now["blocks"][0]["src"], "assistant edit");
+    assert_eq!(now["blocks"][1]["src"], "user typing");
+    let clash = mcp_value(&f, "edit_note", edit("b", "overwrite"), "direct").await;
+    assert_eq!(clash["code"], "CONFLICT", "{clash}");
+    assert!(clash["message"].as_str().unwrap().contains("Block b"));
+    let inserted = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":seen,"edits":[{"op":"insert_after","block_id":"b","latex":"after the user's block"}]}), "direct").await;
+    assert_eq!(inserted["status"], "applied", "{inserted}");
+    let unknown = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":1,"title":"Never read"}), "direct").await;
+    assert_eq!(unknown["code"], "CONFLICT");
+    // A suggestion survives the user saving an unrelated block before Accept.
+    let current = mcp_value(&f, "read_note", json!({"folder_id":"L1","note_id":id}), "direct").await;
+    let proposal = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":current["updated"],"title":"Reviewed","edits":[{"op":"replace","block_id":"a","latex":"suggested"}]}), "suggest").await;
+    let mut later = f.app.notes.get("L1", &id)?.unwrap();
+    later["blocks"][1]["src"] = json!("more user typing");
+    f.app.notes.save("L1", &id, later)?;
+    let accepted = f.json(&format!("/api/agent-edits/{}", proposal["proposal_id"].as_str().unwrap()), Some(json!({"action":"accept"}))).await;
+    assert_eq!(accepted["status"], "applied", "{accepted}");
+    let now = f.app.notes.get("L1", &id)?.unwrap();
+    assert_eq!((now["title"].as_str(), now["blocks"][0]["src"].as_str(), now["blocks"][1]["src"].as_str()), (Some("Reviewed"), Some("suggested"), Some("more user typing")));
+    Ok(())
+}

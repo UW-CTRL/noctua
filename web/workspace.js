@@ -481,7 +481,8 @@ async function refreshAgentNote(a){
  if(N.target!==target)return;
  const active=!W.file&&N.doc?.id===id;
  if(active&&(N.dirty||N.saving)){
-  if(doc.updated>N.doc.updated){N.conflict=true;showConflict();}
+  // An in-flight save meets the newer copy as a 409 and merges there.
+  if(doc.updated>N.doc.updated&&!N.saving&&!N.conflict&&!mergeServerNote(doc)){N.conflict=true;showConflict();}
   return;
  }
  const entry=N.list.find(n=>n.id===id);if(entry){entry.title=doc.title;entry.updated=doc.updated;}
