@@ -112,6 +112,11 @@ assert($('.nb[data-id="tex"] [data-act="below"]')&&!$('.nb[data-id="after"] [dat
 await blockAction('tex','below');clearTimeout(N.saveTimer);N.dirty=false;
 assert(!$('.nb-pair')&&!N.doc.blocks[1].beside&&$('.nb[data-id="tex"] [data-act="beside"]'),'show below stacks the LaTeX under the drawing');
 $('#notes-stage').style.width='';
-window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, the shared collection tree, and LaTeX beside drawings');
+N.items=new Map([['k1',{key:'k1',title:'Analytical engines',creators:['Ada Lovelace','Charles Babbage'],year:1843,venue:'Notes'}]]);N.items.set('bibkey',N.items.get('k1'));
+N.doc.blocks=[{id:'c',type:'text',src:String.raw`See \cite{zz} and \citet{k1}, again \cite{bibkey}. % \cite{commented}`}];renderEditor();
+const refs=[...document.querySelectorAll('.note-references li')].map(li=>li.textContent);
+assert(refs.length===2&&refs[0].startsWith('Ada Lovelace and Charles Babbage (1843). Analytical engines.')&&refs[1].includes('zz')&&$('.note-references li a.cite[data-key="k1"]'),'cited papers are listed once below the note, by author: '+refs.join(' | '));
+N.doc.blocks=[{id:'c',type:'text',src:'No citations'}];renderEditor();assert(!$('.note-references'),'the list disappears without citations');
+window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, the shared collection tree, LaTeX beside drawings, and automatic references');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

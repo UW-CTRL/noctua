@@ -15,7 +15,7 @@ The preamble applies to the entire note. It supports custom commands (`\newcomma
 
 ### Citations and note links
 
-`\cite{PAPER_KEY}` cites a saved paper or an entry in an enabled project bibliography. Use actual citation keys, not Semantic Scholar IDs or invented keys. Imported bibliography entries need not have a corresponding Library paper or downloaded PDF.
+`\cite{PAPER_KEY}` cites a saved paper or an entry in an enabled project bibliography. Use actual citation keys, not Semantic Scholar IDs or invented keys. Imported bibliography entries need not have a corresponding Library paper or downloaded PDF. Noctua lists every cited paper under an automatic References section below the note, so do not write a reference list by hand.
 
 `\noteref{NOTE_ID}` links to a note by its stable ID and displays its current title. A project tree's display name can differ from the note's document title.
 

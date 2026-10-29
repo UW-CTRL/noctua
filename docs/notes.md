@@ -159,6 +159,14 @@ Use `\label`, `\ref`, and `\eqref` to link within a note. Type `\cite{` to pick
 a paper from the collection or an automatically indexed project bibliography, or `[[` to link another note. The gear at the far right of the note header
 opens a preamble for shared commands and page layout.
 
+Citations appear as author and year, such as (Daniel et al. 2026), and resolve
+against your whole library, not only the note's collection. Click a citation to
+open the paper's PDF in the Reader with the note beside it; ⌘-click (Ctrl-click
+on Windows/Linux), or a paper without a PDF, shows its details instead. Every
+cited paper is listed automatically under **References** at the bottom of the
+note, by first author; entries open the same way, and keys that match nothing
+are flagged.
+
 This is not a full TeX installation: arbitrary packages and TikZ are unsupported.
 Chat Markdown and Mermaid use a separate renderer.
 

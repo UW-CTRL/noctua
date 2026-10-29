@@ -95,9 +95,11 @@ async function loadNoteFolder(target) {
   if (typeof selectCollection === 'function') selectCollection(target);
   N.items = new Map();
   try {
-    const [list, items] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`)]);
+    // Citations resolve against the whole library; the collection's own items
+    // (including project bibliography keys) take precedence.
+    const [list, items, all] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`), target === 'L1' ? [] : api('/api/library/items?target=L1').catch(() => [])]);
     N.list = list;
-    for (const it of items) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
+    for (const it of [...all, ...items]) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
   } catch (e) {
     N.list = [];
     toast(e.message, { error: true });
@@ -433,7 +435,7 @@ function citeHtml(keys, { textual, note }) {
     const who = it.creators?.length > 2 ? `${last} et al.` : it.creators?.length === 2 ? `${last} and ${it.creators[1].trim().split(/\s+/).pop()}` : last;
     return { key: k, who: esc(who), year: esc(it.year ?? 'n.d.') };
   });
-  const link = (p, text) => p.key ? `<a class="cite" data-key="${esc(p.key)}" title="${esc(N.items.get(p.key).title || '')}">${text}</a>` : p.html;
+  const link = (p, text) => p.key ? `<a class="cite" data-key="${esc(p.key)}" title="${esc(N.items.get(p.key).title || '')}${N.items.get(p.key).has_pdf ? ' (click to read it beside this note)' : ''}">${text}</a>` : p.html;
   const tail = note ? `, ${esc(note)}` : '';
   if (textual) return parts.map((p) => link(p, p.key ? `${p.who} (${p.year}${tail})` : '')).join('; ');
   return `(${parts.map((p) => link(p, p.key ? `${p.who} ${p.year}` : '')).join('; ')}${tail})`;
@@ -571,7 +573,7 @@ See Equation \eqref{eq:energy}.`)}</section>
       <section><h3>Undo and redo</h3><p>The collection and save status align with the left end of the divider below the title. The title has extra space above it, follows the divider’s width where space permits, and wraps onto additional lines as you type. Only the Undo/Redo icons at the far left and Note guide and preamble icons at the far right stay pinned to the top while you scroll. The title scrolls with the document. The center between the edge controls stays transparent and does not block note text or editing. Use Undo/Redo or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
       <section><h3>Project files and bibliographies</h3><p>Switch Library, Notes, and Reader with Option+1/2/3 on macOS or Alt+1/2/3 on Windows/Linux; Reader requires an open PDF. Shortcuts pause while a dialog is open. Library folders can be moved, ordered, or sent to Library Trash without deleting project files; restore there to recover the folder group. Permanently deleting a folder from Library Trash removes its project notes and files and cannot be undone. Each collection has a Project files tree. Image and video files have their own icons; folders and ordinary documents remain distinct. Icons do not imply preview support. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note, LaTeX (.tex), or File, a name, and a destination folder. Refreshing restores the last viewed file or note; text files also restore their cursor and source scroll position. New folder opens a compact folder form. File creates an empty file using the exact filename. LaTeX (.tex) adds a compact 11pt article template with Korean, math, figure, and table support and appends .tex when needed; the first paper becomes the main document. Drag an entry over the project selector to reveal other projects, then drop it on a destination to move it. For name conflicts, choose Overwrite, Skip, or Add number; move notes with their referenced files together in a folder. Project root appears only while dragging project entries. Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Trash shows newest deletions first and scrolls when the list grows. In Trash, click rows to select entries and use Restore or Delete permanently (confirmation required); Command+A or Ctrl+A selects all, and selected folders restore before their contents. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, hover or focus a row for Rename and Trash, and drag entries to move them, and preview media. In Suggest mode, project-file edits ask inline in chat once per file per prompt; Direct mode applies edits without approval popups. Notes retain their block editor. Import or create .bib files anywhere in the project to automatically add their citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Paste files copied from your file manager into the Library collection list with Command+V or Ctrl+V: PDFs become papers, and other formats are stored here in Project files. Binary formats may only support download. Use Image / Video for larger note videos.</p></section>
       <section><h3>Agent skills</h3><p>Settings → Skills separates Global Agent Skills from Project Skills. Global Location defaults to ~/.agents/skills; save another existing folder or use Use default. Global installations are read in place. Import Skills from Project copies multiple SKILL.md packages into a named group. Expand or collapse each project to browse its skills. Disconnect removes that group's Noctua copies and leaves original files and other groups unchanged; import again to reconnect. Individual skill imports remain available. Chat project defaults select skills for a Noctua project and are separate from source-project groups. In chat, type / to search all available skills and choose with Up/Down and Enter/Tab or a click (Esc closes). These commands add skills for one message without changing defaults. Every script run needs approval and separate output review. Scripts run local code, not in an OS sandbox. Plan mode cannot run scripts; dependencies are not installed automatically.</p></section>
-      <section><h3>Find</h3><p>Use Command+F or Ctrl+F to search the rendered note or the source you are editing. Match case, Regular expression, and Whole word refine results. Invalid regular expressions show an error in the Find bar.</p></section><section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
+      <section><h3>Find</h3><p>Use Command+F or Ctrl+F to search the rendered note or the source you are editing. Match case, Regular expression, and Whole word refine results. Invalid regular expressions show an error in the Find bar.</p></section><section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance. Citations resolve against your whole library; click one to read the paper beside the note (⌘/Ctrl-click for its details). Cited papers are listed automatically under References at the bottom of the note.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
       <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode saves requested edits on the server before reporting completion; use Undo to revert them. Suggest changes are reviewed as whole proposals in Assistant changes below the project tree.</p></section>`;
     dialog.addEventListener('click', event => {
       if (event.target !== dialog) return;
@@ -826,7 +828,10 @@ async function convertAllDrawings() {
 // block being edited shows its result in the live preview instead.
 function typeset() {
   if (!N.doc) return;
-  const htmls = NoctuaLatex.renderDoc(N.doc.blocks.map((b) => b.type === 'text' ? b.src : null), { cite: citeHtml, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble });
+  const cited = new Set();
+  const cite = (keys, opts) => { keys.forEach((k) => cited.add(k)); return citeHtml(keys, opts); };
+  const htmls = NoctuaLatex.renderDoc(N.doc.blocks.map((b) => b.type === 'text' ? b.src : null), { cite, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble });
+  renderReferences([...cited]);
   N.doc.blocks.forEach((b, i) => {
     if (b.type !== 'text') return;
     const el = document.querySelector(`.nb[data-id="${b.id}"]`);
@@ -842,6 +847,44 @@ function typeset() {
     target.classList.toggle('is-empty', !b.src.trim());
   });
   applyImgSel();
+}
+
+// The papers a note cites, listed automatically below it (author-year, by
+// first author). Entries link like citations: click to read beside the note.
+function referenceEntry(key) {
+  const it = N.items.get(key);
+  if (!it) return { sort: key.toLowerCase(), html: `<li class="missing">${esc(key)} <span>(not in your library)</span></li>` };
+  const names = (it.creators || []).map((n) => n.trim()).filter(Boolean);
+  const last = (n) => n.split(/\s+/).pop();
+  const authors = !names.length ? '' : names.length > 3 ? `${names.slice(0, 3).join(', ')}, et al.` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const venue = it.venue ? ` <i>${esc(it.venue)}</i>.` : '';
+  return {
+    sort: `${(names[0] ? last(names[0]) : it.title || key).toLowerCase()} ${it.year || ''}`,
+    html: `<li><a class="cite" data-key="${esc(key)}" title="${esc(it.title || '')}${it.has_pdf ? ' (click to read it beside this note)' : ''}">${esc(authors || 'Unknown authors')} (${esc(it.year || 'n.d.')}). ${esc(it.title || '(untitled)')}.</a>${venue}</li>`,
+  };
+}
+
+function renderReferences(keys) {
+  const page = $('#notes-stage .note-page');
+  if (!page) return;
+  let section = page.querySelector('.note-references');
+  // A paper cited under several keys (library key, BibTeX key) is listed once.
+  const seen = new Set(), entries = [];
+  for (const key of keys) {
+    const id = N.items.get(key)?.key || key;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    entries.push(referenceEntry(key));
+  }
+  if (!entries.length) { section?.remove(); return; }
+  if (!section) {
+    section = document.createElement('section');
+    section.className = 'note-references';
+    section.setAttribute('aria-label', 'References');
+    page.append(section);
+  }
+  const html = `<h2>References</h2><ol>${entries.sort((a, b) => a.sort.localeCompare(b.sort)).map((e) => e.html).join('')}</ol>`;
+  if (section._rendered !== html) { section.innerHTML = html; section._rendered = html; }
 }
 
 function startEdit(id) {
@@ -1057,6 +1100,12 @@ $('#notes-stage').addEventListener('click', (e) => {
   lib.detail = it;
   G.selected = null;
   renderLibDetails(it);
+  // Open the cited paper with this note beside it; ⌘/Ctrl-click shows only its details.
+  if (it.has_pdf && !(e.metaKey || e.ctrlKey)) {
+    showRightTab('paper', { focus: false });
+    openPaperView(it.key, 'here').then(() => { if (document.body.classList.contains('pdf-mode') && !splitViewActive()) setSplitView(true); });
+    return;
+  }
   showRightTab('paper');
 }, true);
 // "Visualize paper graph" on a cited paper takes you back to the graph.

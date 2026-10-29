@@ -1158,6 +1158,15 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-actions [aria-expanded="true"] { color: var(--np-link); background: var(--np-raise); }
 .note-page { width: min(860px, 100%); padding: 12px clamp(40px, 6%, 64px) 96px; }
 .note-head { padding-bottom: 14px; margin-bottom: 8px; }
+/* Cited papers, listed automatically below the note. */
+.note-references { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--np-line); font: calc(var(--note-font-size, 16px) * .9)/1.5 var(--font-note); color: var(--np-ink); }
+.note-references h2 { margin: 0 0 10px; font-size: 1.15em; font-weight: 600; }
+.note-references ol { margin: 0; padding: 0; list-style: none; }
+.note-references li { margin: 0 0 8px; padding-left: 1.6em; text-indent: -1.6em; }
+.note-references a.cite { color: inherit; text-decoration: none; cursor: pointer; }
+.note-references a.cite:hover { color: var(--np-link); text-decoration: underline; }
+.note-references li.missing { color: var(--np-warn); }
+.note-references li.missing span { color: var(--np-muted); }
 .note-title { min-width: 0; margin: 0 0 20px; padding: 2px 4px; text-align: center; font: 500 var(--note-title-font-size)/1.25 var(--font-note); color: var(--np-ink); resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-meta { justify-content: flex-start; text-align: left; }
 .nb-insert:last-child { height: 34px; margin-top: 12px; }
