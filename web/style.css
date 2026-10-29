@@ -538,7 +538,11 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 .ink:hover .ink-edge:hover, .ink-edge:active { background: linear-gradient(var(--np-line), var(--np-line)) center / 3px 40px no-repeat; }
 .nb-ink > .nb-tools { left: calc(-48px - var(--pad-out, 0px)); }
 /* LaTeX converted from a drawing can sit beside it, using the panel's width. */
-.nb-pair { --pair-w: max(100%, min(var(--stage-w, 100%) - 128px, 1500px)); width: var(--pair-w); margin-left: calc((100% - var(--pair-w)) / 2); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.nb-pair { --pair-w: max(100%, min(var(--stage-w, 100%) - 128px, 1500px)); width: var(--pair-w); margin-left: calc((100% - var(--pair-w)) / 2); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 24px; align-items: start; }
+/* The LaTeX reads first (left, or above when stacked); the drawing's tools sit on its right edge. */
+.nb-pair > .nb-text { order: -1; }
+.nb-pair > .nb-ink > .nb-tools { left: auto; right: -48px; }
+.nb-pair > .nb-ink > .nb-tools::after { left: auto; right: 100%; }
 #notes-stage.narrow .nb-pair { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .ink canvas.erasing { cursor: cell; }
 .ink:hover canvas, .ink:focus-within canvas { box-shadow: inset 0 0 0 1px var(--np-line); }

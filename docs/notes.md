@@ -184,7 +184,7 @@ panel scroll sideways inside themselves. Strokes keep their size when a pad grow
 or the window changes; older pads look as before.
 
 The pad's **TeX** button uses the selected assistant to transcribe the drawing
-into a LaTeX text block placed beside the drawing, so you can compare them; the
+into a LaTeX text block placed beside the drawing (LaTeX on the left, drawing on the right), so you can compare them; the
 drawing is preserved. Diagrams, graphs, and sketches are redrawn as SVG images
 saved with the collection's media and included in the text; if one cannot be
 redrawn, a `[diagram]` placeholder marks it. SVG images are shown inverted
