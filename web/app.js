@@ -903,7 +903,7 @@ async function loadLibItems() {
     const [items, notes] = await Promise.all([api(`/api/library/items?target=${enc(target)}`), api(`/api/notes?target=${enc(target)}`).catch(() => [])]);
     if (target !== lib.target || lib.trash) return;
     lib.items = items;
-    lib.notes = notes;
+    lib.notes = Array.isArray(notes) ? notes : [];
   } catch (e) {
     if (target !== lib.target) return;
     lib.items = null;
@@ -938,7 +938,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
-  renderLibraryTable(libraryTableRows(items, lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }).sort(cmp));
+  renderLibraryTable((typeof libraryTableRows === 'function' ? libraryTableRows(items, lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }) : items).sort(cmp));
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;

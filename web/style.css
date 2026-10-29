@@ -1246,8 +1246,8 @@ body.library-view #library-view { display: flex; }
 body.library-view #graph, body.library-view #empty, body.library-view #stage > .graph-toolbar,
 body.library-view #stage > .legend, body.library-view #tooltip, body.library-view #graph-filter-empty,
 body.library-view #tab-library > .list-tools, body.library-view #lib-items { display: none !important; }
-.library-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
-.library-heading > div:first-child { flex: 1; min-width: 0; }
+.library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.library-heading > div:first-child { flex: 1 1 140px; min-width: 0; }
 .library-heading h1 { font-size: calc(18px * var(--ui-font-scale)); margin: 0 0 4px; }
 .library-heading .hint { margin: 0; font-size: calc(12px * var(--ui-font-scale)); }
 .library-kind { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }

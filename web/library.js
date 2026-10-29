@@ -373,7 +373,7 @@ function confirmDeleteLibraryFolder(target){
 // tag filter lists papers only; the text filter matches note titles.
 function libraryTableRows(papers,notes,{kind='all',tag='',filter=''}={}){
   const query=filter.trim().toLowerCase();
-  const noteRows=kind==='papers'||tag?[]:(notes||[]).map(n=>({kind:'note',key:'note:'+n.id,id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
+  const noteRows=kind==='papers'||tag||!Array.isArray(notes)?[]:notes.map(n=>({kind:'note',key:'note:'+n.id,id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
     .filter(n=>!query||n.title.toLowerCase().includes(query));
   return [...(kind==='notes'?[]:papers),...noteRows];
 }
