@@ -282,9 +282,12 @@ compilation drain via `tests/server-paper-lifecycle.py`. Real compiler API tests
 start an authenticated foreground server with temporary client/profile paths.
 
 The desktop updater shares release history and confirmation helpers with the
-About settings UI. `tests/updates-ui.html` covers update actions and release
-history. `tests/client-updates.html` checks that server management omits app
-updates while the startup offer remains available.
+About settings UI. `tests/updates.swift` covers both legacy HTTP updates and the
+independent desktop bridge, including client version display, version-pinned
+installation, native confirmation ownership and failure recovery.
+`tests/updates-ui.html` covers update actions and release history.
+`tests/client-updates.html` checks that server management omits app updates while
+the startup offer remains available.
 
 `python3 tests/server-detach.py` captures both `ensure` output streams and verifies
 that they close after the launcher exits while the isolated server stays ready.
