@@ -91,7 +91,8 @@ const G = {
 };
 // Noctua library browser: selected folder, its items, item shown in details.
 const lib = {
-  target: store.get('noctua.libTarget') || 'L1', items: null, detail: null,
+  target: store.get('noctua.libTarget') || 'L1', items: null, notes: [], detail: null,
+  kind: ['papers', 'notes'].includes(store.get('noctua.libKind')) ? store.get('noctua.libKind') : 'all',
   selected: new Set(), selectionTarget: null, anchor: null, tag: '',
   expanded: (() => {
     try { const saved = JSON.parse(store.get('noctua.expandedFolders') || '["L1"]'); return new Set(Array.isArray(saved) ? saved : ['L1']); }
@@ -899,9 +900,10 @@ async function loadLibItems() {
   renderLibraryTable([]);
   el.innerHTML = '<p class="hint">Loading library…</p>';
   try {
-    const items = await api(`/api/library/items?target=${enc(target)}`);
+    const [items, notes] = await Promise.all([api(`/api/library/items?target=${enc(target)}`), api(`/api/notes?target=${enc(target)}`).catch(() => [])]);
     if (target !== lib.target || lib.trash) return;
     lib.items = items;
+    lib.notes = notes;
   } catch (e) {
     if (target !== lib.target) return;
     lib.items = null;
@@ -936,7 +938,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
-  renderLibraryTable(items);
+  renderLibraryTable(libraryTableRows(items, lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }).sort(cmp));
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;
@@ -969,17 +971,22 @@ function renderLibItems() {
 // The library table includes local items even when Semantic Scholar cannot match them.
 function renderLibraryTable(items) {
   $('#library-title').textContent = targetName(lib.target) || 'Library';
-  $('#library-count').textContent = lib.items ? `${items.length} of ${lib.items.length} papers` : '';
+  const notes = items.filter((it) => it.kind === 'note').length, papers = items.length - notes;
+  $('#library-count').textContent = lib.items ? [lib.kind !== 'notes' && `${papers} of ${lib.items.length} papers`, lib.kind !== 'papers' && lib.notes.length && `${notes} of ${lib.notes.length} notes`].filter(Boolean).join(' · ') : '';
   const status = $('#library-table-status');
   status.hidden = !!items.length;
-  status.textContent = !lib.items ? 'Loading library…' : lib.items.length ? 'No matches.' : 'This folder is empty. Import a PDF or search for papers to get started.';
+  status.textContent = !lib.items ? 'Loading library…' : lib.items.length || lib.notes.length ? 'No matches.' : 'This folder is empty. Import a PDF, search for papers, or create a note to get started.';
   document.querySelectorAll('[data-library-sort]').forEach((button) => {
     const sort = $('#lib-sort').value;
     button.closest('th').setAttribute('aria-sort', button.dataset.librarySort === sort ? (sort === 'year-desc' ? 'descending' : 'ascending') : button.dataset.librarySort === 'year-desc' && sort === 'year-asc' ? 'ascending' : 'none');
   });
   if (typeof renderLibraryManagement==='function') renderLibraryManagement();
   const rows = $('#library-rows');
-  rows.innerHTML = items.map(it => `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
+  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row">
+    <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${esc(it.title)}</button></td>
+    <td>—</td><td>${esc(it.year || '—')}</td>
+    <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
+  </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
@@ -987,6 +994,13 @@ function renderLibraryTable(items) {
   const byKey = new Map(items.map(it => [it.key, it]));
   rows.querySelectorAll('tr').forEach(row => {
     const it = byKey.get(row.dataset.key);
+    if (it.kind === 'note') {
+      const open = () => openNoteFrom(lib.target, it.id);
+      row.querySelector('[data-open-note]').addEventListener('click', open);
+      row.addEventListener('dblclick', open);
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) open(); });
+      return;
+    }
     row.addEventListener('click', (e) => {
       selectLibraryPaper(e,it,row);
       row.focus();

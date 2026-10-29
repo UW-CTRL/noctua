@@ -30,10 +30,11 @@ const tick=()=>new Promise(r=>setTimeout(r,30));const assert=(ok,msg)=>{if(!ok)t
  await openLibraryTrash();d=document.querySelector('#library-trash-view');const purgeRow=d.querySelector('[data-trash-index="0"]');purgeRow.click();const beforePurge=requests.filter(r=>r.body?.op==='purge').length;purgeRow.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));let purgeDialog=document.querySelector('dialog');assert(purgeDialog.open&&purgeDialog.textContent.includes('cannot be undone')&&requests.filter(r=>r.body?.op==='purge').length===beforePurge,'permanent delete must require a separate confirmation');await purgeDialog.querySelector('form').onsubmit({preventDefault(){}});await tick();assert(requests.some(r=>r.body?.op==='purge'&&r.body.entries[0].id==='old'),'Trash Delete must permanently purge selection');lib.trash=false;document.body.classList.remove('library-trash-view');
  let edited=null,createdParent=null;window.openCollectionResearch=id=>{edited=id;};window.openCollectionCreate=id=>{createdParent=id;};
  const menuAnchor=$('#lib-tree [data-id="C1"]');openLibraryFolderMenu('C1',menuAnchor,{clientX:10,clientY:10});
- let menu=document.querySelector('.library-folder-menu');assert(menu.getAttribute('role')==='menu'&&menu.querySelectorAll('button').length===3&&!document.querySelector('dialog'),'folder right click should show three menu items without a dialog');
+ let menu=document.querySelector('.library-folder-menu');assert(menu.getAttribute('role')==='menu'&&menu.querySelectorAll('button').length===4&&menu.querySelector('[data-folder-action="note"]')&&!document.querySelector('dialog'),'folder right click should show four menu items, including New note, without a dialog');
  assert(menu.getAttribute('popover')!=='auto','folder menu must not light-dismiss when the right button is released (Linux opens it on press)');
  menu.querySelector('[data-folder-action="edit"]').click();assert(edited==='C1'&&!document.querySelector('.library-folder-menu'),'pencil menu action not connected');
  openLibraryFolderMenu('C1',menuAnchor);document.querySelector('[data-folder-action="new"]').click();assert(createdParent==='C1','new folder menu lost parent');
+ let noteIn=null;window.createNoteIn=id=>{noteIn=id;};openLibraryFolderMenu('C1',menuAnchor);document.querySelector('[data-folder-action="note"]').click();assert(noteIn==='C1'&&!document.querySelector('.library-folder-menu'),'new note menu lost its collection');
  openLibraryFolderMenu('C1',menuAnchor);document.querySelector('[data-folder-action="delete"]').click();d=document.querySelector('dialog');assert(d.open&&!requests.some(r=>r.body?.op==='folder_trash'),'delete must require confirmation');d.querySelector('[data-cancel]').click();await tick();
  openLibraryFolderMenu('C1',menuAnchor);menu=document.querySelector('.library-folder-menu');menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert(!document.querySelector('.library-folder-menu'),'Escape did not dismiss folder menu');
  const pairs=duplicateLibraryPairs([{key:'a',title:'A sufficiently long title',DOI:'10.1/a'},{key:'b',title:'Different name',DOI:'10.1/A'},{key:'c',title:'A sufficiently long title'}]);assert(pairs.length===2,'duplicate candidate indexing failed');
@@ -53,6 +54,12 @@ const tick=()=>new Promise(r=>setTimeout(r,30));const assert=(ok,msg)=>{if(!ok)t
 
 
  openLibraryTags(lib.items);d=document.querySelector('dialog');d.querySelector('[name="tags"]').value='retain';fail=true;await d.querySelector('form').onsubmit({preventDefault(){}});assert(d.open&&d.querySelector('[role="alert"]').textContent.includes('elsewhere')&&d.querySelector('[name="tags"]').value==='retain','failed batch lost form edits');fail=false;d.close();
- window.webkit.messageHandlers.result.postMessage('PASS: Library multi-selection, copy/cut/paste, drag, batch tags/trash, restore/undo, folder move/order, duplicate candidates and failure retention');
+ const papers=[{key:'p1',title:'Graph paper'}],notes=[{id:'n1',title:'Lineage notes',updated:Date.UTC(2026,9,1)},{id:'n2',title:'Other',updated:Date.UTC(2026,9,2)}];
+ const all=libraryTableRows(papers,notes);
+ assert(all.length===3&&all.filter(r=>r.kind==='note').map(r=>r.key).join()==='note:n1,note:n2'&&all[1].year===2026&&all[1].dateAdded.startsWith('2026-10-01'),'notes join papers in the Library table');
+ assert(libraryTableRows(papers,notes,{kind:'papers'}).length===1&&libraryTableRows(papers,notes,{kind:'notes'}).every(r=>r.kind==='note'),'All / Papers / Notes filter');
+ assert(libraryTableRows(papers,notes,{filter:'lineage'}).filter(r=>r.kind==='note').length===1&&libraryTableRows(papers,notes,{tag:'read'}).every(r=>!r.kind),'note rows follow the text filter and hide under tag filters');
+ window.renderLibItems=()=>{};setLibraryKind('notes');assert(lib.kind==='notes'&&cache.get('noctua.libKind')==='notes','kind choice is remembered');
+ window.webkit.messageHandlers.result.postMessage('PASS: Library multi-selection, copy/cut/paste, drag, batch tags/trash, restore/undo, folder move/order, duplicate candidates, failure retention, and notes beside papers');
 })().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+'\n'+error.stack));
 </script></body></html>

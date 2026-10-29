@@ -116,6 +116,11 @@ async function loadNoteFolder(target) {
 
 function renderNoteList() {
   if(W.manifest&&W.target===N.target)renderWorkspaceTree();
+  // Keep the Library table's note rows current.
+  if (typeof lib !== 'undefined' && lib.target === N.target && lib.items) {
+    lib.notes = N.list.map(({ id, title, created, updated }) => ({ id, title, created, updated }));
+    if (!isNotesMode() && typeof renderLibItems === 'function') renderLibItems();
+  }
   renderSplitNoteBar();
   const el = $('#note-list');
   if (!N.list.length) {
@@ -173,6 +178,21 @@ async function openNote(id) {
   } catch (e) {
     toast(e.message, { error: true });
   }
+}
+
+// Entry points from Library and the Reader: open or create a note in a
+// collection, switching to Notes (or keeping the note beside the paper).
+async function openNoteFrom(target, id) {
+  if (N.target !== target) await loadNoteFolder(target);
+  if (W.file || N.doc?.id !== id) { W.file = null; await openNote(id); }
+  if (!isNotesMode()) setMode('notes');
+}
+
+async function createNoteIn(target, { beside = false } = {}) {
+  if (target && N.target !== target) await loadNoteFolder(target);
+  if (beside) { if (!splitViewActive()) setSplitView(true); }
+  else if (!isNotesMode()) setMode('notes');
+  return createNote();
 }
 
 function chooseLocalDraft(candidates) {

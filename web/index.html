@@ -111,6 +111,12 @@
       <section id="library-view" aria-label="Library papers">
         <div class="library-heading">
           <div><h1 id="library-title">Library</h1><span id="library-count" class="hint"></span></div>
+          <div id="library-kind" class="library-kind" role="group" aria-label="Show papers, notes, or both">
+            <button type="button" data-kind="all" aria-pressed="true" class="active">All</button>
+            <button type="button" data-kind="papers" aria-pressed="false">Papers</button>
+            <button type="button" data-kind="notes" aria-pressed="false">Notes</button>
+          </div>
+          <button type="button" id="library-new-note" data-icon="file-plus" data-icon-only title="New note in this collection" aria-label="New note in this collection"></button>
           <div id="library-filter-control" class="expanding-filter">
             <input id="library-table-filter" type="search" placeholder="Filter library…" aria-label="Filter library table" aria-controls="library-rows">
             <button type="button" data-icon="search" data-icon-only aria-label="Filter library" title="Filter library"></button>

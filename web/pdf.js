@@ -456,6 +456,7 @@ async function renderPDF(anchor=null){
       <details class="pdf-more-menu">
         <summary title="More document actions" aria-label="More document actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></summary>
         <div class="pdf-more-options">
+          <button data-new-note data-icon="file-plus">New note beside the paper</button>
           <button data-dark data-icon="${PDF.dark?'sun':'moon'}">${PDF.dark?'Light':'Dark'} pages</button>
           <button data-tab data-icon="external-link">Open in new tab</button>
           <button data-window data-icon="app-window">Open in new window</button>
@@ -467,6 +468,7 @@ async function renderPDF(anchor=null){
   const stage=$('#pdf-stage'),on=(s,fn)=>stage.querySelector(s).onclick=()=>Promise.resolve().then(fn).catch(e=>toast(e.message));
   const pageInput=stage.querySelector('[data-page]');sizePDFPageInput(pageInput);
   pageInput.oninput=()=>sizePDFPageInput(pageInput);pageInput.onchange=e=>pdfNavigate(+e.target.value);
+  on('[data-new-note]',()=>{stage.querySelector('.pdf-more-menu').open=false;return createNoteIn(N.target,{beside:true});});
   on('[data-zoom="-"]',()=>zoomPDF(PDF.scale/1.2));on('[data-zoom="+"]',()=>zoomPDF(PDF.scale*1.2));
   on('[data-auto-highlight]',autoHighlightPDF);on('[data-split]',()=>setSplitView(!document.body.classList.contains('split-view')));updatePDFAutoHighlightUI();
   on('[data-highlight]',()=>addPDFAnnotation('highlight'));on('[data-comment]',()=>addPDFAnnotation(PDF.selection?'highlight':'comment'));

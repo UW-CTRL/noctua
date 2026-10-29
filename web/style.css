@@ -1221,6 +1221,14 @@ body.library-view #tab-library > .list-tools, body.library-view #lib-items { dis
 .library-heading > div:first-child { flex: 1; min-width: 0; }
 .library-heading h1 { font-size: calc(18px * var(--ui-font-scale)); margin: 0 0 4px; }
 .library-heading .hint { margin: 0; font-size: calc(12px * var(--ui-font-scale)); }
+.library-kind { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.library-kind button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(12px * var(--ui-font-scale)); }
+.library-kind button.active { background: var(--bg); color: var(--ink); font-weight: 600; }
+#library-new-note { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
+#library-new-note:hover { color: var(--accent); }
+#library-rows .library-note-row [data-open-note] { display: inline-flex; align-items: center; gap: 6px; }
+#library-rows .library-note-row [data-open-note]::before { width: 14px; height: 14px; color: var(--accent); }
+#library-rows .library-note-kind { color: var(--muted); }
 #library-table-scroll { overflow: auto; flex: 1; min-height: 0; }
 #library-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: calc(12px * var(--ui-font-scale)); text-align: left; }
 #library-table th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); white-space: nowrap; font-weight: 500; }

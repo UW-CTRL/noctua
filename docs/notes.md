@@ -12,7 +12,10 @@ Library and Notes share one collection tree in the left sidebar: selecting a
 collection in either mode selects it in both, and the collection's notes and
 files appear nested under its row. Select a collection and use **New note or
 file** (above the tree, in Library or Notes) and select **Note**; Noctua switches
-to Notes to open it. Notes combine
+to Notes to open it. You can also create a note from the Library table header,
+a collection's right-click menu, or the Reader's **More document actions**
+menu, which opens it beside the paper. The Library table lists notes beside
+papers; see [Library](research.md). Notes combine
 text, drawing, and media blocks and save automatically. Click text to edit its
 source with a live preview; click away to finish. Hover between blocks to insert
 content. The **Note guide** question-mark icon at the far right of the note header opens the in-app syntax and editing guide.

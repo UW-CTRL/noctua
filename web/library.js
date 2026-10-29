@@ -369,11 +369,28 @@ function confirmDeleteLibraryFolder(target){
     if(descendants.has(lib.target))lib.target='L1';
   });d.querySelector('[type="submit"]').focus();
 }
+// Notes appear beside papers in the Library table. Notes have no tags, so a
+// tag filter lists papers only; the text filter matches note titles.
+function libraryTableRows(papers,notes,{kind='all',tag='',filter=''}={}){
+  const query=filter.trim().toLowerCase();
+  const noteRows=kind==='papers'||tag?[]:(notes||[]).map(n=>({kind:'note',key:'note:'+n.id,id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
+    .filter(n=>!query||n.title.toLowerCase().includes(query));
+  return [...(kind==='notes'?[]:papers),...noteRows];
+}
+function setLibraryKind(kind){
+  lib.kind=['papers','notes'].includes(kind)?kind:'all';store.set('noctua.libKind',lib.kind);
+  document.querySelectorAll('#library-kind [data-kind]').forEach(b=>{b.classList.toggle('active',b.dataset.kind===lib.kind);b.setAttribute('aria-pressed',String(b.dataset.kind===lib.kind));});
+  if(typeof renderLibItems==='function')renderLibItems();
+}
+document.querySelectorAll('#library-kind [data-kind]').forEach(b=>b.addEventListener('click',()=>setLibraryKind(b.dataset.kind)));
+if(typeof lib!=='undefined'&&document.querySelector('#library-kind'))setLibraryKind(lib.kind);
+document.querySelector('#library-new-note')?.addEventListener('click',()=>createNoteIn(lib.target));
+
 function openLibraryFolderMenu(target,anchor,event={}){
   closeLibraryFolderMenu?.(false);
   if(!collections.targets.some(entry=>entry.id===target))return;
   const menu=document.createElement('div');menu.className='library-folder-menu';menu.setAttribute('popover','manual');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Collection actions');
-  menu.innerHTML=`<button type="button" role="menuitem" data-folder-action="edit" data-icon="pencil" ${target==='L1'?'disabled':''}>Edit collection</button><button type="button" role="menuitem" data-folder-action="new" data-icon="folder-plus">New folder</button><button type="button" role="menuitem" data-folder-action="delete" data-icon="trash-2" ${target==='L1'?'disabled':''}>Delete folder</button>`;
+  menu.innerHTML=`<button type="button" role="menuitem" data-folder-action="edit" data-icon="pencil" ${target==='L1'?'disabled':''}>Edit collection</button><button type="button" role="menuitem" data-folder-action="note" data-icon="file-plus">New note</button><button type="button" role="menuitem" data-folder-action="new" data-icon="folder-plus">New folder</button><button type="button" role="menuitem" data-folder-action="delete" data-icon="trash-2" ${target==='L1'?'disabled':''}>Delete folder</button>`;
   const controller=new AbortController();
   const close=(restoreFocus=true)=>{if(!menu.isConnected)return;controller.abort();if(menu.matches(':popover-open'))menu.hidePopover();menu.remove();if(closeLibraryFolderMenu===close)closeLibraryFolderMenu=null;if(restoreFocus&&anchor?.isConnected)anchor.focus();};
   closeLibraryFolderMenu=close;
@@ -388,7 +405,7 @@ function openLibraryFolderMenu(target,anchor,event={}){
     if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
     event.preventDefault();const i=buttons.indexOf(document.activeElement);const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(i+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next]?.focus();
   },{signal:controller.signal});
-  menu.querySelectorAll('[data-folder-action]').forEach(button=>button.onclick=()=>{const action=button.dataset.folderAction;close(false);if(action==='edit')openCollectionResearch(target);else if(action==='new')openCollectionCreate(target);else confirmDeleteLibraryFolder(target);});
+  menu.querySelectorAll('[data-folder-action]').forEach(button=>button.onclick=()=>{const action=button.dataset.folderAction;close(false);if(action==='edit')openCollectionResearch(target);else if(action==='note')createNoteIn(target);else if(action==='new')openCollectionCreate(target);else confirmDeleteLibraryFolder(target);});
   document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target))close(false);},{signal:controller.signal,capture:true});
   menu.addEventListener('toggle',event=>{if(event.newState==='closed')close(false);},{signal:controller.signal});
 }
