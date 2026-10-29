@@ -11,7 +11,12 @@ let end = source.range(of: "// First run stays short")!.lowerBound
 context.evaluateScript(#"""
 const esc = s => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const settings={version:'0.1.0'};let native=false;function isDesktopConnectionClient(){return native;}
-let allow=true, calls=[], messages=[], fail=false, status='available';
+let allow=true, calls=[], nativeCalls=[], messages=[], fail=false, status='available';
+const window={top:{noctuaAppVersion:'0.1.0',noctuaDesktopUpdate:async(action,version)=>{
+  nativeCalls.push({action,version});
+  if(fail)throw new Error('Native updater unavailable');
+  return {status,version:'0.2.0'};
+}}};
 const confirm = () => { throw new Error('Native confirmation must not be used'); };
 async function api(path,body){calls.push({path,body});if(fail)throw new Error('Network unavailable');return {status,version:'0.2.0'};}
 const button={dataset:{updateAction:'check'},textContent:'Check for updates'};
@@ -25,7 +30,11 @@ confirmUpdateInstall = async () => allow;
 (async()=>{
   assert(!aboutSection({desktop:false}).includes('data-act="update"'),'browser app offers native updates');
   assert(aboutSection({desktop:true}).includes('Check for updates'),'desktop update button missing');
-  native=true;assert(aboutSection({desktop:false}).includes('data-client-section="desktop"'),'independent desktop must offer local app updates through general settings');native=false;
+  native=true;
+  const nativeAbout=aboutSection({desktop:false,version:'9.9.9'});
+  assert(nativeAbout.includes('Check for updates')&&!nativeAbout.includes('data-client-section='),'independent desktop must update directly in About');
+  assert(nativeAbout.includes('Version 0.1.0 · Desktop app'),'About must show the client version rather than the server version');
+  native=false;
   const html=updateSummary({current_version:'0.1.0',version:'0.3.0',releases:[{version:'0.3.0',changes:[{kind:'fixes',items:['<img src=x onerror=alert(1)>']}]}]});
   assert(html.includes('0.1.0 → 0.3.0')&&html.includes('Fixed:'),'version range or category missing');
   assert(!html.includes('<img')&&html.includes('&lt;img'),'release highlight was not escaped');
@@ -53,7 +62,19 @@ confirmUpdateInstall = async () => allow;
   assert(button.dataset.updateAction==='restart','install in another window not recovered');
   status='unexpected';
   try {await updateApp(button,section,msg);throw new Error('invalid response accepted');} catch(e){assert(e.message.includes('Unexpected response'),'wrong response error');}
-  globalThis.result='PASS: desktop visibility, check, install confirmation, restart, failure recovery, current version, and cross-window recovery';
+  const httpCalls=calls.length,nativeButton={dataset:{updateAction:'check'},textContent:'Check for updates'};
+  native=true;status='available';
+  await updateApp(nativeButton,section,msg);
+  assert(nativeCalls.at(-1).action==='check'&&nativeButton.dataset.updateAction==='install','desktop check must use the native bridge');
+  allow=false;status='installed';
+  await updateApp(nativeButton,section,msg);
+  assert(nativeCalls.at(-1).action==='install'&&nativeCalls.at(-1).version==='0.2.0'&&nativeButton.dataset.updateAction==='restart','native installation must pass the checked version and defer confirmation to the native process');
+  await updateApp(nativeButton,section,msg);
+  assert(nativeCalls.at(-1).action==='restart'&&calls.length===httpCalls,'desktop updates must not use server HTTP endpoints');
+  fail=true;nativeButton.dataset.updateAction='install';
+  try {await updateApp(nativeButton,section,msg);throw new Error('native failure hidden');} catch(e){assert(e.message==='Native updater unavailable','wrong native error');}
+  assert(nativeButton.dataset.updateAction==='check','native failure must allow a new check');
+  globalThis.result='PASS: About visibility, client version, HTTP and native update routing, version-pinned installation, confirmation ownership, restart and failure recovery';
 })().catch(e=>globalThis.result='FAIL: '+e.message+' '+e.stack);
 """#)
 let deadline = Date().addingTimeInterval(5)

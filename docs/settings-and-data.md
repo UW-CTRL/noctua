@@ -17,15 +17,11 @@ Connection, recovery and browser sign-in screens use the app’s light/dark colo
 controls and UI typography. The desktop remembers the last connected app’s
 appearance on this device, so its local connection screen keeps that appearance
 even while the server is offline; first launch follows the system theme.
-Connection setup is a popup with **Choose → Connect → Save** steps and **Back**
-navigation. Management controls are separate from this wizard. Input is retained when
-going back; changing connection details requires a new test before saving.
+Connection setup uses **Choose → Connect → Save** steps and **Back** navigation.
+Input is retained when going back; changing connection details requires a new test
+before saving. On first launch, connection setup appears as a popup. Choose a server location first; the Connect step shows local server management for this computer, or address and token fields for another computer.
 
-In the desktop app, **Settings → Server & Connection** offers **Change connection**
-for the connection wizard and **Server management** for local start, stop, token,
-and login controls. Selecting the category stays inside general Settings; it does
-not open a second window automatically. First-run connection setup shows only
-**Choose → Connect → Save**, with no server-management or app-update tabs.
+In the desktop app, **Settings → Server & Connection** shows the current connection and local server controls directly inside the settings panel, with the same header, close button and layout as other categories. The local controls use an isolated frame: the connected server cannot read local tokens, logs or command responses. The current server’s name, address, and version are shown when available. Select **Change connection** to open the connection steps; the review identifies the tested server separately from the current one. **Clear saved connection** clears the next-launch preference while leaving the current connection open. Under **Server management**, **Start** appears when the local server is unavailable; **Stop safely** and **Restart safely** appear when it is running. You can also manage login auto-start and access its authentication token. Local controls are shown when **Use this computer as server** is selected.
 In a browser, **Settings → Server & connection** offers **Server address** and
 **Authentication token** fields. Choose **Save & connect** and allow its pop-up.
 Noctua saves the current browser window's open editors and chat drafts, signs in
@@ -41,18 +37,15 @@ browser connection feature. Local process controls remain desktop-only; token vi
 in authenticated localhost browser sessions as described below. Tokens are not put in URLs or browser storage.
 
 The native Settings menu opens general Settings while connected and local management
-while no library window is open. General Settings links to connection setup, local
-server management, and app updates. Server management shows identity, status,
-errors/logs, authentication token and user-login auto-start for **this computer**. These local controls remain local
-when a remote server is selected. Start/stop/restart and login auto-start are
+while no library window is open. General Settings contains connection setup and local server management in Server & Connection, and app updates in About. Server management shows identity, status,
+errors/logs, authentication token and user-login auto-start for **this computer**. These local controls appear when this computer is selected as the server. Expand **Server logs** at the bottom to load the log; use **Refresh logs** to reload it. Start/stop/restart and login auto-start are
 separate actions; app exit and connection changes leave servers running.
 
 In the desktop connection manager, open **Settings → Server & Connection → Server management → Authentication token**
-and choose **Show token** or **Copy token**. The token is hidden initially;
-**Hide token**, leaving the tab or closing the dialog clears it from the field.
+and choose **Show token** or **Copy token**. This token is for connecting from another computer; it does not appear in the local connection popup. The token is hidden initially;
+**Hide token** or closing the server settings clears it from the field.
 Copy works while the token stays hidden and replaces the system clipboard.
-These controls always use this computer's server token, even when connected to a
-remote server. Start the local server once if it has no token yet. Share the token
+These controls use this computer's server token. Start the local server once if it has no token yet. Share the token
 only with people who should have full server access. An authenticated browser opened at `http://localhost:<port>` or
 `http://127.0.0.1:<port>` also offers **Current server token → Show token / Copy token**
 in **Settings → Server & connection**. It clears the displayed token when hidden,
@@ -281,15 +274,11 @@ location you want to select.
 
 ## Updates
 
-Open **Settings → About & Shortcuts → App updates**, then choose **Check desktop update**.
-Server-hosted web pages do not control the native updater. Official builds check
+Open **Settings → About & Shortcuts**, then choose **Check for updates** under
+**App Updates**. If a newer version is available, the button offers installation;
+confirm the native prompt to install. Choose **Restart Noctua** after installation.
+The app saves open edits before installation and restart. Official builds also check
 at startup after restoring or retrying a saved connection. Save work before installing.
-**Install offered update** is enabled only when a newer version is available.
-**Restart updated app** is enabled only after installation succeeds. Both stay
-disabled before checking or when the app is current.
-**Install offered update** opens an in-app confirmation. Choose **Install update** to download,
-verify, and install it, or **Cancel** / Esc to leave the app unchanged. After
-installation, use **Restart Noctua** when offered.
 The startup popup lists release highlights from your installed version through
 the offered update, newest first, including versions you skipped. Scroll the
 history with a mouse or trackpad, or focus it with Tab and use the arrow keys.
@@ -309,7 +298,7 @@ before the server is stopped, backed up and replaced. Failed saves or a task wai
 timeout keep the old owner running. An enabled login service follows the verified
 replacement; auto-start is never installed implicitly. Previous staged executables
 are cleaned only after the new identity/version is verified and their references
-are released. Use **Settings → Server & Connection → Server management → Update server** to retry and inspect progress.
+are released. If an update fails or cleanup remains, **Retry server update** appears in **Settings → Server & Connection** alongside the progress or error.
 A default OS-user client profile permits one local server across data folders.
 If pending skill reviews block an update, use **Open running server · defer
 update** to resolve them on the compatible current server, then retry. Failed

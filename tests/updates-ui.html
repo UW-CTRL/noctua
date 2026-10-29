@@ -5,6 +5,8 @@
 const settings = { desktop: true, skipped: true, version: '0.1.0' };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const keyNeeded = s => !s.skipped;
+let desktopClient = false;
+function isDesktopConnectionClient(){return desktopClient;}
 let calls = [], fail = false, confirmCalls = 0, status = 'available', notifications = [];
 function toast(message,options){notifications.push({message,options});}
 window.confirm = () => { confirmCalls++; throw new Error('Native confirmation is unavailable in the desktop tab'); };
@@ -23,6 +25,14 @@ const until = async predicate => {
 window.addEventListener('load', async () => {
   try {
     const previous = document.querySelector('#previous-focus'); previous.focus();
+    desktopClient=true;
+    assert(aboutSection({version:'0.3.0',desktop:false}).includes('data-update-action="check"'), 'desktop About must contain updater');
+    window.noctuaDesktopUpdate=async (action,version)=>{calls.push({path:'native',body:{action,version}});return {status:'current'};};
+    const about=document.createElement('div');about.innerHTML=aboutSection({version:'0.3.0',desktop:false});document.body.append(about);
+    await updateApp(about.querySelector('[data-update-action]'),about,()=>{});
+    assert(calls.at(-1).path==='native' && calls.at(-1).body.action==='check','About must call this desktop updater');
+    about.remove();calls=[];desktopClient=false;
+
     await checkStartupUpdate({desktop:false, skipped:true});
     await checkStartupUpdate({desktop:true, skipped:false});
     assert(calls.length === 0, 'browser mode or first-run setup checked for updates');

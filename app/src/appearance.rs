@@ -64,6 +64,18 @@ if (window.top === window) {
         window.addEventListener('noctua-app-icon', done);
         location.href = 'https://noctua.invalid/app-icon?icon=' + icon + '&request=' + request;
     });
+    window.noctuaDesktopUpdate = (action, version) => new Promise((resolve, reject) => {
+        if (!['check', 'install', 'restart'].includes(action)) { reject(new Error('Invalid update action')); return; }
+        const request = crypto.randomUUID();
+        const done = event => {
+            if (event.detail.request !== request) return;
+            clearTimeout(timer); window.removeEventListener('noctua-update-result', done);
+            if (event.detail.error) reject(new Error(event.detail.error)); else resolve(event.detail.result);
+        };
+        const timer = setTimeout(() => { window.removeEventListener('noctua-update-result', done); reject(new Error('Update request timed out')); }, 20 * 60 * 1000);
+        window.addEventListener('noctua-update-result', done);
+        location.href = 'https://noctua.invalid/desktop-update?' + new URLSearchParams({action, request, version:version || ''});
+    });
     let lastAppearance;
     function publishAppearance() {
         if (location.pathname !== '/shell') return;
