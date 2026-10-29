@@ -370,7 +370,10 @@ function renderEditor() {
   N.pads.clear();
   const stage = $('#notes-stage');
   renderSplitNoteBar();
-  const media = stage.dataset.mediaNote === N.doc?.id ? captureVideos(stage) : [];
+  N.keepScroll?.();
+  const same = stage.dataset.mediaNote === N.doc?.id;
+  const scroll = same ? { top: stage.scrollTop, left: stage.scrollLeft } : null;
+  const media = same ? captureVideos(stage) : [];
   stage.dataset.mediaNote = N.doc?.id || '';
   if (!N.doc) {
     stage.innerHTML = `<div class="note-page note-empty">
@@ -406,6 +409,27 @@ function renderEditor() {
   typeset();
   restoreVideos(stage, media);
   updateHistoryButtons();
+  if (scroll) keepNoteScroll(stage, scroll);
+}
+
+// Re-rendering rebuilds every block, so the page briefly collapses and the
+// browser clamps the scroll position. Hold the reader's place while images and
+// pads settle, until they scroll or type themselves.
+function keepNoteScroll(stage, pos) {
+  const apply = () => { stage.scrollTop = pos.top; stage.scrollLeft = pos.left; };
+  const events = ['wheel', 'pointerdown', 'keydown', 'touchstart'];
+  const ro = new ResizeObserver(apply);
+  const stop = () => {
+    ro.disconnect();
+    clearTimeout(timer);
+    events.forEach((e) => stage.removeEventListener(e, stop, true));
+    if (N.keepScroll === stop) N.keepScroll = null;
+  };
+  const timer = setTimeout(stop, 2000);
+  apply();
+  ro.observe(stage.querySelector('.note-page'));
+  events.forEach((e) => stage.addEventListener(e, stop, { capture: true, passive: true }));
+  N.keepScroll = stop;
 }
 
 // The title shares the document width and grows with its wrapped text.
@@ -717,7 +741,8 @@ function startEdit(id) {
   ta.value = b.src;
   const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
   grow();
-  ta.focus();
+  ta.focus({ preventScroll: true });
+  if (!N.keepScroll) ta.scrollIntoView({ block: 'nearest' });  // a re-render is holding the reader's place
   ta.setSelectionRange(ta.value.length, ta.value.length);
   ta.addEventListener('input', () => {
     b.src = ta.value;

@@ -93,6 +93,12 @@ $('#note-help').click();assert($('#note-help-dialog').open,'help opens');$('#not
 for(const theme of ['dark','light']){setNotesTheme(theme);const style=getComputedStyle($('#notes-stage'));assert(style.colorScheme===theme,'note theme remains independent');}
 N.doc.preamble=String.raw`\geometry{paperwidth=12in}`;applyPreamble();assert(parseFloat($('.note-page').style.width)>760,'explicit paper geometry preserved');
 N.doc.preamble='';applyPreamble();
+N.doc.blocks=Array.from({length:40},(_,i)=>({id:'s'+i,type:'text',src:'Paragraph '+i+'\n\n'+'words '.repeat(80)}));
+renderEditor();$('#notes-stage').scrollTop=900;const kept=$('#notes-stage').scrollTop;
+assert(kept>800,'long note scrolls');
+renderEditor();assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'re-rendering the open note keeps its scroll position');
+startEdit('s30');assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'restoring the caret after a re-render does not scroll');
+N.editing=null;N.keepScroll?.();
 window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, and explicit geometry');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>
