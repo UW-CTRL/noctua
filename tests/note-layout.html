@@ -3,15 +3,19 @@
 <style>main{--left-w:260px;grid-template-columns:260px minmax(0,1fr)}#notes-stage{height:100%}</style>
 </head><body class="notes-mode">
 <header><span class="brand">Noctua</span><div class="mode-switch"><button data-mode="notes" class="active" data-icon="notebook-pen">Notes</button></div></header>
-<main><aside id="left"><div id="notes-side">        <div class="workspace-tools" aria-label="Project files">
-          <select id="notes-target" title="Project files collection" aria-label="Project files collection"><option value="L1">Research</option></select>
-          <div role="group" aria-label="Create and import files">
+<main><aside id="left"><div id="notes-side"><ul id="note-list"></ul></div>
+<div id="research-sidebar"><div id="tab-library" class="tab-body">
+        <div id="collection-tools" class="workspace-tools" aria-label="Collections">
+          <strong id="collection-tools-title">Collections</strong>
+          <div role="group" aria-label="Create and import files in the selected collection">
             <button data-new-file data-icon="file-plus" data-icon-only aria-label="New note or file"></button>
-            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New folder"></button>
+            <button data-new-folder data-icon="folder-plus" data-icon-only aria-label="New project folder"></button>
             <button data-import-file data-icon="file-up" data-icon-only aria-label="Import files"></button>
           </div>
         </div>
-<ul id="note-list"></ul></div></aside><section id="notes-stage" data-notes-theme="light"></section></main>
+<div id="graph-folders"><ul id="lib-tree" class="tree"><li data-id="L1" style="padding-left:8px"><span class="t-name">Research</span></li><li data-id="C2" style="padding-left:16px"><span class="t-name">Other</span></li></ul></div>
+<div class="list-tools"><input id="lib-filter"></div><ul id="lib-items"></ul></div>
+<div id="graph-list-switch" class="tabs">Papers</div></div></aside><section id="notes-stage" data-notes-theme="light"></section></main>
 <div id="details" hidden></div><div id="cite-picker" hidden></div>
 <script>
 const $=s=>document.querySelector(s), enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -21,7 +25,7 @@ function toast(s){throw Error(s)} function updateChatContext(){}
 async function api(){return {undo:'Edit note',redo:null}}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
-<script src="../web/select.js"></script><script src="../web/latex.js"></script><script src="../web/edit-history.js"></script><script src="../web/notes.js"></script><script src="../web/workspace.js"></script>
+<script src="../web/select.js"></script><script src="../web/latex.js"></script><script src="../web/edit-history.js"></script><script src="../web/ink.js"></script><script src="../web/notes.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
 N.target='L1';N.doc={id:'note',title:'Reading notes',preamble:'',blocks:[{id:'b1',type:'text',src:String.raw`\section{Research questions}
@@ -30,19 +34,18 @@ Connect ideas, collect evidence, and keep the next question close.
 W.target='L1';W.manifest={entries:[{id:'sources',kind:'folder',name:'Sources'},{id:'note-entry',kind:'note',note:'note',name:'Reading notes'},{id:'bib',kind:'file',name:'references.bib'}],history:{}};
 resetNoteHistory();renderEditor();renderWorkspaceTree();
 await Promise.resolve();
-const collection=$('#notes-target');
-collection.addEventListener('change',()=>{});
 for(const width of [220,320]){
  document.querySelector('main').style.gridTemplateColumns=width+'px minmax(0,1fr)';
- const head=$('#notes-side>.workspace-tools').getBoundingClientRect(),picker=$('#notes-target').closest('.web-select').getBoundingClientRect(),actions=$('#notes-side [role="group"]').getBoundingClientRect();
- assert(picker.right<=actions.left&&actions.right<=head.right,'collection and create actions fit one row');
- const trigger=$('#notes-target').closest('.web-select').querySelector('button'),style=getComputedStyle(trigger);
- assert(parseFloat(style.paddingLeft)>=12&&parseFloat(style.paddingRight)>=12,'collection text and arrow lack inset');
- assert(Math.abs(picker.top-actions.top)<6,'collection and create actions align');
+ const head=$('#collection-tools').getBoundingClientRect(),title=$('#collection-tools-title').getBoundingClientRect(),actions=$('#collection-tools [role="group"]').getBoundingClientRect();
+ assert(title.right<=actions.left&&actions.right<=head.right+1,'collection heading and create actions fit one row');
+ assert(Math.abs((title.top+title.bottom)/2-(actions.top+actions.bottom)/2)<6,'collection heading and create actions align');
 }
 document.querySelector('main').style.gridTemplateColumns='';
-assert(!$('#note-new')&&!$('.notes-side-head')&&document.querySelectorAll('#notes-side>.workspace-tools').length===1,'single merged project header');
-renderWorkspaceTree();assert($('#notes-target')===collection,'tree updates preserve collection selector');
+assert(!$('#notes-target')&&!$('#note-new')&&!$('.notes-side-head')&&document.querySelectorAll('.workspace-tools').length===1,'one shared collection header, no collection dropdown');
+assert(getComputedStyle($('#lib-tree')).display!=='none'&&getComputedStyle($('#lib-items')).display==='none'&&getComputedStyle($('#graph-list-switch')).display==='none','notes show the Library collection tree without paper lists');
+const nested=$('#lib-tree > li[data-id="L1"] + li.tree-files #workspace-tree');
+assert(nested&&$('#lib-tree > li[data-id="C2"]').previousElementSibling.classList.contains('tree-files'),'project files sit under their collection row');
+renderWorkspaceTree();assert(document.querySelectorAll('#workspace-tree').length===1&&$('#lib-tree li.tree-files #workspace-tree')===nested,'tree updates keep files in place');
 assert(!$('.note-toolbar'),'no separate top bar');
 assert($('#notes-stage>.note-actions [data-undo]')&&$('#notes-stage>.note-actions #note-help'),'actions belong to writing area');
 assert($('[data-file="note-entry"]').getAttribute('aria-current')==='page','open note visibly selected');
@@ -93,6 +96,27 @@ $('#note-help').click();assert($('#note-help-dialog').open,'help opens');$('#not
 for(const theme of ['dark','light']){setNotesTheme(theme);const style=getComputedStyle($('#notes-stage'));assert(style.colorScheme===theme,'note theme remains independent');}
 N.doc.preamble=String.raw`\geometry{paperwidth=12in}`;applyPreamble();assert(parseFloat($('.note-page').style.width)>760,'explicit paper geometry preserved');
 N.doc.preamble='';applyPreamble();
-window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, and explicit geometry');
+N.doc.blocks=Array.from({length:40},(_,i)=>({id:'s'+i,type:'text',src:'Paragraph '+i+'\n\n'+'words '.repeat(80)}));
+renderEditor();$('#notes-stage').scrollTop=900;const kept=$('#notes-stage').scrollTop;
+assert(kept>800,'long note scrolls');
+renderEditor();assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'re-rendering the open note keeps its scroll position');
+startEdit('s30');assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'restoring the caret after a re-render does not scroll');
+N.editing=null;N.keepScroll?.();
+$('#notes-stage').style.width='1300px';await new Promise(r=>setTimeout(r,60));
+N.doc.blocks=[{id:'ink',type:'ink',w:1000,h:.4,strokes:[]},{id:'tex',type:'text',src:'Converted $x$',beside:true},{id:'after',type:'text',src:'Next'}];
+renderEditor();await new Promise(r=>setTimeout(r,60));
+const pair=$('.nb-pair'),cells=[...pair.children].map(c=>c.getBoundingClientRect());
+assert(pair&&pair.children.length===2&&cells[1].right<=cells[0].left&&Math.abs(cells[0].top-cells[1].top)<2,'converted LaTeX sits left of its drawing');
+assert(pair.getBoundingClientRect().width>$('.note-blocks').getBoundingClientRect().width,'drawing rows use the panel width');
+assert($('.nb[data-id="tex"] [data-act="below"]')&&!$('.nb[data-id="after"] [data-act="beside"]'),'only text after a drawing offers the layout toggle');
+await blockAction('tex','below');clearTimeout(N.saveTimer);N.dirty=false;
+assert(!$('.nb-pair')&&!N.doc.blocks[1].beside&&$('.nb[data-id="tex"] [data-act="beside"]'),'show below stacks the LaTeX under the drawing');
+$('#notes-stage').style.width='';
+N.items=new Map([['k1',{key:'k1',title:'Analytical engines',creators:['Ada Lovelace','Charles Babbage'],year:1843,venue:'Notes'}]]);N.items.set('bibkey',N.items.get('k1'));
+N.doc.blocks=[{id:'c',type:'text',src:String.raw`See \cite{zz} and \citet{k1}, again \cite{bibkey}. % \cite{commented}`}];renderEditor();
+const refs=[...document.querySelectorAll('.note-references li')].map(li=>li.textContent);
+assert(refs.length===2&&refs[0].startsWith('Ada Lovelace and Charles Babbage (1843). Analytical engines.')&&refs[1].includes('zz')&&$('.note-references li a.cite[data-key="k1"]'),'cited papers are listed once below the note, by author: '+refs.join(' | '));
+N.doc.blocks=[{id:'c',type:'text',src:'No citations'}];renderEditor();assert(!$('.note-references'),'the list disappears without citations');
+window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, the shared collection tree, LaTeX beside drawings, and automatic references');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

@@ -865,3 +865,85 @@ async fn annotation_reply_views_share_bounded_text_and_geometry_options() -> Res
         .is_none());
     Ok(())
 }
+
+#[tokio::test]
+async fn note_edits_from_an_older_read_apply_when_their_blocks_are_unchanged() -> Result<()> {
+    let f = Fixture::new()?;
+    let mut doc = f.app.notes.create("L1", "Shared")?;
+    let id = doc["id"].as_str().unwrap().to_owned();
+    doc["blocks"] = json!([{"id":"a","type":"text","src":"assistant target"},{"id":"b","type":"text","src":"user target"}]);
+    f.app.notes.save("L1", &id, doc)?;
+    let read = mcp_value(&f, "read_note", json!({"folder_id":"L1","note_id":id}), "direct").await;
+    let seen = read["updated"].clone();
+    // The user keeps typing elsewhere in the note.
+    let mut mine = f.app.notes.get("L1", &id)?.unwrap();
+    mine["blocks"][1]["src"] = json!("user typing");
+    f.app.notes.save("L1", &id, mine.clone())?;
+    let edit = |block: &str, latex: &str| json!({"folder_id":"L1","note_id":id,"updated":seen,"edits":[{"op":"replace","block_id":block,"latex":latex}]});
+    let applied = mcp_value(&f, "edit_note", edit("a", "assistant edit"), "direct").await;
+    assert_eq!(applied["status"], "applied", "{applied}");
+    let now = f.app.notes.get("L1", &id)?.unwrap();
+    assert_eq!(now["blocks"][0]["src"], "assistant edit");
+    assert_eq!(now["blocks"][1]["src"], "user typing");
+    let clash = mcp_value(&f, "edit_note", edit("b", "overwrite"), "direct").await;
+    assert_eq!(clash["code"], "CONFLICT", "{clash}");
+    assert!(clash["message"].as_str().unwrap().contains("Block b"));
+    let inserted = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":seen,"edits":[{"op":"insert_after","block_id":"b","latex":"after the user's block"}]}), "direct").await;
+    assert_eq!(inserted["status"], "applied", "{inserted}");
+    let unknown = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":1,"title":"Never read"}), "direct").await;
+    assert_eq!(unknown["code"], "CONFLICT");
+    // A suggestion survives the user saving an unrelated block before Accept.
+    let current = mcp_value(&f, "read_note", json!({"folder_id":"L1","note_id":id}), "direct").await;
+    let proposal = mcp_value(&f, "edit_note", json!({"folder_id":"L1","note_id":id,"updated":current["updated"],"title":"Reviewed","edits":[{"op":"replace","block_id":"a","latex":"suggested"}]}), "suggest").await;
+    let mut later = f.app.notes.get("L1", &id)?.unwrap();
+    later["blocks"][1]["src"] = json!("more user typing");
+    f.app.notes.save("L1", &id, later)?;
+    let accepted = f.json(&format!("/api/agent-edits/{}", proposal["proposal_id"].as_str().unwrap()), Some(json!({"action":"accept"}))).await;
+    assert_eq!(accepted["status"], "applied", "{accepted}");
+    let now = f.app.notes.get("L1", &id)?.unwrap();
+    assert_eq!((now["title"].as_str(), now["blocks"][0]["src"].as_str(), now["blocks"][1]["src"].as_str()), (Some("Reviewed"), Some("suggested"), Some("more user typing")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn transcribed_svg_diagrams_become_note_media() -> Result<()> {
+    let f = Fixture::new()?;
+    let text = "Intro $x$\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\" stroke=\"#000\"/></svg>\n```\nAfter\n```svg\nnot an svg\n```";
+    let out = crate::notes::place_diagrams(&f.app, Some("L1"), text)?;
+    let path = out.split("]{").nth(1).and_then(|s| s.split('}').next()).unwrap();
+    assert!(out.starts_with("Intro $x$\n\\includegraphics[width=0.7\\textwidth]{media/") && path.ends_with(".svg"), "{out}");
+    assert!(out.ends_with("After\n[diagram]"), "{out}");
+    let folder = f.app.library.folder_id("L1")?;
+    assert!(f.app.notes.root.join(&folder).join(path).exists());
+    let served = f.request(&format!("/api/note-media/L1/{}", path.trim_start_matches("media/")), None, None).await;
+    assert_eq!(served.headers()["content-type"], "image/svg+xml");
+    assert_eq!(served.headers()["content-security-policy"], "sandbox");
+    assert_eq!(crate::notes::place_diagrams(&f.app, None, "```svg\n<svg xmlns=\"x\"/>\n```")?, "[diagram]");
+    Ok(())
+}
+
+#[tokio::test]
+async fn convert_ink_places_transcriptions_beside_drawings_by_mode() -> Result<()> {
+    let f = Fixture::new()?;
+    let mut doc = f.app.notes.create("L1", "Handwritten")?;
+    let id = doc["id"].as_str().unwrap().to_owned();
+    doc["blocks"] = json!([{"id":"ink","type":"ink","w":1000,"h":0.4,"strokes":[{"p":[[1,2,1],[30,40,1]],"w":4.5,"c":"#e8e6e1"}]},{"id":"tail","type":"text","src":"after"}]);
+    let updated = f.app.notes.save("L1", &id, doc)?;
+    // A cached preview stands in for the app rendering the drawing.
+    let previews = f.app.notes.root.join(f.app.library.folder_id("L1")?).join(".drawing-previews");
+    std::fs::create_dir_all(&previews)?;
+    std::fs::write(previews.join(format!("{id}-ink-{updated}.png")), b"\x89PNG\r\n\x1a\nfake-preview")?;
+    let args = json!({"folder_id":"L1","note_id":id,"updated":updated});
+    let plan = mcp_value(&f, "convert_ink", args.clone(), "plan").await;
+    assert_eq!(plan["isError"], true);
+    let proposal = mcp_value(&f, "convert_ink", args.clone(), "suggest").await;
+    assert_eq!(proposal["status"], "proposed", "{proposal}");
+    assert_eq!(f.app.notes.get("L1", &id)?.unwrap()["blocks"].as_array().unwrap().len(), 2);
+    let applied = mcp_value(&f, "convert_ink", args, "direct").await;
+    assert_eq!(applied["status"], "applied", "{applied}");
+    let blocks = f.app.notes.get("L1", &id)?.unwrap()["blocks"].clone();
+    assert_eq!((blocks[0]["type"].as_str(), blocks[1]["src"].as_str(), blocks[1]["beside"].as_bool(), blocks[2]["id"].as_str()), (Some("ink"), Some(r"\[x^2\]"), Some(true), Some("tail")));
+    let missing = mcp_value(&f, "convert_ink", json!({"folder_id":"L1","note_id":id,"updated":1,"block_ids":["tail"]}), "direct").await;
+    assert_eq!(missing["isError"], true);
+    Ok(())
+}

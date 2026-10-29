@@ -26,7 +26,7 @@ async function undoNote(redo=false){
  try{await flushNoteEdits();if(N.doc?.id!==id||N.target!==target)return;NoteUndo.busy=true;updateHistoryButtons();
   const r=await api(`/api/notes/${enc(target)}/${enc(id)}/history`,{redo,updated:N.doc.updated});
   N.doc=r.doc;N.editing=null;N.imgSel=null;NoteUndo.frames=[];NoteUndo.last=noteSnapshot();NoteUndo.status=r.history;renderEditor();renderNoteList();if(stage)stage.inert=false;
-  if(caret&&!caret.block){const field=caret.field.includes('note-title')?'.note-title':'.note-preamble textarea';if(field.includes('preamble')){N.preambleOpen=true;renderEditor();}const input=document.querySelector(field);input?.focus();input?.setSelectionRange(Math.min(caret.start,input.value.length),Math.min(caret.end,input.value.length));}
+  if(caret&&!caret.block){const field=caret.field.includes('note-title')?'.note-title':'.note-preamble textarea';if(field.includes('preamble')){N.preambleOpen=true;renderEditor();}const input=document.querySelector(field);input?.focus({preventScroll:true});input?.setSelectionRange(Math.min(caret.start,input.value.length),Math.min(caret.end,input.value.length));}
   if(caret?.block&&N.doc.blocks.some(b=>b.id===caret.block&&b.type==='text')){startEdit(caret.block);const ta=document.querySelector(`.nb[data-id="${caret.block}"] textarea`);ta?.setSelectionRange(Math.min(caret.start,ta.value.length),Math.min(caret.end,ta.value.length));}
  }catch(e){toast(e.message,{error:true});}finally{NoteUndo.busy=false;NoteUndo.running=false;if(stage)stage.inert=false;updateHistoryButtons();}
 }

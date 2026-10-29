@@ -371,6 +371,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   --np-link: #805536; --np-ref: #633b1c; --np-warn: #b12a44; --np-unknown: #8c5a12; --np-link-ink: #fff;
   --np-link-rgb: 128, 85, 54;
   --np-ink-filter: invert(1) hue-rotate(180deg);
+  --np-svg-filter: none;
   color-scheme: light;
   overflow: auto; background: var(--np-bg); color: var(--np-ink); min-height: 0;
 }
@@ -379,6 +380,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
   --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
   --np-link-rgb: 169, 184, 255;
   --np-ink-filter: none;
+  --np-svg-filter: invert(1) hue-rotate(180deg);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -387,6 +389,7 @@ body.notes-mode #notes-side { display: flex; flex-direction: column; min-height:
     --np-link: #a9b8ff; --np-ref: #a9b8ff; --np-warn: #f7768e; --np-unknown: #e0af68; --np-link-ink: #111;
     --np-link-rgb: 169, 184, 255;
     --np-ink-filter: none;
+    --np-svg-filter: invert(1) hue-rotate(180deg);
     color-scheme: dark;
   }
 }
@@ -525,12 +528,28 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 /* Drawing pads: same background as the page so they sit in the text seamlessly. */
 .ink { position: relative; outline: none; margin: 4px 0; }
 .ink canvas {
-  display: block; width: 100%; touch-action: none; cursor: crosshair;
+  display: block; touch-action: none; cursor: crosshair;
   border-radius: 6px; box-shadow: inset 0 0 0 1px transparent; transition: box-shadow .12s;
 }
+.ink-scroll { overflow-x: auto; overflow-y: hidden; border-radius: 6px; }
+.ink-surface { position: relative; }
+.ink-edge { position: absolute; top: 0; bottom: 0; width: 10px; z-index: 1; cursor: ew-resize; touch-action: none; }
+.ink-edge.left { left: 0; } .ink-edge.right { right: 0; }
+.ink:hover .ink-edge:hover, .ink-edge:active { background: linear-gradient(var(--np-line), var(--np-line)) center / 3px 40px no-repeat; }
+.nb-ink > .nb-tools { left: calc(-48px - var(--pad-out, 0px)); }
+/* LaTeX converted from a drawing can sit beside it, using the panel's width. */
+.nb-pair { --pair-w: max(100%, min(var(--stage-w, 100%) - 128px, 1500px)); width: var(--pair-w); margin-left: calc((100% - var(--pair-w)) / 2); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 24px; align-items: start; }
+/* The LaTeX reads first (left, or above when stacked); the drawing's tools sit on its right edge. */
+.nb-pair > .nb-text { order: -1; }
+.nb-pair > .nb-ink > .nb-tools { left: auto; right: -48px; }
+.nb-pair > .nb-ink > .nb-tools::after { left: auto; right: 100%; }
+#notes-stage.narrow .nb-pair { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .ink canvas.erasing { cursor: cell; }
 .ink:hover canvas, .ink:focus-within canvas { box-shadow: inset 0 0 0 1px var(--np-line); }
-.ink canvas, .ink-tools [data-color] { filter: var(--np-ink-filter); }
+/* SVG diagrams are dark-on-transparent; dark pages show them light, hues kept. */
+#notes-stage .tex-img img[src$=".svg"] { filter: var(--np-svg-filter); }
+.ink canvas.ink-live { position: absolute; left: 0; top: 0; pointer-events: none; box-shadow: none; }
+.ink-tools [data-color] { filter: var(--np-ink-filter); }
 .ink-tools {
   position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 3px; z-index: 2;
   background: var(--np-raise); border: 1px solid var(--np-line); border-radius: 8px; padding: 3px 5px;
@@ -566,6 +585,8 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 .chat-mode[data-mode="suggest"] { color: var(--accent); border-color: var(--accent); }
 .chat-mode[data-mode="plan"] { color: var(--muted); }
 .chat-mode[data-mode="direct"] { color: #fff; background: var(--cite); border-color: var(--cite); }
+.chat-effort { color: var(--muted); }
+.chat-effort:not([data-effort="default"]) { color: var(--ink); border-color: var(--muted); }
 
 .note-meta a { color: var(--np-link); }
 
@@ -948,7 +969,8 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-title:focus-visible {outline:none;    border-radius: 4px; }
 .note-meta { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0; text-align: center; font: 14px/1.5 var(--font-note); }
 .note-folder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
-.note-save-status { color: var(--np-muted); }
+.note-save-status { color: var(--np-muted); transition: opacity .3s; }
+.note-save-status.quiet { opacity: .6; }
 .note-save-status::before { content: "·"; margin-right: 6px; }
 .note-preamble { margin: 16px 0 0; }
 .nb-view.is-empty { min-height: 32px; padding: 4px 0; }
@@ -1138,8 +1160,17 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-actions button:enabled:hover, #workspace-editor header button:enabled:hover { color: var(--np-ink); background: var(--np-raise); }
 .note-actions button:focus-visible, #workspace-editor button:focus-visible, .workspace-source:focus-visible {outline:none;   }
 .note-actions [aria-expanded="true"] { color: var(--np-link); background: var(--np-raise); }
-.note-page { width: min(760px, 100%); padding: 12px clamp(40px, 6%, 64px) 96px; }
+.note-page { width: min(860px, 100%); padding: 12px clamp(40px, 6%, 64px) 96px; }
 .note-head { padding-bottom: 14px; margin-bottom: 8px; }
+/* Cited papers, listed automatically below the note. */
+.note-references { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--np-line); font: calc(var(--note-font-size, 16px) * .9)/1.5 var(--font-note); color: var(--np-ink); }
+.note-references h2 { margin: 0 0 10px; font-size: 1.15em; font-weight: 600; }
+.note-references ol { margin: 0; padding: 0; list-style: none; }
+.note-references li { margin: 0 0 8px; padding-left: 1.6em; text-indent: -1.6em; }
+.note-references a.cite { color: inherit; text-decoration: none; cursor: pointer; }
+.note-references a.cite:hover { color: var(--np-link); text-decoration: underline; }
+.note-references li.missing { color: var(--np-warn); }
+.note-references li.missing span { color: var(--np-muted); }
 .note-title { min-width: 0; margin: 0 0 20px; padding: 2px 4px; text-align: center; font: 500 var(--note-title-font-size)/1.25 var(--font-note); color: var(--np-ink); resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-meta { justify-content: flex-start; text-align: left; }
 .nb-insert:last-child { height: 34px; margin-top: 12px; }
@@ -1219,6 +1250,14 @@ body.library-view #tab-library > .list-tools, body.library-view #lib-items { dis
 .library-heading > div:first-child { flex: 1; min-width: 0; }
 .library-heading h1 { font-size: calc(18px * var(--ui-font-scale)); margin: 0 0 4px; }
 .library-heading .hint { margin: 0; font-size: calc(12px * var(--ui-font-scale)); }
+.library-kind { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.library-kind button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(12px * var(--ui-font-scale)); }
+.library-kind button.active { background: var(--bg); color: var(--ink); font-weight: 600; }
+#library-new-note { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
+#library-new-note:hover { color: var(--accent); }
+#library-rows .library-note-row [data-open-note] { display: inline-flex; align-items: center; gap: 6px; }
+#library-rows .library-note-row [data-open-note]::before { width: 14px; height: 14px; color: var(--accent); }
+#library-rows .library-note-kind { color: var(--muted); }
 #library-table-scroll { overflow: auto; flex: 1; min-height: 0; }
 #library-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: calc(12px * var(--ui-font-scale)); text-align: left; }
 #library-table th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); white-space: nowrap; font-weight: 500; }
@@ -1301,7 +1340,25 @@ header #open-settings { margin-left: auto; }
 #research-sidebar #tab-nodes > .list-tools { position: sticky; top: 0; z-index: 2; padding: 6px 0 9px; margin: 0; background: var(--panel); }
 
 body.library-view #graph-folders > summary { display: none; }
-body:is(.notes-mode, .pdf-mode) #research-sidebar { display: none !important; }
+body.pdf-mode:not(.notes-mode) #research-sidebar { display: none !important; }
+/* Notes share the Library's collection tree; only paper lists give way to the editor. */
+body.notes-mode #research-sidebar { display: flex; flex-direction: column; overflow: hidden; }
+body.notes-mode #research-sidebar > :not(#tab-library), body.notes-mode #library-tags, body.notes-mode #tags-divider { display: none !important; }
+/* Wins over the Graph/Lineage folder height, which has the same specificity. */
+html body.notes-mode #research-sidebar #tab-library { flex: 1; height: auto; min-height: 0; overflow: auto; }
+body.notes-mode #lib-tree { max-height: none; }
+#notes-side:not(:has(#workspace-tree)) { display: none !important; }
+#collection-tools { position: sticky; top: 0; z-index: 3; margin: 0 -12px; background: var(--panel); }
+body.notes-mode #lib-tree .library-trash-row, body.notes-mode #library-root-drop { display: none; }
+body.pdf-mode #collection-tools { display: none; }
+#lib-tree > li.tree-files { display: block; min-height: 0; padding: 2px 0 6px; cursor: default; background: none; box-shadow: none; }
+#lib-tree > li.tree-files:hover { background: none; }
+#lib-tree > li.tree-files #workspace-tree { overflow: visible; }
+#lib-tree > li.tree-files .workspace-entry { margin-left: calc(var(--tree-indent, 8px) + 18px); }
+#workspace-footer-host { display: none; }
+body.notes-mode #workspace-footer-host { display: block; position: sticky; bottom: -10px; z-index: 3; margin: auto -12px -10px; background: var(--panel); }
+html body.notes-mode #research-sidebar #tab-library { display: flex; flex-direction: column; }
+#lib-tree li.workspace-project-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 
 
@@ -1499,6 +1556,14 @@ body.split-dragging, body.split-dragging * { cursor:grabbing !important; user-se
 body.pdf-mode.split-view main > #split-divider { display:block; position:relative; grid-column:3; grid-row:1; justify-self:start; width:8px; margin-left:calc(var(--split,50%) - 4px); background:var(--panel); cursor:col-resize; touch-action:none; z-index:10; }
 #split-divider::after { content:""; position:absolute; top:0; bottom:0; left:3px; width:2px; background:var(--line); pointer-events:none; transition:background .12s .08s; }
 #split-divider:hover::after, #split-divider.dragging::after, #split-divider:focus-visible::after { background:var(--accent); }
+/* The same split beside the Library, Graph and Lineage views. */
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #stage { justify-self:start; width:calc(var(--split,50%) - 4px); }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #notes-stage { display:block !important; justify-self:end; width:calc(100% - var(--split,50%) - 4px); margin-top:40px; }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #split-note-bar { display:flex; align-items:center; gap:6px; grid-column:3; grid-row:1; align-self:start; box-sizing:border-box; height:40px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line); justify-self:end; width:calc(100% - var(--split,50%) - 4px); }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #split-divider { display:block; position:relative; grid-column:3; grid-row:1; justify-self:start; width:8px; margin-left:calc(var(--split,50%) - 4px); background:var(--panel); cursor:col-resize; touch-action:none; z-index:10; }
+.graph-toolbar [data-split] { pointer-events:auto; }
+.library-heading [data-split] { width:30px; min-height:30px; padding:0; border-color:transparent; background:transparent; color:var(--muted); }
+:is(.library-heading, .graph-toolbar) [data-split][aria-pressed="true"] { color:var(--accent); }
 /* Keep reader navigation and add the note list below it to pick the side note. */
 body.pdf-mode.split-view #pdf-sidebar { flex:1 1 55%; height:auto; min-height:0; }
 body.pdf-mode.split-view #notes-side { display:flex !important; flex-direction:column; flex:1 1 45%; min-height:0; border-top:1px solid var(--line); }

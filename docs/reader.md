@@ -6,7 +6,15 @@
 
 Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
-of the app's appearance.
+of the app's appearance. Pages are redrawn at each zoom level and at least twice
+the screen's resolution, so text stays sharp on standard and scaled displays.
+
+**Fit to width** (the double-arrow button beside the zoom controls) makes the
+pages fill the reading area and keeps them fitted as you resize the window,
+show or hide the side panes, or open and drag the note beside the paper; the
+choice is remembered. Zooming by hand turns it off. Ctrl+scroll (or a trackpad
+pinch) zooms smoothly around the pointer: the pages scale immediately and are
+redrawn sharply once you pause.
 
 To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
 The matching local PDF is required. Imported highlights, comments, area/text
@@ -83,7 +91,8 @@ double-click it to return to an even split, or focus it and use the arrow keys.
 Each side keeps a minimum width. Bars above each side switch documents without
 leaving the Reader: above the PDF, choose a folder (the whole library by default)
 and any paper with a PDF; above the note, choose a folder, choose a note, or
-create one with **New note**. The navigation
+create one with **New note**. **More document actions → New note beside the
+paper** opens the split and starts a note in the selected collection in one step. The navigation
 pane also lists the folder's project files below the Reader outline and
 annotations; choose one there to open it beside the paper. Click the button again to give the PDF the full width; the note stays
 saved and open in Notes. The split, its width, and the side-pane rails are

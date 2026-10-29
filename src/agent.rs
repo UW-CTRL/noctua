@@ -23,17 +23,23 @@ impl Provider {
     }
     /// Apply only to inference commands, never login or status probes.
     pub fn configure(self, app: &App, cmd: &mut Command) {
+        self.configure_effort(app, cmd, None);
+    }
+    /// Like `configure`, with a validated per-message effort overriding the
+    /// saved reasoning effort.
+    pub fn configure_effort(self, app: &App, cmd: &mut Command, effort: Option<&str>) {
         let settings = app.settings.lock().unwrap();
         let options = settings.assistant.for_provider(self);
+        let reasoning = effort.unwrap_or(&options.reasoning);
         if !options.model.is_empty() { cmd.arg("--model").arg(&options.model); }
         match self {
             Self::Claude => {
-                if !options.reasoning.is_empty() { cmd.arg("--effort").arg(&options.reasoning); }
+                if !reasoning.is_empty() { cmd.arg("--effort").arg(reasoning); }
                 cmd.arg("--settings").arg(json!({"fastMode": options.fast}).to_string());
             }
             Self::Codex => {
-                if !options.reasoning.is_empty() {
-                    cmd.arg("-c").arg(format!("model_reasoning_effort={}", json!(options.reasoning)));
+                if !reasoning.is_empty() {
+                    cmd.arg("-c").arg(format!("model_reasoning_effort={}", json!(reasoning)));
                 }
                 cmd.arg("-c").arg(format!("service_tier={}", json!(if options.fast { "fast" } else { "default" })));
             }
@@ -214,13 +220,17 @@ pub async fn login(State(app): State<Arc<App>>, Path(provider): Path<Provider>) 
 /// Keep user-configured MCP servers out of Noctua, while sharing the CLI's
 /// login. Noctua's MCP tools are the route for all research and note changes.
 pub fn codex_command(app: &App, mcp_url: Option<&str>, instructions: &str) -> Command {
+    codex_command_effort(app, mcp_url, instructions, None)
+}
+
+pub fn codex_command_effort(app: &App, mcp_url: Option<&str>, instructions: &str, effort: Option<&str>) -> Command {
     let mut cmd = Provider::Codex.command(app);
     cmd.args(["exec", "--json", "--skip-git-repo-check", "--ignore-user-config"])
         .args(["-c", "approval_policy=\"never\"", "-c", "sandbox_mode=\"read-only\""])
         .args(["-c", "features.shell_tool=false", "-c", "web_search=\"disabled\""])
         .args(["-c", "project_doc_max_bytes=0"])
         .arg("-c").arg(format!("developer_instructions={}", json!(instructions)));
-    Provider::Codex.configure(app, &mut cmd);
+    Provider::Codex.configure_effort(app, &mut cmd, effort);
     if let Some(url) = mcp_url {
         cmd.arg("-c").arg(format!("mcp_servers.noctua.url={}", json!(url)))
             .arg("-c").arg(format!("mcp_servers.noctua.bearer_token_env_var={}",json!("NOCTUA_MCP_TOKEN")))
@@ -1547,6 +1557,15 @@ mod tests {
                 }
             }
         }
+        // A per-message effort overrides the saved one; invalid efforts are refused.
+        for (provider, effort, flag, value) in [("claude", "low", "--effort", "low"), ("codex", "minimal", "-c", r#"model_reasoning_effort="minimal""#)] {
+            f.events("/api/chat", json!({ "message": "quick", "provider": provider, "effort": effort })).await;
+            let calls: Vec<Value> = std::fs::read_to_string(f.root.join("invocations.jsonl"))?.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+            let last = calls.iter().rev().find(|c| c["provider"] == provider).unwrap()["args"].as_array().unwrap().clone();
+            assert!(last.windows(2).any(|p| p[0] == flag && p[1] == value), "{last:?}");
+            assert!(!last.windows(2).any(|p| p[1] == "high" || p[1] == r#"model_reasoning_effort="high""#));
+        }
+        assert_eq!(f.request("/api/chat", Some(json!({ "message": "x", "provider": "claude", "effort": "ultra" })), None).await.status(), StatusCode::BAD_REQUEST);
         // Provider-only updates preserve both saved configurations.
         f.json("/api/settings/agent", Some(json!({"provider":"claude"}))).await;
         let settings = f.json("/api/settings", None).await;

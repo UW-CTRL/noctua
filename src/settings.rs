@@ -157,13 +157,18 @@ impl AssistantOptions {
         if self.model.len() > 200 || self.model.starts_with('-') || self.model.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err(bad("Enter a model ID without spaces (up to 200 characters)."));
         }
-        let levels = match provider {
-            Provider::Claude => &["", "low", "medium", "high", "xhigh", "max"][..],
-            Provider::Codex => &["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..],
-        };
-        if !levels.contains(&self.reasoning.as_str()) { return Err(bad("Unsupported reasoning effort for this provider.")); }
+        if !valid_effort(provider, &self.reasoning) { return Err(bad("Unsupported reasoning effort for this provider.")); }
         Ok(())
     }
+}
+
+/// Reasoning efforts each CLI accepts; empty keeps the CLI's default.
+pub fn valid_effort(provider: Provider, effort: &str) -> bool {
+    let levels = match provider {
+        Provider::Claude => &["", "low", "medium", "high", "xhigh", "max"][..],
+        Provider::Codex => &["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..],
+    };
+    levels.contains(&effort)
 }
 
 impl Settings {

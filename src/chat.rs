@@ -36,6 +36,9 @@ pub struct ChatBody {
     chat_id: Option<String>,
     #[serde(default)]
     mode: String,
+    /// Reasoning effort for this message; empty keeps the saved setting.
+    #[serde(default)]
+    effort: String,
     /// Papers, notes, project files/folders and collections @-mentioned, as text.
     #[serde(default)]
     attachments: String,
@@ -104,6 +107,9 @@ pub fn stream(app: Arc<App>, body: ChatBody) -> Result<Body, crate::ApiError> {
     validate_selections(&body.selections).map_err(|error|crate::Status(axum::http::StatusCode::BAD_REQUEST,error.to_string()))?;
     let files=crate::chat_files::validate(&app,&body.files).map_err(|error|crate::Status(axum::http::StatusCode::BAD_REQUEST,error.to_string()))?;
     let provider = body.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent);
+    if !crate::settings::valid_effort(provider, &body.effort) {
+        return Err(crate::Status(axum::http::StatusCode::BAD_REQUEST, "Unsupported reasoning effort for this provider.".into()).into());
+    }
     let (tx, rx) = mpsc::channel::<Value>(256);
     let chat_id = body
         .chat_id
@@ -174,14 +180,15 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
         }
         if std::fs::read_dir(&dir)?.filter_map(Result::ok).any(|entry| entry.path().extension().is_some_and(|ext|ext=="pdf")) { Some(dir) } else { None }
     } else { None };
+    let effort = Some(body.effort.as_str()).filter(|e| !e.is_empty());
     let mut cmd = if provider == Provider::Codex {
-        let mut c = agent::codex_command(app, Some(url.as_str()), &instructions);
+        let mut c = agent::codex_command_effort(app, Some(url.as_str()), &instructions, effort);
         if let Some(s) = &session { c.args(["resume", s]); }
         c.arg("-");
         c
     } else {
         let mut c = provider.command(app);
-        provider.configure(app, &mut c);
+        provider.configure_effort(app, &mut c, effort);
         c.args(["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"])
             .args(["--tools", if native_pdf_dir.is_some() { "Read" } else { "" }, "--strict-mcp-config", "--mcp-config", &mcp])
             .args(["--allowedTools", if native_pdf_dir.is_some() { "Read,mcp__noctua" } else { "mcp__noctua" }, "--system-prompt", &instructions]);

@@ -38,10 +38,11 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-pub(crate) const WRITE_TOOLS: [&str; 10] = [
+pub(crate) const WRITE_TOOLS: [&str; 11] = [
     "download_pdf",
     "save_to_library",
     "edit_note",
+    "convert_ink",
     "annotate_pdf",
     "comment_on_pdf_annotation",
     "edit_project_file",
@@ -202,6 +203,8 @@ async fn call(app: &App, params: &Value, mode: &str, chat_id: Option<&str>) -> V
             json!({"content":view_image(app,&args)?})
         } else if name == "view_note_drawing" {
             json!({"content":crate::reader::drawing_for_agent(app,&args,chat_id).await?})
+        } else if name == "convert_ink" {
+            json!({"content":[{"type":"text","text":crate::reader::convert_ink(app,&args,mode,chat_id).await?.to_string()}]})
         } else {
             let v = run(app, name, &args, mode, chat_id).await?;
             let text = v

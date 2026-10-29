@@ -23,6 +23,7 @@ let checks=#"""
 (async()=>{
  const normal=pdfRasterSize(612,792,3);assert(normal.width===1836&&normal.height===2376,'3x screen incorrectly capped at 2x');
  const zoomed=pdfRasterSize(1224,1584,3);assert(zoomed.width===normal.width*2,'zoom did not increase raster resolution');
+ const standard=pdfRasterSize(612,792,1),scaled=pdfRasterSize(612,792,1.25);assert(standard.width===1224&&scaled.width===1224,'standard and fractional screens are not supersampled to 2x');
  const huge=pdfRasterSize(20000,20000,3);assert(huge.width*huge.height<=32*1024*1024&&huge.width<=16384,'canvas memory bound missing');
  window.visualViewport.scale=2;assert(pdfPixelDensity()===6,'browser magnification ignored');
  let prevented=false;const wheel={ctrlKey:true,deltaY:-50,deltaMode:0,clientX:100,clientY:200,preventDefault(){prevented=true;}};

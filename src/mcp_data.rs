@@ -27,6 +27,7 @@ pub fn catalog(list: &mut Value) {
   tool("get_edit_proposal","Read an assistant change's proposed/applied/rejected status. Only the app's review UI can accept/reject it.",json!({"proposal_id":string()}),&["proposal_id"]),
   tool("read_pdf_outline","Read the saved AI outline without generating analysis. Reports unavailable when no saved AI outline exists; does not read embedded PDF bookmarks.",json!({"paper_key":string()}),&["paper_key"]),
   tool("get_paper_relations","Read references, citations or similar papers without changing the app view. Relationships are a bounded upstream snapshot, not the entire citation corpus.",json!({"paper_id":string(),"relation":{"type":"string","enum":["references","citations","similar"]}}),&["paper_id","relation"]),
+  tool("convert_ink","Transcribe handwriting blocks into LaTeX text placed beside each drawing, redrawing diagrams as SVG images; drawings stay. Omit block_ids to convert every drawing in the note. Use updated from read_note. Suggest stores a reviewable proposal; Direct saves. Uncached drawings need an active Noctua chat to render.",json!({"folder_id":string(),"note_id":string(),"updated":integer(0,u64::MAX),"block_ids":{"type":"array","items":string(),"maxItems":20}}),&["folder_id","note_id","updated"]),
   tool("view_note_drawing","View a saved handwriting block as PNG. Cached previews work independently; uncached previews require an active Noctua chat to render. Does not transcribe or edit strokes.",json!({"folder_id":string(),"note_id":string(),"block_id":string()}),&["folder_id","note_id","block_id"]),
  ]);
     for t in tools {
@@ -109,7 +110,7 @@ pub fn catalog(list: &mut Value) {
                 props.get_mut("edits").unwrap()["items"]["properties"]["after_block_id"] = json!({"type":"string","description":"For move: destination block ID, empty for first"});
                 props.get_mut("edits").unwrap()["items"]["additionalProperties"] = json!(false);
                 t["inputSchema"]["required"] = json!(["folder_id", "note_id", "updated"]);
-                t["description"]=json!("Apply targeted block edits and/or title/preamble with updated from read_note. replace/delete/move require block_id; insert_after may omit it for first. move requires after_block_id (empty for first). Replacing ink preserves it and inserts text below. Direct persists atomically before applied; Suggest stores a durable proposal for app review. Unknown blocks and stale versions fail.");
+                t["description"]=json!("Apply targeted block edits and/or title/preamble with updated from read_note. replace/delete/move require block_id; insert_after may omit it for first. move requires after_block_id (empty for first). Replacing ink preserves it and inserts text below. Direct persists atomically before applied; Suggest stores a durable proposal for app review. Unknown blocks fail. After a newer save, edits still apply if the blocks, title or preamble they touch are unchanged since that read; otherwise read again.");
             }
             "save_to_library" => {
                 props.insert("download_pdf".into(), json!({"type":"boolean","description":"Defaults to true. Set false to save metadata/membership without attempting a PDF download."}));
@@ -177,7 +178,7 @@ pub fn catalog(list: &mut Value) {
             ("limit","Maximum items in a result page; inspect has_more and continuation fields."),
             ("char_offset","Zero-based Unicode character offset within the current text, PDF page, or note block."),
             ("max_chars","Maximum Unicode characters per text range; use continuation metadata to read the remainder."),
-            ("updated","Saved note version from read_note. Required for edits; stale versions are rejected."),
+            ("updated","Saved note version from read_note. Required for edits; edits conflict only where that version differs from the latest save."),
             ("revision","Workspace version from list_project_files/read_project_file. Stale versions are rejected."),
         ] {
             if let Some(property)=props.get_mut(field){property["description"]=json!(description);}

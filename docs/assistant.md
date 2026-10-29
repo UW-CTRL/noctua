@@ -16,6 +16,9 @@ focus shows the same labels immediately; reduced-motion preferences disable the 
 can search papers, explore your library, save papers, read PDFs, annotate
 passages, and edit note text through Noctua's tools.
 
+While the assistant works, its steps appear in the conversation. The
+bottom-right notification shows its progress only while the chat is hidden.
+
 The `@` picker includes every file type in the current project (`.bib`, `.tex`,
 images, and more), plus library papers, notes, and collections. Search by filename,
 folder path, title, or author; results show their type and location. Choose a result
@@ -34,9 +37,19 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 | --- | --- |
 | Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization and downloads apply immediately. |
 | Plan | Investigates and answers without writing changes |
-| Direct | Saves supported changes before reporting completion; version checks protect concurrent edits and note edits can be undone |
+| Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
-Choose the mode with the badge below the composer.
+Choose the mode with the badge below the composer, or press Shift+Tab while the
+chat box or the mode and effort badges have focus.
+
+### Reasoning effort per message
+
+The **effort** badge beside the mode sets the reasoning effort for your next
+messages: **Default effort** uses the level saved in **Settings → Research
+assistant**, and the other levels are those the selected model supports. Click
+the badge to cycle, or press Shift+← / Shift+→ while the chat box is empty to
+step down or up (with text in the box, these keys select text as usual). The
+choice is remembered per provider on this device.
 
 ## Chat attachments
 
@@ -82,7 +95,8 @@ or unusually formatted objects. Attaching sources is a UI action, not a chat too
 ## Capabilities and limits
 
 The assistant can download available PDFs, search indexed text, view rendered
-pages, and annotate exact passages. Keep a Noctua chat tab open when it needs
+pages, and annotate exact passages. In notes, it can view drawings and transcribe
+them into LaTeX placed beside each drawing, redrawing diagrams as SVG images. Keep a Noctua chat tab open when it needs
 uncached PDF text or page images. Scanned PDFs do not gain OCR.
 
 Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while
@@ -211,7 +225,7 @@ These use separate task prompts rather than the combined chat instructions.
 | --- | --- | --- |
 | [PDF outline](../src/prompts/pdf-outline.md) | Page text; ground headings in exact quotes and PDF page numbers. | Validated JSON section tree. |
 | [Auto-highlight](../src/prompts/pdf-autohighlight.md) | Page text; choose exact, non-overlapping quotes in four categories. | Validated highlights with brief English explanations. |
-| [Handwriting](../src/prompts/handwriting.md) | Drawing image; preserve wording, use supported LaTeX, mark diagrams. | LaTeX source inserted below the drawing. |
+| [Handwriting](../src/prompts/handwriting.md) | Drawing image; preserve wording, use supported LaTeX, redraw diagrams as SVG. | LaTeX source placed beside the drawing; SVG diagrams saved as note media and included as images. |
 | [Lineage](../src/prompts/lineage.md) | Titles, abstract excerpts, IDs, and citation steps; explain research threads. | JSON themes, key papers, and relationships. |
 
 ### Workers and maintenance

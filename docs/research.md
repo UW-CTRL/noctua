@@ -220,6 +220,30 @@ Folder counts align at the right edge. Hover a folder or focus its controls to
 replace its count with rename, new-folder, and available import actions.
 The library supports filtering, sorting, and metadata editing.
 
+The same tree appears in **Notes**, and the selection is shared between the two
+modes. The selected collection's notes and project files are listed under its
+row; click a note to open it in Notes. The **Collections** header above the tree
+creates notes, project folders, and imports in the selected collection. See
+[Notes](notes.md#project-files-bibliographies-and-skills).
+
+The Library table lists the selected collection's notes beside its papers. Note
+rows have a notebook icon, show **Note** and their last edit in the Publication
+column, and open in Notes when you click the title, double-click the row, or
+press Enter. Use **All / Papers / Notes** above the table to choose what is
+listed (remembered on this device). The text filter matches note titles; a tag
+filter lists papers only, since notes have no tags. Notes are listed for the
+selected collection itself, not its subfolders. The **New note** icon beside the
+filter, or **New note** in a collection's right-click menu, creates a note there
+and opens it.
+
+To write while you browse, click **Open notes beside this view** (two columns)
+in the Library header or the Graph and Lineage toolbar. The note opens to the
+right of the Library, Graph, or Lineage view, with the same divider, folder and
+note pickers, and **New note** button as
+[notes beside the paper](reader.md#take-notes-beside-the-paper). Notes you open
+from the collection tree appear in that side panel. Library views and the Reader
+remember their splits separately.
+
 Select a collection in the folder tree and switch to **Graph** or **Lineage** to
 explore connections among its papers. **Papers** contains just the graph paper
 list with sorting and filtering. Colors distinguish citation-connected clusters;

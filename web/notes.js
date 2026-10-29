@@ -30,11 +30,10 @@ function setMode(mode) {
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   store.set('noctua.mode', mode);
   $('#tooltip').classList.add('hidden');
+  if (typeof syncSplitButtons === 'function') syncSplitButtons();
   if (isNotesMode()) showNotes();
-  else {
-    saveNow();
-    requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
-  }
+  else saveNow();
+  if (!notes) requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
   renderDetails();
   updateChatContext();
 }
@@ -44,9 +43,9 @@ function showNotes() {
   loadRefs(true).then(typeset);  // note titles for \noteref links
 }
 
-// Opening or closing the note beside the Reader keeps the PDF as the main view.
+// Opening or closing the side note keeps the PDF or Library as the main view.
 document.addEventListener('noctua-split-change', () => {
-  if (!document.body.classList.contains('pdf-mode')) return;
+  if (document.body.classList.contains('notes-mode')) return;
   if (isNotesMode()) showNotes(); else saveNow();
   updateChatContext();
 });
@@ -78,26 +77,29 @@ splitNoteBar.querySelector('[data-split-note]').addEventListener('change', (e) =
 splitNoteBar.querySelector('[data-split-new]').addEventListener('click', () => createNote());
 
 // Called by app.js whenever the Noctua folder list (re)loads.
+// Notes follow the collection selected in the shared tree.
 function notesRefreshFolders() {
   const ids = collections.targets.map((t) => t.id);
-  const want = N.target || store.get('noctua.notesTarget');
+  const selected = typeof lib !== 'undefined' && !lib.trash ? lib.target : null;
+  const want = ids.includes(selected) ? selected : N.target || store.get('noctua.notesTarget');
   const pick = ids.includes(want) ? want : ids.find((i) => i.startsWith('C')) || ids[0] || '';
-  $('#notes-target').innerHTML = collectionOptions(pick);
-  if (isNotesMode() && !N.target && pick) loadNoteFolder(pick);
+  if (pick && N.target !== pick) loadNoteFolder(pick);
 }
 
 async function loadNoteFolder(target) {
   if (!target) return;
-  try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});$('#notes-target').value=N.target||'';return;}
+  try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});return;}
   rememberWorkspaceView();W.file=null;
   N.target = target;
   store.set('noctua.notesTarget', target);
-  $('#notes-target').value = target;
+  if (typeof selectCollection === 'function') selectCollection(target);
   N.items = new Map();
   try {
-    const [list, items] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`)]);
+    // Citations resolve against the whole library; the collection's own items
+    // (including project bibliography keys) take precedence.
+    const [list, items, all] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`), target === 'L1' ? [] : api('/api/library/items?target=L1').catch(() => [])]);
     N.list = list;
-    for (const it of items) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
+    for (const it of [...all, ...items]) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
   } catch (e) {
     N.list = [];
     toast(e.message, { error: true });
@@ -115,6 +117,11 @@ async function loadNoteFolder(target) {
 
 function renderNoteList() {
   if(W.manifest&&W.target===N.target)renderWorkspaceTree();
+  // Keep the Library table's note rows current.
+  if (typeof lib !== 'undefined' && lib.target === N.target && lib.items) {
+    lib.notes = N.list.map(({ id, title, created, updated }) => ({ id, title, created, updated }));
+    if (!document.body.classList.contains('notes-mode') && typeof renderLibItems === 'function') renderLibItems();
+  }
   renderSplitNoteBar();
   const el = $('#note-list');
   if (!N.list.length) {
@@ -174,6 +181,21 @@ async function openNote(id) {
   }
 }
 
+// Entry points from Library and the Reader: open or create a note in a
+// collection, switching to Notes (or keeping the note beside the paper).
+async function openNoteFrom(target, id) {
+  if (N.target !== target) await loadNoteFolder(target);
+  if (W.file || N.doc?.id !== id) { W.file = null; await openNote(id); }
+  if (!isNotesMode()) setMode('notes');
+}
+
+async function createNoteIn(target, { beside = false } = {}) {
+  if (target && N.target !== target) await loadNoteFolder(target);
+  if (beside) { if (!splitViewActive()) setSplitView(true); }
+  else if (!isNotesMode()) setMode('notes');
+  return createNote();
+}
+
 function chooseLocalDraft(candidates) {
   if (candidates.length <= 1) return Promise.resolve(candidates[0] || null);
   return new Promise(resolve => {
@@ -201,6 +223,7 @@ function chooseLocalDraft(candidates) {
 
 async function showNote(doc) {
   if (window.noctuaServer) await window.noctuaServer;
+  const server = doc;
   let recovered = false, conflict = false;
   N.draftSource = null; N.draftError = null;
   try {
@@ -219,6 +242,7 @@ async function showNote(doc) {
 
   if (N.doc?.id !== doc.id) { N.preambleOpen = false; N.imgSel = null; N.conflict = false; }
   N.doc = doc;
+  N.base = conflict ? null : clone(server);  // the server copy local edits start from
   rememberWorkspaceView();
   store.set('noctua.openFile.'+N.target,'');
   W.file=null;
@@ -284,7 +308,10 @@ function showConflict() {
 
 function setStatus(s) {
   const el = $('#note-status');
-  if (el) el.textContent = s;
+  if (!el) return;
+  el.textContent = s;
+  // Routine autosave progress stays in the background; problems stand out.
+  el.classList.toggle('quiet', /^(Saved|Saving to server…|Saved to server|Local draft saved)$/.test(s));
 }
 
 async function saveNow() {
@@ -298,8 +325,7 @@ async function saveNow() {
   const historyFrames=NoteUndo.frames.splice(0);
   NoteUndo.group=null;
   let failed = false;
-  const progressKey = `note-save:${target}:${doc.id}`;
-  notifyProgress(progressKey, 'Saving note…');
+  const sent = JSON.stringify(doc);
   try {
     const r = await fetch(`/api/notes/${enc(target)}/${enc(doc.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...doc,_history:historyFrames}),
@@ -308,6 +334,7 @@ async function saveNow() {
     if (r.status === 409 && N.doc === doc) {
       NoteUndo.frames.unshift(...historyFrames);
       N.dirty = true;
+      if (await mergeLatestNote(target, doc)) return;
       N.conflict = true;
       showConflict();
       return;
@@ -321,6 +348,7 @@ async function saveNow() {
       }
     } catch { toast('Server saved; local draft cleanup failed.', {error:true}); }
     doc.updated = j.updated;
+    if (N.doc === doc) N.base = { ...JSON.parse(sent), updated: j.updated };
     if (N.dirty && N.doc === doc) persistNoteDraft(target, doc);
     const entry = N.list.find((n) => n.id === doc.id);
     if (entry) { entry.updated = j.updated; entry.title = doc.title; }
@@ -337,13 +365,64 @@ async function saveNow() {
       N.saveTimer = setTimeout(saveNow, 3000);
     }
   } finally {
-    notifyProgress(progressKey, null);
     N.saving = false;
   }
   if (N.dirty && N.doc === doc) {
     clearTimeout(N.saveTimer);
     N.saveTimer = setTimeout(saveNow, failed ? 3000 : 800);
   }
+}
+
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Folds unsaved local edits into a newer server copy (usually an assistant
+// edit) when the two changed different blocks. Returns false, leaving the note
+// untouched, if both changed the same block, title or preamble, or if local
+// edits added, removed or reordered blocks.
+function mergeServerNote(server) {
+  const base = N.base, local = N.doc;
+  if (!base || !local || base.id !== server.id || local.id !== server.id) return false;
+  for (const pad of N.pads.values()) pad.finish();  // keep a stroke in progress
+  const ids = (d) => d.blocks.map((b) => b.id).join('\n');
+  if (ids(local) !== ids(base)) return false;
+  const was = new Map(base.blocks.map((b) => [b.id, b]));
+  const now = new Map(server.blocks.map((b) => [b.id, b]));
+  const mine = new Map(local.blocks.filter((b) => !sameJSON(b, was.get(b.id))).map((b) => [b.id, b]));
+  for (const id of mine.keys()) if (!sameJSON(now.get(id), was.get(id))) return false;
+  const merged = clone(server);
+  for (const f of ['title', 'preamble']) {
+    if ((local[f] || '') === (base[f] || '')) continue;
+    if ((server[f] || '') !== (base[f] || '')) return false;
+    merged[f] = local[f];
+  }
+  merged.blocks = merged.blocks.map((b) => mine.has(b.id) ? clone(mine.get(b.id)) : b);
+  // Re-render around the writer: keep the open block, title caret and place.
+  const active = document.activeElement, editing = N.editing;
+  const caret = active?.matches?.('textarea') ? [active.selectionStart, active.selectionEnd] : null;
+  const onTitle = active?.classList?.contains('note-title');
+  N.base = clone(server);
+  N.doc = merged;
+  N.editing = null;
+  NoteUndo.frames = []; NoteUndo.last = noteSnapshot(); NoteUndo.group = null;
+  renderEditor();
+  const field = onTitle ? $('#notes-stage .note-title') : editing && merged.blocks.some((b) => b.id === editing && b.type === 'text') ? (startEdit(editing), document.querySelector(`.nb[data-id="${editing}"] textarea`)) : null;
+  if (field && caret) { field.focus({ preventScroll: true }); field.setSelectionRange(...caret); }
+  const entry = N.list.find((n) => n.id === merged.id);
+  if (entry) { entry.title = merged.title; entry.updated = merged.updated; }
+  renderNoteList();
+  N.dirty = true;
+  persistNoteDraft();
+  clearTimeout(N.saveTimer);
+  N.saveTimer = setTimeout(saveNow, 300);
+  return true;
+}
+
+async function mergeLatestNote(target, doc) {
+  try {
+    const server = await api(`/api/notes/${enc(target)}/${enc(doc.id)}`);
+    return N.doc === doc && N.target === target && server.updated > (N.base?.updated || 0) && mergeServerNote(server);
+  } catch { return false; }
 }
 
 // ---------------------------------------------------------------- citations
@@ -356,7 +435,7 @@ function citeHtml(keys, { textual, note }) {
     const who = it.creators?.length > 2 ? `${last} et al.` : it.creators?.length === 2 ? `${last} and ${it.creators[1].trim().split(/\s+/).pop()}` : last;
     return { key: k, who: esc(who), year: esc(it.year ?? 'n.d.') };
   });
-  const link = (p, text) => p.key ? `<a class="cite" data-key="${esc(p.key)}" title="${esc(N.items.get(p.key).title || '')}">${text}</a>` : p.html;
+  const link = (p, text) => p.key ? `<a class="cite" data-key="${esc(p.key)}" title="${esc(N.items.get(p.key).title || '')}${N.items.get(p.key).has_pdf ? ' (click to read it beside this note)' : ''}">${text}</a>` : p.html;
   const tail = note ? `, ${esc(note)}` : '';
   if (textual) return parts.map((p) => link(p, p.key ? `${p.who} (${p.year}${tail})` : '')).join('; ');
   return `(${parts.map((p) => link(p, p.key ? `${p.who} ${p.year}` : '')).join('; ')}${tail})`;
@@ -370,7 +449,10 @@ function renderEditor() {
   N.pads.clear();
   const stage = $('#notes-stage');
   renderSplitNoteBar();
-  const media = stage.dataset.mediaNote === N.doc?.id ? captureVideos(stage) : [];
+  N.keepScroll?.();
+  const same = stage.dataset.mediaNote === N.doc?.id;
+  const scroll = same ? { top: stage.scrollTop, left: stage.scrollLeft } : null;
+  const media = same ? captureVideos(stage) : [];
   stage.dataset.mediaNote = N.doc?.id || '';
   if (!N.doc) {
     stage.innerHTML = `<div class="note-page note-empty">
@@ -382,7 +464,7 @@ function renderEditor() {
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
   stage.innerHTML = `<div class="note-actions" role="toolbar" aria-label="Note editing">
       ${historyButtons('note')}
-      <div class="note-actions-right"><button id="note-help" data-icon="circle-help" data-icon-only title="Note guide" aria-label="Note guide"></button><button id="note-preamble-toggle" data-icon="settings" data-icon-only title="Preamble and page layout" aria-label="Preamble and page layout" aria-expanded="${!!N.preambleOpen}"></button></div>
+      <div class="note-actions-right"><button id="note-convert-ink" data-icon="sigma" data-icon-only title="Convert drawings without LaTeX beside them" aria-label="Convert drawings without LaTeX beside them"${N.doc.blocks.some((b) => b.type === 'ink') ? '' : ' hidden'}></button><button id="note-help" data-icon="circle-help" data-icon-only title="Note guide" aria-label="Note guide"></button><button id="note-preamble-toggle" data-icon="settings" data-icon-only title="Preamble and page layout" aria-label="Preamble and page layout" aria-expanded="${!!N.preambleOpen}"></button></div>
     </div><div class="note-page">
       <textarea class="note-title" rows="1" placeholder="Untitled note" aria-label="Note title" spellcheck="false">${esc(N.doc.title)}</textarea>
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
@@ -397,15 +479,54 @@ function renderEditor() {
     <div class="note-blocks"></div></div>`;
   wirePreamble(stage);
   stage.querySelector('#note-help').addEventListener('click', showNoteHelp);
+  stage.querySelector('#note-convert-ink').addEventListener('click', convertAllDrawings);
   const wrap = stage.querySelector('.note-blocks');
   wrap.appendChild(inserter(0));
-  N.doc.blocks.forEach((b, i) => {
-    wrap.appendChild(blockEl(b));
-    wrap.appendChild(inserter(i + 1));
-  });
+  const blocks = N.doc.blocks;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i], next = blocks[i + 1];
+    if (b.type === 'ink' && next?.type === 'text' && next.beside) {
+      // A drawing and the LaTeX written from it share a row.
+      const pair = document.createElement('div');
+      pair.className = 'nb-pair';
+      pair.append(blockEl(b), blockEl(next, b));
+      wrap.append(pair, inserter(i + 2));
+      i++;
+      continue;
+    }
+    wrap.append(blockEl(b, blocks[i - 1]), inserter(i + 1));
+  }
   typeset();
   restoreVideos(stage, media);
   updateHistoryButtons();
+  if (scroll) keepNoteScroll(stage, scroll);
+}
+
+// Drawing rows use the note panel's width and stack in narrow panels.
+if ($('#notes-stage')) new ResizeObserver(([entry]) => {
+  const stage = entry.target, width = stage.clientWidth;
+  stage.style.setProperty('--stage-w', width + 'px');
+  stage.classList.toggle('narrow', width < 900);
+}).observe($('#notes-stage'));
+
+// Re-rendering rebuilds every block, so the page briefly collapses and the
+// browser clamps the scroll position. Hold the reader's place while images and
+// pads settle, until they scroll or type themselves.
+function keepNoteScroll(stage, pos) {
+  const apply = () => { stage.scrollTop = pos.top; stage.scrollLeft = pos.left; };
+  const events = ['wheel', 'pointerdown', 'keydown', 'touchstart'];
+  const ro = new ResizeObserver(apply);
+  const stop = () => {
+    ro.disconnect();
+    clearTimeout(timer);
+    events.forEach((e) => stage.removeEventListener(e, stop, true));
+    if (N.keepScroll === stop) N.keepScroll = null;
+  };
+  const timer = setTimeout(stop, 2000);
+  apply();
+  ro.observe(stage.querySelector('.note-page'));
+  events.forEach((e) => stage.addEventListener(e, stop, { capture: true, passive: true }));
+  N.keepScroll = stop;
 }
 
 // The title shares the document width and grows with its wrapped text.
@@ -436,7 +557,7 @@ function showNoteHelp() {
 \textbf{Bold} and \emph{emphasis}`)}</section>
       <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear at the far right of the sticky note header opens the preamble for page layout and custom LaTeX commands.</p></section>
       <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Note font applies to the title, body, collection/save metadata, and empty-block writing hint; Title size defaults to 28 px. Collection and save-status text stay at 14 px. Title size and Body size are separate controls in Settings → Appearance → Fonts. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
-      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
+      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches; hover the pad to change pen colour or width (your last pen is remembered). Pads grow as you write near their right or bottom edge; drag an edge to resize, or the left edge outward to add room on the left. TeX transcribes a drawing into LaTeX beside it, redrawing diagrams as SVG; Σ in the note header converts every drawing without LaTeX beside it, and the assistant can do the same when asked. Show below / Show beside on that text switches the layout.</p><p>Images can be PNG, JPEG, GIF, WebP, or SVG. For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
       <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
 See Section \ref{sec:intro}.
@@ -452,7 +573,7 @@ See Equation \eqref{eq:energy}.`)}</section>
       <section><h3>Undo and redo</h3><p>The collection and save status align with the left end of the divider below the title. The title has extra space above it, follows the divider’s width where space permits, and wraps onto additional lines as you type. Only the Undo/Redo icons at the far left and Note guide and preamble icons at the far right stay pinned to the top while you scroll. The title scrolls with the document. The center between the edge controls stays transparent and does not block note text or editing. Use Undo/Redo or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
       <section><h3>Project files and bibliographies</h3><p>Switch Library, Notes, and Reader with Option+1/2/3 on macOS or Alt+1/2/3 on Windows/Linux; Reader requires an open PDF. Shortcuts pause while a dialog is open. Library folders can be moved, ordered, or sent to Library Trash without deleting project files; restore there to recover the folder group. Permanently deleting a folder from Library Trash removes its project notes and files and cannot be undone. Each collection has a Project files tree. Image and video files have their own icons; folders and ordinary documents remain distinct. Icons do not imply preview support. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note, LaTeX (.tex), or File, a name, and a destination folder. Refreshing restores the last viewed file or note; text files also restore their cursor and source scroll position. New folder opens a compact folder form. File creates an empty file using the exact filename. LaTeX (.tex) adds a compact 11pt article template with Korean, math, figure, and table support and appends .tex when needed; the first paper becomes the main document. Drag an entry over the project selector to reveal other projects, then drop it on a destination to move it. For name conflicts, choose Overwrite, Skip, or Add number; move notes with their referenced files together in a folder. Project root appears only while dragging project entries. Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Trash shows newest deletions first and scrolls when the list grows. In Trash, click rows to select entries and use Restore or Delete permanently (confirmation required); Command+A or Ctrl+A selects all, and selected folders restore before their contents. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, hover or focus a row for Rename and Trash, and drag entries to move them, and preview media. In Suggest mode, project-file edits ask inline in chat once per file per prompt; Direct mode applies edits without approval popups. Notes retain their block editor. Import or create .bib files anywhere in the project to automatically add their citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Paste files copied from your file manager into the Library collection list with Command+V or Ctrl+V: PDFs become papers, and other formats are stored here in Project files. Binary formats may only support download. Use Image / Video for larger note videos.</p></section>
       <section><h3>Agent skills</h3><p>Settings → Skills separates Global Agent Skills from Project Skills. Global Location defaults to ~/.agents/skills; save another existing folder or use Use default. Global installations are read in place. Import Skills from Project copies multiple SKILL.md packages into a named group. Expand or collapse each project to browse its skills. Disconnect removes that group's Noctua copies and leaves original files and other groups unchanged; import again to reconnect. Individual skill imports remain available. Chat project defaults select skills for a Noctua project and are separate from source-project groups. In chat, type / to search all available skills and choose with Up/Down and Enter/Tab or a click (Esc closes). These commands add skills for one message without changing defaults. Every script run needs approval and separate output review. Scripts run local code, not in an OS sandbox. Plan mode cannot run scripts; dependencies are not installed automatically.</p></section>
-      <section><h3>Find</h3><p>Use Command+F or Ctrl+F to search the rendered note or the source you are editing. Match case, Regular expression, and Whole word refine results. Invalid regular expressions show an error in the Find bar.</p></section><section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
+      <section><h3>Find</h3><p>Use Command+F or Ctrl+F to search the rendered note or the source you are editing. Match case, Regular expression, and Whole word refine results. Invalid regular expressions show an error in the Find bar.</p></section><section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance. Citations resolve against your whole library; click one to read the paper beside the note (⌘/Ctrl-click for its details). Cited papers are listed automatically under References at the bottom of the note.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
       <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode saves requested edits on the server before reporting completion; use Undo to revert them. Suggest changes are reviewed as whole proposals in Assistant changes below the project tree.</p></section>`;
     dialog.addEventListener('click', event => {
       if (event.target !== dialog) return;
@@ -587,15 +708,19 @@ function inserter(index) {
   return d;
 }
 
-function blockEl(b) {
+function blockEl(b, prev) {
   const el = document.createElement('div');
   el.className = `nb nb-${b.type}`;
   el.dataset.id = b.id;
+  const layoutButton = b.type === 'text' && prev?.type === 'ink'
+    ? (b.beside ? '<button data-act="below" title="Show below the drawing" data-icon="rows-2" aria-label="Show below the drawing" data-icon-only>↓</button>'
+      : '<button data-act="beside" title="Show beside the drawing" data-icon="columns-2" aria-label="Show beside the drawing" data-icon-only>→</button>')
+    : '';
   el.innerHTML = `<div class="nb-tools">
       <button data-act="up" title="Move up" data-icon="arrow-up" aria-label="Move up" data-icon-only>↑</button>
       <button data-act="down" title="Move down" data-icon="arrow-down" aria-label="Move down" data-icon-only>↓</button>
-      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (inserted below)" data-icon="sigma" aria-label="Convert handwriting to LaTeX (inserted below)" data-icon-only>TeX</button>'
-        : ''}
+      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (placed beside the drawing)" data-icon="sigma" aria-label="Convert handwriting to LaTeX (placed beside the drawing)" data-icon-only>TeX</button>'
+        : ''}${layoutButton}
       <button data-act="delete" title="Delete block" data-icon="trash-2" aria-label="Delete block" data-icon-only>✕</button>
     </div><div class="nb-body"></div>`;
   const body = el.querySelector('.nb-body');
@@ -619,7 +744,7 @@ function blockEl(b) {
 const blockIndex = (id) => N.doc.blocks.findIndex((b) => b.id === id);
 
 function insertBlock(index, type) {
-  const b = type === 'ink' ? { id: newId('b'), type: 'ink', h: 0.35, strokes: [] } : { id: newId('b'), type: 'text', src: '' };
+  const b = type === 'ink' ? { id: newId('b'), type: 'ink', w: Ink.defaultWidth(), h: 0.6, strokes: [] } : { id: newId('b'), type: 'text', src: '' };
   stopEdit();
   N.doc.blocks.splice(index, 0, b);
   markDirty();
@@ -652,40 +777,61 @@ async function blockAction(id, act, btn) {
     if (!N.doc.blocks.length) N.doc.blocks.push({ id: newId('b'), type: 'text', src: '' });
     markDirty();
     renderEditor();
+  } else if (act === 'beside' || act === 'below') {
+    stopEdit();
+    if (act === 'beside') b.beside = true; else delete b.beside;
+    markDirty();
+    renderEditor();
   } else if (act === 'latex') {
     if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
     const doc = N.doc, target = N.target, provider = chat.provider;
     const png = N.pads.get(id)?.toPNG();
     if (!png) return toast('Draw something first.');
-    btn.disabled = true;
-    btn.textContent = '…';
-    btn.dataset.icon = 'loader-circle';
+    if (btn) btn.disabled = true;
+    if (btn) btn.textContent = '…';
+    if (btn) btn.dataset.icon = 'loader-circle';
     toast('Converting handwriting to LaTeX…');
     try {
-      const { latex } = await api('/api/ink-latex', { png, provider });
+      const { latex } = await api('/api/ink-latex', { png, provider, target });
       if (N.doc !== doc || N.target !== target || blockIndex(id) < 0) {
         toast('The note changed while transcribing. Reopen the drawing and try again.');
         return;
       }
-      const nb = { id: newId('b'), type: 'text', src: latex };
+      const nb = { id: newId('b'), type: 'text', src: latex, beside: true };
       N.doc.blocks.splice(blockIndex(id) + 1, 0, nb);
       markDirty();
       renderEditor();
-      toast('Converted. The LaTeX is below the drawing; delete the drawing if you no longer need it.');
+      toast('Converted. The LaTeX is beside the drawing; use its Show below button to stack them, or delete the drawing if you no longer need it.');
     } catch (e) {
       toast(e.message, { error: true });
-      btn.disabled = false;
-      btn.textContent = 'TeX';
-      btn.dataset.icon = 'sigma';
+      if (btn) { btn.disabled = false; btn.textContent = 'TeX'; btn.dataset.icon = 'sigma'; }
     }
   }
+}
+
+// Converts each drawing that has no LaTeX beside it yet, one at a time.
+async function convertAllDrawings() {
+  if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
+  const doc = N.doc;
+  const ids = doc.blocks.filter((b, i) => b.type === 'ink' && b.strokes?.length && !(doc.blocks[i + 1]?.type === 'text' && doc.blocks[i + 1].beside)).map((b) => b.id);
+  if (!ids.length) return toast('Every drawing already has LaTeX beside it.');
+  try {
+    for (const [k, id] of ids.entries()) {
+      if (N.doc !== doc || blockIndex(id) < 0) break;
+      notifyProgress('convert-drawings', `Converting drawing ${k + 1} of ${ids.length}…`);
+      await blockAction(id, 'latex', document.querySelector(`.nb[data-id="${id}"] [data-act="latex"]`));
+    }
+  } finally { notifyProgress('convert-drawings', null); }
 }
 
 // Typesets every text block (numbering and \ref run across the note). The
 // block being edited shows its result in the live preview instead.
 function typeset() {
   if (!N.doc) return;
-  const htmls = NoctuaLatex.renderDoc(N.doc.blocks.map((b) => b.type === 'text' ? b.src : null), { cite: citeHtml, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble });
+  const cited = new Set();
+  const cite = (keys, opts) => { keys.forEach((k) => cited.add(k)); return citeHtml(keys, opts); };
+  const htmls = NoctuaLatex.renderDoc(N.doc.blocks.map((b) => b.type === 'text' ? b.src : null), { cite, noteref: noteRefHtml, image: noteImageUrl, preamble: N.doc.preamble });
+  renderReferences([...cited]);
   N.doc.blocks.forEach((b, i) => {
     if (b.type !== 'text') return;
     const el = document.querySelector(`.nb[data-id="${b.id}"]`);
@@ -703,6 +849,44 @@ function typeset() {
   applyImgSel();
 }
 
+// The papers a note cites, listed automatically below it (author-year, by
+// first author). Entries link like citations: click to read beside the note.
+function referenceEntry(key) {
+  const it = N.items.get(key);
+  if (!it) return { sort: key.toLowerCase(), html: `<li class="missing">${esc(key)} <span>(not in your library)</span></li>` };
+  const names = (it.creators || []).map((n) => n.trim()).filter(Boolean);
+  const last = (n) => n.split(/\s+/).pop();
+  const authors = !names.length ? '' : names.length > 3 ? `${names.slice(0, 3).join(', ')}, et al.` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const venue = it.venue ? ` <i>${esc(it.venue)}</i>.` : '';
+  return {
+    sort: `${(names[0] ? last(names[0]) : it.title || key).toLowerCase()} ${it.year || ''}`,
+    html: `<li><a class="cite" data-key="${esc(key)}" title="${esc(it.title || '')}${it.has_pdf ? ' (click to read it beside this note)' : ''}">${esc(authors || 'Unknown authors')} (${esc(it.year || 'n.d.')}). ${esc(it.title || '(untitled)')}.</a>${venue}</li>`,
+  };
+}
+
+function renderReferences(keys) {
+  const page = $('#notes-stage .note-page');
+  if (!page) return;
+  let section = page.querySelector('.note-references');
+  // A paper cited under several keys (library key, BibTeX key) is listed once.
+  const seen = new Set(), entries = [];
+  for (const key of keys) {
+    const id = N.items.get(key)?.key || key;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    entries.push(referenceEntry(key));
+  }
+  if (!entries.length) { section?.remove(); return; }
+  if (!section) {
+    section = document.createElement('section');
+    section.className = 'note-references';
+    section.setAttribute('aria-label', 'References');
+    page.append(section);
+  }
+  const html = `<h2>References</h2><ol>${entries.sort((a, b) => a.sort.localeCompare(b.sort)).map((e) => e.html).join('')}</ol>`;
+  if (section._rendered !== html) { section.innerHTML = html; section._rendered = html; }
+}
+
 function startEdit(id) {
   stopEdit();
   const b = N.doc.blocks.find((x) => x.id === id);
@@ -717,7 +901,8 @@ function startEdit(id) {
   ta.value = b.src;
   const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
   grow();
-  ta.focus();
+  ta.focus({ preventScroll: true });
+  if (!N.keepScroll) ta.scrollIntoView({ block: 'nearest' });  // a re-render is holding the reader's place
   ta.setSelectionRange(ta.value.length, ta.value.length);
   ta.addEventListener('input', () => {
     b.src = ta.value;
@@ -864,6 +1049,7 @@ function setNotesTheme(theme) {
   $('#notes-stage').dataset.notesTheme = next;
   if ($('#setup-notes-theme')) $('#setup-notes-theme').value = next;
   store.set('noctua.notesTheme', next);
+  if (typeof Ink !== 'undefined') Ink.refresh();
 }
 setNotesTheme(store.get('noctua.notesTheme'));
 window.addEventListener('storage', (e) => {
@@ -871,7 +1057,6 @@ window.addEventListener('storage', (e) => {
 });
 
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-$('#notes-target').addEventListener('change', (e) => { loadNoteFolder(e.target.value); });
 
 $('#note-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');
@@ -915,6 +1100,12 @@ $('#notes-stage').addEventListener('click', (e) => {
   lib.detail = it;
   G.selected = null;
   renderLibDetails(it);
+  // Open the cited paper with this note beside it; ⌘/Ctrl-click shows only its details.
+  if (it.has_pdf && !(e.metaKey || e.ctrlKey)) {
+    showRightTab('paper', { focus: false });
+    openPaperView(it.key, 'here').then(() => { if (document.body.classList.contains('pdf-mode') && !splitViewActive()) setSplitView(true); });
+    return;
+  }
   showRightTab('paper');
 }, true);
 // "Visualize paper graph" on a cited paper takes you back to the graph.

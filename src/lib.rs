@@ -382,6 +382,8 @@ struct ThreadsBody {
 struct InkBody {
     png: String,
     provider: Option<agent::Provider>,
+    /// Collection whose note media receives redrawn diagrams.
+    target: Option<String>,
 }
 
 async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
@@ -473,7 +475,7 @@ async fn note_image_get(State(app): Shared, Path((target, file)): Path<(String, 
 }
 
 async fn ink_latex(State(app): Shared, Json(b): Json<InkBody>) -> ApiResult {
-    Ok(Json(json!({ "latex": notes::ink_to_latex(&app, b.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent), &b.png).await? })))
+    Ok(Json(json!({ "latex": notes::ink_to_latex(&app, b.provider.unwrap_or_else(|| app.settings.lock().unwrap().agent), &b.png, b.target.as_deref()).await? })))
 }
 
 async fn explain_threads(State(app): Shared, Json(b): Json<ThreadsBody>) -> ApiResult {

@@ -59,10 +59,16 @@ fn edited_note(app: &App, a: &Value) -> Result<(Value, Vec<Value>)> {
     if entry["deleted"] == true {
         bail!("Restore this note from project trash before editing it");
     }
-    if a["updated"].as_u64().is_none() || a["updated"] != doc["updated"] {
-        return Err(conflict(
-            "Note changed. Read it again and use its updated version.",
-        ));
+    let stale = || conflict("Note changed. Read it again and use its updated version.");
+    let read = a["updated"].as_u64().ok_or_else(stale)?;
+    if doc["updated"].as_u64() != Some(read) {
+        // Someone saved since the read; the edit still applies to the current
+        // note if nothing it touches has changed.
+        let base = app
+            .notes
+            .version(&app.library.folder_id(target)?, id, read)
+            .ok_or_else(stale)?;
+        unchanged_since(&base, &doc, a)?;
     }
     let mut results = Vec::new();
     for field in ["title", "preamble"] {
@@ -134,10 +140,12 @@ fn edited_note(app: &App, a: &Value) -> Result<(Value, Vec<Value>)> {
                     bail!("Block text exceeds 100000 bytes");
                 }
                 let id = crate::library::id("b");
-                blocks.insert(
-                    position.map_or(0, |p| p + 1),
-                    json!({"id":id,"type":"text","src":text}),
-                );
+                let mut inserted = json!({"id":id,"type":"text","src":text});
+                // Transcriptions sit beside the drawing they came from.
+                if e["beside"] == true && position.is_some_and(|p| blocks[p]["type"] == "ink") {
+                    inserted["beside"] = json!(true);
+                }
+                blocks.insert(position.map_or(0, |p| p + 1), inserted);
                 affected = Some(id);
             }
             _ => bail!("Unknown note operation"),
@@ -151,6 +159,33 @@ fn edited_note(app: &App, a: &Value) -> Result<(Value, Vec<Value>)> {
         bail!("Provide edits, title or preamble");
     }
     Ok((doc, results))
+}
+fn unchanged_since(base: &Value, doc: &Value, a: &Value) -> Result<()> {
+    for field in ["title", "preamble"] {
+        if a.get(field).is_some() && base[field] != doc[field] {
+            return Err(conflict(&format!(
+                "The note {field} changed since it was read. Read the note again."
+            )));
+        }
+    }
+    let block = |d: &Value, id: &str| {
+        d["blocks"]
+            .as_array()
+            .and_then(|b| b.iter().find(|b| b["id"] == id))
+            .cloned()
+    };
+    for e in a["edits"].as_array().into_iter().flatten() {
+        let Some(id) = e["block_id"].as_str() else { continue };
+        let now = block(doc, id);
+        // Inserting only needs its anchor to exist; other operations need
+        // the block exactly as it was read.
+        if now.is_none() || (e["op"] != "insert_after" && now != block(base, id)) {
+            return Err(conflict(&format!(
+                "Block {id} changed since the note was read. Read the note again."
+            )));
+        }
+    }
+    Ok(())
 }
 fn validate_file(app: &App, a: &Value) -> Result<()> {
     let m = crate::workspace::snapshot(app, a["folder_id"].as_str().context("Folder required")?)?;
@@ -267,10 +302,13 @@ fn validate_create(app: &App, a: &Value) -> Result<()> {
 fn perform(app: &App, name: &str, a: &Value) -> Result<Value> {
     match name {
         "edit_note" => {
-            let (doc, edits) = edited_note(app, a)?;
+            let (mut doc, edits) = edited_note(app, a)?;
             let target = a["folder_id"].as_str().unwrap();
             let id = a["note_id"].as_str().unwrap();
-            let updated = app.notes.save(&app.library.folder_id(target)?, id, doc)?;
+            let folder = app.library.folder_id(target)?;
+            let updated = app.notes.save(&folder, id, doc.clone())?;
+            doc["updated"] = json!(updated);
+            app.notes.remember(&folder, id, &doc);
             Ok(
                 json!({"status":"applied","note_id":id,"folder_id":target,"updated":updated,"edits":edits}),
             )

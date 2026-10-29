@@ -30,7 +30,8 @@ function workspaceFileIcon(entry) {
  return ext==='bib'?'library':'file-text';
 }
 function renderWorkspaceTree(){
- let tree=document.getElementById('workspace-tree');if(!tree){tree=document.createElement('div');tree.id='workspace-tree';$('#note-list').before(tree);}
+ let tree=W.treeEl;if(!tree){tree=W.treeEl=document.createElement('div');tree.id='workspace-tree';}
+ placeWorkspaceTree();
  $('#note-list').hidden=true;
  const m=W.manifest;if(!m)return;
  const entries=m.entries.filter(e=>!e.deleted);
@@ -44,9 +45,9 @@ function renderWorkspaceTree(){
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
  tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
- $('#notes-side [data-new-file]').onclick=()=>workspaceCreate(false);$('#notes-side [data-new-folder]').onclick=()=>workspaceCreate(true);$('#notes-side [data-import-file]').onclick=workspaceImport;tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
+ tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
  tree.querySelector('[data-latex-settings]').onclick=()=>showPaperSettings().catch(e=>toast(e.message,{error:true}));
- tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=event=>{const modified=event.ctrlKey||event.metaKey||event.shiftKey;selectWorkspaceEntry(b.dataset.file,event);tree.focus({preventScroll:true});if(!modified)openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true}));});
+ tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=event=>{const modified=event.ctrlKey||event.metaKey||event.shiftKey;selectWorkspaceEntry(b.dataset.file,event);tree.focus({preventScroll:true});if(modified)return;const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);if(entry?.kind!=='folder'&&typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true}));});
  tree.querySelectorAll('[data-file-rename]').forEach(b=>b.onclick=()=>workspaceRename(b.dataset.fileRename));
  tree.querySelectorAll('[data-file-trash]').forEach(b=>b.onclick=()=>confirmWorkspaceTrash(b.dataset.fileTrash));
  tree.tabIndex=0;tree.setAttribute('aria-label','Project files');
@@ -60,8 +61,38 @@ function renderWorkspaceTree(){
    event.preventDefault();confirmWorkspaceTrash(workspaceDragIds({ids:[...W.selected]}));
   }
  };
- bindWorkspaceDrag(tree);bindProjectDrop();
+ bindWorkspaceDrag(tree);
+ // Project-wide actions stay at the bottom of the sidebar, below the whole tree.
+ const footer=tree.querySelector('.workspace-footer'),footerHost=document.getElementById('workspace-footer-host');
+ if(footer&&footerHost){footerHost.replaceChildren(footer);bindWorkspaceDrag(footerHost);}
 }
+// The open collection's notes and files sit under its row in the shared
+// collection tree, in Library and Notes alike. Without a visible row (for
+// example in a fixture without the tree) they stay in the notes side panel.
+function placeWorkspaceTree(){
+ const tree=W.treeEl;if(!tree)return;
+ const row=W.target&&document.querySelector(`#lib-tree > li[data-id="${CSS.escape(W.target)}"]`);
+ let host=document.querySelector('#lib-tree > li.tree-files');
+ if(!row){host?.remove();if(tree.parentElement?.id!=='notes-side')$('#note-list')?.before(tree);return;}
+ if(host&&host.previousElementSibling!==row){host.remove();host=null;}
+ if(!host){host=document.createElement('li');host.className='tree-files';host.setAttribute('role','none');row.after(host);}
+ host.style.setProperty('--tree-indent',row.style.paddingLeft||'8px');
+ if(tree.parentElement!==host)host.append(tree);
+ bindProjectRows();
+}
+// Drop project entries on another collection's row to move them there.
+function bindProjectRows(){
+ document.querySelectorAll('#lib-tree > li[data-id]:not([data-library-trash])').forEach(row=>{
+  if(row.dataset.projectDrop)return;row.dataset.projectDrop='1';
+  const accepts=e=>W.drag&&row.dataset.id!==W.target&&Array.from(e.dataTransfer?.types||[]).includes(workspaceDragType);
+  row.addEventListener('dragover',e=>{if(!accepts(e))return;e.preventDefault();e.dataTransfer.dropEffect='move';row.classList.add('workspace-project-target');});
+  row.addEventListener('dragleave',e=>{if(!row.contains(e.relatedTarget))row.classList.remove('workspace-project-target');});
+  row.addEventListener('drop',e=>{if(!accepts(e))return;e.preventDefault();e.stopPropagation();closeProjectDrop();let item;try{item=JSON.parse(e.dataTransfer.getData(workspaceDragType));}catch{}W.drag=null;if(item)transferWorkspaceEntries(item,row.dataset.id);});
+ });
+}
+document.querySelector('#collection-tools [data-new-file]')?.addEventListener('click',()=>{if(typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');workspaceCreate(false);});
+document.querySelector('#collection-tools [data-new-folder]')?.addEventListener('click',()=>workspaceCreate(true));
+document.querySelector('#collection-tools [data-import-file]')?.addEventListener('click',()=>workspaceImport());
 function selectWorkspaceEntry(id,event={}){
  const rows=[...document.querySelectorAll('#workspace-tree [data-entry]')],ids=rows.map(row=>row.dataset.entry);
  if(event.shiftKey&&ids.includes(W.anchor)){
@@ -75,31 +106,18 @@ function workspaceDragIds(item){
  const ids=item.ids||[item.id],entries=W.manifest.entries;
  return ids.filter(id=>{const seen=new Set();let parent=entries.find(e=>e.id===id)?.parent;while(parent&&!seen.has(parent)){if(ids.includes(parent))return false;seen.add(parent);parent=entries.find(e=>e.id===parent)?.parent;}return true;});
 }
-function closeProjectDrop(){document.querySelector('.workspace-project-drop')?.remove();}
-function bindProjectDrop(){
- const host=$('#notes-target')?.closest('.web-select')||$('#notes-target')?.parentElement;if(!host)return;
- host.ondragover=event=>{
-  if(!W.drag||!Array.from(event.dataTransfer?.types||[]).includes(workspaceDragType))return;
-  event.preventDefault();event.dataTransfer.dropEffect='move';
-  if(document.querySelector('.workspace-project-drop'))return;
-  const menu=document.createElement('div');menu.className='workspace-project-drop web-select-list';menu.setAttribute('aria-label','Move to project');
-  const select=$('#notes-target');
-  menu.innerHTML=[...select.options].filter(o=>o.value&&o.value!==W.target&&!o.disabled).map(o=>`<div class="web-select-option" data-project-drop="${esc(o.value)}">${esc(o.textContent)}</div>`).join('')||'<div class="hint">No other projects</div>';
-  document.body.append(menu);const rect=host.getBoundingClientRect();Object.assign(menu.style,{position:'fixed',left:rect.left+'px',top:rect.bottom+4+'px',minWidth:rect.width+'px',maxHeight:'320px',overflowY:'auto',zIndex:10000});
-  menu.ondragover=e=>{e.preventDefault();e.dataTransfer.dropEffect='move';menu.querySelectorAll('.workspace-drop-active').forEach(n=>n.classList.remove('workspace-drop-active'));e.target.closest('[data-project-drop]')?.classList.add('workspace-drop-active');};
-  menu.ondrop=async e=>{e.preventDefault();e.stopPropagation();const destination=e.target.closest('[data-project-drop]')?.dataset.projectDrop;let item;try{item=JSON.parse(e.dataTransfer.getData(workspaceDragType));}catch{}closeProjectDrop();W.drag=null;if(!destination||!item)return;
-   try{if(item.target!==W.target)throw Error('Project changed. Try again.');await saveWorkspaceFile();await flushNoteEdits();
-    const target=W.target;let moved=false;for(const id of workspaceDragIds(item)){
-    const dest=await api(`/api/workspaces/${enc(destination)}`),entry=W.manifest.entries.find(n=>n.id===id&&!n.deleted);if(!entry)throw Error('Entry not found.');
-    const conflict=await chooseMoveConflict(entry,dest.entries);if(conflict==='skip')continue;
-    if(W.target!==target)throw Error('Project changed. Try again.');
-    const m=await workspaceChange({op:'transfer',id,destination,destination_revision:dest.revision,conflict});moved=true;
-    if(W.file&&m.entries.some(n=>n.id===W.file&&n.deleted)){W.file=null;renderEditor();}
-    if(N.doc&&m.entries.some(n=>n.note===N.doc.id&&n.deleted)){N.doc=null;renderEditor();}
-    }if(moved)await loadNoteFolder(destination);
-   }catch(err){toast(err.message,{error:true});}
-  };
- };
+function closeProjectDrop(){document.querySelectorAll('.workspace-project-target').forEach(n=>n.classList.remove('workspace-project-target'));}
+async function transferWorkspaceEntries(item,destination){
+ try{if(item.target!==W.target)throw Error('Project changed. Try again.');await saveWorkspaceFile();await flushNoteEdits();
+  const target=W.target;let moved=false;for(const id of workspaceDragIds(item)){
+  const dest=await api(`/api/workspaces/${enc(destination)}`),entry=W.manifest.entries.find(n=>n.id===id&&!n.deleted);if(!entry)throw Error('Entry not found.');
+  const conflict=await chooseMoveConflict(entry,dest.entries);if(conflict==='skip')continue;
+  if(W.target!==target)throw Error('Project changed. Try again.');
+  const m=await workspaceChange({op:'transfer',id,destination,destination_revision:dest.revision,conflict});moved=true;
+  if(W.file&&m.entries.some(n=>n.id===W.file&&n.deleted)){W.file=null;renderEditor();}
+  if(N.doc&&m.entries.some(n=>n.note===N.doc.id&&n.deleted)){N.doc=null;renderEditor();}
+  }if(moved)await loadNoteFolder(destination);
+ }catch(err){toast(err.message,{error:true});}
 }
 document.addEventListener('dragend',closeProjectDrop);
 document.addEventListener('drop',closeProjectDrop);
@@ -481,7 +499,8 @@ async function refreshAgentNote(a){
  if(N.target!==target)return;
  const active=!W.file&&N.doc?.id===id;
  if(active&&(N.dirty||N.saving)){
-  if(doc.updated>N.doc.updated){N.conflict=true;showConflict();}
+  // An in-flight save meets the newer copy as a 409 and merges there.
+  if(doc.updated>N.doc.updated&&!N.saving&&!N.conflict&&!mergeServerNote(doc)){N.conflict=true;showConflict();}
   return;
  }
  const entry=N.list.find(n=>n.id===id);if(entry){entry.title=doc.title;entry.updated=doc.updated;}

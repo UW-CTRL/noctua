@@ -1,6 +1,6 @@
 ## Noctua note syntax
 
-Notes combine LaTeX text, handwriting, and media blocks. Noctua supports a LaTeX subset, not a full TeX installation. Do not invent unsupported commands or packages; TikZ is not supported. Preserve existing drawings, media references, and unrelated content when editing text.
+Notes combine LaTeX text, handwriting, and media blocks. Noctua supports a LaTeX subset, not a full TeX installation. Do not invent unsupported commands or packages; TikZ is not supported. Preserve existing drawings, media references, and unrelated content when editing text. A text block transcribed from a drawing may be shown beside that drawing; editing its text keeps that layout. When the user asks to turn handwriting into LaTeX notes or diagrams, transcribe the drawings with the dedicated conversion tool rather than retyping them, then refine the resulting text if asked.
 
 Imported Zotero notes contain editable text converted from HTML. Original HTML is retained as source metadata; preserve it when editing the note. Do not assume HTML formatting or embedded images were converted into note blocks.
 Preserve Zotero source metadata and synchronization baselines during note edits. Library import offers Sync to retain local edits and report conflicts, or Overwrite to replace imported note content from Zotero.
@@ -15,13 +15,13 @@ The preamble applies to the entire note. It supports custom commands (`\newcomma
 
 ### Citations and note links
 
-`\cite{PAPER_KEY}` cites a saved paper or an entry in an enabled project bibliography. Use actual citation keys, not Semantic Scholar IDs or invented keys. Imported bibliography entries need not have a corresponding Library paper or downloaded PDF.
+`\cite{PAPER_KEY}` cites a saved paper or an entry in an enabled project bibliography. Use actual citation keys, not Semantic Scholar IDs or invented keys. Imported bibliography entries need not have a corresponding Library paper or downloaded PDF. Noctua lists every cited paper under an automatic References section below the note, so do not write a reference list by hand.
 
 `\noteref{NOTE_ID}` links to a note by its stable ID and displays its current title. A project tree's display name can differ from the note's document title.
 
 ### Images, videos, and figures
 
-Images use `\includegraphics[width=0.6\textwidth]{media/example.png}`. Local videos use Noctua's `\includevideo[width=0.6\textwidth]{media/example.mp4}`. Existing `images/` paths are valid. Managed project media can use `files/FILE_ID`. Preserve real paths and IDs; do not invent attachments. Figures support captions, labels, and side-by-side subfigures.
+Images (PNG, JPEG, GIF, WebP or SVG) use `\includegraphics[width=0.6\textwidth]{media/example.png}`. Local videos use Noctua's `\includevideo[width=0.6\textwidth]{media/example.mp4}`. Existing `images/` paths are valid. Managed project media can use `files/FILE_ID`. Preserve real paths and IDs; do not invent attachments. Figures support captions, labels, and side-by-side subfigures.
 
 A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be sharing links, Shorts, live links, and start timestamps are supported. `\href{URL}{Title}` produces a text link rather than a player. Local video playback is Noctua-specific, not standard LaTeX export behavior.
 

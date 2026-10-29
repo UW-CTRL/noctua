@@ -146,5 +146,26 @@ pub async fn drawing_for_agent(app:&App,a:&Value,chat:Option<&str>)->Result<Valu
  Ok(json!([{"type":"image","data":STANDARD.encode(bytes),"mimeType":"image/png"},{"type":"text","text":format!("Note {note}, block {block}, updated {}",doc["updated"])}]))
 }
 
+/// Transcribes drawings into LaTeX placed beside them, applied through the
+/// regular note edit so modes, proposals and version checks apply.
+pub async fn convert_ink(app:&App,a:&Value,mode:&str,chat:Option<&str>)->Result<Value>{
+ let target=a["folder_id"].as_str().context("Folder required")?;let note=a["note_id"].as_str().context("Note required")?;
+ let(doc,entry)=crate::mcp_edits::note_state(app,target,note)?;if entry["deleted"]==true{bail!("Restore the note before converting its drawings");}
+ let drawings:Vec<&str>=doc["blocks"].as_array().unwrap().iter().filter(|b|b["type"]=="ink"&&b["strokes"].as_array().is_some_and(|s|!s.is_empty())).filter_map(|b|b["id"].as_str()).collect();
+ let wanted:Vec<&str>=match a["block_ids"].as_array(){Some(ids)=>ids.iter().filter_map(Value::as_str).collect(),None=>drawings.clone()};
+ if wanted.is_empty(){bail!("This note has no drawings to convert");}
+ if wanted.len()>20{bail!("Convert at most 20 drawings at a time");}
+ if let Some(missing)=wanted.iter().find(|id|!drawings.contains(id)){bail!("Drawing block not found or empty: {missing}");}
+ let provider=app.settings.lock().unwrap().agent;
+ let mut edits=Vec::new();
+ for block in wanted{
+  let preview=drawing_for_agent(app,&json!({"folder_id":target,"note_id":note,"block_id":block}),chat).await?;
+  let png=preview[0]["data"].as_str().context("Drawing preview missing")?;
+  let latex=crate::notes::ink_to_latex(app,provider,png,Some(target)).await?;
+  edits.push(json!({"op":"insert_after","block_id":block,"latex":latex,"beside":true}));
+ }
+ crate::mcp_edits::change(app,"edit_note",&json!({"folder_id":target,"note_id":note,"updated":a["updated"],"edits":edits}),mode,chat)
+}
+
 async fn annotation_history(State(app):Shared,Path(key):Path<String>)->ApiResult{Ok(Json(app.library.annotation_history(&key,None)?))}
 async fn annotation_undo(State(app):Shared,Path(key):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(app.library.annotation_history(&key,Some(&b))?))}

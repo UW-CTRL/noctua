@@ -1,43 +1,85 @@
 'use strict';
-// Handwriting pads for notes. Strokes are stored as vectors in pad units
-// (0..1000 across the pad's width), so pads scale with the page and files
-// stay small. Pen pressure sets the line width; the Wacom eraser end (or the
+// Handwriting pads for notes. Strokes are stored as vectors in pad units, so
+// files stay small. A pad is `w` units wide (1000 for older pads) and `h`
+// thousand units tall, and draws at a fixed scale: a wider pad gives more room
+// rather than bigger strokes, and pads grow as you write near their edges. Pen pressure sets the line width; the Wacom eraser end (or the
 // eraser tool) removes whole strokes; touch input is ignored (palm rejection).
 
 const Ink = (() => {
   const UNIT = 1000;
+  const PX_PER_UNIT = 0.632;           // 1000 units fill the classic 632 px text column
+  const GUTTER = 64;                   // room beside wide pads for the block tools
+  const MAX_W = 6000, MAX_H = 8;       // units wide; thousands of units tall
+  const EDGE = 80, GROW_W = 400, GROW_H = 300;  // units
   const COLORS = ['#e8e6e1', '#8b85ff', '#f7768e', '#9ece6a', '#e0af68'];
   const WIDTHS = [1.4, 2.4, 4.5];
-  // Shared by every pad, like picking up a pen.
-  const tool = { color: COLORS[0], width: WIDTHS[1], eraser: false };
+  // Shared by every pad, like picking up a pen; the last pen is remembered.
+  const saved = (() => { try { return JSON.parse(store.get('noctua.inkTool') || 'null'); } catch { return null; } })();
+  const tool = {
+    color: COLORS.includes(saved?.color) ? saved.color : COLORS[0],
+    width: WIDTHS.includes(saved?.width) ? saved.width : WIDTHS[2],
+    eraser: false,
+  };
+  const saveTool = () => { try { store.set('noctua.inkTool', JSON.stringify({ color: tool.color, width: tool.width })); } catch {} };
+  const pads = new Set();
 
   const segWidth = (s, p, scale) => Math.max(0.6, s.w * scale * (0.35 + 0.9 * p));
 
-  // Draws one stroke with pressure-varying width, smoothed through midpoints.
-  function drawStroke(ctx, s, scale, color = s.c) {
-    const P = s.p;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (P.length === 1) {
-      ctx.beginPath();
-      ctx.arc(P[0][0] * scale, P[0][1] * scale, segWidth(s, P[0][2], scale) / 2, 0, Math.PI * 2);
-      ctx.fill();
-      return;
+  // Light pages show the dark-page palette inverted with hues kept, matching
+  // CSS `invert(1) hue-rotate(180deg)` without filtering the canvas itself.
+  const lightCache = new Map();
+  function lightColor(hex) {
+    if (!lightCache.has(hex)) {
+      const [r, g, b] = [1, 3, 5].map((i) => 1 - parseInt(hex.slice(i, i + 2), 16) / 255);
+      const ch = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
+      lightCache.set(hex, '#' + ch(-0.574 * r + 1.43 * g + 0.144 * b) + ch(0.426 * r + 0.43 * g + 0.144 * b) + ch(0.426 * r + 1.43 * g - 0.856 * b));
     }
-    let mx = P[0][0], my = P[0][1];
+    return lightCache.get(hex);
+  }
+
+  // Samples the midpoint-smoothed stroke as [x, y, width] in pixels.
+  function samples(s, scale) {
+    const P = s.p, at = (q) => [q[0] * scale, q[1] * scale, segWidth(s, q[2], scale)];
+    const out = [at(P[0])];
+    let m = P[0];
     for (let i = 1; i < P.length; i++) {
-      const [x, y, p] = P[i];
-      const nx = i < P.length - 1 ? (x + P[i + 1][0]) / 2 : x;
-      const ny = i < P.length - 1 ? (y + P[i + 1][1]) / 2 : y;
-      ctx.lineWidth = segWidth(s, p, scale);
-      ctx.beginPath();
-      ctx.moveTo(mx * scale, my * scale);
-      ctx.quadraticCurveTo(x * scale, y * scale, nx * scale, ny * scale);
-      ctx.stroke();
-      mx = nx; my = ny;
+      const c = P[i], n = i < P.length - 1 ? [(c[0] + P[i + 1][0]) / 2, (c[1] + P[i + 1][1]) / 2, (c[2] + P[i + 1][2]) / 2] : c;
+      const len = (Math.hypot(c[0] - m[0], c[1] - m[1]) + Math.hypot(n[0] - c[0], n[1] - c[1])) * scale;
+      const k = Math.min(16, Math.max(1, Math.ceil(len / 3)));
+      for (let j = 1; j <= k; j++) {
+        const t = j / k, u = 1 - t, q = (a) => u * u * m[a] + 2 * u * t * c[a] + t * t * n[a];
+        out.push(at([q(0), q(1), q(2)]));
+      }
+      m = n;
     }
+    return out;
+  }
+
+  // The stroke's outline as one shape: a disc at every sample joined by
+  // tangent quads, all wound the same way so overlaps merge under nonzero fill.
+  // Filling once avoids the beaded edges of stroking each segment separately.
+  function strokePath(s, scale) {
+    const pts = samples(s, scale), path = new Path2D();
+    const dot = ([x, y, w]) => { path.moveTo(x + w / 2, y); path.arc(x, y, w / 2, 0, Math.PI * 2); };
+    dot(pts[0]);
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0, w0] = pts[i - 1], [x1, y1, w1] = pts[i], d = Math.hypot(x1 - x0, y1 - y0);
+      if (d > 0.01) {
+        const nx = (y0 - y1) / d, ny = (x1 - x0) / d, r0 = w0 / 2, r1 = w1 / 2;
+        const q = [[x0 + nx * r0, y0 + ny * r0], [x1 + nx * r1, y1 + ny * r1], [x1 - nx * r1, y1 - ny * r1], [x0 - nx * r0, y0 - ny * r0]];
+        let area = 0;
+        for (let k = 0; k < 4; k++) area += q[k][0] * q[(k + 1) % 4][1] - q[(k + 1) % 4][0] * q[k][1];
+        if (area < 0) q.reverse();
+        path.moveTo(...q[0]); path.lineTo(...q[1]); path.lineTo(...q[2]); path.lineTo(...q[3]); path.closePath();
+      }
+      dot(pts[i]);
+    }
+    return path;
+  }
+
+  function drawStroke(ctx, s, scale, color = s.c) {
+    ctx.fillStyle = color;
+    ctx.fill(strokePath(s, scale), 'nonzero');
   }
 
   function bounds(strokes) {
@@ -59,6 +101,16 @@ const Ink = (() => {
 
   // Mounts a pad for `block` ({ h, strokes }) into `el`. `onChange` fires after
   // every finished stroke, erase, undo, clear or resize.
+  const padWidth = (block) => Math.min(MAX_W, Math.max(300, Number(block.w) || UNIT));
+
+  // Width in units for a new pad: the room the note panel currently has.
+  function defaultWidth() {
+    const stage = document.getElementById('notes-stage');
+    const column = stage?.querySelector('.note-blocks')?.clientWidth || UNIT * PX_PER_UNIT;
+    const room = Math.min(1500, Math.max(column, (stage?.clientWidth || 0) - 2 * GUTTER));
+    return Math.max(UNIT, Math.min(MAX_W, Math.round(room / PX_PER_UNIT / 50) * 50));
+  }
+
   function mount(el, block, onChange, history = null) {
     block.strokes = block.strokes || [];
     block.h = block.h || 0.35;
@@ -75,38 +127,80 @@ const Ink = (() => {
         <button data-act="redo" title="Redo (⇧⌘Z)" data-icon="redo-2" aria-label="Redo (⇧⌘Z)" data-icon-only>↷</button>
         <button data-act="clear" title="Clear pad" data-icon="eraser">Clear</button>
       </div>
-      <canvas></canvas>
-      <div class="ink-resize" title="Drag to resize"></div>`;
-    const canvas = el.querySelector('canvas');
-    const ctx = canvas.getContext('2d');
+      <div class="ink-scroll"><div class="ink-surface">
+        <canvas></canvas>
+        <canvas class="ink-live" aria-hidden="true"></canvas>
+        <div class="ink-edge left" title="Drag left to add room on the left"></div>
+        <div class="ink-edge right" title="Drag to change the width"></div>
+      </div></div>
+      <div class="ink-resize" title="Drag to change the height"></div>`;
+    const [canvas, live] = el.querySelectorAll('canvas');
+    const scroller = el.querySelector('.ink-scroll'), surface = el.querySelector('.ink-surface');
+    const ctx = canvas.getContext('2d'), liveCtx = live.getContext('2d');
     const undo = [], redo = [];
-    let scale = 1, cur = null, erasing = false, erasedAny = false;
+    let scale = PX_PER_UNIT, cur = null, erasing = false, erasedAny = false, paint = (c) => c, geometry = '';
 
-    function layout() {
-      const w = el.clientWidth || 600;
-      const h = Math.max(60, Math.round(w * block.h));
-      const dpr = window.devicePixelRatio || 1;
-      canvas.style.height = h + 'px';
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-      scale = w / UNIT;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Wide pads extend past the text column (centered, up to the note panel's
+    // width) and scroll sideways inside themselves beyond that. Beside LaTeX,
+    // a pad keeps to its half of the row. Older 1000-unit pads shrink to fit a
+    // narrow column, as before.
+    function layout(force = false) {
+      const nb = el.closest('.nb'), stage = el.closest('#notes-stage');
+      const column = (nb || el.parentElement)?.clientWidth || UNIT * PX_PER_UNIT;
+      const room = el.closest('.nb-pair') || !stage ? column : Math.max(column, stage.clientWidth - 2 * GUTTER);
+      const w = padWidth(block), dpr = window.devicePixelRatio || 1;
+      const key = [column, room, w, block.h, dpr].join();
+      if (key === geometry && !force) return;
+      geometry = key;
+      scale = Math.min(PX_PER_UNIT, column / Math.min(w, UNIT));
+      const full = Math.round(w * scale), visible = Math.min(full, room);
+      const out = Math.max(0, (visible - column) / 2);
+      const h = Math.max(60, Math.round(Math.min(MAX_H, block.h) * UNIT * scale));
+      nb?.style.setProperty('--pad-out', out + 'px');
+      el.style.width = visible + 'px';
+      el.style.marginLeft = -out + 'px';
+      surface.style.width = full + 'px';
+      // Bound the backing store of very large pads.
+      const density = Math.min(dpr, Math.sqrt(48 * 1024 * 1024 / (full * h)));
+      for (const c of [canvas, live]) {
+        c.style.width = full + 'px';
+        c.style.height = h + 'px';
+        c.width = Math.round(full * density);
+        c.height = Math.round(h * density);
+        c.getContext('2d').setTransform(density, 0, 0, density, 0, 0);
+      }
       redraw();
+      drawLive();
+    }
+
+    // Finishing a stroke near the right or bottom edge adds room there.
+    function grow(s) {
+      const b = bounds([s]);
+      if (!b) return;
+      const w = padWidth(block);
+      if (b.x1 > w - EDGE && w < MAX_W) block.w = Math.min(MAX_W, Math.ceil((b.x1 + GROW_W) / 50) * 50);
+      if (b.y1 > block.h * UNIT - EDGE && block.h < MAX_H) block.h = Math.min(MAX_H, Math.ceil(b.y1 + GROW_H) / UNIT);
+      layout();
     }
 
     function redraw() {
+      paint = getComputedStyle(el).getPropertyValue('--np-ink-filter').includes('invert') ? lightColor : (c) => c;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const s of block.strokes) drawStroke(ctx, s, scale);
-      if (cur) drawStroke(ctx, cur, scale);
+      for (const s of block.strokes) drawStroke(ctx, s, scale, paint(s.c));
+    }
+
+    // The stroke in progress is redrawn whole on its own layer each move.
+    function drawLive() {
+      liveCtx.clearRect(0, 0, live.width, live.height);
+      if (cur) drawStroke(liveCtx, cur, scale, paint(cur.c));
     }
 
     const changed = () => onChange && onChange();
 
     function point(e) {
       const r = canvas.getBoundingClientRect();
-      const k = UNIT / r.width;
       const p = e.pointerType === 'pen' ? (e.pressure || 0.5) : 0.5;
-      return [Math.round((e.clientX - r.left) * k * 10) / 10, Math.round((e.clientY - r.top) * k * 10) / 10, Math.round(p * 100) / 100];
+      return [Math.round((e.clientX - r.left) / scale * 10) / 10, Math.round((e.clientY - r.top) / scale * 10) / 10, Math.round(p * 100) / 100];
     }
 
     function eraseAt([x, y]) {
@@ -132,8 +226,7 @@ const Ink = (() => {
       erasing = tool.eraser || (e.buttons & 32) !== 0 || e.button === 5;
       erasedAny = false;
       if (erasing) eraseAt(point(e));
-      else cur = { c: tool.color, w: tool.width, p: [point(e)] };
-      redraw();
+      else { cur = { c: tool.color, w: tool.width, p: [point(e)] }; drawLive(); }
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!cur && !erasing) return;
@@ -142,19 +235,18 @@ const Ink = (() => {
         if (erasing) eraseAt(point(ev));
         else cur.p.push(point(ev));
       }
-      if (cur) {
-        // Draw just the newest segments; full redraw on finish.
-        const n = cur.p.length;
-        drawStroke(ctx, { ...cur, p: cur.p.slice(Math.max(0, n - evs.length - 2)) }, scale);
-      }
+      if (cur) drawLive();
     });
     const finish = () => {
       if (cur) {
         block.strokes.push(cur);
         undo.push({ added: cur });
         redo.length = 0;
+        drawStroke(ctx, cur, scale, paint(cur.c));
+        const done = cur;
         cur = null;
-        redraw();
+        drawLive();
+        grow(done);
         changed();
       } else if (erasing && erasedAny) changed();
       erasing = false;
@@ -187,8 +279,8 @@ const Ink = (() => {
     el.querySelector('.ink-tools').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
-      if (b.dataset.color) { tool.color = b.dataset.color; tool.eraser = false; }
-      else if (b.dataset.width) tool.width = Number(b.dataset.width);
+      if (b.dataset.color) { tool.color = b.dataset.color; tool.eraser = false; saveTool(); }
+      else if (b.dataset.width) { tool.width = Number(b.dataset.width); saveTool(); }
       else if (b.dataset.act === 'eraser') tool.eraser = !tool.eraser;
       else if (b.dataset.act === 'undo') undoOnce();
       else if (b.dataset.act === 'redo') redoOnce();
@@ -209,28 +301,81 @@ const Ink = (() => {
       }
     });
 
-    // Drag the bottom edge to change the pad's height.
-    el.querySelector('.ink-resize').addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      const startY = e.clientY, startH = canvas.clientHeight, w = el.clientWidth;
-      const move = (ev) => { block.h = Math.max(60, startH + ev.clientY - startY) / w; layout(); };
-      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); changed(); };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+    function drag(handle, onMove, onUp = () => {}) {
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const start = { x: e.clientX, y: e.clientY, h: block.h, w: padWidth(block) };
+        const move = (ev) => onMove(ev.clientX - start.x, ev.clientY - start.y, start);
+        const up = (ev) => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          onUp(ev.clientX - start.x, start);
+          changed();
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+    }
+    // The bottom edge sets the height; the right edge the width, never cutting
+    // off strokes. Dragging the left edge outward adds room on the left by
+    // shifting the drawing right (inward removes empty room there).
+    drag(el.querySelector('.ink-resize'), (dx, dy, start) => {
+      block.h = Math.min(MAX_H, Math.max(60 / scale, start.h * UNIT + dy / scale) / UNIT);
+      layout();
+    });
+    drag(el.querySelector('.ink-edge.right'), (dx, dy, start) => {
+      const used = bounds(block.strokes)?.x1 || 0;
+      block.w = Math.round(Math.min(MAX_W, Math.max(300, used + 20, start.w + dx / scale)));
+      layout();
+    });
+    const leftEdge = el.querySelector('.ink-edge.left');
+    drag(leftEdge, (dx) => { leftEdge.style.transform = `translateX(${dx}px)`; }, (dx, start) => {
+      leftEdge.style.transform = '';
+      const used = bounds(block.strokes);
+      const shift = Math.round(Math.max(-(used ? used.x0 - 10 : 0), Math.min(MAX_W - start.w, -dx / scale)));
+      if (!shift) return;
+      for (const s of block.strokes) for (const q of s.p) q[0] = Math.round((q[0] + shift) * 10) / 10;
+      block.w = start.w + shift;
+      layout(true);
+      scroller.scrollLeft = 0;
     });
 
-    const ro = new ResizeObserver(() => { if (canvas.width !== Math.round(el.clientWidth * (window.devicePixelRatio || 1))) layout(); });
-    ro.observe(el);
+    const ro = new ResizeObserver(() => layout());
+    ro.observe(el.closest('.nb') || el.parentElement || el);
     layout();
     syncToolbars();
 
-    return {
+    const pad = {
       finish,
+      layout,
+      redraw,
       // Black-on-white PNG of the strokes, cropped, for handwriting recognition.
       toPNG() { return preview(block); },
-      destroy() { ro.disconnect(); },
+      destroy() { ro.disconnect(); pads.delete(pad); },
     };
+    pads.add(pad);
+    observeStage();
+    return pad;
   }
+
+  // The note panel's width sets how far wide pads may extend.
+  let stageObserved = null;
+  const stageRO = new ResizeObserver(() => pads.forEach((p) => p.layout()));
+  function observeStage() {
+    const stage = document.getElementById('notes-stage');
+    if (stage && stage !== stageObserved) { stageObserved = stage; stageRO.observe(stage); }
+  }
+
+  // Repaint at the new density when the window moves between screens or zooms.
+  function watchDensity() {
+    const query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    query.addEventListener('change', () => { pads.forEach((p) => p.layout()); watchDensity(); }, { once: true });
+  }
+  watchDensity();
+  // Page theme changes recolour the strokes.
+  const refresh = () => pads.forEach((p) => p.redraw());
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refresh);
 
   function preview(block) {
     const b = bounds(block.strokes);
@@ -248,5 +393,5 @@ const Ink = (() => {
     return c.toDataURL('image/png');
   }
 
-  return { mount, tool, preview };
+  return { mount, tool, preview, refresh, defaultWidth };
 })();

@@ -66,7 +66,7 @@ operations, see [Server and connections](server.md).
 | 1. Choose a collection | In **Library**, select a collection or use **New folder inside** (+) to create one. |
 | 2. Add a paper | Choose **Import PDF** and select a local file. Alternatively, search by title, DOI, or arXiv link and choose **Add to Noctua**. |
 | 3. Read | Select the saved paper and choose **Read PDF**. Select text to highlight it or add a comment. |
-| 4. Write | Switch to **Notes**, select the same collection, and choose **New note**. Enter a title and write a short takeaway; changes save automatically. |
+| 4. Write | With the same collection selected, choose **New note or file** above the collection tree and pick **Note**. Enter a title and write a short takeaway; changes save automatically. |
 
 If a search result has no downloadable PDF, use **Attach PDF** in its saved
 paper details to add a local copy. The PDF and note are stored on the connected server.

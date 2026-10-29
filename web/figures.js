@@ -229,11 +229,11 @@ function imageNames(fileName, usedLabels) {
 function noteImageUrl(path) {
   const file=/^files\/(f[a-zA-Z0-9_-]+)$/.exec(path.trim());
   if(file&&N.target)return `/api/workspaces/${enc(N.target)}/files/${file[1]}/content`;
-  const m = /^(images|media)\/([A-Za-z0-9_-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm))$/i.exec(path.trim());
+  const m = /^(images|media)\/([A-Za-z0-9_-]+\.(?:png|jpe?g|gif|webp|svg|mp4|mov|webm))$/i.exec(path.trim());
   return m && N.target ? `/api/note-${m[1] === 'images' ? 'images' : 'media'}/${enc(N.target)}/${m[2]}` : null;
 }
 
-const isMediaFile = (f) => /^(image|video)\//.test(f.type) || /\.(png|jpe?g|gif|webp|mp4|m4v|mov|webm)$/i.test(f.name || '');
+const isMediaFile = (f) => /^(image|video)\//.test(f.type) || /\.(png|jpe?g|gif|webp|svg|mp4|m4v|mov|webm)$/i.test(f.name || '');
 async function uploadImage(file, target) {
   const r = await fetch(`/api/note-media/${enc(target)}`, { method: 'POST', body: file });
   const j = await r.json().catch(() => ({}));
@@ -317,7 +317,7 @@ async function importMediaFiles(files, { blockId = null, index = null, forceNew 
   document.querySelector(`.nb[data-id="${target.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-const imgInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm,.mp4,.m4v,.mov,.webm', multiple: true, hidden: true });
+const imgInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.svg,video/mp4,video/quicktime,video/webm,.mp4,.m4v,.mov,.webm', multiple: true, hidden: true });
 document.body.appendChild(imgInput);
 // Opens the system file dialog; the chosen images go to addImages(…, opts).
 function pickImages(opts) {

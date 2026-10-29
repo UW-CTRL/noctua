@@ -91,7 +91,8 @@ const G = {
 };
 // Noctua library browser: selected folder, its items, item shown in details.
 const lib = {
-  target: store.get('noctua.libTarget') || 'L1', items: null, detail: null,
+  target: store.get('noctua.libTarget') || 'L1', items: null, notes: [], detail: null,
+  kind: ['papers', 'notes'].includes(store.get('noctua.libKind')) ? store.get('noctua.libKind') : 'all',
   selected: new Set(), selectionTarget: null, anchor: null, tag: '',
   expanded: (() => {
     try { const saved = JSON.parse(store.get('noctua.expandedFolders') || '["L1"]'); return new Set(Array.isArray(saved) ? saved : ['L1']); }
@@ -751,6 +752,36 @@ async function saveToLibrary(p, btn) {
 
 // ---------------------------------------------------------------- Noctua library browser
 
+// Library and Notes share one selected collection.
+function showCollection(id) {
+  lib.trash=false;document.body.classList.remove('library-trash-view');
+  lib.target = id;
+  store.set('noctua.libTarget', lib.target);
+  revealCollection(id);
+  renderDetails();
+  renderLibTree();
+  loadLibItems();
+  clearTimeout(projectFolderTimer);projectFolderTimer=null;
+  if (G.layout !== 'library') {
+    G.token++;
+    const target=lib.target;
+    projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
+  }
+}
+// Called when notes open another collection (Reader side note, @ mentions, moves).
+function selectCollection(id) {
+  if (lib.target === id && !lib.trash) { renderLibTree(); return; }
+  showCollection(id);
+}
+function revealCollection(id) {
+  const byId = new Map(collections.targets.map(t => [t.id, t]));
+  let changed = false;
+  for (let parent = byId.get(id)?.parent; parent; parent = byId.get(parent)?.parent) {
+    if (!lib.expanded.has(parent)) { lib.expanded.add(parent); changed = true; }
+  }
+  if (changed) store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
+}
+
 function renderLibTree() {
   const el = $('#lib-tree');
   if (!collections.targets.length) {
@@ -789,19 +820,9 @@ function renderLibTree() {
     li.addEventListener('contextmenu', event=>{event.preventDefault();event.stopPropagation();openLibraryFolderMenu(li.dataset.id,li,event);});
     li.addEventListener('click', () => {
       if (li.querySelector('input')) return;
-      lib.trash=false;document.body.classList.remove('library-trash-view');
-      lib.target = li.dataset.id;
-      store.set('noctua.libTarget', lib.target);
-      renderDetails();
-      renderLibTree();
-      loadLibItems();
-      clearTimeout(projectFolderTimer);projectFolderTimer=null;
-      if (G.layout !== 'library') {
-        G.token++;
-        const target=lib.target;
-        projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
-      }
-      el.querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
+      showCollection(li.dataset.id);
+      if (typeof loadNoteFolder === 'function' && N.target !== lib.target) loadNoteFolder(lib.target);
+      $('#lib-tree').querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
     });
     li.addEventListener('keydown', (e) => {
       if (e.target !== li || e.isComposing || e.key !== 'Enter' || !li.dataset.id.startsWith('C')) return;
@@ -827,6 +848,7 @@ function renderLibTree() {
     });
 
   });
+  if (typeof placeWorkspaceTree === 'function') placeWorkspaceTree();
 }
 
 function startRename(li) {
@@ -878,9 +900,10 @@ async function loadLibItems() {
   renderLibraryTable([]);
   el.innerHTML = '<p class="hint">Loading library…</p>';
   try {
-    const items = await api(`/api/library/items?target=${enc(target)}`);
+    const [items, notes] = await Promise.all([api(`/api/library/items?target=${enc(target)}`), api(`/api/notes?target=${enc(target)}`).catch(() => [])]);
     if (target !== lib.target || lib.trash) return;
     lib.items = items;
+    lib.notes = notes;
   } catch (e) {
     if (target !== lib.target) return;
     lib.items = null;
@@ -915,7 +938,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
-  renderLibraryTable(items);
+  renderLibraryTable(libraryTableRows(items, lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }).sort(cmp));
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;
@@ -948,17 +971,22 @@ function renderLibItems() {
 // The library table includes local items even when Semantic Scholar cannot match them.
 function renderLibraryTable(items) {
   $('#library-title').textContent = targetName(lib.target) || 'Library';
-  $('#library-count').textContent = lib.items ? `${items.length} of ${lib.items.length} papers` : '';
+  const notes = items.filter((it) => it.kind === 'note').length, papers = items.length - notes;
+  $('#library-count').textContent = lib.items ? [lib.kind !== 'notes' && `${papers} of ${lib.items.length} papers`, lib.kind !== 'papers' && lib.notes.length && `${notes} of ${lib.notes.length} notes`].filter(Boolean).join(' · ') : '';
   const status = $('#library-table-status');
   status.hidden = !!items.length;
-  status.textContent = !lib.items ? 'Loading library…' : lib.items.length ? 'No matches.' : 'This folder is empty. Import a PDF or search for papers to get started.';
+  status.textContent = !lib.items ? 'Loading library…' : lib.items.length || lib.notes.length ? 'No matches.' : 'This folder is empty. Import a PDF, search for papers, or create a note to get started.';
   document.querySelectorAll('[data-library-sort]').forEach((button) => {
     const sort = $('#lib-sort').value;
     button.closest('th').setAttribute('aria-sort', button.dataset.librarySort === sort ? (sort === 'year-desc' ? 'descending' : 'ascending') : button.dataset.librarySort === 'year-desc' && sort === 'year-asc' ? 'ascending' : 'none');
   });
   if (typeof renderLibraryManagement==='function') renderLibraryManagement();
   const rows = $('#library-rows');
-  rows.innerHTML = items.map(it => `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
+  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row">
+    <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${esc(it.title)}</button></td>
+    <td>—</td><td>${esc(it.year || '—')}</td>
+    <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
+  </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
@@ -966,6 +994,13 @@ function renderLibraryTable(items) {
   const byKey = new Map(items.map(it => [it.key, it]));
   rows.querySelectorAll('tr').forEach(row => {
     const it = byKey.get(row.dataset.key);
+    if (it.kind === 'note') {
+      const open = () => openNoteFrom(lib.target, it.id);
+      row.querySelector('[data-open-note]').addEventListener('click', open);
+      row.addEventListener('dblclick', open);
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) open(); });
+      return;
+    }
     row.addEventListener('click', (e) => {
       selectLibraryPaper(e,it,row);
       row.focus();
@@ -1078,6 +1113,7 @@ async function activateAgent(provider, { persist = true } = {}) {
     if (chat.ready) store.set('noctua.chatDraft.' + chat.provider, $('#chat-input').value);
     chat.provider = provider;
     chat.ready = true;
+    if (typeof renderChatEffort === 'function') renderChatEffort();
     chat.sentGraphKey = null; chat.sentNoteKey = null;
     $('#chat-input').value = store.get('noctua.chatDraft.' + provider) || '';
     toggleChatHistory(false);
@@ -1129,6 +1165,37 @@ function setChatMode(mode) {
 function cycleChatMode() {
   const order = Object.keys(CHAT_MODES);
   setChatMode(order[(order.indexOf(chat.mode) + 1) % order.length]);
+}
+
+// Reasoning effort for the next messages, per provider; '' follows the saved
+// setting in Settings → Research assistant.
+const effortLabel = (id) => ({ xhigh: 'Extra high' })[id] || id[0].toUpperCase() + id.slice(1);
+function savedAssistantOptions() {
+  return (typeof settings !== 'undefined' && settings?.assistant?.[chat.provider]) || {};
+}
+function chatEfforts() {
+  return ['', ...(typeof assistantEfforts === 'function' ? assistantEfforts(chat.provider, savedAssistantOptions().model) : [])];
+}
+function chatEffort() {
+  const effort = store.get('noctua.chatEffort.' + chat.provider) || '';
+  return chatEfforts().includes(effort) ? effort : '';
+}
+function renderChatEffort() {
+  const b = $('#chat-effort');
+  if (!b) return;
+  const effort = chatEffort(), saved = savedAssistantOptions().reasoning;
+  b.textContent = effort ? `${effortLabel(effort)} effort` : 'Default effort';
+  b.dataset.effort = effort || 'default';
+  b.title = `Reasoning effort for your next messages: ${effort ? effortLabel(effort) : `saved setting${saved ? ` (${effortLabel(saved)})` : ''}`}. Click, or press Shift+← / Shift+→ in an empty chat box, to change.`;
+}
+function setChatEffort(effort) {
+  store.set('noctua.chatEffort.' + chat.provider, effort);
+  renderChatEffort();
+}
+// Click cycles through the levels; Shift+arrows step down or up and stop at the ends.
+function stepChatEffort(delta, wrap = false) {
+  const levels = chatEfforts(), i = levels.indexOf(chatEffort()) + delta;
+  setChatEffort(levels[wrap ? (i + levels.length) % levels.length : Math.max(0, Math.min(levels.length - 1, i))]);
 }
 
 const TOOL_LABEL = {
@@ -1489,9 +1556,20 @@ function runChatAction(a, host) {
   }
 }
 
+// The chat shows its own progress; the corner notice only stands in for it
+// while the chat is out of sight.
+function chatOnScreen() {
+  return !$('#chat').classList.contains('hidden') && !(typeof paneCollapsed === 'function' && paneCollapsed('right'));
+}
+function syncAssistantProgress() {
+  notifyProgress('assistant', chat.busy && !chatOnScreen() ? chat.progress || 'Assistant is working…' : null);
+}
+window.addEventListener('resize', syncAssistantProgress);  // panes announce collapse with a resize
+
 function setChatBusy(busy) {
   chat.busy = busy;
-  notifyProgress('assistant', busy ? 'Assistant is working…' : null);
+  chat.progress = null;
+  syncAssistantProgress();
   $('#chat-new').disabled = busy;
   $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
@@ -1524,7 +1602,8 @@ async function sendChat(text) {
     else if (e.type === 'text_start') { if (md && !md.endsWith('\n\n')) md += '\n\n'; }
     else if (e.type === 'text') { md += e.text; NoctuaChatRender.update(body, md); }
     else if (e.type === 'tool') {
-      notifyProgress('assistant', `${TOOL_LABEL[e.name] || e.name}…`);
+      chat.progress = `${TOOL_LABEL[e.name] || e.name}…`;
+      syncAssistantProgress();
       const t = document.createElement('div');
       t.className = 'tool';
       t.textContent = `⚙ ${TOOL_LABEL[e.name] || e.name}…`;
@@ -1543,7 +1622,7 @@ async function sendChat(text) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
+      body: JSON.stringify({ message: text, provider, context, project_target: projectTarget, skill_ids: skillSelection.ids, chat_id: chat.id, mode: chat.mode, effort: typeof chatEffort === 'function' ? chatEffort() : '', attachments, selections:selectedPassages.items, files:uploaded.files.map(file=>file.id) }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
@@ -1569,6 +1648,7 @@ function showRightTab(name, { focus = true } = {}) {
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
   if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); if (focus) $('#chat-input').focus(); }
+  syncAssistantProgress();
 }
 
 // ---------------------------------------------------------------- toast / tabs
@@ -2203,13 +2283,24 @@ $('#chat-font-smaller').addEventListener('click', () => NoctuaFonts.setChatSize(
 $('#chat-font-larger').addEventListener('click', () => NoctuaFonts.setChatSize(NoctuaFonts.getChatSize() + 1));
 document.addEventListener('noctua-chat-text-change', syncChatFontSize);
 syncChatFontSize();
+// Linux reports Shift+Tab as ISO_Left_Tab; match on the physical key too.
+const isShiftTab = (e) => e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing && (e.key === 'Tab' || e.code === 'Tab' || e.keyCode === 9);
 $('#chat-mode').addEventListener('click', cycleChatMode);
+// The mode and effort badges keep the shortcut after being clicked.
+for (const id of ['#chat-mode', '#chat-effort']) $(id).addEventListener('keydown', (e) => { if (isShiftTab(e)) { e.preventDefault(); cycleChatMode(); } });
+$('#chat-effort').addEventListener('click', () => stepChatEffort(1, true));
 $('#chat-input').addEventListener('keydown', (e) => {
   if (window.NoctuaSkillPicker?.key(e)) return;
   if (mentionKey(e)) return;  // @-mention popup open
-  if (e.key === 'Tab' && e.shiftKey) {
+  if (isShiftTab(e)) {
     e.preventDefault();
     cycleChatMode();
+    return;
+  }
+  // With text in the box, Shift+arrows keep selecting it.
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.target.value) {
+    e.preventDefault();
+    stepChatEffort(e.key === 'ArrowRight' ? 1 : -1);
     return;
   }
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

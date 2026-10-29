@@ -5,7 +5,9 @@
 //! Also turns handwriting (a PNG) into LaTeX with the selected CLI backend.
 
 use std::{
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -16,6 +18,11 @@ use crate::{agent::{self, Provider}, App};
 
 pub struct Notes {
     pub(crate) root: PathBuf,
+}
+
+fn seen_versions() -> &'static Mutex<HashMap<String, VecDeque<Value>>> {
+    static SEEN: OnceLock<Mutex<HashMap<String, VecDeque<Value>>>> = OnceLock::new();
+    SEEN.get_or_init(Default::default)
 }
 
 fn now_ms() -> u64 {
@@ -83,10 +90,41 @@ impl Notes {
 
     pub fn get(&self, folder: &str, id: &str) -> Result<Option<Value>> {
         match std::fs::read_to_string(self.path(folder, id)?) {
-            Ok(s) => Ok(Some(serde_json::from_str(&s)?)),
+            Ok(s) => {
+                let doc: Value = serde_json::from_str(&s)?;
+                self.remember(folder, id, &doc);
+                Ok(Some(doc))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Keeps recent versions handed to readers (session only), so an edit
+    /// based on one can still be checked block by block after later saves.
+    pub fn remember(&self, folder: &str, id: &str, doc: &Value) {
+        let Some(updated) = doc["updated"].as_u64() else { return };
+        let key = format!("{}:{folder}:{id}", self.root.display());
+        let mut seen = seen_versions().lock().unwrap();
+        if seen.len() >= 256 && !seen.contains_key(&key) {
+            if let Some(old) = seen.keys().next().cloned() {
+                seen.remove(&old);
+            }
+        }
+        let versions = seen.entry(key).or_default();
+        if versions.iter().any(|d| d["updated"].as_u64() == Some(updated)) {
+            return;
+        }
+        versions.push_back(doc.clone());
+        while versions.len() > 16 {
+            versions.pop_front();
+        }
+    }
+
+    /// A version previously returned by `get` or recorded with `remember`.
+    pub fn version(&self, folder: &str, id: &str, updated: u64) -> Option<Value> {
+        let key = format!("{}:{folder}:{id}", self.root.display());
+        seen_versions().lock().unwrap().get(&key)?.iter().find(|d| d["updated"].as_u64() == Some(updated)).cloned()
     }
 
     pub fn create(&self, folder: &str, title: &str) -> Result<Value> {
@@ -278,7 +316,29 @@ fn image_ext(b: &[u8]) -> Option<&'static str> {
 const INK_PROMPT: &str = include_str!("prompts/handwriting.md");
 
 /// Handwriting (base64 PNG) to LaTeX source, via the selected CLI backend.
-pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Result<String> {
+/// Saves each fenced ```svg diagram in a transcription as note media of the
+/// collection and refers to it from the LaTeX; unusable ones become placeholders.
+pub(crate) fn place_diagrams(app: &App, target: Option<&str>, text: &str) -> Result<String> {
+    let folder = target.map(|t| app.library.folder_id(t)).transpose()?;
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("```svg") {
+        let body = start + "```svg".len();
+        let Some(len) = rest[body..].find("```") else { break };
+        let svg = rest[body..body + len].trim();
+        out.push_str(&rest[..start]);
+        let saved = folder.as_deref().filter(|_| svg.len() <= 200_000).and_then(|f| crate::media::save(&app.notes.root, f, svg.as_bytes()).ok());
+        out.push_str(&match saved {
+            Some(path) => format!("\\includegraphics[width=0.7\\textwidth]{{{path}}}"),
+            None => "[diagram]".to_owned(),
+        });
+        rest = &rest[body + len + 3..];
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
+pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str, target: Option<&str>) -> Result<String> {
     use base64::Engine;
     let data = png_b64.trim().trim_start_matches("data:image/png;base64,");
     let bytes = base64::engine::general_purpose::STANDARD.decode(data).context("invalid drawing image")?;
@@ -307,5 +367,6 @@ pub async fn ink_to_latex(app: &App, provider: Provider, png_b64: &str) -> Resul
         (c, format!("{msg}\n"))
     };
     let text = agent::one_shot(app, provider, cmd, &input, "transcribe the drawing").await?;
+    let text = place_diagrams(app, target, &text)?;
     Ok(text.trim().trim_start_matches("```latex").trim_start_matches("```").trim_end_matches("```").trim().to_string())
 }
