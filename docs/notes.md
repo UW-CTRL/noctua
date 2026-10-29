@@ -212,7 +212,11 @@ they touch different blocks. If both change the same block, title or preamble
 is asked to read the note again, or your changes are preserved for you to resolve. See [proposal review](assistant.md#assistant-reads-and-review).
 
 Chat can inspect saved drawings; keep a Noctua chat tab open when a preview is
-needed. The drawing pad's TeX action performs separate handwriting transcription.
+needed. Ask the assistant to convert your handwriting (for example "convert the
+drawings in this note to LaTeX") and it transcribes the note's drawings, or chosen
+ones, into LaTeX beside each drawing, with diagrams redrawn as SVG; Suggest mode
+lets you review the result first. The **Convert drawings** (Σ) button in the note
+header does the same in the app for every drawing without LaTeX beside it.
 Videos, stroke editing, media uploads, whole-note deletion, and cross-project
 moves remain UI actions or unsupported tool operations. Attach a note with @ or
 select rendered text and choose **Add to chat**.

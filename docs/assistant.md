@@ -95,7 +95,8 @@ or unusually formatted objects. Attaching sources is a UI action, not a chat too
 ## Capabilities and limits
 
 The assistant can download available PDFs, search indexed text, view rendered
-pages, and annotate exact passages. Keep a Noctua chat tab open when it needs
+pages, and annotate exact passages. In notes, it can view drawings and transcribe
+them into LaTeX placed beside each drawing, redrawing diagrams as SVG images. Keep a Noctua chat tab open when it needs
 uncached PDF text or page images. Scanned PDFs do not gain OCR.
 
 Bulk AI outlines and auto-highlighting are [Reader controls](reader.md), while

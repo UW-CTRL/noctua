@@ -140,10 +140,12 @@ fn edited_note(app: &App, a: &Value) -> Result<(Value, Vec<Value>)> {
                     bail!("Block text exceeds 100000 bytes");
                 }
                 let id = crate::library::id("b");
-                blocks.insert(
-                    position.map_or(0, |p| p + 1),
-                    json!({"id":id,"type":"text","src":text}),
-                );
+                let mut inserted = json!({"id":id,"type":"text","src":text});
+                // Transcriptions sit beside the drawing they came from.
+                if e["beside"] == true && position.is_some_and(|p| blocks[p]["type"] == "ink") {
+                    inserted["beside"] = json!(true);
+                }
+                blocks.insert(position.map_or(0, |p| p + 1), inserted);
                 affected = Some(id);
             }
             _ => bail!("Unknown note operation"),

@@ -921,3 +921,29 @@ async fn transcribed_svg_diagrams_become_note_media() -> Result<()> {
     assert_eq!(crate::notes::place_diagrams(&f.app, None, "```svg\n<svg xmlns=\"x\"/>\n```")?, "[diagram]");
     Ok(())
 }
+
+#[tokio::test]
+async fn convert_ink_places_transcriptions_beside_drawings_by_mode() -> Result<()> {
+    let f = Fixture::new()?;
+    let mut doc = f.app.notes.create("L1", "Handwritten")?;
+    let id = doc["id"].as_str().unwrap().to_owned();
+    doc["blocks"] = json!([{"id":"ink","type":"ink","w":1000,"h":0.4,"strokes":[{"p":[[1,2,1],[30,40,1]],"w":4.5,"c":"#e8e6e1"}]},{"id":"tail","type":"text","src":"after"}]);
+    let updated = f.app.notes.save("L1", &id, doc)?;
+    // A cached preview stands in for the app rendering the drawing.
+    let previews = f.app.notes.root.join(f.app.library.folder_id("L1")?).join(".drawing-previews");
+    std::fs::create_dir_all(&previews)?;
+    std::fs::write(previews.join(format!("{id}-ink-{updated}.png")), b"\x89PNG\r\n\x1a\nfake-preview")?;
+    let args = json!({"folder_id":"L1","note_id":id,"updated":updated});
+    let plan = mcp_value(&f, "convert_ink", args.clone(), "plan").await;
+    assert_eq!(plan["isError"], true);
+    let proposal = mcp_value(&f, "convert_ink", args.clone(), "suggest").await;
+    assert_eq!(proposal["status"], "proposed", "{proposal}");
+    assert_eq!(f.app.notes.get("L1", &id)?.unwrap()["blocks"].as_array().unwrap().len(), 2);
+    let applied = mcp_value(&f, "convert_ink", args, "direct").await;
+    assert_eq!(applied["status"], "applied", "{applied}");
+    let blocks = f.app.notes.get("L1", &id)?.unwrap()["blocks"].clone();
+    assert_eq!((blocks[0]["type"].as_str(), blocks[1]["src"].as_str(), blocks[1]["beside"].as_bool(), blocks[2]["id"].as_str()), (Some("ink"), Some(r"\[x^2\]"), Some(true), Some("tail")));
+    let missing = mcp_value(&f, "convert_ink", json!({"folder_id":"L1","note_id":id,"updated":1,"block_ids":["tail"]}), "direct").await;
+    assert_eq!(missing["isError"], true);
+    Ok(())
+}

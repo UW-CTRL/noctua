@@ -462,7 +462,7 @@ function renderEditor() {
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
   stage.innerHTML = `<div class="note-actions" role="toolbar" aria-label="Note editing">
       ${historyButtons('note')}
-      <div class="note-actions-right"><button id="note-help" data-icon="circle-help" data-icon-only title="Note guide" aria-label="Note guide"></button><button id="note-preamble-toggle" data-icon="settings" data-icon-only title="Preamble and page layout" aria-label="Preamble and page layout" aria-expanded="${!!N.preambleOpen}"></button></div>
+      <div class="note-actions-right"><button id="note-convert-ink" data-icon="sigma" data-icon-only title="Convert drawings without LaTeX beside them" aria-label="Convert drawings without LaTeX beside them"${N.doc.blocks.some((b) => b.type === 'ink') ? '' : ' hidden'}></button><button id="note-help" data-icon="circle-help" data-icon-only title="Note guide" aria-label="Note guide"></button><button id="note-preamble-toggle" data-icon="settings" data-icon-only title="Preamble and page layout" aria-label="Preamble and page layout" aria-expanded="${!!N.preambleOpen}"></button></div>
     </div><div class="note-page">
       <textarea class="note-title" rows="1" placeholder="Untitled note" aria-label="Note title" spellcheck="false">${esc(N.doc.title)}</textarea>
     <div class="note-head${N.preambleOpen ? ' open' : ''}">
@@ -477,6 +477,7 @@ function renderEditor() {
     <div class="note-blocks"></div></div>`;
   wirePreamble(stage);
   stage.querySelector('#note-help').addEventListener('click', showNoteHelp);
+  stage.querySelector('#note-convert-ink').addEventListener('click', convertAllDrawings);
   const wrap = stage.querySelector('.note-blocks');
   wrap.appendChild(inserter(0));
   const blocks = N.doc.blocks;
@@ -554,7 +555,7 @@ function showNoteHelp() {
 \textbf{Bold} and \emph{emphasis}`)}</section>
       <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear at the far right of the sticky note header opens the preamble for page layout and custom LaTeX commands.</p></section>
       <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Note font applies to the title, body, collection/save metadata, and empty-block writing hint; Title size defaults to 28 px. Collection and save-status text stay at 14 px. Title size and Body size are separate controls in Settings → Appearance → Fonts. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
-      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches; hover the pad to change pen colour or width (your last pen is remembered). Pads grow as you write near their right or bottom edge; drag an edge to resize, or the left edge outward to add room on the left. TeX transcribes a drawing into LaTeX beside it; Show below / Show beside on that text switches the layout.</p><p>Images can be PNG, JPEG, GIF, WebP, or SVG. For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
+      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches; hover the pad to change pen colour or width (your last pen is remembered). Pads grow as you write near their right or bottom edge; drag an edge to resize, or the left edge outward to add room on the left. TeX transcribes a drawing into LaTeX beside it, redrawing diagrams as SVG; Σ in the note header converts every drawing without LaTeX beside it, and the assistant can do the same when asked. Show below / Show beside on that text switches the layout.</p><p>Images can be PNG, JPEG, GIF, WebP, or SVG. For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
       <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
 See Section \ref{sec:intro}.
@@ -784,9 +785,9 @@ async function blockAction(id, act, btn) {
     const doc = N.doc, target = N.target, provider = chat.provider;
     const png = N.pads.get(id)?.toPNG();
     if (!png) return toast('Draw something first.');
-    btn.disabled = true;
-    btn.textContent = '…';
-    btn.dataset.icon = 'loader-circle';
+    if (btn) btn.disabled = true;
+    if (btn) btn.textContent = '…';
+    if (btn) btn.dataset.icon = 'loader-circle';
     toast('Converting handwriting to LaTeX…');
     try {
       const { latex } = await api('/api/ink-latex', { png, provider, target });
@@ -801,11 +802,24 @@ async function blockAction(id, act, btn) {
       toast('Converted. The LaTeX is beside the drawing; use its Show below button to stack them, or delete the drawing if you no longer need it.');
     } catch (e) {
       toast(e.message, { error: true });
-      btn.disabled = false;
-      btn.textContent = 'TeX';
-      btn.dataset.icon = 'sigma';
+      if (btn) { btn.disabled = false; btn.textContent = 'TeX'; btn.dataset.icon = 'sigma'; }
     }
   }
+}
+
+// Converts each drawing that has no LaTeX beside it yet, one at a time.
+async function convertAllDrawings() {
+  if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
+  const doc = N.doc;
+  const ids = doc.blocks.filter((b, i) => b.type === 'ink' && b.strokes?.length && !(doc.blocks[i + 1]?.type === 'text' && doc.blocks[i + 1].beside)).map((b) => b.id);
+  if (!ids.length) return toast('Every drawing already has LaTeX beside it.');
+  try {
+    for (const [k, id] of ids.entries()) {
+      if (N.doc !== doc || blockIndex(id) < 0) break;
+      notifyProgress('convert-drawings', `Converting drawing ${k + 1} of ${ids.length}…`);
+      await blockAction(id, 'latex', document.querySelector(`.nb[data-id="${id}"] [data-act="latex"]`));
+    }
+  } finally { notifyProgress('convert-drawings', null); }
 }
 
 // Typesets every text block (numbering and \ref run across the note). The
