@@ -264,9 +264,11 @@ function pdfCategoryBadge(a){
   const category=pdfCategories[a.category];return category?`<span class="pdf-category-badge" style="--category-color:${esc(a.color)}">${category.label}</span>`:'';
 }
 // Re-rasterize PDF vectors at the display's pixel density, rather than magnifying
-// an existing bitmap. Bound large pages to avoid exceeding WebKit canvas limits.
+// an existing bitmap. Render at least 2x, rounded up to a whole factor, so
+// standard and fractionally scaled screens downsample a sharp page instead of
+// stretching a soft one. Bound large pages to avoid exceeding WebKit canvas limits.
 function pdfRasterSize(width,height,density){
-  const ratio=Math.min(Math.max(1,density || 1),Math.sqrt(32*1024*1024/(width*height)),16384/width,16384/height);
+  const ratio=Math.min(Math.max(2,Math.ceil((density || 1)-.01)),Math.sqrt(32*1024*1024/(width*height)),16384/width,16384/height);
   const w=Math.max(1,Math.floor(width*ratio)),h=Math.max(1,Math.floor(height*ratio));
   return {width:w,height:h,transform:[w/width,0,0,h/height,0,0]};
 }

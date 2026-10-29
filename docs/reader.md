@@ -6,7 +6,8 @@
 
 Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
-of the app's appearance.
+of the app's appearance. Pages are redrawn at each zoom level and at least twice
+the screen's resolution, so text stays sharp on standard and scaled displays.
 
 To copy Zotero annotations, choose **Library → Import from Zotero → PDF annotations**.
 The matching local PDF is required. Imported highlights, comments, area/text
