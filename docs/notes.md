@@ -2,8 +2,9 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
-Saving progress appears in the shared bottom-right notification. Unsaved state
-and save-conflict actions remain beside the note.
+Notes save automatically; the save state appears quietly beside the collection
+name under the title. Save problems and conflict actions appear in the same place,
+and failures also raise a notification.
 
 ## Write in a collection
 

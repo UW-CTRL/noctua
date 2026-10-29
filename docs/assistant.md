@@ -16,6 +16,9 @@ focus shows the same labels immediately; reduced-motion preferences disable the 
 can search papers, explore your library, save papers, read PDFs, annotate
 passages, and edit note text through Noctua's tools.
 
+While the assistant works, its steps appear in the conversation. The
+bottom-right notification shows its progress only while the chat is hidden.
+
 The `@` picker includes every file type in the current project (`.bib`, `.tex`,
 images, and more), plus library papers, notes, and collections. Search by filename,
 folder path, title, or author; results show their type and location. Choose a result

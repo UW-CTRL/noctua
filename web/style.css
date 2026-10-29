@@ -948,7 +948,8 @@ header .web-select-trigger { height: var(--header-control-height); }
 .note-title:focus-visible {outline:none;    border-radius: 4px; }
 .note-meta { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0; text-align: center; font: 14px/1.5 var(--font-note); }
 .note-folder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
-.note-save-status { color: var(--np-muted); }
+.note-save-status { color: var(--np-muted); transition: opacity .3s; }
+.note-save-status.quiet { opacity: .6; }
 .note-save-status::before { content: "·"; margin-right: 6px; }
 .note-preamble { margin: 16px 0 0; }
 .nb-view.is-empty { min-height: 32px; padding: 4px 0; }

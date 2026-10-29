@@ -1489,9 +1489,20 @@ function runChatAction(a, host) {
   }
 }
 
+// The chat shows its own progress; the corner notice only stands in for it
+// while the chat is out of sight.
+function chatOnScreen() {
+  return !$('#chat').classList.contains('hidden') && !(typeof paneCollapsed === 'function' && paneCollapsed('right'));
+}
+function syncAssistantProgress() {
+  notifyProgress('assistant', chat.busy && !chatOnScreen() ? chat.progress || 'Assistant is working…' : null);
+}
+window.addEventListener('resize', syncAssistantProgress);  // panes announce collapse with a resize
+
 function setChatBusy(busy) {
   chat.busy = busy;
-  notifyProgress('assistant', busy ? 'Assistant is working…' : null);
+  chat.progress = null;
+  syncAssistantProgress();
   $('#chat-new').disabled = busy;
   $('#chat-history-btn').disabled = busy;
   $('#chat-send').textContent = busy ? 'Stop' : 'Send';
@@ -1524,7 +1535,8 @@ async function sendChat(text) {
     else if (e.type === 'text_start') { if (md && !md.endsWith('\n\n')) md += '\n\n'; }
     else if (e.type === 'text') { md += e.text; NoctuaChatRender.update(body, md); }
     else if (e.type === 'tool') {
-      notifyProgress('assistant', `${TOOL_LABEL[e.name] || e.name}…`);
+      chat.progress = `${TOOL_LABEL[e.name] || e.name}…`;
+      syncAssistantProgress();
       const t = document.createElement('div');
       t.className = 'tool';
       t.textContent = `⚙ ${TOOL_LABEL[e.name] || e.name}…`;
@@ -1569,6 +1581,7 @@ function showRightTab(name, { focus = true } = {}) {
   $('#details').classList.toggle('hidden', name !== 'paper');
   $('#chat').classList.toggle('hidden', name !== 'chat');
   if (name === 'chat') { restoreChatInputHeight(); updateChatContext(); if (focus) $('#chat-input').focus(); }
+  syncAssistantProgress();
 }
 
 // ---------------------------------------------------------------- toast / tabs

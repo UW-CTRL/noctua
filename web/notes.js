@@ -284,7 +284,10 @@ function showConflict() {
 
 function setStatus(s) {
   const el = $('#note-status');
-  if (el) el.textContent = s;
+  if (!el) return;
+  el.textContent = s;
+  // Routine autosave progress stays in the background; problems stand out.
+  el.classList.toggle('quiet', /^(Saved|Saving to server…|Saved to server|Local draft saved)$/.test(s));
 }
 
 async function saveNow() {
@@ -298,8 +301,6 @@ async function saveNow() {
   const historyFrames=NoteUndo.frames.splice(0);
   NoteUndo.group=null;
   let failed = false;
-  const progressKey = `note-save:${target}:${doc.id}`;
-  notifyProgress(progressKey, 'Saving note…');
   try {
     const r = await fetch(`/api/notes/${enc(target)}/${enc(doc.id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...doc,_history:historyFrames}),
@@ -337,7 +338,6 @@ async function saveNow() {
       N.saveTimer = setTimeout(saveNow, 3000);
     }
   } finally {
-    notifyProgress(progressKey, null);
     N.saving = false;
   }
   if (N.dirty && N.doc === doc) {
