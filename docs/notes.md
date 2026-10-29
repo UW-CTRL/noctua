@@ -166,8 +166,20 @@ Chat Markdown and Mermaid use a separate renderer.
 
 Add a drawing pad for handwritten notes. Hover a pad for its pen colours, three
 pen widths (the boldest is the default), eraser, undo, and clear; your last pen
-choice is remembered. Its **TeX** button uses the selected assistant to insert a
-LaTeX transcription below while preserving the drawing.
+choice is remembered.
+
+New pads start as wide as the note panel allows, extending past the text column.
+Pads grow as you write: finishing a stroke near the right or bottom edge adds
+room there. Drag the bottom edge to change the height, the right edge to change
+the width, or the left edge outward to add room on the left. Pads wider than the
+panel scroll sideways inside themselves. Strokes keep their size when a pad grows
+or the window changes; older pads look as before.
+
+The pad's **TeX** button uses the selected assistant to transcribe the drawing
+into a LaTeX text block placed beside the drawing, so you can compare them; the
+drawing is preserved. In narrow panels the two stack. Use **Show below** /
+**Show beside** on the text block to switch, or delete the drawing once you no
+longer need it.
 
 The [transcription prompt](../src/prompts/handwriting.md) specifies supported
 LaTeX and how diagrams are represented. See

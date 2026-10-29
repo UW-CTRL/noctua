@@ -1,6 +1,6 @@
 ## Noctua note syntax
 
-Notes combine LaTeX text, handwriting, and media blocks. Noctua supports a LaTeX subset, not a full TeX installation. Do not invent unsupported commands or packages; TikZ is not supported. Preserve existing drawings, media references, and unrelated content when editing text.
+Notes combine LaTeX text, handwriting, and media blocks. Noctua supports a LaTeX subset, not a full TeX installation. Do not invent unsupported commands or packages; TikZ is not supported. Preserve existing drawings, media references, and unrelated content when editing text. A text block transcribed from a drawing may be shown beside that drawing; editing its text keeps that layout.
 
 Imported Zotero notes contain editable text converted from HTML. Original HTML is retained as source metadata; preserve it when editing the note. Do not assume HTML formatting or embedded images were converted into note blocks.
 Preserve Zotero source metadata and synchronization baselines during note edits. Library import offers Sync to retain local edits and report conflicts, or Overwrite to replace imported note content from Zotero.

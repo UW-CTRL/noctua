@@ -25,7 +25,7 @@ function toast(s){throw Error(s)} function updateChatContext(){}
 async function api(){return {undo:'Edit note',redo:null}}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
-<script src="../web/select.js"></script><script src="../web/latex.js"></script><script src="../web/edit-history.js"></script><script src="../web/notes.js"></script><script src="../web/workspace.js"></script>
+<script src="../web/select.js"></script><script src="../web/latex.js"></script><script src="../web/edit-history.js"></script><script src="../web/ink.js"></script><script src="../web/notes.js"></script><script src="../web/workspace.js"></script>
 <script>
 (async()=>{
 N.target='L1';N.doc={id:'note',title:'Reading notes',preamble:'',blocks:[{id:'b1',type:'text',src:String.raw`\section{Research questions}
@@ -102,6 +102,16 @@ assert(kept>800,'long note scrolls');
 renderEditor();assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'re-rendering the open note keeps its scroll position');
 startEdit('s30');assert(Math.abs($('#notes-stage').scrollTop-kept)<2,'restoring the caret after a re-render does not scroll');
 N.editing=null;N.keepScroll?.();
-window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, and the shared collection tree');
+$('#notes-stage').style.width='1300px';await new Promise(r=>setTimeout(r,60));
+N.doc.blocks=[{id:'ink',type:'ink',w:1000,h:.4,strokes:[]},{id:'tex',type:'text',src:'Converted $x$',beside:true},{id:'after',type:'text',src:'Next'}];
+renderEditor();await new Promise(r=>setTimeout(r,60));
+const pair=$('.nb-pair'),cells=[...pair.children].map(c=>c.getBoundingClientRect());
+assert(pair&&pair.children.length===2&&cells[1].left>=cells[0].right&&Math.abs(cells[0].top-cells[1].top)<2,'converted LaTeX sits beside its drawing');
+assert(pair.getBoundingClientRect().width>$('.note-blocks').getBoundingClientRect().width,'drawing rows use the panel width');
+assert($('.nb[data-id="tex"] [data-act="below"]')&&!$('.nb[data-id="after"] [data-act="beside"]'),'only text after a drawing offers the layout toggle');
+await blockAction('tex','below');clearTimeout(N.saveTimer);N.dirty=false;
+assert(!$('.nb-pair')&&!N.doc.blocks[1].beside&&$('.nb[data-id="tex"] [data-act="beside"]'),'show below stacks the LaTeX under the drawing');
+$('#notes-stage').style.width='';
+window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, the shared collection tree, and LaTeX beside drawings');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

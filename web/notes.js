@@ -479,15 +479,32 @@ function renderEditor() {
   stage.querySelector('#note-help').addEventListener('click', showNoteHelp);
   const wrap = stage.querySelector('.note-blocks');
   wrap.appendChild(inserter(0));
-  N.doc.blocks.forEach((b, i) => {
-    wrap.appendChild(blockEl(b));
-    wrap.appendChild(inserter(i + 1));
-  });
+  const blocks = N.doc.blocks;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i], next = blocks[i + 1];
+    if (b.type === 'ink' && next?.type === 'text' && next.beside) {
+      // A drawing and the LaTeX written from it share a row.
+      const pair = document.createElement('div');
+      pair.className = 'nb-pair';
+      pair.append(blockEl(b), blockEl(next, b));
+      wrap.append(pair, inserter(i + 2));
+      i++;
+      continue;
+    }
+    wrap.append(blockEl(b, blocks[i - 1]), inserter(i + 1));
+  }
   typeset();
   restoreVideos(stage, media);
   updateHistoryButtons();
   if (scroll) keepNoteScroll(stage, scroll);
 }
+
+// Drawing rows use the note panel's width and stack in narrow panels.
+if ($('#notes-stage')) new ResizeObserver(([entry]) => {
+  const stage = entry.target, width = stage.clientWidth;
+  stage.style.setProperty('--stage-w', width + 'px');
+  stage.classList.toggle('narrow', width < 900);
+}).observe($('#notes-stage'));
 
 // Re-rendering rebuilds every block, so the page briefly collapses and the
 // browser clamps the scroll position. Hold the reader's place while images and
@@ -537,7 +554,7 @@ function showNoteHelp() {
 \textbf{Bold} and \emph{emphasis}`)}</section>
       <section><h3>Blocks and layout</h3><p>Hover between blocks to add Text, Drawing, or Image / Video. Hover over a block to reveal its left toolbar: move it up or down, or delete it. Drawing blocks also offer handwriting-to-LaTeX conversion.</p><p>The gear at the far right of the sticky note header opens the preamble for page layout and custom LaTeX commands.</p></section>
       <section><h3>Fonts and appearance</h3><p>Open Settings to choose separate System, Note, and Chat font families and sizes, and the Notes theme. Note font applies to the title, body, collection/save metadata, and empty-block writing hint; Title size defaults to 28 px. Collection and save-status text stay at 14 px. Title size and Body size are separate controls in Settings → Appearance → Fonts. App, Notes, and Reader themes default to System until you choose a preference. Equations keep their math typeface.</p></section>
-      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches; hover the pad to change pen colour or width (your last pen is remembered).</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
+      <section><h3>Images, videos, and drawings</h3><p>Use Image / Video between blocks, paste a media file or screenshot, or drag files onto the note. With the note open beside a paper in the Reader, drag selected PDF text in as a cited quote, or drag a detected figure, table, or algorithm by its handle to add it as a cited image. Drag an image or video's edge to resize it. Use Drawing for handwriting and sketches; hover the pad to change pen colour or width (your last pen is remembered). Pads grow as you write near their right or bottom edge; drag an edge to resize, or the left edge outward to add room on the left. TeX transcribes a drawing into LaTeX beside it; Show below / Show beside on that text switches the layout.</p><p>For local videos, MP4 with H.264 video and AAC audio is recommended. YouTube links go in a text block.</p></section>
       <section><h3>YouTube videos</h3><p>Paste a video URL on its own line in a text block. Finish editing to watch it inside the note. Shared links, Shorts, live videos, and start times work too.</p>${example('https://www.youtube.com/watch?v=aircAruvnKk')}<p>Use a text link when you want a title instead of a player:</p>${example(String.raw`\href{https://www.youtube.com/watch?v=aircAruvnKk}{What is a neural network?}`)}</section>
       <section><h3>References within a note</h3><p>Add a label to a numbered section, equation, figure, or theorem, then refer to it from any text block. Click the rendered reference number to jump to its label. References can point forward; missing labels show ??.</p>${example(String.raw`\section{Introduction}\label{sec:intro}
 See Section \ref{sec:intro}.
@@ -688,15 +705,19 @@ function inserter(index) {
   return d;
 }
 
-function blockEl(b) {
+function blockEl(b, prev) {
   const el = document.createElement('div');
   el.className = `nb nb-${b.type}`;
   el.dataset.id = b.id;
+  const layoutButton = b.type === 'text' && prev?.type === 'ink'
+    ? (b.beside ? '<button data-act="below" title="Show below the drawing" data-icon="rows-2" aria-label="Show below the drawing" data-icon-only>↓</button>'
+      : '<button data-act="beside" title="Show beside the drawing" data-icon="columns-2" aria-label="Show beside the drawing" data-icon-only>→</button>')
+    : '';
   el.innerHTML = `<div class="nb-tools">
       <button data-act="up" title="Move up" data-icon="arrow-up" aria-label="Move up" data-icon-only>↑</button>
       <button data-act="down" title="Move down" data-icon="arrow-down" aria-label="Move down" data-icon-only>↓</button>
-      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (inserted below)" data-icon="sigma" aria-label="Convert handwriting to LaTeX (inserted below)" data-icon-only>TeX</button>'
-        : ''}
+      ${b.type === 'ink' ? '<button data-act="latex" title="Convert handwriting to LaTeX (placed beside the drawing)" data-icon="sigma" aria-label="Convert handwriting to LaTeX (placed beside the drawing)" data-icon-only>TeX</button>'
+        : ''}${layoutButton}
       <button data-act="delete" title="Delete block" data-icon="trash-2" aria-label="Delete block" data-icon-only>✕</button>
     </div><div class="nb-body"></div>`;
   const body = el.querySelector('.nb-body');
@@ -720,7 +741,7 @@ function blockEl(b) {
 const blockIndex = (id) => N.doc.blocks.findIndex((b) => b.id === id);
 
 function insertBlock(index, type) {
-  const b = type === 'ink' ? { id: newId('b'), type: 'ink', h: 0.35, strokes: [] } : { id: newId('b'), type: 'text', src: '' };
+  const b = type === 'ink' ? { id: newId('b'), type: 'ink', w: Ink.defaultWidth(), h: 0.6, strokes: [] } : { id: newId('b'), type: 'text', src: '' };
   stopEdit();
   N.doc.blocks.splice(index, 0, b);
   markDirty();
@@ -753,6 +774,11 @@ async function blockAction(id, act, btn) {
     if (!N.doc.blocks.length) N.doc.blocks.push({ id: newId('b'), type: 'text', src: '' });
     markDirty();
     renderEditor();
+  } else if (act === 'beside' || act === 'below') {
+    stopEdit();
+    if (act === 'beside') b.beside = true; else delete b.beside;
+    markDirty();
+    renderEditor();
   } else if (act === 'latex') {
     if (!chat.ready || chat.switching) return toast('Choose a research assistant first.');
     const doc = N.doc, target = N.target, provider = chat.provider;
@@ -768,11 +794,11 @@ async function blockAction(id, act, btn) {
         toast('The note changed while transcribing. Reopen the drawing and try again.');
         return;
       }
-      const nb = { id: newId('b'), type: 'text', src: latex };
+      const nb = { id: newId('b'), type: 'text', src: latex, beside: true };
       N.doc.blocks.splice(blockIndex(id) + 1, 0, nb);
       markDirty();
       renderEditor();
-      toast('Converted. The LaTeX is below the drawing; delete the drawing if you no longer need it.');
+      toast('Converted. The LaTeX is beside the drawing; use its Show below button to stack them, or delete the drawing if you no longer need it.');
     } catch (e) {
       toast(e.message, { error: true });
       btn.disabled = false;

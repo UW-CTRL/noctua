@@ -47,6 +47,26 @@ document.querySelector('#pad [data-width="1.4"]').click();
 assert(Ink.tool.width===1.4&&JSON.parse(stored['noctua.inkTool']).width===1.4,'pen choice is remembered');
 assert(Ink.preview(block).startsWith('data:image/png;base64,'),'recognition preview still renders');
 pad.destroy();
-window.webkit.messageHandlers.result.postMessage('PASS: bold default pen, remembered pen, live layer, even stroke edges, and theme colours without filters');
+// Pads draw at a fixed scale: 1000 units fill 632 px, and wider pads add room.
+assert(Math.round(canvas.getBoundingClientRect().width)===632,'older pads keep their size: '+canvas.getBoundingClientRect().width);
+const wide={w:3000,h:0.4,strokes:[]};document.getElementById('pad').replaceChildren();const big=document.createElement('div');document.getElementById('notes-stage').append(big);
+const widePad=Ink.mount(big,wide,()=>{});await frame();
+const [wc]=big.querySelectorAll('canvas'),scroll=big.querySelector('.ink-scroll');
+assert(Math.round(wc.getBoundingClientRect().width)===1896&&scroll.scrollWidth>scroll.clientWidth&&big.getBoundingClientRect().width<=700,'wide pads keep the stroke scale and scroll sideways');
+// Writing near the right and bottom edges adds room.
+const grow={w:1000,h:0.3,strokes:[]};const host=document.createElement('div');document.getElementById('notes-stage').append(host);
+let saved=0;const growPad=Ink.mount(host,grow,()=>saved++);await frame();
+const gc=host.querySelector('canvas'),gr=gc.getBoundingClientRect(),pt=(type,x,y)=>gc.dispatchEvent(new PointerEvent(type,{pointerId:2,pointerType:'pen',pressure:.5,clientX:gr.left+x,clientY:gr.top+y,buttons:1,bubbles:true}));
+gc.setPointerCapture=()=>{};
+pt('pointerdown',500,60);for(let x=510;x<=625;x+=5)pt('pointermove',x,60+(x-500));pt('pointerup',625,185);
+assert(grow.w>1000&&grow.h>0.3&&saved===1,'drawing near the edges grows the pad: '+grow.w+' '+grow.h);
+assert(Math.abs(gc.getBoundingClientRect().width-grow.w*0.632)<2,'grown pad keeps the stroke scale');
+const left=host.querySelector('.ink-edge.left'),lr=left.getBoundingClientRect(),x0=grow.strokes[0].p[0][0];
+left.dispatchEvent(new PointerEvent('pointerdown',{clientX:lr.left+2,clientY:lr.top+5,bubbles:true}));
+window.dispatchEvent(new PointerEvent('pointerup',{clientX:lr.left-61,clientY:lr.top+5}));
+assert(Math.abs(grow.strokes[0].p[0][0]-x0-100)<1,'dragging the left edge adds room by shifting the drawing');
+growPad.destroy();widePad.destroy();
+assert(Ink.defaultWidth()>=1000,'new pads are at least the classic width');
+window.webkit.messageHandlers.result.postMessage('PASS: bold default pen, remembered pen, live layer, even stroke edges, theme colours without filters, fixed stroke scale, wide pads, and growing pads');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
 </script></body></html>
