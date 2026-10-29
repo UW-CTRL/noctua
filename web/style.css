@@ -1526,6 +1526,14 @@ body.split-dragging, body.split-dragging * { cursor:grabbing !important; user-se
 body.pdf-mode.split-view main > #split-divider { display:block; position:relative; grid-column:3; grid-row:1; justify-self:start; width:8px; margin-left:calc(var(--split,50%) - 4px); background:var(--panel); cursor:col-resize; touch-action:none; z-index:10; }
 #split-divider::after { content:""; position:absolute; top:0; bottom:0; left:3px; width:2px; background:var(--line); pointer-events:none; transition:background .12s .08s; }
 #split-divider:hover::after, #split-divider.dragging::after, #split-divider:focus-visible::after { background:var(--accent); }
+/* The same split beside the Library, Graph and Lineage views. */
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #stage { justify-self:start; width:calc(var(--split,50%) - 4px); }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #notes-stage { display:block !important; justify-self:end; width:calc(100% - var(--split,50%) - 4px); margin-top:40px; }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #split-note-bar { display:flex; align-items:center; gap:6px; grid-column:3; grid-row:1; align-self:start; box-sizing:border-box; height:40px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line); justify-self:end; width:calc(100% - var(--split,50%) - 4px); }
+body.split-library:not(.pdf-mode):not(.notes-mode) main > #split-divider { display:block; position:relative; grid-column:3; grid-row:1; justify-self:start; width:8px; margin-left:calc(var(--split,50%) - 4px); background:var(--panel); cursor:col-resize; touch-action:none; z-index:10; }
+.graph-toolbar [data-split] { pointer-events:auto; }
+.library-heading [data-split] { width:30px; min-height:30px; padding:0; border-color:transparent; background:transparent; color:var(--muted); }
+:is(.library-heading, .graph-toolbar) [data-split][aria-pressed="true"] { color:var(--accent); }
 /* Keep reader navigation and add the note list below it to pick the side note. */
 body.pdf-mode.split-view #pdf-sidebar { flex:1 1 55%; height:auto; min-height:0; }
 body.pdf-mode.split-view #notes-side { display:flex !important; flex-direction:column; flex:1 1 45%; min-height:0; border-top:1px solid var(--line); }

@@ -236,6 +236,14 @@ selected collection itself, not its subfolders. The **New note** icon beside the
 filter, or **New note** in a collection's right-click menu, creates a note there
 and opens it.
 
+To write while you browse, click **Open notes beside this view** (two columns)
+in the Library header or the Graph and Lineage toolbar. The note opens to the
+right of the Library, Graph, or Lineage view, with the same divider, folder and
+note pickers, and **New note** button as
+[notes beside the paper](reader.md#take-notes-beside-the-paper). Notes you open
+from the collection tree appear in that side panel. Library views and the Reader
+remember their splits separately.
+
 Select a collection in the folder tree and switch to **Graph** or **Lineage** to
 explore connections among its papers. **Papers** contains just the graph paper
 list with sorting and filtering. Colors distinguish citation-connected clusters;

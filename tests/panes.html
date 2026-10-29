@@ -67,6 +67,14 @@ const assert=(v,m)=>{if(!v)throw Error(m)};
  document.body.className='pdf-mode split-view';setSplitView(false);
  assert(getComputedStyle($('#notes-stage')).display==='none'&&box('#pdf-stage').width>1000&&store.get('noctua.pane.split')==='false','closing the split returns the reader to full width');
  toggle.remove();document.body.className='';
- window.webkit.messageHandlers.result.postMessage('PASS: collapsible rails in graph/notes/PDF modes, saved state, retained widths/drafts, keyboard focus, Lucide icons and the resizable reader/note split');
+ // The Library, Graph and Lineage views have their own split beside the note.
+ const libToggle=document.createElement('button');libToggle.dataset.split='';$('#stage').append(libToggle);
+ document.body.className='';setSplitView(true);await frame();
+ assert(document.body.classList.contains('split-library')&&!document.body.classList.contains('split-view')&&store.get('noctua.pane.split.library')==='true'&&store.get('noctua.pane.split')==='false','the library split is remembered separately from the reader');
+ assert(splitViewActive()&&getComputedStyle(divider).display==='block'&&getComputedStyle($('#notes-stage')).display==='block'&&libToggle.ariaLabel==='Close notes beside this view'&&libToggle.getAttribute('aria-pressed')==='true','the note opens beside the library view');
+ let main=box('#stage');note=box('#notes-stage');assert(main.width>200&&note.left>=main.right-1&&Math.abs(main.width-note.width)<12,'library view and note share the column');
+ document.body.className='pdf-mode split-library';assert(!splitViewActive()&&getComputedStyle(divider).display==='none','the library split does not open the reader split');
+ document.body.className='split-library';setSplitView(false);assert(!document.body.classList.contains('split-library')&&getComputedStyle($('#notes-stage')).display==='none','closing the library split');
+ window.webkit.messageHandlers.result.postMessage('PASS: collapsible rails in graph/notes/PDF modes, saved state, retained widths/drafts, keyboard focus, Lucide icons and the resizable reader/note and library/note splits');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

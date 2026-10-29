@@ -30,11 +30,10 @@ function setMode(mode) {
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   store.set('noctua.mode', mode);
   $('#tooltip').classList.add('hidden');
+  if (typeof syncSplitButtons === 'function') syncSplitButtons();
   if (isNotesMode()) showNotes();
-  else {
-    saveNow();
-    requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
-  }
+  else saveNow();
+  if (!notes) requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
   renderDetails();
   updateChatContext();
 }
@@ -44,9 +43,9 @@ function showNotes() {
   loadRefs(true).then(typeset);  // note titles for \noteref links
 }
 
-// Opening or closing the note beside the Reader keeps the PDF as the main view.
+// Opening or closing the side note keeps the PDF or Library as the main view.
 document.addEventListener('noctua-split-change', () => {
-  if (!document.body.classList.contains('pdf-mode')) return;
+  if (document.body.classList.contains('notes-mode')) return;
   if (isNotesMode()) showNotes(); else saveNow();
   updateChatContext();
 });
@@ -119,7 +118,7 @@ function renderNoteList() {
   // Keep the Library table's note rows current.
   if (typeof lib !== 'undefined' && lib.target === N.target && lib.items) {
     lib.notes = N.list.map(({ id, title, created, updated }) => ({ id, title, created, updated }));
-    if (!isNotesMode() && typeof renderLibItems === 'function') renderLibItems();
+    if (!document.body.classList.contains('notes-mode') && typeof renderLibItems === 'function') renderLibItems();
   }
   renderSplitNoteBar();
   const el = $('#note-list');
