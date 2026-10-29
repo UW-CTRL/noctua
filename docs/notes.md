@@ -158,8 +158,10 @@ Chat Markdown and Mermaid use a separate renderer.
 
 ## Drawings and media
 
-Add a drawing pad for handwritten notes. Its **TeX** button uses the selected
-assistant to insert a LaTeX transcription below while preserving the drawing.
+Add a drawing pad for handwritten notes. Hover a pad for its pen colours, three
+pen widths (the boldest is the default), eraser, undo, and clear; your last pen
+choice is remembered. Its **TeX** button uses the selected assistant to insert a
+LaTeX transcription below while preserving the drawing.
 
 The [transcription prompt](../src/prompts/handwriting.md) specifies supported
 LaTeX and how diagrams are represented. See

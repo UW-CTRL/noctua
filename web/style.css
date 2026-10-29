@@ -530,7 +530,8 @@ body.img-resizing, body.img-resizing * { cursor: ew-resize !important; user-sele
 }
 .ink canvas.erasing { cursor: cell; }
 .ink:hover canvas, .ink:focus-within canvas { box-shadow: inset 0 0 0 1px var(--np-line); }
-.ink canvas, .ink-tools [data-color] { filter: var(--np-ink-filter); }
+.ink canvas.ink-live { position: absolute; left: 0; top: 0; pointer-events: none; box-shadow: none; }
+.ink-tools [data-color] { filter: var(--np-ink-filter); }
 .ink-tools {
   position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 3px; z-index: 2;
   background: var(--np-raise); border: 1px solid var(--np-line); border-radius: 8px; padding: 3px 5px;

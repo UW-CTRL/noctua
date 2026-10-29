@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Ink pads</title>
+<link rel="stylesheet" href="../web/style.css">
+<style>#notes-stage{width:700px;height:600px}</style>
+</head><body class="notes-mode">
+<section id="notes-stage" data-notes-theme="dark"><div id="pad"></div></section>
+<script>
+const stored={'noctua.inkTool':null};
+const store={get:k=>stored[k]??null,set(k,v){stored[k]=v;}};
+function assert(ok,message){if(!ok)throw Error(message)}
+</script>
+<script src="../web/ink.js"></script>
+<script>
+(async()=>{
+const frame=()=>new Promise(r=>setTimeout(r,30));
+assert(Ink.tool.width===4.5,'the boldest pen is the default');
+const block={strokes:[]};let changes=0;
+const pad=Ink.mount(document.getElementById('pad'),block,()=>changes++);
+await frame();
+const [canvas,live]=document.querySelectorAll('#pad canvas');
+assert(live.classList.contains('ink-live')&&getComputedStyle(live).pointerEvents==='none','live layer sits above without taking input');
+assert(getComputedStyle(canvas).filter==='none','the canvas is not filtered');
+const r=canvas.getBoundingClientRect(),y=r.top+r.height/2;
+const ev=(type,x)=>canvas.dispatchEvent(new PointerEvent(type,{pointerId:1,pointerType:'mouse',clientX:x,clientY:y,buttons:1,bubbles:true}));
+canvas.setPointerCapture=()=>{};
+ev('pointerdown',r.left+50);
+for(let x=60;x<=400;x+=10)ev('pointermove',r.left+x);
+const liveData=live.getContext('2d').getImageData(0,0,live.width,live.height).data;
+assert(liveData.some((v,i)=>i%4===3&&v>0),'the stroke in progress draws on the live layer');
+ev('pointerup',r.left+400);
+assert(block.strokes.length===1&&changes===1&&block.strokes[0].w===4.5,'finished stroke is saved with the default pen');
+assert(live.getContext('2d').getImageData(0,0,live.width,live.height).data.every((v,i)=>i%4!==3||v===0),'live layer clears after the stroke');
+// A straight stroke filled as one shape has an even edge: no beads where segments meet.
+const dpr=window.devicePixelRatio||1,ctx=canvas.getContext('2d');
+const row=Math.round((y-r.top)*dpr);
+const coverage=x=>{const d=ctx.getImageData(Math.round(x*dpr),row-8,1,17).data;let a=0;for(let i=3;i<d.length;i+=4)a+=d[i];return a;};
+const center=ctx.getImageData(Math.round(200*dpr),row-8,1,17).data;
+let best=0;for(let i=3;i<center.length;i+=4)if(center[i]>center[best+3])best=i-3;
+assert(center[best+3]>=180&&center[best]===0xe8,'stroke is drawn in the dark palette');
+const sums=[];for(let x=120;x<=330;x+=3)sums.push(coverage(x));
+assert(Math.max(...sums)-Math.min(...sums)<=0.06*Math.max(...sums),'stroke coverage is even along a straight line: '+sums.join(','));
+document.getElementById('notes-stage').dataset.notesTheme='light';
+document.getElementById('notes-stage').style.setProperty('--np-ink-filter','invert(1) hue-rotate(180deg)');
+Ink.refresh();
+const light=ctx.getImageData(Math.round(200*dpr),row-8+best/4,1,1).data;
+assert(light[0]<0x30&&light[1]<0x30&&light[3]>=180,'light pages draw the pen dark without a CSS filter');
+document.querySelector('#pad [data-width="1.4"]').click();
+assert(Ink.tool.width===1.4&&JSON.parse(stored['noctua.inkTool']).width===1.4,'pen choice is remembered');
+assert(Ink.preview(block).startsWith('data:image/png;base64,'),'recognition preview still renders');
+pad.destroy();
+window.webkit.messageHandlers.result.postMessage('PASS: bold default pen, remembered pen, live layer, even stroke edges, and theme colours without filters');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
+</script></body></html>
