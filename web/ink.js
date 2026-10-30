@@ -55,31 +55,28 @@ const Ink = (() => {
     return out;
   }
 
-  // The stroke's outline as one shape: a disc at every sample joined by
-  // tangent quads, all wound the same way so overlaps merge under nonzero fill.
-  // Filling once avoids the beaded edges of stroking each segment separately.
-  function strokePath(s, scale) {
-    const pts = samples(s, scale), path = new Path2D();
-    const dot = ([x, y, w]) => { path.moveTo(x + w / 2, y); path.arc(x, y, w / 2, 0, Math.PI * 2); };
-    dot(pts[0]);
-    for (let i = 1; i < pts.length; i++) {
-      const [x0, y0, w0] = pts[i - 1], [x1, y1, w1] = pts[i], d = Math.hypot(x1 - x0, y1 - y0);
-      if (d > 0.01) {
-        const nx = (y0 - y1) / d, ny = (x1 - x0) / d, r0 = w0 / 2, r1 = w1 / 2;
-        const q = [[x0 + nx * r0, y0 + ny * r0], [x1 + nx * r1, y1 + ny * r1], [x1 - nx * r1, y1 - ny * r1], [x0 - nx * r0, y0 - ny * r0]];
-        let area = 0;
-        for (let k = 0; k < 4; k++) area += q[k][0] * q[(k + 1) % 4][1] - q[(k + 1) % 4][0] * q[k][1];
-        if (area < 0) q.reverse();
-        path.moveTo(...q[0]); path.lineTo(...q[1]); path.lineTo(...q[2]); path.lineTo(...q[3]); path.closePath();
-      }
-      dot(pts[i]);
-    }
-    return path;
-  }
-
+  // Each run of samples with about the same width is stroked as one round-
+  // joined polyline. The canvas merges a path's own overlaps, so straight
+  // lines keep an even edge, unlike stroking or filling every segment apart.
   function drawStroke(ctx, s, scale, color = s.c) {
-    ctx.fillStyle = color;
-    ctx.fill(strokePath(s, scale), 'nonzero');
+    const pts = samples(s, scale), step = 0.25;
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle = color;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    const width = (w) => Math.max(step, Math.round(w / step) * step);
+    if (pts.length === 1) {
+      ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], width(pts[0][2]) / 2, 0, Math.PI * 2); ctx.fill();
+    }
+    for (let i = 1; i < pts.length;) {
+      const w = width(pts[i][2]);
+      let j = i + 1;
+      while (j < pts.length && Math.abs(pts[j][2] - w) <= step) j++;
+      ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]);
+      for (let k = i; k < j; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+      ctx.lineWidth = w; ctx.stroke();
+      i = j;
+    }
+    ctx.restore();
   }
 
   function bounds(strokes) {
