@@ -35,7 +35,7 @@ window.NoctuaBrowserConnection = (() => {
             } catch (error) { reject(error); }
           } else if (event.data.type === 'noctua-connect-result' && started) {
             if (!event.data.ok) reject(Error('Connection failed. Check the server token and that the server is ready.'));
-            else if (event.data.server?.api_version !== 1 || !event.data.server?.ready || !event.data.server?.server_id) reject(Error('The target server is incompatible or unavailable.'));
+            else if (![1,2].includes(event.data.server?.api_version) || !event.data.server?.ready || !event.data.server?.server_id) reject(Error('The target server is incompatible or unavailable.'));
             else resolve();
           }
         };
@@ -68,7 +68,7 @@ window.NoctuaBrowserConnection = (() => {
         const identity = await fetch('/api/server', {signal:AbortSignal.timeout(10000)});
         if (!identity.ok) throw Error();
         const server = await identity.json();
-        if (server.api_version !== 1 || !server.ready || !server.server_id) throw Error();
+        if (![1,2].includes(server.api_version) || !server.ready || !server.server_id) throw Error();
         window.opener.postMessage({type:'noctua-connect-result',id,ok:true,server:{api_version:server.api_version,ready:server.ready,server_id:server.server_id}},source);
         status.textContent = 'Connected. Returning to Noctua…';
       } catch {

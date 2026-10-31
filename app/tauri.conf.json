@@ -42,7 +42,8 @@
     "resources": {
       "binaries/": "binaries/",
       "../target/tectonic/": "tectonic/",
-      "../target/texlive/": "texlive/"
+      "../target/texlive/": "texlive/",
+      "ui/": "ui/"
     }
   }
 }

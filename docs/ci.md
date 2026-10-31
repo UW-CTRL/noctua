@@ -54,24 +54,24 @@ check clears bundle resources with a check-only `TAURI_CONFIG` override, so it
 needs no managed TeX trees or bundled server. Installer builds and release
 resource verification still use the full packaging configuration.
 
-For PRs, change detection classifies the whole base/head diff independently for
-each suite (including added and deleted paths for renames):
+PRs and main pushes classify added/deleted inputs independently for each suite.
+PRs compare their merge base; main pushes compare their before/after commits.
 
-| Changed inputs | Desktop type-check | Real paper integration |
-| --- | --- | --- |
-| Native app code, menus, icons and app manifests | Run | Skip, except the `32x32.png` paper-test image |
-| Server code under `src/`, embedded prompts and root `build.rs` | Skip | Run |
-| Shared client/lifecycle code, root Cargo manifests/lockfile, CI and unknown inputs | Run | Run |
-| Compiler setup scripts and notices under `third-party/` | Skip | Run |
-| `paper-integration.py`, `paper_fixture.py`, `test_paper_*.py`, `server-detach.py` | Skip | Run |
-| Other frontend fixtures, web assets and documentation | Skip | Skip |
+| Changed inputs | Backend build/tests | Desktop type-check | Real paper integration |
+| --- | --- | --- | --- |
+| UI files under `web/` | Skip | Run | Skip |
+| Native app code and app manifests | Skip | Run | Skip, except the paper fixture icon |
+| Server code, prompts and root `build.rs` | Run | Skip | Run |
+| Shared client code, dependency/Server Cargo changes, CI or unknown inputs | Run | Run | Run |
+| Only Desktop version in Cargo.toml/Cargo.lock | Skip | Run | Skip |
+| Compiler setup scripts/notices | Run | Skip | Run |
+| Paper integration fixtures | Run for lifecycle tests | Skip | Run |
+| Other frontend fixtures and documentation | Skip | Skip | Skip |
 
-Backend and frontend jobs still run, so their test-only changes remain covered.
-Missing/failed comparisons conservatively run both native suites. Main pushes
-containing non-documentation changes and manual runs exercise both suites. Skipped
-jobs retain their named successful checks for branch protection. Classifier
-regressions cover native-only and paper-only edits, shared dependencies,
-unknown inputs and real Git renames.
+Frontend checks and release validation still run. Missing/failed comparisons and
+manual runs conservatively execute all suites. Skipped jobs retain their named
+successful checks for branch protection. Classifier tests exercise real Git
+before/after comparisons, UI-only main pushes and renames into server code.
 
 Native desktop and paper jobs have distinct Rust dependency-cache keys. On
 Windows only, `CARGO_PROFILE_DEV_DEBUG=0` omits debug/PDB data from these CI
@@ -386,3 +386,10 @@ macOS release validation checks the actual updater archive for the bundled serve
 and compiler resources as well as checking the DMG. Publication tests require the
 archive and its signature and verify Apple Silicon and legacy Universal manifest
 target selection before allowing publication.
+
+The client gateway tests exercise local asset ownership, native-only bearer
+credentials, cookie/Host/Origin checks, stale server identity rejection,
+non-followed upstream redirects, uploads larger than the default Axum body limit,
+and delivery of the first chat event before the upstream stream finishes.
+Browser resource tests cover runtime UI changes and traversal/symlink rejection.
+Signed cross-platform server fixtures validate the Desktop release verifier.

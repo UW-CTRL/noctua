@@ -25,29 +25,45 @@ concurrency:
 jobs:
   backend:
     name: Backend tests
+    needs: release-checks
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Skip backend compilation when server inputs are unchanged
+        if: needs.release-checks.outputs.run_backend == 'false'
+        run: echo "No server inputs changed; backend compilation is not needed."
       - uses: actions/checkout@v4
+        if: needs.release-checks.outputs.run_backend != 'false'
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+        if: needs.release-checks.outputs.run_backend != 'false'
       - uses: Swatinem/rust-cache@v2
+        if: needs.release-checks.outputs.run_backend != 'false'
       - name: Compile and test the backend
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: cargo test --locked -p noctua -p noctua-client
       - name: Build lifecycle test server
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: cargo build --locked -p noctua
       - name: Test detached server lifetime
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/server-detach.py
       - name: Test isolated server lifecycle and authentication
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/server-lifecycle.py
       - name: Test server recovery
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/server-recovery.py
       - name: Build next-version update fixture
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/build-update-fixture.py
       - name: Test coordinated server updates
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/server-update.py
       - name: Test paper compiler ownership across server updates
+        if: needs.release-checks.outputs.run_backend != 'false'
         run: python3 tests/server-paper-lifecycle.py
 
   frontend:
@@ -64,6 +80,7 @@ jobs:
         run: |
           bash tests/run-frontend.sh
           node tests/pdf-comments.cjs
+          node --test tests/desktop-storage.cjs
 
   desktop:
     name: Desktop check (${{ matrix.platform }})
@@ -207,6 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      run_backend: ${{ steps.changes.outputs.run_backend }}
       run_desktop: ${{ steps.changes.outputs.run_desktop }}
       run_paper: ${{ steps.changes.outputs.run_paper }}
     steps:

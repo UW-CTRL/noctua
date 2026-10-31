@@ -33,7 +33,7 @@ an ensure lock and the server holds an exclusive lifetime ownership lock.
 Choose **Connect to another computer** and enter its HTTPS origin and token.
 **Test connection** (or **Test & continue**) verifies the server through the actual
 WebView. **Save & connect** rechecks its identity and
-creates the WebView's HttpOnly browser session before opening the UI. Redirects
+creates the Desktop frontend's private HttpOnly session before opening its bundled UI. Redirects
 are refused and HTTPS certificate verification stays enabled. Remote use never
 starts a local data server or requires local AI installation. The saved mode is
 retried next launch without repeating setup. Success opens the library and hides
@@ -58,7 +58,7 @@ window, including the end of any in-progress drawing stroke. Every window must t
 project text, PDF comments and chat draft. Failed saves or unresolved conflicts
 block the switch. The old windows stay open and resume editing on failure.
 Status polling does not replace connection settings you are still typing. A successful switch opens
-fresh server content and closes the old windows, so old responses cannot update
+fresh Desktop content for the selected server and closes the old windows, so old responses cannot update
 the new interface. Server-owned tab state, chat drafts and note drafts are
 namespaced by server identity. Browser requests also carry that identity; the
 server rejects an old window’s requests if the same address now serves different
@@ -88,7 +88,7 @@ checksum file. Substitute the actual downloaded filename. Checksums detect
 corruption; these archives are not signed desktop installers.
 
 Extract the archive into a permanent directory owned by your user. It contains
-`noctua` (`noctua.exe` on Windows) and the license. No Tauri, desktop installation,
+`noctua` (`noctua.exe` on Windows), the license and an external `ui/` folder. No Tauri, desktop installation,
 or Rust toolchain is needed to run it. From that directory:
 
 ```sh
@@ -97,7 +97,9 @@ or Rust toolchain is needed to run it. From that directory:
 ```
 
 On Windows use `.\noctua.exe ensure` and `.\noctua.exe token`. Open the URL
-returned by `ensure` in a browser and sign in with the token. Keep the executable
+returned by `ensure` in a browser and sign in with the token. Keep the `ui/` folder beside the executable for browser access. Alternatively,
+set `NOCTUA_UI_DIR` or use `--ui-dir` with an absolute UI directory. Missing UI
+files do not disable the server API or Desktop connections. Keep the executable
 available for future starts; use `noctua stop` to stop safely. See the remote
 connection instructions below before exposing the loopback server to another
 computer. Assistant features require a separately installed assistant CLI.
@@ -389,3 +391,27 @@ on those OSes in this development environment. Do not interpret a generated
 service file or successful compile as a verified login service installation.
 
 Authentication tokens use 15 randomly generated, case-sensitive characters, omitting visually confusing characters. On the first start of this version, an older long token is replaced and no longer authenticates; reconnect other computers with the new token. The new token remains stable across subsequent restarts. The eye icon toggles visibility and the copy icon copies without revealing the token.
+
+## Desktop-owned interface
+
+Desktop includes its own library, reader, notes and chat UI. It connects to a
+local or remote server through a private streaming gateway, so a Desktop UI
+update does not rebuild or restart the server. Server versions and Desktop
+versions remain independent; both must support the same API/data protocol.
+Desktop releases reuse a verified published server for first installation.
+
+Browser access continues to use UI files installed on the server computer.
+Standalone archives include these files. Desktop-started servers keep a durable
+browser UI snapshot outside the app installation, including through server-only
+updates. To update a browser deployment's interface without recompiling the
+server, download `Noctua_VERSION_browser-ui.tar.gz` and its `.sha256` from the desired
+Desktop release, verify the checksum, and extract into the configured UI directory.
+The archive also has an updater-key signature and an API compatibility manifest. Refresh
+browser clients together; this is not a separate automatic UI update channel.
+
+Server API generation 2 identifies the external-browser-UI distribution. The new
+Desktop accepts existing generation-1 servers as well as generation 2. Older
+Desktop clients reject generation-2 server metadata instead of automatically
+installing a server without the embedded UI they depend on. Upgrade Desktop
+first when adopting generation-2 Server releases. Data format version remains 1;
+this separation does not migrate or replace research data.

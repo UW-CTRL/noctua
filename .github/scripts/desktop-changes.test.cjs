@@ -6,12 +6,10 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const detect = require('./desktop-changes.cjs');
 
-test('web assets, documentation, and tests skip desktop checks', () => {
+test('documentation and unrelated tests skip desktop checks', () => {
   for (const files of [
     ['README.md', 'docs/ci.md', 'docs/images/demo.gif'],
-    ['web/app.js', 'web/style.css', 'web/icons.svg', 'web/index.html'],
     ['tests/pdf-navigation.swift', 'tests/pdf-reader.html', 'tests/pdf-comments.cjs'],
-    ['web/pdf.js', 'tests/pdf-reader.html', 'docs/reader.md'],
   ]) {
     assert.equal(detect.requiresDesktop(files), false, files.join(', '));
   }
@@ -129,4 +127,52 @@ test('a paper-test-only Git change schedules paper integration', t => {
   const files = detect.changedFiles(base,git('rev-parse','HEAD'),cwd);
   assert.equal(detect.requiresPaper(files),true);
   assert.equal(detect.requiresDesktop(files),false);
+});
+
+test('UI changes compile Desktop without building the server or real compilers', () => {
+  const files = ['web/app.js', 'web/index.html', 'web/vendor/pdfjs/build/pdf.mjs'];
+  assert.equal(detect.requiresDesktop(files), true);
+  assert.equal(detect.requiresBackend(files), false);
+  assert.equal(detect.requiresPaper(files), false);
+});
+test('native-only changes skip backend compilation; server and shared changes require it', () => {
+  assert.equal(detect.requiresBackend(['app/src/main.rs']), false);
+  for (const file of ['src/lib.rs', 'crates/client/src/frontend.rs', 'Cargo.lock', 'tests/server-update.py']) {
+    assert.equal(detect.requiresBackend([file]), true, file);
+  }
+});
+
+test('main UI pushes also skip backend compilation using the actual before/after diff', async t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'noctua-main-ui-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  git('init', '--quiet'); mkdirSync(join(cwd, 'web'));
+  writeFileSync(join(cwd, 'web/app.js'), 'old UI'); git('add', '.');
+  const commit = () => git('-c', 'user.name=CI test', '-c', 'user.email=ci@example.invalid', 'commit', '--quiet', '-m', 'UI');
+  commit(); const before = git('rev-parse', 'HEAD');
+  writeFileSync(join(cwd, 'web/app.js'), 'new UI'); git('add', '.'); commit();
+  const after = git('rev-parse', 'HEAD'), log = logger();
+  await detect({ context: { eventName: 'push', payload: { before, after } }, core: log.core, cwd });
+  assert.equal(log.output.run_backend, 'false');
+  assert.equal(log.output.run_desktop, 'true');
+  assert.equal(log.output.run_paper, 'false');
+});
+
+test('a Desktop-only release version change leaves the server graph untouched', async t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'noctua-versions-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  git('init', '--quiet');
+  const manifest = version => `[package]\nname = "noctua"\nversion = "0.3.6"\n[workspace]\nmembers = ["app"]\n[workspace.package]\nversion = "${version}"\n`;
+  const lock = version => `version = 4\n[[package]]\nname = "noctua"\nversion = "0.3.6"\n[[package]]\nname = "noctua-app"\nversion = "${version}"\n`;
+  const commit = () => { git('add', '.'); git('-c', 'user.name=CI test', '-c', 'user.email=ci@example.invalid', 'commit', '--quiet', '-m', 'Version'); return git('rev-parse', 'HEAD'); };
+  writeFileSync(join(cwd, 'Cargo.toml'), manifest('0.3.6')); writeFileSync(join(cwd, 'Cargo.lock'), lock('0.3.6')); const before = commit();
+  writeFileSync(join(cwd, 'Cargo.toml'), manifest('0.3.7')); writeFileSync(join(cwd, 'Cargo.lock'), lock('0.3.7')); const after = commit();
+  const log = logger();
+  await detect({ context: { eventName: 'push', payload: { before, after } }, core: log.core, cwd });
+  assert.equal(log.output.run_backend, 'false'); assert.equal(log.output.run_desktop, 'true'); assert.equal(log.output.run_paper, 'false');
+  writeFileSync(join(cwd, 'Cargo.toml'), manifest('0.3.7').replace('version = "0.3.6"', 'version = "0.3.7"'));
+  const server = commit(), changed = detect.componentFiles(['Cargo.toml'], after, server, cwd, false);
+  assert.equal(detect.requiresBackend(changed), true);
+  assert.equal(detect.requiresPaper(changed), true);
 });

@@ -197,7 +197,7 @@ pub async fn guard(
                     (header::CONTENT_TYPE, "text/html; charset=utf-8"),
                     (header::CACHE_CONTROL, "no-store"),
                 ],
-                include_str!("../web/login.html"),
+                crate::web_assets::read("login.html").unwrap_or_else(|| b"Browser UI unavailable. Install UI files or use the Desktop app.".to_vec()),
             )
                 .into_response();
         }

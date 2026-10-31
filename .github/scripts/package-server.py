@@ -35,6 +35,11 @@ def package(root, tag, target):
     output.mkdir(exist_ok=True)
     archive = output / f"noctua-{tag}-{target}{'.zip' if windows else '.tar.gz'}"
     files = [(binary, binary.name), (root / "LICENSE", "LICENSE")]
+    ui = root / 'web'
+    if not (ui / 'index.html').is_file():
+        raise ValueError('Browser UI source is required for standalone packaging')
+    files += [(path, 'ui/' + path.relative_to(ui).as_posix()) for path in sorted(ui.rglob('*')) if path.is_file()]
+    files += [(root / f'app/icons/icon-{name}.svg', f'ui/app-icons/{name}.svg') for name in ['dark', 'light']]
     if windows:
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
             for source, name in files:

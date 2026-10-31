@@ -1024,7 +1024,7 @@ function openSetup({ firstRun = false, tab } = {}) {
         }
         case 'reconnect-server': {
           const current=await api('/api/server');
-          if(current.api_version!==1||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');
+          if(![1,2].includes(current.api_version)||current.server_id!==window.noctuaServerId)throw Error('Server changed or is incompatible. Open the connection manager.');
           msg(section,`Connected to ${current.server_id}`,true);break;
         }
         case 'update': await updateApp(t, section, msg); break;

@@ -4,6 +4,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 pub mod client;
+pub mod frontend;
 pub mod paths;
 pub mod server;
 pub mod server_recovery;

@@ -47,12 +47,18 @@ fn authenticate(metadata: &[u8], signature: &str, public_key: &str) -> Result<Ma
 }
 
 pub fn verify(metadata: &[u8], signature: &str, public_key: &str) -> Result<Manifest> {
+    verify_target(metadata, signature, public_key, target())
+}
+
+/// Verify a published artifact for packaging on another supported desktop target.
+pub fn verify_target(metadata: &[u8], signature: &str, public_key: &str, expected_target: &str) -> Result<Manifest> {
+    anyhow::ensure!(["aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"].contains(&expected_target), "Unsupported server target");
     let manifest = authenticate(metadata, signature, public_key)?;
     let version = semver::Version::parse(&manifest.version)?;
     anyhow::ensure!(version.pre.is_empty() && version.build.is_empty(), "Only stable server updates are supported");
-    anyhow::ensure!(manifest.target == target() && manifest.api_version == crate::server::API_VERSION
+    anyhow::ensure!(manifest.target == expected_target && crate::server::compatible_api(manifest.api_version)
         && manifest.data_version == crate::server::DATA_VERSION, "Server release is incompatible with this client");
-    anyhow::ensure!(manifest.binary == binary_name(&manifest.version, target())
+    anyhow::ensure!(manifest.binary == binary_name(&manifest.version, expected_target)
         && manifest.size > 0 && manifest.size <= MAX_BINARY
         && manifest.sha256.len() == 64 && manifest.sha256.bytes().all(|b| b.is_ascii_hexdigit()), "Invalid signed server metadata");
     Ok(manifest)
@@ -111,7 +117,7 @@ pub async fn check(current: &str, public_key: &str, compilers: &Value) -> Result
         let signature = String::from_utf8(bytes(&client, &asset_url(&version, &(name + ".sig")), 16 * 1024).await?)?;
         let manifest = authenticate(&metadata, &signature, public_key)?;
         anyhow::ensure!(manifest.version == version, "Server release tag and signed metadata disagree");
-        if manifest.api_version != crate::server::API_VERSION || manifest.data_version != crate::server::DATA_VERSION || &manifest.paper_compilers != compilers {
+        if !crate::server::compatible_api(manifest.api_version) || manifest.data_version != crate::server::DATA_VERSION || &manifest.paper_compilers != compilers {
             incompatible = true;
             continue;
         }
@@ -223,6 +229,18 @@ mod tests {
         assert!(verify(metadata.replace("0.3.6", "9.0.0").as_bytes(), signature, key).is_err());
         assert!(verify(metadata.as_bytes(), &(signature.to_owned() + "corrupt"), key).is_err());
         assert!(verify(metadata.as_bytes(), signature, &STANDARD.encode("invalid public key")).is_err());
+    }
+    #[test]
+    fn packaging_verifies_each_foreign_target_with_the_same_signature_rules() {
+        let key=include_str!("../testdata/server.pub");
+        for (target,metadata,signature) in [
+            ("aarch64-apple-darwin",include_str!("../testdata/aarch64-apple-darwin.json"),include_str!("../testdata/aarch64-apple-darwin.json.sig")),
+            ("x86_64-pc-windows-msvc",include_str!("../testdata/x86_64-pc-windows-msvc.json"),include_str!("../testdata/x86_64-pc-windows-msvc.json.sig")),
+            ("x86_64-unknown-linux-gnu",include_str!("../testdata/x86_64-unknown-linux-gnu.json"),include_str!("../testdata/x86_64-unknown-linux-gnu.json.sig")),
+        ] {
+            assert_eq!(verify_target(metadata.as_bytes(),signature,key,target).unwrap().target,target);
+            assert!(verify_target(metadata.replace("0.3.6","9.9.9").as_bytes(),signature,key,target).is_err());
+        }
     }
     #[test]
     fn valid_signature_for_another_platform_is_rejected() {

@@ -67,6 +67,13 @@ class ReleaseResourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'missing: server'):
                 resources.check_macos_updater(root)
 
+    def test_new_desktop_packages_keep_a_browser_ui_snapshot(self):
+        import os
+        with patch.dict(os.environ, {'NOCTUA_REQUIRE_BROWSER_UI': 'true'}):
+            with self.assertRaisesRegex(ValueError, 'browser UI'):
+                resources.validate(self.names)
+            resources.validate(self.names + ['Noctua.app/Contents/Resources/ui/index.html'])
+
     def test_linux_requires_both_retained_packages(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -20,6 +20,7 @@ mod appearance;
 mod manager_frame;
 mod icons;
 mod updater;
+mod frontend;
 
 /// A fixed port keeps the pages' origin (and so their saved tabs and layout)
 /// the same between launches; another free port is used if it's taken.
@@ -86,6 +87,7 @@ fn main() {
                 .build(),
         )
         .manage(updater::Updates::default())
+        .manage(frontend::Frontends::default())
         .manage(icons::Icons::default())
         .invoke_handler(tauri::generate_handler![
             client_state,
@@ -219,24 +221,6 @@ fn manager_path(open: Option<&str>) -> String {
         .append_pair("open", open);
     format!("index.html?{}", query.query().unwrap())
 }
-fn browser_session(header: &str) -> anyhow::Result<(String, String)> {
-    let (name, value) = header
-        .split(';')
-        .next()
-        .and_then(|cookie| cookie.split_once('='))
-        .ok_or_else(|| anyhow::anyhow!("Invalid browser session"))?;
-    let scoped = name.strip_prefix("noctua_session_").is_some_and(|suffix| {
-        suffix.len() == 16 && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
-    });
-    anyhow::ensure!(
-        (name == "noctua_session" || scoped)
-            && value.len() == 32
-            && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
-        "Invalid browser session"
-    );
-    Ok((name.into(), value.into()))
-}
-
 fn content_shell_url(
     address: &str,
     window: &str,
@@ -520,40 +504,40 @@ async fn connect_server(
         verify_tested_server(&identity,expected_server_id.as_deref())?;
         let old=noctua::client::load()?;
         anyhow::ensure!(old.address!=address||old.server_id.is_empty()||old.server_id==identity["server_id"],"The server identity at this address changed. Choose a different address or clear the saved connection before accepting new data");
-        let destination=content_shell_url(&address,window.label(),new_window.unwrap_or(false),open_path.as_deref())?;
         let same_connection=shell.connected.lock().unwrap().as_ref().is_some_and(|(old_address,id,_)|old_address==&address&&Some(id.as_str())==identity["server_id"].as_str());
         let keep_windows=new_window.unwrap_or(false)&&same_connection;
-        // Authenticate a browser session through the same server endpoint, then install its
-        // HttpOnly cookie in the WebView. A failed test never replaces a saved preference.
-        let response=noctua::server::http()?.post(format!("{address}/auth/login")).header("Origin",&address).bearer_auth(&secret).send().await?;
-        anyhow::ensure!(response.status().is_success(),"Browser session authentication failed");
-        let header=response.headers().get("set-cookie").and_then(|v|v.to_str().ok()).ok_or_else(||anyhow::anyhow!("Server did not create a browser session"))?;
-        let (cookie_name,session)=browser_session(header)?;
-        let parsed=tauri::Url::parse(&address)?;
-        let cookie=tauri::webview::Cookie::build((cookie_name,session)).domain(parsed.host_str().unwrap_or_default().to_string()).path("/").http_only(true).same_site(tauri::webview::cookie::SameSite::Strict).secure(parsed.scheme()=="https").build();
-        // Re-authenticate the same server before flushing old editors: a server restart
-        // invalidates sessions, but must not trap dirty notes behind a 401 forever.
+        let cached=app.state::<frontend::Frontends>().0.lock().unwrap().get(&address).cloned();
+        let ui=if let Some(ui)=cached {ui.authenticate(secret.clone(),identity["server_id"].as_str().unwrap().into());ui}
+        else {
+            let ui=noctua::frontend::start(&address,secret.clone(),identity["server_id"].as_str().unwrap().into(),frontend::asset,&noctua::client::config_dir()?.join("ui-ports")).await?;
+            app.state::<frontend::Frontends>().0.lock().unwrap().insert(address.clone(),ui.clone());ui
+        };
+        let ui_address=ui.origin.clone();
+        let destination=content_shell_url(&ui_address,window.label(),new_window.unwrap_or(false),open_path.as_deref())?;
+        let parsed=tauri::Url::parse(&ui_address)?;
+        let cookie=tauri::webview::Cookie::build((ui.cookie_name,ui.cookie_value)).domain(parsed.host_str().unwrap_or_default().to_string()).path("/").http_only(true).same_site(tauri::webview::cookie::SameSite::Strict).build();
         if same_connection {
             for old_window in app.webview_windows().into_values().filter(|w|w.label().starts_with("content")){old_window.set_cookie(cookie.clone())?;}
         }
         let label=format!("content{}",app.state::<Shell>().windows.fetch_add(1,Ordering::Relaxed));
-        let manager_url=manager_frame::start(&app,&label,window.label(),&address)?;
+        let manager_url=manager_frame::start(&app,&label,window.label(),&ui_address)?;
         let manager_origin=tauri::Url::parse(&manager_url)?.origin().ascii_serialization();
         let callback_app=app.clone();
         let callback_label=label.clone();
-        let navigation_origin=address.clone();
+        let navigation_origin=ui_address.clone();
         let opener_app=app.clone();
-        let opener_origin=address.clone();
+        let opener_origin=ui_address.clone();
         let ready_ticket=uuid::Uuid::new_v4().simple().to_string();
         let (ready_tx,ready_rx)=tokio::sync::oneshot::channel();
         shell.flush.lock().unwrap().insert(ready_ticket.clone(),PendingReply{window:label.clone(),purpose:"ready",sender:ready_tx});
-        let ready_origin=address.clone();
+        let ready_origin=ui_address.clone();
         let ready_once=std::sync::atomic::AtomicBool::new(false);
         let expected_id=identity["server_id"].clone();
-        let ready_script=format!("(async()=>{{let ok=false;try{{const r=await fetch('/api/server');const s=await r.json();ok=r.ok&&s.api_version===1&&s.ready&&s.server_id==={}}}catch{{}}location.href='https://noctua.invalid/ready/{}/'+ok}})()",expected_id,ready_ticket);
+        let ready_script=format!("(async()=>{{let ok=false;try{{const r=await fetch('/api/server');const s=await r.json();ok=r.ok&&[1,2].includes(s.api_version)&&s.ready&&s.server_id==={}}}catch{{}}location.href='https://noctua.invalid/ready/{}/'+ok}})()",expected_id,ready_ticket);
         let mut provisional=ProvisionalWindow{app:app.clone(),label:label.clone(),ticket:ready_ticket.clone(),committed:false};
         let w=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("loading.html".into()))
             .initialization_script(appearance::CONTENT_SCRIPT)
+            .initialization_script(format!("window.noctuaServerAddress={};",serde_json::to_string(&address)?))
             .initialization_script(format!("window.noctuaManagerUrl={};",serde_json::to_string(&manager_url)?))
             .initialization_script(format!("window.noctuaAppIcon = {}; window.noctuaAppVersion = {};",serde_json::to_string(&*app.state::<icons::Icons>().0.lock().unwrap()).unwrap(),serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap()))
             .visible(false)
@@ -617,13 +601,14 @@ async fn connect_server(
 
         w.set_cookie(cookie)?;
         // Check transport on a read-only document before loading any editor/draft UI.
-        w.navigate(tauri::Url::parse(&format!("{address}/api/server"))?)?;
+        w.navigate(tauri::Url::parse(&format!("{ui_address}/api/server"))?)?;
         let ready=tokio::time::timeout(std::time::Duration::from_secs(30),ready_rx).await;
         shell.flush.lock().unwrap().remove(&ready_ticket);
         if !matches!(ready,Ok(Ok(true))) {let _=w.close();anyhow::bail!("The desktop browser could not authenticate or load this server. Saved connection kept; retry or change settings")}
         if test_only {let _=w.close();return Ok(identity)}
         let _switch_guard=SwitchGuard(app.clone());
         if !keep_windows {if let Err(error)=flush_clients(&app,w.label()).await {let _=w.close();return Err(anyhow::Error::msg(error))}}
+        frontend::migrate_storage(&app,&w,&address,identity["server_id"].as_str().unwrap()).await?;
         if mode=="remote" {if let Err(error)=noctua::client::store_secret(&address,&secret){let _=w.close();return Err(error)}}
         w.navigate(destination)?;
         w.show()?;w.set_focus()?;
@@ -850,20 +835,6 @@ mod connection_tests {
         assert!(super::verify_tested_server(&server, None).is_ok());
     }
     use super::*;
-    #[test]
-    fn browser_session_accepts_scoped_and_legacy_names_without_echoing_secrets() {
-        let secret = "a".repeat(32);
-        for name in ["noctua_session", "noctua_session_0123456789abcdef"] {
-            assert_eq!(
-                browser_session(&format!("{name}={secret}; Path=/; HttpOnly")).unwrap(),
-                (name.into(), secret.clone())
-            );
-        }
-        let error = browser_session(&format!("unrelated={secret}"))
-            .unwrap_err()
-            .to_string();
-        assert!(!error.contains(&secret));
-    }
     #[test]
     fn new_windows_preserve_paths_and_isolate_query_values() {
         let open = "/#pdf=paper-1&page=3";

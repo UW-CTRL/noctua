@@ -4,6 +4,7 @@ pub const SAFE_ENV: &[&str] = &[
     "NOCTUA_ORIGINS",
     "NOCTUA_SERVER_NAME",
     "NOCTUA_NOTES",
+    "NOCTUA_UI_DIR",
     "NOCTUA_CLAUDE",
     "NOCTUA_CODEX",
     "NOCTUA_LAUNCH_PATH",
@@ -186,7 +187,7 @@ pub async fn candidate(executable: &Path) -> Result<Value> {
         serde_json::from_slice(&output.stdout).context("Invalid server executable metadata")?;
     anyhow::ensure!(
         value["product"] == "noctua"
-            && value["api_version"] == server::API_VERSION
+            && server::compatible_identity(&value)
             && value["data_version"] == server::DATA_VERSION,
         "The bundled server has an incompatible API or data format"
     );
@@ -391,7 +392,7 @@ pub async fn run(
     server::validate_local_record(&old)?;
     anyhow::ensure!(
         old.product == "noctua"
-            && old.api_version == server::API_VERSION
+            && server::compatible_api(old.api_version)
             && old.data_dir == fs::canonicalize(&data)?,
         "The stopped server record belongs to another product, API or data folder"
     );
