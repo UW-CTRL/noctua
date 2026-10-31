@@ -11,6 +11,11 @@ The first engine is marked **Default** and is selected immediately after reorder
 and whenever the app reopens or reloads. Choosing another engine in the search
 menu temporarily changes the current search. arXiv is first initially.
 
+Drag an engine below the **Disabled** divider to remove it from the search menu
+and Tab cycling. Drag it above the divider to enable it again. At least one engine
+must remain enabled. Disabled choices save for this browser and server, including
+after a reload. Disabling the default selects the first remaining enabled engine.
+
 ## Server & connection
 
 Connection, recovery and browser sign-in screens use the app’s light/dark colors,
