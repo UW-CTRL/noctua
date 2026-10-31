@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import unittest
 import tempfile
+import io
+import tarfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).parents[2]
@@ -42,6 +44,28 @@ class ReleaseResourceTests(unittest.TestCase):
                 self.assertEqual(run.call_args_list[0].args[0][:4],
                                  ['hdiutil', 'attach', '-readonly', '-nobrowse'])
                 self.assertEqual(run.call_args_list[-1].args[0][:2], ['hdiutil', 'detach'])
+
+    def test_macos_updater_requires_signed_archive_with_runtime_resources(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with self.assertRaisesRegex(ValueError, 'archive is required'):
+                resources.check_macos_updater(root)
+            archive = root / 'target/release/bundle/macos/Noctua.app.tar.gz'
+            archive.parent.mkdir(parents=True)
+            def write(names):
+                with tarfile.open(archive, 'w:gz') as package:
+                    for name in names:
+                        info = tarfile.TarInfo('Noctua.app/Contents/Resources/' + name)
+                        info.size = 1
+                        package.addfile(info, io.BytesIO(b'x'))
+            write(self.names)
+            with self.assertRaisesRegex(ValueError, 'signature is required'):
+                resources.check_macos_updater(root)
+            archive.with_name(archive.name + '.sig').write_text('signed fixture')
+            resources.check_macos_updater(root)
+            write(self.names[1:])
+            with self.assertRaisesRegex(ValueError, 'missing: server'):
+                resources.check_macos_updater(root)
 
     def test_linux_requires_both_retained_packages(self):
         with tempfile.TemporaryDirectory() as folder:

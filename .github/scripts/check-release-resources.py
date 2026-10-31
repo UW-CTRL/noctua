@@ -1,6 +1,8 @@
 """Fail a release build if its installer omits essential runtime resources."""
 from pathlib import Path
 import re
+import os
+import tarfile
 import subprocess
 import sys
 import tempfile
@@ -22,8 +24,22 @@ def validate(names):
         raise ValueError('Installer is missing: ' + ', '.join(missing))
 
 
+def check_macos_updater(root):
+    archives = list(root.glob('target/**/release/bundle/macos/*.app.tar.gz'))
+    if not archives:
+        raise ValueError('Signed macOS updater archive is required.')
+    for archive in archives:
+        signature = archive.with_name(archive.name + '.sig')
+        if not signature.is_file() or not signature.read_text().strip():
+            raise ValueError('macOS updater signature is required.')
+        with tarfile.open(archive) as package:
+            validate(package.getnames())
+
+
 def check(root, platform=sys.platform):
     if platform == 'darwin':
+        if os.environ.get('NOCTUA_REQUIRE_MACOS_UPDATER') == 'true':
+            check_macos_updater(root)
         packages = list(root.glob('target/**/release/bundle/dmg/*.dmg'))
     elif platform == 'win32':
         packages = list(root.glob('target/**/release/bundle/nsis/*-setup.exe'))

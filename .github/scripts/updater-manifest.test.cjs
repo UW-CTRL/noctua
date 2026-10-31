@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const manifest = require('./updater-manifest.cjs');
 
 function fixture() {
-  const names = ['Noctua_0.1.2_x64-setup.exe', 'Noctua_0.1.2_amd64.AppImage'];
+  const names = ['Noctua_0.1.2_x64-setup.exe', 'Noctua_0.1.2_amd64.AppImage', 'Noctua_aarch64.app.tar.gz'];
   const assets = names.flatMap(name => [name, `${name}.sig`]).map((name, id) => ({
     id, name, size: 100, state: 'uploaded', browser_download_url: `https://github.com/UW-CTRL/noctua/releases/download/untagged-draft/${name}`,
   }));
@@ -19,22 +19,23 @@ function fixture() {
   return { args, assets, calls, repos };
 }
 
-test('one complete manifest offers only signed Windows and AppImage updates', async () => {
+test('one complete manifest offers signed macOS, Windows and AppImage updates', async () => {
   const f = fixture();
   await manifest(f.args);
   const uploaded = f.calls.at(-1)[1];
   assert.equal(uploaded.version, '0.1.2');
   assert.equal(uploaded.notes, 'Release notes');
   assert.deepEqual(uploaded.release_summaries, [{ version: '0.1.2', changes: [] }]);
-  assert.deepEqual(Object.keys(uploaded.platforms), ['windows-x86_64', 'linux-x86_64']);
+  assert.deepEqual(Object.keys(uploaded.platforms), ['windows-x86_64', 'linux-x86_64', 'darwin-aarch64']);
   assert.equal(uploaded.platforms['darwin-x86_64'], undefined);
   const base = 'https://github.com/UW-CTRL/noctua/releases/download/v0.1.2/';
-  assert.equal(uploaded.platforms['darwin-aarch64'], undefined);
+  assert.equal(uploaded.platforms['darwin-aarch64'].url, base + 'Noctua_aarch64.app.tar.gz');
+  assert.equal(uploaded.platforms['darwin-aarch64'].signature, 'c2lnbmF0dXJl');
   assert.equal(uploaded.platforms['windows-x86_64'].url, base + 'Noctua_0.1.2_x64-setup.exe');
   assert.equal(uploaded.platforms['linux-x86_64'].url, base + 'Noctua_0.1.2_amd64.AppImage');
   assert(!JSON.stringify(uploaded.platforms).includes('untagged-'));
   assert.equal(uploaded.platforms['linux-x86_64'].signature, 'c2lnbmF0dXJl');
-  assert.equal(f.calls.filter(c => c[0] === 'get').length, 2);
+  assert.equal(f.calls.filter(c => c[0] === 'get').length, 3);
 });
 
 test('release history summaries include older stable releases and fail closed on API errors', async () => {
@@ -63,7 +64,7 @@ test('desktop manifests retain the independently versioned bundled server', asyn
 });
 
 test('each missing, empty, or incomplete bundle or signature prevents manifest writes', async () => {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     for (const failure of ['missing', 'empty', 'incomplete']) {
       const f = fixture();
       if (failure === 'missing') f.assets.splice(i, 1);
@@ -93,4 +94,14 @@ test('a retry replaces an existing draft manifest only after downloading all sig
   await manifest(f.args);
   assert.deepEqual(f.calls.slice(-2).map(c => c[0]), ['delete', 'upload']);
   assert.equal(f.calls.at(-2)[1], 88);
+});
+
+test('Universal archives serve both Mac architectures with one verified signature', async () => {
+  const f = fixture();
+  for (const asset of f.assets) asset.name = asset.name.replace('aarch64.app', 'universal.app');
+  await manifest({ ...f.args, macosArch: 'universal' });
+  const platforms = f.calls.at(-1)[1].platforms;
+  assert.deepEqual(platforms['darwin-aarch64'], platforms['darwin-x86_64']);
+  assert(platforms['darwin-x86_64'].url.endsWith('Noctua_universal.app.tar.gz'));
+  assert.equal(f.calls.filter(c => c[0] === 'get').length, 3);
 });

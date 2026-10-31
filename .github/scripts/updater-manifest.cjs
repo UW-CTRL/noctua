@@ -1,10 +1,14 @@
 // Generate once, after all platform uploads, so parallel builds cannot lose targets.
-module.exports = async function uploadManifest({ github, context, release, assets }) {
+module.exports = async function uploadManifest({ github, context, release, assets, macosArch = 'aarch64' }) {
+  if (!['aarch64', 'universal'].includes(macosArch)) throw new Error('Unsupported macOS update architecture');
   const version = release.tag_name.slice(1);
   const targets = {
     'windows-x86_64': `Noctua_${version}_x64-setup.exe`,
     'linux-x86_64': `Noctua_${version}_amd64.AppImage`,
   };
+  const macosArchive = `Noctua_${macosArch}.app.tar.gz`;
+  targets['darwin-aarch64'] = macosArchive;
+  if (macosArch === 'universal') targets['darwin-x86_64'] = macosArchive;
   const complete = name => {
     const asset = assets.find(a => a.name === name && a.state === 'uploaded' && a.size > 0);
     if (!asset) throw new Error(`Missing completed updater asset: ${name}`);
