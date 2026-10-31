@@ -282,10 +282,9 @@ This avoids the Ubuntu 22.04 system Python tar extraction failure on TinyTeX's
 relative symlinks while retaining the archive data filter and checksum validation.
 Use Python 3.12 when reproducing compiler setup locally.
 
-Paper jobs share prepared compiler caches with release builds. Pushes to main
-also warm the pinned Tauri CLI cache for future version tags; pull requests do not
-install that CLI. The desktop timeout is 30 minutes to allow the first uncached
-CLI installation. See [release caching](releases.md#paper-compiler-packaging) for
+Paper jobs share prepared compiler caches with release builds. Tauri CLI cache
+preparation runs in a separate workflow, so neither main nor PR desktop checks
+install that CLI. See [release caching](releases.md#paper-compiler-packaging) for
 cache keys, invalidation, and cold-run behavior.
 
 Paper integration prepares both pinned managed compilers, builds the server, and
@@ -295,7 +294,10 @@ subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
 artifact retention. It requires network for uncached TeX resources.
 
 The frontend suite includes `tests/paper.html` for editor/preview behavior, save
-conflicts, debounced builds, cancellation, and stale PDF-load protection.
+conflicts, debounced builds, cancellation, and stale PDF-load protection. It logs
+completed assertions and pending operations to CI. Application operations have a
+ten-second timeout with an operation name; the WebKit launcher retains its
+35-second overall limit and reports the last progress message on timeout.
 
 `tests/document-tools.html` covers citation source labels and duplicate results,
 rendered title math, stale suggestion requests, line-comment shortcuts, and Find
@@ -363,3 +365,19 @@ Trash regressions additionally cover table-style selection, Restore actions, Del
 Authentication tests cover stable 15-character token generation, replacement and rejection of older long credentials, and inline eye/copy controls in both browser and desktop connection fields, including containment inside the input border.
 
 Desktop server settings checks (`tests/server-settings.swift` and `tests/manager-embedded.html`) cover inline layout, category navigation, token clearing and local controls. The app’s `manager_frame` unit test rejects remote or missing origins, unexpected hosts and requests without the management header.
+
+### Release tool preparation and release eligibility
+
+`cache-release-tools.yml` prepares the pinned Tauri CLI separately from CI, on
+release workflow changes to main or manual dispatch. Its OS/architecture/version
+cache is shared with both release workflows. Cache misses still install the CLI
+inside a release; cache preparation is not a prerequisite for checks or releases.
+Keep `TAURI_CLI_VERSION` aligned in the cache and both release workflows.
+
+Both release workflows require successful `ci.yml` and `security.yml` push runs
+on main for the exact tagged commit. The latest matching run must be completed
+and successful; missing, pending, failed, or cancelled checks block preparation,
+building, and publication. PR checks cannot substitute for main checks.
+
+The Paper stale-load fixture waits for explicit mocked request-start signals
+instead of timer ticks and suspends background polling during its two-load race.

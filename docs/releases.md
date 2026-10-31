@@ -10,6 +10,17 @@ release unpublished. The workflow never bumps versions or creates tags.
 New macOS releases do not support Intel Macs; Intel users can retain an older Universal release. The new
 updater manifest omits all macOS targets; macOS updates use manual DMG installation.
 
+Before either release workflow can prepare or build a release, the exact tagged
+commit must have successful main push runs of both CI and Dependency security.
+Missing, running, failed, or cancelled checks block the release. Merge and verify
+main before creating a tag; after a failed check, resolve the failure and obtain
+a successful run for the intended commit. A successful PR check alone is not
+sufficient. This gate applies to manual rebuilds too. Older tags without matching
+main checks cannot be rebuilt through these gated workflows.
+
+Tauri CLI cache preparation runs separately from CI. A missing cache slows the
+release installation step but does not prevent a release.
+
 ## Standalone server releases
 
 `.github/workflows/release-server.yml` publishes standalone server archives for
@@ -434,7 +445,7 @@ the cache. Setup scripts still run after restoration and check their version
 stamps. No partial-key fallback is used.
 
 The release workflow caches Tauri CLI 2.10.1 in a dedicated installation directory,
-separate from the Rust build cache. Update `TAURI_CLI_VERSION` in both CI and release
+separate from the Rust build cache. Update `TAURI_CLI_VERSION` in the dedicated cache and both release
 workflows together to upgrade it; the new version gets a fresh cache.
 Main-branch desktop CI also prepares this CLI cache because GitHub allows tag runs
 to restore default-branch caches, but not caches belonging to other tags. Let main

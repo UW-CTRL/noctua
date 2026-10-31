@@ -13,13 +13,20 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  ci:
+    uses: ./.github/workflows/check-release-ci.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+
   prepare:
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -33,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: ${{ needs.ci.outputs.commit }}
 
       - name: Validate release version
         env:

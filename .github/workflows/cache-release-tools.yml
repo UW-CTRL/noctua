@@ -1,0 +1,39 @@
+name: Release tool cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cache-release-tools.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tool-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tauri:
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest, ubuntu-22.04]
+    env:
+      TAURI_CLI_VERSION: '2.10.1'
+    steps:
+      - uses: actions/cache@v4
+        id: tauri
+        with:
+          path: ${{ runner.temp }}/noctua-tauri-cli
+          key: tauri-cli-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TAURI_CLI_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.tauri.outputs.cache-hit != 'true'
+      - name: Install release CLI on cache miss
+        if: steps.tauri.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "${{ env.TAURI_CLI_VERSION }}" --locked --root "${{ runner.temp }}/noctua-tauri-cli"
