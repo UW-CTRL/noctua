@@ -208,14 +208,16 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  $('[data-library-sort="title"]').click();assert($('#library-rows tr').dataset.key==='b','sort by title');
  $('[data-library-sort="year-desc"]').click();assert($('#library-rows tr').dataset.key==='a','sort newest');
  $('[data-library-sort="year-desc"]').click();assert($('#library-rows tr').dataset.key==='b','reverse year sort');
+ const libraryFilterWidth=$('#library-filter-control').getBoundingClientRect().width;
+ assert(getComputedStyle($('#library-table-filter')).opacity==='1','empty library filter is always visible');
  $('#library-table-filter').value='Hopper';$('#library-table-filter').dispatchEvent(new Event('input'));
  assert($('#library-rows').children.length===1&&$('#library-rows tr').dataset.key==='b','filter by author');
  assert($('header #search-form')&&!$('#stage #search-form'),'global paper search restored to header');
  assert(document.querySelectorAll('#library-table-filter').length===1&&$('.library-heading #library-table-filter'),'single filter shares the library heading');
  const searchRequests=requests.filter(p=>p.startsWith('/api/search')).length;
- $('#library-filter-control').style.transition='none';
- assert($('#library-filter-control').classList.contains('has-query'),'typing keeps filter expanded');
- assert($('#library-filter-control').getBoundingClientRect().width>120,'filter expands horizontally');
+ assert($('#library-filter-control').getBoundingClientRect().width===libraryFilterWidth,'typing leaves library filter width unchanged');
+ assert($('#library-filter-control').classList.contains('has-query'),'typing records active filter');
+ assert($('#library-filter-control').getBoundingClientRect().width>120,'filter has space for direct text entry');
  assert($('#library-filter-control').getBoundingClientRect().right<=$('#stage').getBoundingClientRect().right,'filter stays in center pane');
  $('#stage').style.maxWidth='340px';
  assert($('#library-filter-control').getBoundingClientRect().right<=$('#stage').getBoundingClientRect().right,'filter fits narrow center pane');
@@ -244,8 +246,10 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(visible($('#graph-filter-control')),'Network shows top-right graph filter');
  const extra=addNode({paperId:'filter-other',title:'Compiler history',authors:[{name:'Grace Hopper'}],year:2020,venue:'Computing',citationCount:12},'exp');
  G.selected='filter-other';
+ const graphFilterWidth=$('#graph-filter-control').getBoundingClientRect().width;
+ assert(getComputedStyle($('#graph-filter')).opacity==='1'&&graphFilterWidth>120,'empty graph filter is always visible');
  const setGraphFilter=value=>{const input=$('#graph-filter');input.value=value;input.dispatchEvent(new Event('input'));};
- setGraphFilter('Ada');assert(visibleNodes().length===1&&visibleNodes()[0].id==='s1'&&$('#node-list').children.length===1,'graph and Papers filter together, even for a selected nonmatch');
+ setGraphFilter('Ada');assert($('#graph-filter-control').getBoundingClientRect().width===graphFilterWidth,'typing leaves graph filter width unchanged');assert(visibleNodes().length===1&&visibleNodes()[0].id==='s1'&&$('#node-list').children.length===1,'graph and Papers filter together, even for a selected nonmatch');
  assert($('#filter').value==='Ada'&&$('#graph-filter-control').classList.contains('has-query'),'graph and sidebar filters stay in sync');
  setGraphFilter('no such paper');assert(visibleNodes().length===0&&!$('#graph-filter-empty').hidden,'empty graph filter state');
  $('#filter').value='2020';$('#filter').dispatchEvent(new Event('input'));assert(visibleNodes().length===1&&$('#graph-filter').value==='2020','sidebar filter updates graph and top-right field');
@@ -266,8 +270,8 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(!$('#graph-papers-title')&&!$('#node-count'),'redundant Papers count heading removed');
  assert($('#filter').placeholder===`Filter ${G.nodes.size} paper${G.nodes.size===1?'':'s'}`,'filter placeholder displays graph paper count');
  assert($('#sort').closest('.web-select').getBoundingClientRect().right<=$('#papers-filter-control').getBoundingClientRect().left,'sort precedes left-aligned filter');
- $('#papers-filter-control button').click();assert(document.activeElement===$('#filter'),'paper magnifier focuses expanding filter');
- $('#filter').value='Ada';$('#filter').dispatchEvent(new Event('input'));assert($('#papers-filter-control').classList.contains('has-query')&&G.filter==='ada','paper filter expands and filters graph');
+ $('#papers-filter-control button').click();assert(document.activeElement===$('#filter'),'paper magnifier focuses visible filter');
+ $('#filter').value='Ada';$('#filter').dispatchEvent(new Event('input'));assert($('#papers-filter-control').classList.contains('has-query')&&G.filter==='ada','paper filter updates graph');
  $('#filter').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));assert(!G.filter&&!$('#papers-filter-control').classList.contains('has-query'),'Escape clears paper filter');
  const divider=$('#folder-divider');
  const defaultHeight=Math.min(440,Math.floor($('#research-sidebar').clientHeight*.65));
@@ -482,7 +486,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  // Leave a populated table for visual inspection.
  $('[data-layout="library"]').click();$('#lib-tree [data-id="L1"]').click();await settle();
  $('#search').value='';$('#search').dispatchEvent(new Event('input'));$('#search').blur();
- window.webkit.messageHandlers.result.postMessage('PASS: Compact Library/Papers navigation, default folder expansion, subfolder scope, complete library table, sorting/filtering, selection/PDF actions, stale folder/query protection, all three visualizations, header search/results and expanding local filter, Fit button/Lineage bounds, default save folder, and shared notifications');
+ window.webkit.messageHandlers.result.postMessage('PASS: Compact Library/Papers navigation, default folder expansion, subfolder scope, complete library table, sorting/filtering, selection/PDF actions, stale folder/query protection, all three visualizations, header search/results and fixed local filters, Fit button/Lineage bounds, default save folder, and shared notifications');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack+'\nRuntime: '+testErrors.join('; ')));
 </script>
 """#
