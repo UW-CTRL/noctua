@@ -25,7 +25,18 @@ fn summaries(raw: &Value, current: &str, latest: &str) -> Vec<Value> {
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
+// DMG-only releases must never check for or install an archive update.
+fn manual_macos_update(action: UpdateAction) -> anyhow::Result<Value> {
+    if matches!(action, UpdateAction::StartupCheck) {
+        return Ok(json!({ "status": "skipped" }));
+    }
+    anyhow::bail!("macOS updates require manual installation. Download the Apple Silicon DMG from https://github.com/UW-CTRL/noctua/releases/latest, quit Noctua, and replace Noctua in Applications. Intel Macs must retain an older Universal release.");
+}
+
 pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>) -> anyhow::Result<Value> {
+    if cfg!(target_os = "macos") {
+        return manual_macos_update(action);
+    }
     let state = app.state::<Updates>();
     let mut pending = state.0.try_lock()
         .map_err(|_| anyhow::anyhow!("An update operation is already in progress. Please wait."))?;
@@ -49,7 +60,7 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
         UpdateAction::Check | UpdateAction::StartupCheck => {
             #[cfg(target_os = "linux")]
             anyhow::ensure!(std::env::var_os("APPIMAGE").is_some(),
-                "In-app updates require the AppImage build on Linux. Update .deb and .rpm installations with your package manager.");
+                "In-app updates require the AppImage build on Linux. Update .deb installations with your package manager.");
             anyhow::ensure!(!option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim().is_empty(),
                 "This build has no update verification key. Install an official release to enable updates.");
             // Forget an earlier offer if this check fails: never install stale metadata.
@@ -82,6 +93,16 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_skips_startup_and_requires_manual_installation_for_every_action() {
+        assert_eq!(manual_macos_update(UpdateAction::StartupCheck).unwrap(), json!({"status":"skipped"}));
+        for action in [UpdateAction::Check, UpdateAction::Install, UpdateAction::Restart] {
+            let message = manual_macos_update(action).unwrap_err().to_string();
+            assert!(message.contains("manual installation"));
+            assert!(message.contains("https://github.com/UW-CTRL/noctua/releases/latest"));
+        }
+    }
 
     #[test]
     fn changes_cover_only_versions_between_installed_and_offered_releases() {

@@ -274,7 +274,14 @@ location you want to select.
 
 ## Updates
 
-Open **Settings → About & Shortcuts**, then choose **Check for updates** under
+On macOS, updates are manual. Download the Apple Silicon DMG from the
+[latest release](https://github.com/UW-CTRL/noctua/releases/latest), quit Noctua,
+and replace Noctua in Applications. Your data folder is retained. The update
+check explains this path; there is no startup update prompt. Older installations
+may show an update-check error because macOS updater archives are no longer
+published. Intel Macs must retain an older Universal release.
+
+On Windows or Linux AppImage, open **Settings → About & Shortcuts**, then choose **Check for updates** under
 **App Updates**. If a newer version is available, the button offers installation;
 confirm the native prompt to install. Choose **Restart Noctua** after installation.
 The app saves open edits before installation and restart. Official builds also check

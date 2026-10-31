@@ -4,10 +4,9 @@ const publish = require('./publish-release.cjs');
 
 function fixture() {
   const names = [
-    'Noctua_0.1.1_aarch64.dmg', 'Noctua_aarch64.app.tar.gz',
-    'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_x64_en-US.msi',
+    'Noctua_0.1.1_aarch64.dmg',
+    'Noctua_0.1.1_x64-setup.exe',
     'Noctua_0.1.1_amd64.AppImage', 'Noctua_0.1.1_amd64.deb',
-    'Noctua-0.1.1-1.x86_64.rpm',
   ];
   const release = { tag_name: 'v0.1.1', draft: true, name: 'Edited title', body: '![Demo](https://example.com/demo.gif)', prerelease: false };
   const assets = names.map((name, id) => ({ id, name, state: 'uploaded', size: 123 }));
@@ -36,7 +35,7 @@ test('publishes complete installers without changing release notes, title, or pr
 });
 
 test('each missing, empty, or incomplete installer keeps the release unpublished', async () => {
-  for (let index = 0; index < 7; index++) {
+  for (let index = 0; index < 4; index++) {
     for (const state of ['missing', 'empty', 'uploading']) {
       const f = fixture();
       if (state === 'missing') f.assets.splice(index, 1);
@@ -62,11 +61,11 @@ test('Universal installers cannot satisfy a new Apple Silicon release', async ()
   assert.deepEqual(f.calls, []);
 });
 
-test('an explicit legacy Universal rebuild preserves its installers, alias, and updater targets', async () => {
+test('an explicit legacy Universal rebuild preserves its DMG alias without macOS updater targets', async () => {
   const f = fixture();
   f.release.id = 42;
   for (const asset of f.assets) asset.name = asset.name.replace('_aarch64', '_universal');
-  for (const name of ['Noctua_universal.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
+  for (const name of ['Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
     f.assets.push({ name: `${name}.sig`, id: 99, size: 12, state: 'uploaded' });
   }
   const repos = f.args.github.rest.repos;
@@ -77,8 +76,8 @@ test('an explicit legacy Universal rebuild preserves its installers, alias, and 
   repos.uploadReleaseAsset = async p => uploads.push(p);
   await publish({ ...f.args, macosArch: 'universal', updaterEnabled: true });
   const platforms = JSON.parse(uploads[0].data).platforms;
-  assert.deepEqual(platforms['darwin-aarch64'], platforms['darwin-x86_64']);
-  assert.ok(platforms['darwin-aarch64'].url.endsWith('/Noctua_universal.app.tar.gz'));
+  assert.equal(platforms['darwin-aarch64'], undefined);
+  assert.equal(platforms['darwin-x86_64'], undefined);
   assert.equal(uploads[1].name, 'Noctua-macOS-universal.dmg');
   assert.equal(f.calls.length, 1);
 });
@@ -145,7 +144,7 @@ test('updater manifest upload must succeed before an enabled release is publishe
   for (const failUpload of [false, true]) {
     const f = fixture();
     f.release.id = 42;
-    for (const name of ['Noctua_aarch64.app.tar.gz', 'Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
+    for (const name of ['Noctua_0.1.1_x64-setup.exe', 'Noctua_0.1.1_amd64.AppImage']) {
       f.assets.push({ name: `${name}.sig`, size: 10, state: 'uploaded', id: 10 });
     }
     const repos = f.args.github.rest.repos;
@@ -167,5 +166,14 @@ test('updater manifest upload must succeed before an enabled release is publishe
       assert.equal(uploaded, true);
       assert.equal(f.calls.length, 1);
     }
+  }
+});
+
+test('obsolete installers and macOS updater archives block publication on retries', async () => {
+  for (const name of ['old.msi', 'old.rpm', 'Noctua_aarch64.app.tar.gz', 'Noctua_aarch64.app.tar.gz.sig']) {
+    const f = fixture();
+    f.assets.push({ name });
+    await assert.rejects(publish(f.args), /Remove excluded release assets/);
+    assert.deepEqual(f.calls, []);
   }
 });
