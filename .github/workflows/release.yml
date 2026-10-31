@@ -166,9 +166,9 @@ jobs:
             const path = 'app/tauri.release.conf.json';
             const config = JSON.parse(fs.readFileSync(path, 'utf8'));
             config.bundle ??= {};
-            config.bundle.targets = { macOS: ['dmg'], Windows: ['nsis'], Linux: ['appimage', 'deb'] }[process.env.RELEASE_PLATFORM];
+            config.bundle.targets = { macOS: ['app', 'dmg'], Windows: ['nsis'], Linux: ['appimage', 'deb'] }[process.env.RELEASE_PLATFORM];
             if (!config.bundle.targets) throw new Error('Unsupported release platform');
-            config.bundle.createUpdaterArtifacts = process.env.RELEASE_PLATFORM !== 'macOS';
+            config.bundle.createUpdaterArtifacts = true;
             config.plugins ??= {};
             config.plugins.updater = { ...config.plugins.updater, pubkey };
             // Hooks otherwise run from the frontend root, outside app/.
@@ -240,6 +240,8 @@ jobs:
           sparse-checkout: .github/scripts
           persist-credentials: false
       - name: Verify packaged server and paper compilers
+        env:
+          NOCTUA_REQUIRE_MACOS_UPDATER: ${{ needs.prepare.outputs.updater }}
         shell: bash
         run: python release-tools/.github/scripts/check-release-resources.py
 

@@ -7,8 +7,8 @@ and Linux installers. It uploads them to a shared **draft** GitHub Release.
 Once all three platform builds succeed, it verifies the completed installer uploads
 and publishes the release automatically. A failed or cancelled build leaves the
 release unpublished. The workflow never bumps versions or creates tags.
-New macOS releases do not support Intel Macs; Intel users can retain an older Universal release. The new
-updater manifest omits all macOS targets; macOS updates use manual DMG installation.
+New macOS releases do not support Intel Macs; Intel users can retain an older Universal release. The updater manifest includes signed Apple Silicon macOS application archives
+alongside Windows and Linux update targets.
 
 Before either release workflow can prepare or build a release, the exact tagged
 commit must have successful main push runs of both CI and Dependency security.
@@ -147,7 +147,8 @@ workflow on `main` to publish an older tagged draft without changing its source.
 a branch name as `tag` does not build or create a release from that branch.
 For older tags whose workflow explicitly builds Universal macOS installers,
 preparation retains that architecture for the rebuild, installer checks,
-and download alias. macOS updater entries are omitted even for these rebuilds. New tags build only Apple Silicon.
+and download alias. Universal archives serve both Mac architectures on these
+rebuilds. New tags build only Apple Silicon.
 
 ## Prepare release notes
 
@@ -235,13 +236,14 @@ jobs can reuse successful build outputs. The preparation job continues to refuse
 rebuilding already published releases; retrying publication itself is a no-op for
 an already published release.
 
-Publication rejects MSI, RPM, and macOS updater archives (including their signatures);
+Publication rejects MSI and RPM installers;
 remove obsolete draft assets before retrying. Updater-enabled releases also require
-completed `.sig` files for the Windows NSIS installer and Linux AppImage. The generated `latest.json`
+a completed macOS `.app.tar.gz` archive and its `.sig`, plus completed `.sig`
+files for the Windows NSIS installer and Linux AppImage. The generated `latest.json`
 is uploaded before the draft is published. Its download URLs use the final
 version tag, since GitHub's temporary draft asset URLs can expire on publication.
 It uses the release's existing notes.
-On Windows and AppImage, the app checks GitHub's latest published stable release once per launch and when
+On Apple Silicon macOS, Windows and AppImage, the app checks GitHub's latest published stable release once per launch and when
 the user requests a check in Settings;
 drafts and releases marked as prereleases are not offered. A release without a
 manifest produces a visible check error rather than claiming the app is current.
@@ -277,11 +279,11 @@ working directory to `app/`. Tauri otherwise runs hooks from the frontend root.
 This packaging override lets updated workflows recover older drafts with a
 relative server-script path while preserving their tagged application source.
 
-The workflow enables updater artifact signing only on Windows and Linux in
+The workflow enables updater artifact signing on every desktop platform in
 `app/tauri.release.conf.json`; its checked-in default disables artifact generation.
 The updater disables legacy ZIP support to avoid the vulnerable `zip` dependency.
 Keep Windows updates as raw NSIS `.exe` files and Linux updates as raw AppImages;
-macOS does not generate an updater archive. Platform configuration selects DMG,
+macOS uses a signed `.app.tar.gz` archive. Platform configuration selects APP and DMG,
 NSIS, or AppImage plus DEB explicitly; the workflow also overrides targets for older drafts.
 Ordinary local builds do not require a private key. They show an explanatory
 error when checking for updates unless built with `NOCTUA_UPDATER_PUBLIC_KEY`.
@@ -289,9 +291,10 @@ For a local signed build, export that variable and Tauri's signing environment
 variables and set `plugins.updater.pubkey` to the same public key in your local
 release configuration. Then run
 `cargo tauri build --config tauri.release.conf.json --config '{"bundle":{"createUpdaterArtifacts":true}}'`
-in `app/` on Windows or Linux. For macOS, use `cargo tauri build` instead.
+in `app/` on the supported desktop platforms. On macOS include the app target
+with `--bundles app,dmg` to produce both the archive and installer.
 
-On Windows and AppImage, open **Settings → About & Shortcuts** and choose **Check for
+On Apple Silicon macOS, Windows and AppImage, open **Settings → About & Shortcuts** and choose **Check for
 updates** under **App and Local Server Updates**. An available release changes the button to
 **Update to …**; installing or restarting requires native confirmation.
 Confirming downloads and verifies the signed bundle before replacing the app.
@@ -311,17 +314,16 @@ Installation always requires confirmation; there are no background installations
 Linux supports in-app updates only for AppImage; package-manager installations
 must update through their package manager.
 
-macOS never checks for desktop archives at startup or installs desktop updates
-automatically. Signed local-server releases can still be checked and installed
-in-app, including at startup. A manual check also explains the desktop path:
-download the Apple Silicon DMG from the
-[latest release](https://github.com/UW-CTRL/noctua/releases/latest), quit Noctua,
-open the DMG, and replace Noctua in Applications. Keep the existing data folder.
-Intel users must retain an older Universal release. Already installed versions
-that use the old macOS updater receive no macOS target in `latest.json`; their
-check may report a missing-platform error, but cannot offer an absent archive.
-They must follow the same manual DMG path. Include this migration guidance in
-release notes for the first DMG-only release.
+macOS installs the signed application archive and offers **Restart Noctua** after
+installation. Publication validates that the archive contains the bundled server
+and paper compiler resources, and requires its signature before generating the
+macOS manifest entry. Apple Silicon archives are not offered to Intel Macs.
+
+Desktop 0.3.6 disabled macOS desktop update checks and installation. Users of that
+version must manually install a newer Apple Silicon DMG once to restore in-app
+updates: quit Noctua and replace it in Applications, keeping the data folder.
+Older builds with the updater enabled can consume the signed Mac manifest entry.
+Intel users must retain an older compatible Universal release.
 
 Users of an older release without the updater must manually install a build
 containing this feature once. Test updates between two signed packaged versions

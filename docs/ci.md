@@ -381,3 +381,8 @@ building, and publication. PR checks cannot substitute for main checks.
 
 The Paper stale-load fixture waits for explicit mocked request-start signals
 instead of timer ticks and suspends background polling during its two-load race.
+
+macOS release validation checks the actual updater archive for the bundled server
+and compiler resources as well as checking the DMG. Publication tests require the
+archive and its signature and verify Apple Silicon and legacy Universal manifest
+target selection before allowing publication.

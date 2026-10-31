@@ -34,7 +34,8 @@ cargo tauri build
 ```
 
 Platform configuration builds DMG on macOS, NSIS EXE on Windows, and AppImage
-plus DEB on Linux. macOS updates require manual DMG installation.
+plus DEB on Linux. Signed release builds also create a macOS application archive
+for in-app updates alongside the DMG.
 Installers appear under `target/release/bundle/`. The bundled local connection
 screen opens without starting a data server. The build hook explicitly uses the
 native app directory (`cwd: "."`); its default frontend-root working directory

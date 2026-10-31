@@ -21,7 +21,7 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
     `Noctua_${version}_amd64.deb`,
   ];
   const assets = await github.paginate(github.rest.repos.listReleaseAssets, { ...params, per_page: 100 });
-  const excluded = assets.filter(asset => /\.(?:msi|rpm)$|\.app\.tar\.gz(?:\.sig)?$/.test(asset.name));
+  const excluded = assets.filter(asset => /\.(?:msi|rpm)$/.test(asset.name));
   if (excluded.length) throw new Error(`Remove excluded release assets before publication: ${excluded.map(a => a.name).join(', ')}`);
   const missing = required.filter(name => !assets.some(asset => asset.name === name && asset.state === 'uploaded' && asset.size > 0));
   if (missing.length) {

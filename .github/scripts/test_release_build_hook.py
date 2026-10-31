@@ -36,8 +36,8 @@ class ReleaseBuildHookTests(unittest.TestCase):
             subprocess.run(['node', '-e', configure_script()], cwd=root, env=env, check=True)
             result = json.loads((app / 'tauri.release.conf.json').read_text())
             self.assertEqual(result['plugins']['updater']['pubkey'], env['NOCTUA_UPDATER_PUBLIC_KEY'])
-            self.assertEqual(result['bundle']['createUpdaterArtifacts'], platform != 'macOS')
-            self.assertEqual(result['bundle']['targets'], {'macOS': ['dmg'], 'Windows': ['nsis'], 'Linux': ['appimage', 'deb']}[platform])
+            self.assertTrue(result['bundle']['createUpdaterArtifacts'])
+            self.assertEqual(result['bundle']['targets'], {'macOS': ['app', 'dmg'], 'Windows': ['nsis'], 'Linux': ['appimage', 'deb']}[platform])
             if independent:
                 hook = result['build']['beforeBuildCommand']
                 self.assertEqual(Path(hook['cwd']).resolve(), app.resolve())
