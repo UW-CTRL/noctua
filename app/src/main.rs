@@ -116,7 +116,7 @@ fn main() {
                 }
                 if let Ok(data) = noctua::paths::existing_data_dir() {
                     if noctua::server::status_any_for_update(&data).await.is_ok() {
-                        if let Ok(binary) = server_executable(&update_app) {
+                        if let Ok(binary) = server_executable(&update_app).await {
                             if let Err(error) =
                                 noctua::server_update::ensure_current(&binary, PORT).await
                             {
@@ -314,7 +314,7 @@ fn open_settings_section(app: &AppHandle, section: &str) {
     }
 }
 
-fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
+fn bundled_server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let name = if cfg!(windows) {
         "noctua-server.exe"
     } else {
@@ -332,8 +332,15 @@ fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
         packaged
     };
     anyhow::ensure!(path.is_file(),"Server executable missing. Build `cargo build -p noctua` for development, or reinstall the desktop app");
-    noctua::service::stage(&path)
+    Ok(path)
 }
+async fn server_executable(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
+    let bundled = bundled_server_executable(app)?;
+    let key = option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim();
+    let selected = noctua::releases::selected(key, &bundled).await?.unwrap_or(bundled);
+    noctua::service::stage(&selected)
+}
+
 #[tauri::command]
 fn present_client(window: Webview) -> Result<(), String> {
     local_only(&window)?;
@@ -505,7 +512,7 @@ async fn connect_server(
     let result: anyhow::Result<Value>=async {
         anyhow::ensure!(mode=="local"||mode=="remote","Choose this computer or a remote server");
         let (address,secret)=if mode=="local" {
-            let v=if defer_server_update.unwrap_or(false) {noctua::server::status(&noctua::paths::existing_data_dir()?).await?}else{noctua::server_update::ensure_current(&server_executable(&app)?,PORT).await?};
+            let v=if defer_server_update.unwrap_or(false) {noctua::server::status(&noctua::paths::existing_data_dir()?).await?}else{noctua::server_update::ensure_current(&server_executable(&app).await?,PORT).await?};
             (v["url"].as_str().ok_or_else(||anyhow::anyhow!("Invalid local identity"))?.to_owned(),noctua::server::token(&noctua::paths::existing_data_dir()?)?)
         }else{let address=noctua::server::validate_url(&address)?.origin().ascii_serialization();
             let secret=if secret.is_empty(){noctua::client::read_secret(&address)?}else{secret};(address,secret)};
@@ -643,17 +650,17 @@ async fn local_server(
         .map_err(|_| "Another connection or server operation is in progress".to_string())?;
     let result:anyhow::Result<Value>=async{
         match action.as_str(){
-            "start"=>{return noctua::server_update::ensure_current(&server_executable(&app)?,PORT).await},
+            "start"=>{return noctua::server_update::ensure_current(&server_executable(&app).await?,PORT).await},
             "stop"=>{noctua::server::stop(&noctua::paths::existing_data_dir()?).await?;},
-            "restart"=>{return noctua::server::restart(&server_executable(&app)?,PORT).await},
+            "restart"=>{return noctua::server::restart(&server_executable(&app).await?,PORT).await},
             "update"=>{
                 let data=noctua::paths::existing_data_dir()?;
                 let old=serde_json::to_value(noctua::server::record(&data)?)?;
                 let reconnect=app.state::<Shell>().connected.lock().unwrap().as_ref().is_some_and(|(address,id,_)|Some(address.as_str())==old["url"].as_str()&&Some(id.as_str())==old["server_id"].as_str());
-                let ready=noctua::server_update::retry_current(&server_executable(&app)?,PORT).await?;
+                let ready=noctua::server_update::retry_current(&server_executable(&app).await?,PORT).await?;
                 return Ok(json!({"server":ready,"reconnect_local":reconnect}));
             },
-            "enable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::enable(&server_executable(&app)?)?;},
+            "enable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::enable(&server_executable(&app).await?)?;},
             "disable"=>{let _control=noctua::server::control_lock_for_cli(&noctua::paths::existing_data_dir()?).await?;noctua::service::disable()?;},
             "token" | "copy-token"=>{
                 let data=noctua::paths::existing_data_dir()?;
@@ -679,7 +686,7 @@ async fn update_from_content(app: &AppHandle, action: &str, version: Option<Stri
         return Err("Check for an update before installing".into());
     }
     if replacing {
-        let text = if action == "install" { format!("Install Noctua {}? The app may close or restart.", version.as_deref().unwrap_or_default()) } else { "Restart Noctua now?".into() };
+        let text = if action == "install" { format!("Install the offered Noctua updates for version {}? This may update the desktop and this computer’s local server. Save your work; the app may close or restart.", version.as_deref().unwrap_or_default()) } else { "Restart Noctua now?".into() };
         let (tx, rx) = tokio::sync::oneshot::channel();
         app.dialog().message(text).title("Noctua update")
             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel)

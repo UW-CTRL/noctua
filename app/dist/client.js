@@ -203,7 +203,7 @@ $('#open-running-server').onclick=()=>operation(async()=>{
 async function performDesktop(action,version=offered,{offer=true,startup=false,returnFocus=null}={}){
   const result=await invoke('desktop_action',{action,version:version||null});
   if(['light','dark'].includes(action)){updateMessage='App icon updated.';return result;}
-  const messages={available:'Version '+result.version+' is available.',current:'You are using the latest published version.',installed:'Update installed. Restart Noctua to use it.',skipped:''};
+  const messages={available:(result.component==='server'?'Local server version ':'Version ')+result.version+' is available.',current:'You are using the latest published versions.',installed:'Update installed. Restart Noctua to use it.',server_updating:'The local server is updating. Follow progress in Server & Connection.',skipped:''};
   if(!Object.prototype.hasOwnProperty.call(messages,result.status))throw Error('Unexpected desktop updater response');
   updateMessage=messages[result.status];
   if(result.status==='available'){
@@ -211,6 +211,7 @@ async function performDesktop(action,version=offered,{offer=true,startup=false,r
       if(offer)await showDesktopOffer(result,startup,returnFocus);
   }else if(result.status==='current'){offered=null;desktopInstalled=false;}
   else if(result.status==='installed'){offered=null;desktopInstalled=true;}
+  else if(result.status==='server_updating'){offered=null;desktopInstalled=false;}
   return result;
 }
 async function showDesktopOffer(result,startup=false,returnFocus=null){
@@ -228,6 +229,7 @@ async function showDesktopOffer(result,startup=false,returnFocus=null){
       const response=await performDesktop(action,result.version,{offer:false});
       prompt.querySelector('[role=status]').textContent=updateMessage;
       if(response.status==='installed'){action='restart';prompt.querySelector('[data-install]').textContent='Restart Noctua';}
+      if(response.status==='server_updating')prompt.querySelector('[data-install]').remove();
     }catch(error){prompt.querySelector('[role=status]').textContent=String(error);throw error;}
   });
   document.body.appendChild(prompt);prompt.showModal();prompt.querySelector('[data-dismiss]').focus();

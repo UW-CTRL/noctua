@@ -3,11 +3,9 @@
 //! authenticated data server; the CLI owns its lifetime and interfaces connect.
 
 pub mod server;
-pub mod server_recovery;
-pub mod service;
-pub mod client;
-pub mod server_update;
-mod server_resources;
+pub use noctua_client::{server_recovery, service, client, server_update, paths};
+pub(crate) use noctua_client::storage;
+mod server_launch;
 mod security;
 mod maintenance;
 mod agent;
@@ -32,13 +30,11 @@ mod research;
 pub mod paper;
 mod bibliography;
 mod skills;
-pub mod paths;
 mod project;
 mod s2;
 mod search_providers;
 mod settings;
 mod scholar;
-mod storage;
 mod threads;
 mod zotero;
 
@@ -58,27 +54,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{cache::Cache, history::History, notes::Notes, project::Projects, s2::S2, settings::Settings, zotero::Zotero};
 
-pub use settings::AppIcon;
-
-/// Requests from the page to the desktop app (absent in browser mode).
-pub enum DesktopCmd {
-    /// Apply the selected running-app icon, optionally acknowledging the result.
-    SetAppIcon(AppIcon, Option<oneshot::Sender<Result<(), String>>>),
-    /// Open a new window showing this app URL (path and #hash).
-    NewWindow(String),
-    /// Open an external link in the system browser.
-    OpenExternal(String),
-    /// Show a native folder picker; replies with the chosen path.
-    PickFolder(oneshot::Sender<Option<String>>),
-    /// Close a window (its last tab was closed).
-    CloseWindow(String),
-    /// Check, install, or restart after a signed desktop update.
-    Update(UpdateAction, Option<String>, oneshot::Sender<Result<Value, String>>),
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UpdateAction { Check, StartupCheck, Install, Restart }
+pub use noctua_client::{AppIcon, DesktopCmd, UpdateAction};
 
 pub struct ServeOptions {
     /// 0 picks a free port.
@@ -602,9 +578,13 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<(String, impl Future<Ou
     };
     let port = listener.local_addr()?.port();
     let url = format!("http://127.0.0.1:{port}");
-    let owner = server::Owner::acquire_with_machine(&data, &url,Some(machine))?;
+    let owner = server::Owner::acquire_with_machine(&data, &url,Some(machine), env!("CARGO_PKG_VERSION"), server::backup)?;
     server_update::restore_launch(&data, &owner.record.server_id)?;
-    server_resources::configure()?;
+    if let Some(root) = noctua_client::server_resources::root(&std::env::current_exe()?) {
+        #[cfg(windows)]
+        let root = PathBuf::from(service::service_path(&root));
+        paper::set_resources(root);
+    }
     let migrated = if env::var_os("NOCTUA_HOME").is_some() || env::var_os("NOCTUA_PROFILE_HOME").is_some() { None } else { paths::migrate_legacy(&data)? };
     let mut settings = Settings::load(&data);
     if let Some(old) = &migrated {
@@ -703,7 +683,7 @@ async fn server_update_control(State(app):Shared,Json(body):Json<Value>)->ApiRes
     if action=="cancel" {r.draining.store(false,std::sync::atomic::Ordering::SeqCst);}
     let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && !paper::busy() && app.login_gate.try_lock().is_ok();
     let mut response=json!({"maintenance":notice,"idle":idle&&!pending_review,"pending_review":pending_review});
-    if action=="begin" {response["launch_environment"]=server_update::launch_environment(&app)?;}
+    if action=="begin" {response["launch_environment"]=server_launch::launch_environment(&app)?;}
     Ok(Json(response))
 }
 async fn server_update_ack(State(app):Shared,Json(body):Json<Value>)->ApiResult {

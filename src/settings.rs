@@ -64,13 +64,7 @@ pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<LibrarySe
     Ok(Json(json!({"include_subfolders": body.include_subfolders})))
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AppIcon {
-    Dark,
-    #[default]
-    Light,
-}
+pub use noctua_client::AppIcon;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

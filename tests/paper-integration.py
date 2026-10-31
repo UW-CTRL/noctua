@@ -16,6 +16,8 @@ import time
 import urllib.error
 import urllib.request
 
+from paper_fixture import isolated_environment, staged_server
+
 ROOT = Path(__file__).resolve().parents[1]
 
 def recorded_source(sync_dir, artifact, path):
@@ -70,7 +72,7 @@ def synctex_diagnostics(program, sync_dir, artifact, source, relative, line):
     return '\n'.join(report)
 
 
-def run(engine):
+def run(engine, executable):
     with tempfile.TemporaryDirectory(prefix='noctua-paper-test-') as temp:
         # Keep the real compiler/source paths short enough for Windows TeX, but
         # force the fingerprint + artifact sidecar path beyond MAX_PATH. Both
@@ -82,30 +84,11 @@ def run(engine):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        env = {k:v for k,v in os.environ.items() if not k.startswith('NOCTUA_')}
-        env.update(NOCTUA_HOME=str(data), NOCTUA_CLIENT_HOME=str(Path(temp)/'client'), NOCTUA_PROFILE_HOME=str(Path(temp)/'profile'), NOCTUA_SERVICE_HOME=str(Path(temp)/'services'), NOCTUA_PORT=str(port), PATH='')
-        binary = ROOT/'target'/'debug'/('noctua.exe' if os.name == 'nt' else 'noctua')
-        # Exercise compiler lookup from the independent server's durable resource
-        # tree, including the managed path layout on Windows.
-        staged=Path(temp)/'client'/'servers'/'paper-integration-release'
-        staged.mkdir(parents=True)
-        executable=staged/binary.name
-        shutil.copy2(binary,executable)
-        distribution='tectonic' if engine=='tectonic' else 'texlive'
-        print(f'{engine}: copying compiler resources', flush=True)
-        shutil.copytree(ROOT/'target'/distribution,staged/'paper-resources'/distribution,symlinks=True)
-        # Use the production stager, then retain foreground ownership for fixture
-        # cleanup. The compiler copy must work independently of its source tree.
-        print(f'{engine}: ensuring detached owner', flush=True)
-        prepared=subprocess.run([str(executable),'ensure'],cwd=temp,env=env,capture_output=True,text=True,timeout=180)
-        assert prepared.returncode==0,prepared.stderr
-        record=json.loads(prepared.stdout)
-        print(f'{engine}: stopping prepared owner', flush=True)
-        stopped=subprocess.run([str(executable),'stop'],cwd=temp,env=env,capture_output=True,text=True,timeout=60)
-        assert stopped.returncode==0,stopped.stderr
-        executable=Path(record['executable'])
-        shutil.rmtree(staged)
-        print(f'{engine}: starting staged foreground owner', flush=True)
+        # Both engines reuse one real production-staged resource tree. Each
+        # scenario retains isolated data, credentials, services and process state.
+        env = isolated_environment(Path(temp))
+        env.update(NOCTUA_HOME=str(data), NOCTUA_PORT=str(port))
+        print(f'{engine}: starting server with shared staged compiler resources', flush=True)
         server_log = (data/'server-test.log').open('wb')
         process = subprocess.Popen([str(executable),'serve'], cwd=temp, env=env, stdout=server_log, stderr=server_log)
         base = f'http://127.0.0.1:{port}'
@@ -364,12 +347,13 @@ def run(engine):
 if __name__=='__main__':
     faulthandler.dump_traceback_later(90, repeat=True)
     failures = []
-    for engine in ('tectonic','pdflatex'):
-        print("Testing",engine,flush=True)
-        try:
-            run(engine)
-        except Exception:
-            traceback.print_exc()
-            failures.append(engine)
+    with staged_server(ROOT) as executable:
+        for engine in ('tectonic','pdflatex'):
+            print("Testing",engine,flush=True)
+            try:
+                run(engine, executable)
+            except Exception:
+                traceback.print_exc()
+                failures.append(engine)
     if failures:
         raise SystemExit('Paper integration failed: ' + ', '.join(failures))

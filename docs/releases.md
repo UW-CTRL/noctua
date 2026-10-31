@@ -10,6 +10,56 @@ release unpublished. The workflow never bumps versions or creates tags.
 New macOS releases do not support Intel Macs; Intel users can retain an older Universal release. The new
 updater manifest omits all macOS targets; macOS updates use manual DMG installation.
 
+## Standalone server releases
+
+`.github/workflows/release-server.yml` publishes standalone server archives for
+Linux x64, Windows x64, and macOS Apple Silicon. It runs on `server-v*` tags or a
+manual run with an existing server tag. The desktop `v*` workflow and bundled
+desktop installer format are preserved. Both release workflows use the reusable
+`build-server.yml` workflow to produce native server artifacts. Desktop packaging
+downloads those artifacts from its current run and does not invoke Cargo again
+for the server. Server releases explicitly set `make_latest: false`
+so desktop download aliases and updater URLs continue to use the desktop release.
+
+The server version is `[package].version` in the root `Cargo.toml`; the desktop
+version is `[workspace.package].version`. They can advance independently. Change
+the server version and refresh the lockfile, then validate and tag the reviewed
+commit (substitute the current version):
+
+```sh
+python3 .github/scripts/check-release-version.py server-v0.3.5 --server
+git tag -a server-v0.3.5 -m "Server release v0.3.5"
+git push origin refs/tags/server-v0.3.5
+```
+
+Validation checks the server manifest and lockfile version without requiring
+Tauri configuration. All platform jobs use the resolved tagged commit, restore
+Cargo caches, build with `cargo build --locked --release -p noctua --target TRIPLE`,
+and smoke-test the executable with `describe`, checking its embedded version.
+They archive the executable and license and generate a SHA-256 checksum for each
+archive. It also produces raw executables and per-target update metadata binding
+the version, platform, API/data versions, compiler requirements, size and SHA-256.
+Native builds need no Tauri CLI, desktop libraries, or TeX setup. Publication uses
+Tauri CLI 2.10.1 to sign that metadata with the existing
+`TAURI_SIGNING_PRIVATE_KEY` and password secrets. Official desktop clients verify
+with the embedded `NOCTUA_UPDATER_PUBLIC_KEY`; keep those keys paired. A missing
+signing key or signature prevents server publication.
+
+Only after every build succeeds does publication download the current run's
+artifacts, verify checksums, upload to a draft, and publish it. Per-tag concurrency
+queues overlapping runs. A failed upload leaves a draft that can be retried;
+reruns replace matching draft assets and preserve edited notes. Published releases
+cannot be overwritten. The workflow never creates tags. For manual runs, select
+**Actions → release-server → Run workflow** and enter the existing server tag;
+the tagged commit must contain the server release scripts and workflow.
+
+See [Standalone installation](server.md#standalone-installation) for downloads,
+checksum verification, runtime limits, and compatibility. Managed TeX compilers
+are omitted from standalone archives. In-app server updates retain the verified
+bundled compiler resources and require matching compiler versions. Changed
+compiler requirements need a compatible desktop release or a manual deployment
+with matching resources.
+
 ## Choose a version
 
 Use `0.x.x` during early development. Before `1.0.0`, interfaces may change:
@@ -27,20 +77,20 @@ release. Use numeric tags such as `v0.1.0` and `v1.2.3`; prerelease suffixes and
 build metadata are not supported by this workflow's desktop version check.
 Early development (`0.x.x`) is distinct from GitHub's optional pre-release flag.
 
-The only manually maintained version is `[workspace.package].version` in the
-root `Cargo.toml`. Both Rust packages inherit it using `version.workspace = true`.
-`app/tauri.conf.json` omits `version`, so Tauri uses the desktop Cargo package's
-version. See [Tauri's version configuration](https://v2.tauri.app/reference/config/#version).
-Do not add a separate Tauri version override.
+Desktop releases use `[workspace.package].version` in the root `Cargo.toml`.
+`app/Cargo.toml` inherits that version; `app/tauri.conf.json` omits a version
+override. Server releases use the root `[package].version`. The client library
+has its own internal package version; it is not a server identity or API version.
 
-Change the workspace version in a reviewed commit. Refresh the generated lockfile
-with `cargo metadata --format-version 1 > /dev/null` and commit the resulting
-`Cargo.lock` changes. Check that only intended dependency changes are included.
-The release validator checks both packages' lockfile versions as well as the
-workspace version and inheritance configuration. Python 3.11+ is required:
+Change the appropriate version in a reviewed commit. Refresh the generated
+lockfile with `cargo metadata --format-version 1 > /dev/null` and commit the
+resulting `Cargo.lock` changes. Each release validator checks its own package's
+lockfile version; a desktop release can bundle a server with a different version.
+Python 3.11+ is required:
 
 ```sh
-python3 .github/scripts/check-release-version.py v0.1.0
+python3 .github/scripts/check-release-version.py v0.3.5
+python3 .github/scripts/check-release-version.py server-v0.3.5 --server
 ```
 
 This command only validates files; it does not change the version or create a tag.
@@ -231,7 +281,7 @@ release configuration. Then run
 in `app/` on Windows or Linux. For macOS, use `cargo tauri build` instead.
 
 On Windows and AppImage, open **Settings → About & Shortcuts** and choose **Check for
-updates** under **App Updates**. An available release changes the button to
+updates** under **App and Local Server Updates**. An available release changes the button to
 **Update to …**; installing or restarting requires native confirmation.
 Confirming downloads and verifies the signed bundle before replacing the app.
 Windows exits and relaunches through its installer; Linux shows
@@ -250,8 +300,10 @@ Installation always requires confirmation; there are no background installations
 Linux supports in-app updates only for AppImage; package-manager installations
 must update through their package manager.
 
-macOS never checks at startup or installs automatically. **Check for updates**
-explains the manual path: download the Apple Silicon DMG from the
+macOS never checks for desktop archives at startup or installs desktop updates
+automatically. Signed local-server releases can still be checked and installed
+in-app, including at startup. A manual check also explains the desktop path:
+download the Apple Silicon DMG from the
 [latest release](https://github.com/UW-CTRL/noctua/releases/latest), quit Noctua,
 open the DMG, and replace Noctua in Applications. Keep the existing data folder.
 Intel users must retain an older Universal release. Already installed versions
@@ -336,7 +388,7 @@ No deployment or publication is required to validate the workflow locally:
 ```sh
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 node --test .github/scripts/*.test.cjs
-actionlint .github/workflows/release.yml
+actionlint .github/workflows/*.yml
 ```
 
 The first command requires Python 3.11+. `actionlint` is an optional local
@@ -347,8 +399,8 @@ workflow linter, not a runtime release dependency.
 `app/prepare-server.py`, invoked by Tauri's beforeBuildCommand, builds the headless
 `noctua` binary for the desktop target and bundles it under `binaries/noctua-server`
 (`.exe` on Windows). Official macOS releases target Apple Silicon. Custom
-universal builds require both Rust targets and lipo. Retain Python 3 on runners. The desktop stages a version and
-content-hash copy under NoctuaClient/servers before starting it; bundle replacement
+universal builds require both Rust targets and lipo. Retain Python 3 on runners. The desktop stages a
+content-addressed copy under NoctuaClient/servers before starting it; bundle replacement
 must not remove that copy or terminate the server. Do not clean staged versions
 while a server or service may still use them.
 

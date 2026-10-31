@@ -1,19 +1,20 @@
 [package]
 name = "noctua"
-version.workspace = true
+version = "0.3.5"
 edition = "2021"
 description = "Research-paper explorer: Semantic Scholar citation graphs, a native PDF library and LaTeX notes"
 
 # The desktop app (Tauri) lives in app/. Plain `cargo build` / `cargo run`
 # builds only the independent server/CLI, without desktop dependencies.
 [workspace]
-members = ["app"]
+members = ["app", "crates/client"]
 default-members = ["."]
 
 [workspace.package]
 version = "0.3.5"
 
 [dependencies]
+noctua-client = { path = "crates/client" }
 anyhow = "1"
 libc = "0.2"
 base64 = "0.22"
@@ -40,6 +41,11 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Lifecycle/update tests repeatedly hash large debug executables. Optimize the
+# SHA-256 implementation without removing integrity checks or server debug info.
+[profile.dev.package.sha2]
+opt-level = 3
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

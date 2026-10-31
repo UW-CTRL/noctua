@@ -772,8 +772,8 @@ function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc((isDesktopConnectionClient() && window.top.noctuaAppVersion) || s.version || 'unknown')} · ${(s.desktop || isDesktopConnectionClient()) ? 'Desktop app' : 'Browser app'}</p>
     ${(isDesktopConnectionClient() || s.desktop) ? `<div class="settings-group" data-update>
-      <h3>App Updates</h3>
-      <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
+      <h3>App and Local Server Updates</h3>
+      <p>Noctua checks desktop and running local server releases at startup. Save your work before installing; installation may close and restart Noctua. Remote servers are updated on their own computer.</p>
       <div class="update-summary" hidden></div>
       <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
       <p class="setup-msg" role="status" aria-live="polite"></p>
@@ -807,6 +807,7 @@ async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
       available: ['install', `Update to ${result.version}`, `Version ${result.version} is available.`],
       current: ['check', 'Check for updates', 'You are using the latest published version.'],
       installed: ['restart', 'Restart Noctua', 'Update installed. Restart Noctua to use the new version.'],
+      server_updating: ['check', 'Check for updates', 'The local server is updating. Follow progress in Server & Connection.'],
     }[result.status];
     if (!next) throw new Error('Unexpected response from the desktop updater.');
     button.dataset.updateAction = next[0];

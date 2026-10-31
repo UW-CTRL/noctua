@@ -48,6 +48,20 @@ test('release history summaries include older stable releases and fail closed on
   assert(!failure.calls.some(c => ['delete', 'upload'].includes(c[0])));
 });
 
+test('desktop manifests retain the independently versioned bundled server', async () => {
+  const previous = process.env.NOCTUA_RELEASE_SERVER_VERSION;
+  try {
+    process.env.NOCTUA_RELEASE_SERVER_VERSION = '0.9.0';
+    const f = fixture();
+    await manifest(f.args);
+    assert.equal(f.calls.at(-1)[1].version, '0.1.2');
+    assert.equal(f.calls.at(-1)[1].server_version, '0.9.0');
+  } finally {
+    if (previous === undefined) delete process.env.NOCTUA_RELEASE_SERVER_VERSION;
+    else process.env.NOCTUA_RELEASE_SERVER_VERSION = previous;
+  }
+});
+
 test('each missing, empty, or incomplete bundle or signature prevents manifest writes', async () => {
   for (let i = 0; i < 4; i++) {
     for (const failure of ['missing', 'empty', 'incomplete']) {

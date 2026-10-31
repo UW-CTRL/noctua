@@ -274,32 +274,47 @@ location you want to select.
 
 ## Updates
 
-On macOS, updates are manual. Download the Apple Silicon DMG from the
-[latest release](https://github.com/UW-CTRL/noctua/releases/latest), quit Noctua,
-and replace Noctua in Applications. Your data folder is retained. The update
-check explains this path; there is no startup update prompt. Older installations
-may show an update-check error because macOS updater archives are no longer
-published. Intel Macs must retain an older Universal release.
+On macOS, desktop app updates are manual. Download the Apple Silicon DMG from
+[the latest desktop release](https://github.com/UW-CTRL/noctua/releases/latest),
+quit Noctua, and replace it in Applications. Your data folder is retained. The
+app does not check for macOS desktop archives at startup; it can still check
+for and install signed local-server releases. Older installations may show an
+update-check error because macOS updater archives are no longer published.
+Intel Macs must retain an older Universal release.
 
-On Windows or Linux AppImage, open **Settings → About & Shortcuts**, then choose **Check for updates** under
-**App Updates**. If a newer version is available, the button offers installation;
+On Windows or Linux AppImage, open **Settings → About & Shortcuts**, then choose
+**Check for updates** under **App and Local Server Updates**. If a newer desktop
+version is available, the button offers installation;
 confirm the native prompt to install. Choose **Restart Noctua** after installation.
 The app saves open edits before installation and restart. Official builds also check
-at startup after restoring or retrying a saved connection. Save work before installing.
+at startup after restoring or retrying a saved connection. The same check looks
+for newer compatible standalone releases for an existing running local server.
+A server-only update starts its own worker without requiring a desktop restart;
+a combined offer installs both components. A failed component check is shown
+with the offer rather than reporting that component as up to date. Save work before installing.
 The startup popup lists release highlights from your installed version through
 the offered update, newest first, including versions you skipped. Scroll the
 history with a mouse or trackpad, or focus it with Tab and use the arrow keys.
 The update and dismissal buttons stay visible. Each version has a **Release notes**
 link for its full details; the popup shows summaries, not every changelog item.
 Older update manifests without history provide a link to the offered release.
-Linux in-app updates require AppImage; use your package manager for other builds.
+Linux desktop app updates require AppImage; use your package manager for DEB
+installations. Signed local-server updates remain available on both.
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.
 
 ## Independent server updates
 
-After the updated desktop opens, an existing local server is upgraded separately.
+Installing a desktop update also supplies its bundled server update. After the
+updated desktop opens, it automatically upgrades an older existing local server
+through a separate worker; no manual server download is needed. A newer
+compatible local server is reused instead of downgraded. **Check for updates**
+also discovers signed `server-v*` releases for the running local server. Downloads
+are checked against signed version/platform metadata and a SHA-256 digest before
+execution. Updates retain managed paper compilers; releases requiring different
+compiler resources need a compatible desktop update or manual deployment.
+Remote servers are updated on their own computer.
 Clients receive a maintenance notice and save open edits; active tasks finish
 before the server is stopped, backed up and replaced. Failed saves or a task wait
 timeout keep the old owner running. An enabled login service follows the verified

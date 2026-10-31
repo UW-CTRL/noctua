@@ -1838,7 +1838,7 @@ mod tests {
         use std::sync::atomic::Ordering;
         let dir = tempfile::tempdir()?;
         let mut app = fixture(dir.path(), "http://127.0.0.1:1")?;
-        let owner = crate::server::Owner::acquire(dir.path(), "http://127.0.0.1:7878")?;
+        let owner = crate::server::Owner::acquire_with_machine(dir.path(), "http://127.0.0.1:7878", None, env!("CARGO_PKG_VERSION"), crate::server::backup)?;
         let runtime = Arc::new(crate::security::Runtime::new(
             owner,
             vec!["127.0.0.1:7878".into()],
