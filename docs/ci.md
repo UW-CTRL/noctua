@@ -295,7 +295,10 @@ subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
 artifact retention. It requires network for uncached TeX resources.
 
 The frontend suite includes `tests/paper.html` for editor/preview behavior, save
-conflicts, debounced builds, cancellation, and stale PDF-load protection.
+conflicts, debounced builds, cancellation, and stale PDF-load protection. It logs
+completed assertions and pending operations to CI. Application operations have a
+ten-second timeout with an operation name; the WebKit launcher retains its
+35-second overall limit and reports the last progress message on timeout.
 
 `tests/document-tools.html` covers citation source labels and duplicate results,
 rendered title math, stale suggestion requests, line-comment shortcuts, and Find
