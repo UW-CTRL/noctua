@@ -189,7 +189,7 @@ noctua token</code></pre><p><code>ensure</code> starts a background server or re
 
 function searchSettingsSection() {
   return `<section data-step="search"><h2>Search Engines</h2>
-    <p>Drag engines to change their order in the search menu and Tab switching. The first engine is your default and is selected when you reopen or reload the app.</p>
+    <p>Drag engines to change their order in the search menu and Tab switching. The first engine is your default and is selected when you reopen or reload the app. Drag an engine below the divider to disable it, or back above to enable it. Keep at least one engine enabled.</p>
     <ol class="search-engine-order" aria-label="Search engine order"></ol>
     <p class="setup-msg ok" data-search-order-status role="status">Changes save automatically for this browser and server.</p></section>`;
 }
@@ -198,18 +198,22 @@ function mountSearchEngineOrder(section) {
   let dragged = null;
   const grip = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
   const render = () => {
-    list.innerHTML = searchEngines.map((engine, index) => `<li draggable="true" data-search-engine="${engine}">
-      <span class="search-order-grip">${grip}</span><span class="search-order-name">${esc(searchEngineNames[engine])}${engine === 'google-scholar' ? ' ↗' : ''}${index === 0 ? '<span class="search-order-default">Default</span>' : ''}</span>
-      </li>`).join('');
+    const row = (engine, index, disabled = false) => `<li draggable="true" data-search-engine="${engine}" data-search-disabled="${disabled}"${disabled ? ' class="search-engine-disabled"' : ''}>
+      <span class="search-order-grip">${grip}</span><span class="search-order-name">${esc(searchEngineNames[engine])}${engine === 'google-scholar' ? ' ↗' : ''}${!disabled && index === 0 ? '<span class="search-order-default">Default</span>' : ''}</span>
+      </li>`;
+    const disabled = Object.keys(searchEngineNames).filter(engine => !searchEngines.includes(engine));
+    list.innerHTML = searchEngines.map((engine, index) => row(engine, index)).join('') +
+      '<li class="search-engine-divider" data-search-disabled-zone>Disabled — drop engines here</li>' +
+      disabled.map((engine, index) => row(engine, index, true)).join('');
   };
   const clearDrag = () => {
     dragged = null;
     list.querySelectorAll('li').forEach(row => row.classList.remove('dragging', 'drop-before', 'drop-after'));
   };
-  const save = order => {
-    setSearchEngineOrder(order);
+  const save = (order, disabled) => {
+    setSearchEngineOrder(order, disabled);
     clearDrag(); render();
-    section.querySelector('[data-search-order-status]').textContent = 'Search engine order saved.';
+    section.querySelector('[data-search-order-status]').textContent = 'Search engine preferences saved.';
   };
   list.addEventListener('dragstart', event => {
     const row = event.target.closest('[data-search-engine]');
@@ -220,7 +224,7 @@ function mountSearchEngineOrder(section) {
   });
   list.addEventListener('dragover', event => {
     if (!dragged) return;
-    const row = event.target.closest('[data-search-engine]');
+    const row = event.target.closest('[data-search-engine], [data-search-disabled-zone]');
     if (!row) return;
     event.preventDefault(); event.dataTransfer.dropEffect = 'move';
     list.querySelectorAll('li').forEach(item => item.classList.remove('drop-before', 'drop-after'));
@@ -228,17 +232,24 @@ function mountSearchEngineOrder(section) {
   });
   list.addEventListener('drop', event => {
     if (!dragged) return;
-    const row = event.target.closest('[data-search-engine]');
+    const row = event.target.closest('[data-search-engine], [data-search-disabled-zone]');
     if (!row) return;
     event.preventDefault();
     if (row.dataset.searchEngine === dragged) { clearDrag(); return; }
+    const disable = row.hasAttribute('data-search-disabled-zone') || row.dataset.searchDisabled === 'true';
+    if (disable && searchEngines.length === 1 && searchEngines.includes(dragged)) {
+      clearDrag();
+      section.querySelector('[data-search-order-status]').textContent = 'Keep at least one search engine enabled.';
+      return;
+    }
+    const engine = dragged;
+    const enabled = searchEngines.filter(item => item !== engine);
+    const disabled = Object.keys(searchEngineNames).filter(item => !searchEngines.includes(item) && item !== engine);
+    const order = disable ? disabled : enabled;
+    const targetIndex = order.indexOf(row.dataset.searchEngine);
     const after = event.clientY >= row.getBoundingClientRect().top + row.offsetHeight / 2;
-    const before = after ? row.nextElementSibling?.dataset.searchEngine : row.dataset.searchEngine;
-    // Dropping immediately before the dragged row leaves its order unchanged.
-    if (before === dragged) { clearDrag(); return; }
-    const engine = dragged, order = searchEngines.filter(item => item !== engine);
-    const index = before ? order.indexOf(before) : order.length;
-    order.splice(index, 0, engine); save(order);
+    order.splice(targetIndex < 0 ? order.length : targetIndex + (after ? 1 : 0), 0, engine);
+    save([...enabled, ...disabled], disabled);
   });
   list.addEventListener('dragend', clearDrag);
   render();
