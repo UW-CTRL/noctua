@@ -366,3 +366,6 @@ Trash regressions additionally cover table-style selection, Restore actions, Del
 Authentication tests cover stable 15-character token generation, replacement and rejection of older long credentials, and inline eye/copy controls in both browser and desktop connection fields, including containment inside the input border.
 
 Desktop server settings checks (`tests/server-settings.swift` and `tests/manager-embedded.html`) cover inline layout, category navigation, token clearing and local controls. The app’s `manager_frame` unit test rejects remote or missing origins, unexpected hosts and requests without the management header.
+
+The Paper stale-load fixture waits for explicit mocked request-start signals
+instead of timer ticks and suspends background polling during its two-load race.

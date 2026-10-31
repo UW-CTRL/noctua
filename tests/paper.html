@@ -81,10 +81,20 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  const before=requests.filter(r=>r.body).length;W.dirty=true;paperEdited();paperEdited();paperEdited();await delay(1200);
  assert(requests.filter(r=>r.body).length===before+1,'rapid edits debounce to one saved build');
  status.state='building';await step('poll paper status',()=>paperPoll(Paper.generation));assert(!$('[data-paper-stop]').disabled,'running build can stop');$('[data-paper-stop]').click();await delay(100);assert(requests.some(r=>r.path.endsWith('/cancel')),'Stop requests cancellation');
- const originalEngine=pdfjs,pending={};let oldDisposed=false;const newest={...doc};const older={...doc,destroy:async()=>{oldDisposed=true;}};
- pdfjs=async()=>({...await originalEngine(),getDocument:({url})=>({promise:new Promise(resolve=>pending[url]=resolve)})});
- progress('Start stale PDF load race');
- const olderLoad=paperLoadPDF('old',Paper.generation);await delay(0);const newerLoad=paperLoadPDF('new',Paper.generation);await delay(0);pending.new(newest);await step('render newer PDF',()=>newerLoad);pending.old(older);await step('discard older PDF',()=>olderLoad);assert(Paper.doc===newest&&oldDisposed,'late old PDF cannot replace newer preview');pdfjs=originalEngine;
+ // Isolate the two deliberately unresolved loads from background polling.
+ clearTimeout(Paper.poll);clearTimeout(Paper.timer);
+ const originalEngine=pdfjs,pending={},started={};let oldDisposed=false;const newest={...doc};const older={...doc,destroy:async()=>{oldDisposed=true;}};
+ const oldStarted=new Promise(resolve=>started.old=resolve),newStarted=new Promise(resolve=>started.new=resolve);
+ pdfjs=async()=>({...await originalEngine(),getDocument:({url})=>({promise:new Promise(resolve=>{pending[url]=resolve;started[url]?.();})})});
+ try{
+  const olderLoad=paperLoadPDF('old',Paper.generation);
+  await step('start older PDF request',()=>oldStarted);
+  const newerLoad=paperLoadPDF('new',Paper.generation);
+  await step('start newer PDF request',()=>newStarted);
+  pending.new(newest);await step('render newer PDF',()=>newerLoad);
+  pending.old(older);await step('discard older PDF',()=>olderLoad);
+  assert(Paper.doc===newest&&oldDisposed,'late old PDF cannot replace newer preview');
+ }finally{pdfjs=originalEngine;}
  await step('open paper settings',()=>showPaperSettings());await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');assert(settings.querySelector('[data-latex-bib-mode]').value==='all'&&settings.querySelector('[data-latex-bib-files]').hidden,'bibliographies default to all in project');const bibMode=settings.querySelector('[data-latex-bib-mode]');bibMode.value='selected';bibMode.dispatchEvent(new Event('change'));assert(!settings.querySelector('[data-latex-bib-files]').hidden,'custom selection reveals bibliography files');
  settings.querySelector('[data-latex-compiler]').value='pdflatex';settings.querySelector('[data-latex-compiler]').dispatchEvent(new Event('change'));
  assert(settings.querySelector('[data-compiler-info]').textContent.includes('TeX Live'),'bundled compiler version displayed');
