@@ -35,15 +35,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Compile and test the backend
         run: cargo test --locked -p noctua -p noctua-client
+      - name: Build lifecycle test server
+        run: cargo build --locked -p noctua
+      - name: Test detached server lifetime
+        run: python3 tests/server-detach.py
       - name: Test isolated server lifecycle and authentication
-        run: |
-          cargo build --locked -p noctua
-          python3 tests/server-detach.py
-          python3 tests/server-lifecycle.py
-          python3 tests/server-recovery.py
-          python3 tests/build-update-fixture.py
-          python3 tests/server-update.py
-          python3 tests/server-paper-lifecycle.py
+        run: python3 tests/server-lifecycle.py
+      - name: Test server recovery
+        run: python3 tests/server-recovery.py
+      - name: Build next-version update fixture
+        run: python3 tests/build-update-fixture.py
+      - name: Test coordinated server updates
+        run: python3 tests/server-update.py
+      - name: Test paper compiler ownership across server updates
+        run: python3 tests/server-paper-lifecycle.py
 
   frontend:
     name: Frontend tests

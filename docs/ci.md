@@ -16,13 +16,15 @@ The independent `release-server` workflow builds standalone archives only for
 `server-v*` tags or a manual server release run. Release checks also cover server
 tag validation, prebuilt-server platform and checksum validation, signed update
 metadata, archive contents, executable permissions, and checksums. Backend CI
-runs both the server and extracted client-library unit suites.
+runs both the server and extracted client-library unit suites. Each lifecycle,
+recovery and update integration script has its own CI step so its duration and
+failures are visible separately from the server and update-fixture builds.
 
 ## Checks
 
 | Check | Runner | Coverage |
 | --- | --- | --- |
-| Backend tests | Ubuntu | `cargo test --locked -p noctua` compiles and tests the backend, including chats, MCP permissions and responses, assistant edits and review, library/PDF/media handling, model discovery, storage relocation/failure recovery, and Scholar email OAuth state/PKCE, private credentials, paginated ingestion, full-text PDF screening with a fake agent, excluded/invalid decisions, collection prompts, retries, and restart deduplication. |
+| Backend tests | Ubuntu | `cargo test --locked -p noctua -p noctua-client` compiles and tests the backend and client library, including chats, MCP permissions and responses, assistant edits and review, library/PDF/media handling, model discovery, storage relocation/failure recovery, and Scholar email OAuth state/PKCE, private credentials, paginated ingestion, full-text PDF screening with a fake agent, excluded/invalid decisions, collection prompts, retries, and restart deduplication. |
 | Frontend tests | macOS | `bash tests/run-frontend.sh` runs JavaScriptCore and WebKit checks for syntax, settings, Research views, chat rendering, file attachment upload, draft lifecycle, and PDF page rendering, notes/media, project files, assistant proposal review and edit conflicts, targeted PDF behavior, and responsive layout, Settings skill groups/global locations, Scholar plugin settings, live activity logs/history and outcomes, and slash skill invocation. |
 | Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for the Apple Silicon target. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
@@ -85,8 +87,11 @@ The maintenance WebKit fixture verifies editor flushing, draft preservation,
 pause acknowledgments and conflict/cancellation recovery. Backend CI also builds
 an offline next-version fixture and runs the isolated server update regression;
 OS managers are mocked, never installed as resident services. Fixture polling
-allows for unoptimized ELF executable hashing; identity, editor acknowledgment,
-active-task and backup assertions remain mandatory.
+allows for large executable verification; identity, editor acknowledgment,
+active-task and backup assertions remain mandatory. Development and test builds
+optimize the `sha2` dependency because these checks repeatedly hash complete
+debug executables. Server code and debug information retain their normal debug
+settings; release builds and integrity checks are unchanged.
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,

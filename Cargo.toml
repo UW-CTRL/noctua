@@ -42,5 +42,10 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
+# Lifecycle/update tests repeatedly hash large debug executables. Optimize the
+# SHA-256 implementation without removing integrity checks or server debug info.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
