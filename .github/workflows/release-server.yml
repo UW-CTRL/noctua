@@ -70,7 +70,7 @@ jobs:
           merge-multiple: true
       - name: Verify checksums
         working-directory: server-dist
-        run: sha256sum --check *.sha256
+        run: sha256sum --check ./*.sha256
       - uses: dtolnay/rust-toolchain@stable
       - name: Restore Tauri signer
         id: tauri-cli-cache
