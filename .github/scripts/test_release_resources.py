@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).parents[2]
 spec = importlib.util.spec_from_file_location('resources', Path(__file__).with_name('check-release-resources.py'))
@@ -27,6 +29,28 @@ class ReleaseResourceTests(unittest.TestCase):
     def test_empty_resource_trees_fail(self):
         with self.assertRaises(ValueError):
             resources.validate(['usr/bin/noctua-app'])
+
+    def test_dmg_is_mounted_readonly_and_detached_even_if_validation_fails(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            dmg = root / 'target/release/bundle/dmg/Noctua.dmg'
+            dmg.parent.mkdir(parents=True)
+            dmg.touch()
+            with patch.object(resources.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'Installer is missing'):
+                    resources.check(root, 'darwin')
+                self.assertEqual(run.call_args_list[0].args[0][:4],
+                                 ['hdiutil', 'attach', '-readonly', '-nobrowse'])
+                self.assertEqual(run.call_args_list[-1].args[0][:2], ['hdiutil', 'detach'])
+
+    def test_linux_requires_both_retained_packages(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            deb = root / 'target/release/bundle/deb/Noctua.deb'
+            deb.parent.mkdir(parents=True)
+            deb.touch()
+            with self.assertRaisesRegex(ValueError, 'Both DEB and AppImage'):
+                resources.check(root, 'linux')
 
     def test_release_restores_compilers_after_rust_cache_cleanup(self):
         workflow = (ROOT / '.github/workflows/release.yml').read_text().split('  build:', 1)[1]

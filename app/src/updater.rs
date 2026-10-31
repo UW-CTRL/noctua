@@ -27,6 +27,14 @@ fn summaries(raw: &Value, current: &str, latest: &str) -> Vec<Value> {
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
+// DMG-only releases must never check for or install an archive update.
+fn manual_macos_update(action: UpdateAction) -> anyhow::Result<Value> {
+    if matches!(action, UpdateAction::StartupCheck) {
+        return Ok(json!({ "status": "skipped" }));
+    }
+    anyhow::bail!("macOS updates require manual installation. Download the Apple Silicon DMG from https://github.com/UW-CTRL/noctua/releases/latest, quit Noctua, and replace Noctua in Applications. Intel Macs must retain an older Universal release.");
+}
+
 pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>) -> anyhow::Result<Value> {
     let state = app.state::<Updates>();
     let mut pending = state.0.try_lock()
@@ -57,11 +65,15 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
             pending.server = None;
             pending.server_id = None;
             let mut warnings = Vec::new();
-            let updater = app.updater_builder()
-                .timeout(std::time::Duration::from_secs(15 * 60)).build()?;
-            if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {
+            if cfg!(target_os = "macos") {
+                if matches!(action, UpdateAction::Check) {
+                    warnings.push(manual_macos_update(UpdateAction::Check).unwrap_err().to_string());
+                }
+            } else if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {
                 warnings.push("Use your package manager to update this desktop installation. Local server updates are still available.".to_owned());
             } else {
+                let updater = app.updater_builder()
+                    .timeout(std::time::Duration::from_secs(15 * 60)).build()?;
                 match tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await {
                     Ok(Ok(update)) => pending.update = update,
                     Ok(Err(error)) => warnings.push(format!("Desktop update check failed: {error}")),
@@ -105,9 +117,15 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
             if result["status"] == "current" && !warnings.is_empty() {
                 anyhow::bail!("{}", warnings.join(" "));
             }
+            if cfg!(target_os = "macos") && matches!(action, UpdateAction::StartupCheck) && result["status"] == "current" {
+                result["status"] = json!("skipped");
+            }
             Ok(result)
         }
         UpdateAction::Install => {
+            if cfg!(target_os = "macos") && pending.server.is_none() {
+                return manual_macos_update(action);
+            }
             let offered_version = pending.update.as_ref().map(|u| u.version.as_str())
                 .or_else(|| pending.server.as_ref().map(|s| s.manifest.version.as_str()))
                 .ok_or_else(|| anyhow::anyhow!("Check for updates before installing."))?;
@@ -131,13 +149,26 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
             pending.update = None;
             Ok(json!({ "status": "installed" }))
         }
-        UpdateAction::Restart => anyhow::bail!("Install an update before restarting."),
+        UpdateAction::Restart => {
+            if cfg!(target_os = "macos") { return manual_macos_update(action); }
+            anyhow::bail!("Install an update before restarting.")
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_desktop_archive_updates_require_manual_installation() {
+        assert_eq!(manual_macos_update(UpdateAction::StartupCheck).unwrap(), json!({"status":"skipped"}));
+        for action in [UpdateAction::Check, UpdateAction::Install, UpdateAction::Restart] {
+            let message = manual_macos_update(action).unwrap_err().to_string();
+            assert!(message.contains("manual installation"));
+            assert!(message.contains("https://github.com/UW-CTRL/noctua/releases/latest"));
+        }
+    }
 
     #[test]
     fn changes_cover_only_versions_between_installed_and_offered_releases() {

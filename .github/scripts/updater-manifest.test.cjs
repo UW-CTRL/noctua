@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const manifest = require('./updater-manifest.cjs');
 
 function fixture() {
-  const names = ['Noctua_aarch64.app.tar.gz', 'Noctua_0.1.2_x64-setup.exe', 'Noctua_0.1.2_amd64.AppImage'];
+  const names = ['Noctua_0.1.2_x64-setup.exe', 'Noctua_0.1.2_amd64.AppImage'];
   const assets = names.flatMap(name => [name, `${name}.sig`]).map((name, id) => ({
     id, name, size: 100, state: 'uploaded', browser_download_url: `https://github.com/UW-CTRL/noctua/releases/download/untagged-draft/${name}`,
   }));
@@ -19,22 +19,22 @@ function fixture() {
   return { args, assets, calls, repos };
 }
 
-test('one complete manifest offers the signed Apple Silicon bundle without an Intel target', async () => {
+test('one complete manifest offers only signed Windows and AppImage updates', async () => {
   const f = fixture();
   await manifest(f.args);
   const uploaded = f.calls.at(-1)[1];
   assert.equal(uploaded.version, '0.1.2');
   assert.equal(uploaded.notes, 'Release notes');
   assert.deepEqual(uploaded.release_summaries, [{ version: '0.1.2', changes: [] }]);
-  assert.deepEqual(Object.keys(uploaded.platforms), ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']);
+  assert.deepEqual(Object.keys(uploaded.platforms), ['windows-x86_64', 'linux-x86_64']);
   assert.equal(uploaded.platforms['darwin-x86_64'], undefined);
   const base = 'https://github.com/UW-CTRL/noctua/releases/download/v0.1.2/';
-  assert.equal(uploaded.platforms['darwin-aarch64'].url, base + 'Noctua_aarch64.app.tar.gz');
+  assert.equal(uploaded.platforms['darwin-aarch64'], undefined);
   assert.equal(uploaded.platforms['windows-x86_64'].url, base + 'Noctua_0.1.2_x64-setup.exe');
   assert.equal(uploaded.platforms['linux-x86_64'].url, base + 'Noctua_0.1.2_amd64.AppImage');
   assert(!JSON.stringify(uploaded.platforms).includes('untagged-'));
   assert.equal(uploaded.platforms['linux-x86_64'].signature, 'c2lnbmF0dXJl');
-  assert.equal(f.calls.filter(c => c[0] === 'get').length, 3);
+  assert.equal(f.calls.filter(c => c[0] === 'get').length, 2);
 });
 
 test('release history summaries include older stable releases and fail closed on API errors', async () => {
@@ -63,7 +63,7 @@ test('desktop manifests retain the independently versioned bundled server', asyn
 });
 
 test('each missing, empty, or incomplete bundle or signature prevents manifest writes', async () => {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 4; i++) {
     for (const failure of ['missing', 'empty', 'incomplete']) {
       const f = fixture();
       if (failure === 'missing') f.assets.splice(i, 1);

@@ -274,8 +274,17 @@ location you want to select.
 
 ## Updates
 
-Open **Settings → About & Shortcuts**, then choose **Check for updates** under
-**App and Local Server Updates**. If a newer version is available, the button offers installation;
+On macOS, desktop app updates are manual. Download the Apple Silicon DMG from
+[the latest desktop release](https://github.com/UW-CTRL/noctua/releases/latest),
+quit Noctua, and replace it in Applications. Your data folder is retained. The
+app does not check for macOS desktop archives at startup; it can still check
+for and install signed local-server releases. Older installations may show an
+update-check error because macOS updater archives are no longer published.
+Intel Macs must retain an older Universal release.
+
+On Windows or Linux AppImage, open **Settings → About & Shortcuts**, then choose
+**Check for updates** under **App and Local Server Updates**. If a newer desktop
+version is available, the button offers installation;
 confirm the native prompt to install. Choose **Restart Noctua** after installation.
 The app saves open edits before installation and restart. Official builds also check
 at startup after restoring or retrying a saved connection. The same check looks
@@ -289,7 +298,8 @@ history with a mouse or trackpad, or focus it with Tab and use the arrow keys.
 The update and dismissal buttons stay visible. Each version has a **Release notes**
 link for its full details; the popup shows summaries, not every changelog item.
 Older update manifests without history provide a link to the offered release.
-Linux in-app updates require AppImage; use your package manager for other builds.
+Linux desktop app updates require AppImage; use your package manager for DEB
+installations. Signed local-server updates remain available on both.
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.

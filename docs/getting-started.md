@@ -17,6 +17,10 @@ See [Server and connections](server.md) for browser login, CLI and Tailscale Ser
 
 ## Install and open
 
+Choose the Apple Silicon DMG on macOS, the x64 NSIS setup EXE on Windows,
+or the amd64 AppImage or DEB on Linux. RPM-based Linux users can use AppImage.
+macOS updates use a replacement DMG; see [Updates](settings-and-data.md#updates).
+
 Download the installer for your OS from
 [GitHub Releases](https://github.com/UW-CTRL/noctua/releases/latest), install it,
 and open Noctua. On Linux, make the AppImage executable before opening it.

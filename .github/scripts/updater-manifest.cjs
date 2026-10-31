@@ -1,9 +1,7 @@
 // Generate once, after all platform uploads, so parallel builds cannot lose targets.
-module.exports = async function uploadManifest({ github, context, release, assets, macosArch = 'aarch64' }) {
+module.exports = async function uploadManifest({ github, context, release, assets }) {
   const version = release.tag_name.slice(1);
   const targets = {
-    'darwin-aarch64': `Noctua_${macosArch}.app.tar.gz`,
-    ...(macosArch === 'universal' ? { 'darwin-x86_64': 'Noctua_universal.app.tar.gz' } : {}),
     'windows-x86_64': `Noctua_${version}_x64-setup.exe`,
     'linux-x86_64': `Noctua_${version}_amd64.AppImage`,
   };

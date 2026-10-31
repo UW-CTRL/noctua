@@ -148,6 +148,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+          RELEASE_PLATFORM: ${{ runner.os }}
         with:
           script: |
             const fs = require('node:fs');
@@ -157,6 +158,10 @@ jobs:
             }
             const path = 'app/tauri.release.conf.json';
             const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+            config.bundle ??= {};
+            config.bundle.targets = { macOS: ['dmg'], Windows: ['nsis'], Linux: ['appimage', 'deb'] }[process.env.RELEASE_PLATFORM];
+            if (!config.bundle.targets) throw new Error('Unsupported release platform');
+            config.bundle.createUpdaterArtifacts = process.env.RELEASE_PLATFORM !== 'macOS';
             config.plugins ??= {};
             config.plugins.updater = { ...config.plugins.updater, pubkey };
             // Hooks otherwise run from the frontend root, outside app/.
