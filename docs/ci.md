@@ -13,6 +13,10 @@ deployment steps. The separate release workflow still builds installers only
 for version tags or an explicit manual release run, then publishes the release
 automatically after every platform build and installer verification succeeds.
 
+All seven checks below are required before merging a PR into `main`. See
+[Pull requests and merging](development.md#pull-requests-and-merging) for the
+contribution and squash-merge conventions.
+
 ## Checks
 
 | Check | Runner | Coverage |
