@@ -1,6 +1,6 @@
 [package]
 name = "noctua"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2021"
 description = "Research-paper explorer: Semantic Scholar citation graphs, a native PDF library and LaTeX notes"
 
@@ -11,7 +11,7 @@ members = ["app", "crates/client"]
 default-members = ["."]
 
 [workspace.package]
-version = "0.3.5"
+version = "0.3.6"
 
 [dependencies]
 noctua-client = { path = "crates/client" }
