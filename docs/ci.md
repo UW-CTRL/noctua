@@ -29,6 +29,7 @@ failures are visible separately from the server and update-fixture builds.
 | Desktop check (macos-latest) | macOS | `cargo check --locked -p noctua-app` for the Apple Silicon target. |
 | Desktop check (windows-latest) | Windows | `cargo check --locked -p noctua-app` for the native Windows target. |
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
+| Paper integration (each platform) | macOS, Windows, Ubuntu | Build the server, test native detachment and paper helpers, then run both real compiler/API suites with one production-staged compiler resource fixture. |
 | Release and workflow checks | Ubuntu | Python and Node release-script tests (including package-resource verification and cache ordering), workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
 | Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, manual runs, and weekly on Mondays at 09:17 UTC. |
 
@@ -44,20 +45,37 @@ launch the app, or test installation. The macOS check covers the Apple Silicon a
 used in the release; the release workflow still performs the final
 linking and packaging.
 
-For pull requests only, desktop checks are skipped when every changed path is
-exactly `README.md` or under `docs/`, `web/`, or `tests/`. The release
-and workflow job compares the event's base/head commits using their merge base;
-it includes both deleted and added paths for renames. Classification uses the
-whole PR diff, not just the last pushed commit. Any other path requires
-desktop checks, including `src/prompts/*.md`, Rust source, native app assets,
-dependencies, and workflow files. An empty/failed comparison conservatively runs
-desktop checks. Main pushes containing non-documentation changes and manual runs always run
-desktop checks. Backend,
-frontend, release/workflow, and security jobs still run for these PRs; desktop
-setup and compilation steps are skipped. Each desktop runner only
-reports a skip message, keeping all three named checks successful and available
-for branch protection. Keep the documentation allowlist aligned with build
-inputs if future code starts consuming files under `docs/`.
+Desktop type-checks and paper integration are separate matrix jobs. The desktop
+check clears bundle resources with a check-only `TAURI_CONFIG` override, so it
+needs no managed TeX trees or bundled server. Installer builds and release
+resource verification still use the full packaging configuration.
+
+For PRs, change detection classifies the whole base/head diff independently for
+each suite (including added and deleted paths for renames):
+
+| Changed inputs | Desktop type-check | Real paper integration |
+| --- | --- | --- |
+| Native app code, menus, icons and app manifests | Run | Skip, except the `32x32.png` paper-test image |
+| Server code under `src/`, embedded prompts and root `build.rs` | Skip | Run |
+| Shared client/lifecycle code, root Cargo manifests/lockfile, CI and unknown inputs | Run | Run |
+| Compiler setup scripts and notices under `third-party/` | Skip | Run |
+| `paper-integration.py`, `paper_fixture.py`, `test_paper_*.py`, `server-detach.py` | Skip | Run |
+| Other frontend fixtures, web assets and documentation | Skip | Skip |
+
+Backend and frontend jobs still run, so their test-only changes remain covered.
+Missing/failed comparisons conservatively run both native suites. Main pushes
+containing non-documentation changes and manual runs exercise both suites. Skipped
+jobs retain their named successful checks for branch protection. Classifier
+regressions cover native-only and paper-only edits, shared dependencies,
+unknown inputs and real Git renames.
+
+Native desktop and paper jobs have distinct Rust dependency-cache keys. On
+Windows only, `CARGO_PROFILE_DEV_DEBUG=0` omits debug/PDB data from these CI
+artifacts and caches; debug assertions and compilation checks remain enabled.
+Linux/macOS and ordinary local development keep normal debug information.
+Compiled dependencies remain cached, while installed Cargo tools use their own
+existing caches. The first run of the new cache keys rebuilds dependencies;
+compare later matching runs when assessing cache transfer/build costs.
 
 The audit uses cargo-audit 0.22.2 and fetches current advisories on each run.
 Vulnerabilities fail the check; informational/unmaintained-crate warnings remain
@@ -90,21 +108,29 @@ OS managers are mocked, never installed as resident services. Fixture polling
 allows for large executable verification; identity, editor acknowledgment,
 active-task and backup assertions remain mandatory. Development and test builds
 optimize the `sha2` dependency because these checks repeatedly hash complete
-debug executables. Server code and debug information retain their normal debug
-settings; release builds and integrity checks are unchanged.
+debug executables. Server code keeps debug assertions and its normal optimization
+level; only Windows native/paper CI omits debug symbols as described above.
+Release builds and integrity checks are unchanged.
 
-Desktop CI separately caches Tectonic's downloaded TeX support files and generated
+Paper integration separately caches Tectonic's downloaded TeX support files and generated
 formats under the runner's temporary `tectonic-resources` directory. The paper
 test step sets `TECTONIC_CACHE_DIR` so the server, compiler subprocesses and
 offline `--only-cached` check use the same restored resources. This is separate
 from the existing `target/tectonic` and `target/texlive` distribution cache.
 The resource-cache key includes the runner OS/architecture and a content hash of
-`scripts/setup-tectonic.py` and `tests/paper-integration.py`. Changing either file
-produces a new key; there is no fallback to another key. On a miss, tests populate
+`scripts/setup-tectonic.py`, `tests/paper-integration.py` and
+`tests/paper_fixture.py`. Changing any of these files produces a new key; there is no fallback to another key. On a miss, tests populate
 the cache normally and a successful job saves it for matching later runs,
 subject to GitHub's branch scope and cache eviction. Tests still run on cache
-hits, including the offline compilation assertion. Temporary compiler-resource
-copies remain part of the staging-independence regression.
+hits, including the offline compilation assertion.
+
+The paper fixture prepares one disposable source bundle using hard links when
+supported and ordinary copies otherwise. Production `ensure` still makes a real,
+independent copy of both compiler trees. The source bundle is removed before
+running the API scenarios. Both engines reuse that one staged tree with separate
+data/client profiles and processes. This avoids copying the full distributions
+for each engine while retaining the real staging and bundle-removal regression.
+Original compiler distributions are never modified.
 
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,
@@ -171,9 +197,9 @@ Those manual checks are not counted as passing CI checks.
 
 ## PRs and main
 
-Push a working branch and open a PR into `main`. Review all seven checks before
-merging, allowing the three desktop checks to be skipped for PRs without native
-compilation changes as described above. Fix failures in the same branch; pushing
+Push a working branch and open a PR into `main`. Review all ten checks before
+merging, allowing each native/paper suite to report a skip when its inputs are
+unchanged as described above. Fix failures in the same branch; pushing
 another commit runs CI again.
 For an infrastructure-only change such as CI, a PR verifies the workflow itself
 before it reaches `main`.
@@ -183,7 +209,7 @@ change has already landed. Prefer PRs for normal changes. Running CI does not
 itself block merges or direct pushes: an administrator must configure a main
 branch ruleset or branch protection separately and require **Backend tests**,
 **Frontend tests**, **Release and workflow checks**, the three **Desktop check**
-jobs, and **Dependency security audit**. This change does not
+jobs, the three **Paper integration** jobs, and **Dependency security audit**. This change does not
 modify repository protection settings.
 
 If a runner or download fails transiently, use **Re-run failed jobs** in Actions.
@@ -247,18 +273,18 @@ rather than invalidating every connected client.
 
 ## Paper rendering
 
-Desktop CI and release builds select Python 3.12 before preparing the compilers.
+Paper integration CI and release builds select Python 3.12 before preparing the compilers.
 This avoids the Ubuntu 22.04 system Python tar extraction failure on TinyTeX's
 relative symlinks while retaining the archive data filter and checksum validation.
 Use Python 3.12 when reproducing compiler setup locally.
 
-Desktop jobs share prepared compiler caches with release builds. Pushes to main
+Paper jobs share prepared compiler caches with release builds. Pushes to main
 also warm the pinned Tauri CLI cache for future version tags; pull requests do not
 install that CLI. The desktop timeout is 30 minutes to allow the first uncached
 CLI installation. See [release caching](releases.md#paper-compiler-packaging) for
 cache keys, invalidation, and cold-run behavior.
 
-Desktop CI prepares the pinned managed compiler, builds the browser backend, and
+Paper integration prepares both pinned managed compilers, builds the server, and
 runs `python3 tests/paper-integration.py` on macOS, Windows, and Linux. This uses
 isolated temporary storage and tests real custom-class/BibTeX/image builds,
 subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
@@ -314,7 +340,7 @@ the startup offer remains available.
 
 `python3 tests/server-detach.py` captures both `ensure` output streams and verifies
 that they close after the launcher exits while the isolated server stays ready.
-It runs in backend CI and all desktop platform jobs, including Windows.
+It runs in backend CI and all paper integration platform jobs, including Windows.
 
 ## Collection research regression
 
