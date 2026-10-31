@@ -102,24 +102,20 @@ Histories are separate by document/paper/workspace, remain available during the 
 session, and clear when it exits. New edits clear redo. Conflicting saves must be
 resolved before undoing; failed operations do not consume history.
 
-In **Settings → Skills**, **Global Agent Skills** reads packages in place from
+In **Settings → Skills**, **Global skills** reads packages in place from
 **Location** (default `~/.agents/skills`). Save another existing folder or choose
-**Use default**. **Import Skills from Project** imports multiple `SKILL.md`
-packages from a project or skills folder as a named group. Click each project to
-expand or collapse its skill list. **Disconnect** removes that group's Noctua
-copies without changing the original project or other groups.
+**Use default**. **Noctua local skills** lists all imported skills together.
+Choose **Import folder** and select a folder containing one or more `SKILL.md`
+packages. Imports are snapshots stored in Noctua's data folder.
+**Disconnect** removes an individual Noctua copy and preserves the original files.
+See [Skills settings](settings-and-data.md#skills) for locations and limits.
+Both providers use the same available skills.
 
-Imports are snapshots. Up to 100 skills, 512 files, and 32 MB can be imported in
-one project group. **Import an individual skill** also supports a folder, ZIP,
-or standalone `SKILL.md`; these appear under **Other imported skills**.
-See [Skills settings](settings-and-data.md#skills) for location, import, and
-reconnection details. Both providers use the same available skills.
-
-Under **Chat project defaults**, choose a Noctua project, select skills, and save.
-These defaults are separate from source-project groups. Type `/` in chat to
+All global and Noctua local skills are available automatically in every chat.
+The assistant chooses relevant skills; no project selection is needed. Type `/` to
 search all available skills and select with Up/Down and Enter/Tab or a click
 (Esc closes). An inserted `/skill-name` command activates that skill for one
-message without changing defaults. Delete it to remove that invocation; multiple
+message. Delete it to remove that invocation; multiple
 commands can be used in one message.
 
 Every script invocation requires approval showing its source, arguments, and selected

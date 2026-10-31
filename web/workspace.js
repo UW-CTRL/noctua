@@ -429,7 +429,7 @@ function showWorkspaceTrash(){
  d.querySelector('[data-trash-select]')?.focus();
 }
 
-// Slash commands select available skills for one message, without changing defaults.
+// Slash commands select available skills for one message, without changing skill availability.
 window.NoctuaSkillPicker=(()=>{
  const input=$('#chat-input'),popup=$('#skill-picker');
  let results=[],index=0,version=0,active=null;
@@ -445,7 +445,7 @@ window.NoctuaSkillPicker=(()=>{
  }
  function close(){version++;active=null;results=[];if(popup)popup.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}}
  function render(message){
-  popup.innerHTML=results.length?results.map((s,i)=>`<div role="option" id="skill-option-${i}" aria-selected="${i===index}" data-skill-index="${i}" class="skill-option${i===index?' active':''}"><strong>${esc(s.command)}</strong><small>${esc([s.project_name,s.description].filter(Boolean).join(' · ')||'Skill')}</small></div>`).join(''):`<div class="skill-empty" role="status">${esc(message)}</div>`;
+  popup.innerHTML=results.length?results.map((s,i)=>`<div role="option" id="skill-option-${i}" aria-selected="${i===index}" data-skill-index="${i}" class="skill-option${i===index?' active':''}"><strong>${esc(s.command)}</strong><small>${esc([s.scope==='global'?'Global skill':'Noctua local skill',s.description].filter(Boolean).join(' · ')||'Skill')}</small></div>`).join(''):`<div class="skill-empty" role="status">${esc(message)}</div>`;
   popup.hidden=false;input.setAttribute('aria-expanded','true');
   if(results.length)input.setAttribute('aria-activedescendant','skill-option-'+index);else input.removeAttribute('aria-activedescendant');
   popup.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});
@@ -456,7 +456,7 @@ window.NoctuaSkillPicker=(()=>{
   try{
    const skills=commands(await api('/api/skills'));
    if(request!==version||query()?.text!==q.text||document.activeElement!==input)return;
-   results=skills.filter(s=>`${s.command} ${s.description||''} ${s.project_name||''}`.toLowerCase().includes(q.q)).sort((a,b)=>a.command.localeCompare(b.command));
+   results=skills.filter(s=>`${s.command} ${s.description||''}`.toLowerCase().includes(q.q)).sort((a,b)=>a.command.localeCompare(b.command));
    render(skills.length?'No matching skills.':'No skills found. Install a global skill with the Skills CLI or import one in Settings → Skills.');
   }catch(e){if(request===version)render('Could not load skills: '+e.message);}
  }

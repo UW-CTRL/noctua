@@ -5,27 +5,27 @@ const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)},s
 let searchEngines=['arxiv','semantic-scholar','openalex','google-scholar'];
 const searchEngineNames={arxiv:'arXiv','semantic-scholar':'Semantic Scholar',openalex:'OpenAlex','google-scholar':'Google Scholar'};
 function setSearchEngineOrder(order){searchEngines=[...order];}
-let active='L1',fail=false,importFail=false,projectFail=false,pendingProject=null,errors=[],saveCount=0,resourceLoads=0,importCount=0,zipCount=0,disconnectFail=false,locationFail=false;
-let config={location:'/home/test/.agents/skills',default_location:'/home/test/.agents/skills',projects:[]};
-let skills=[{id:'s1',name:'Review',description:'Review research',source:'local'},{id:'s2',name:'Writing',description:'Write clearly'}],manifests={L1:{revision:1,skills:['s1']},L2:{revision:1,skills:[]}};
+let active='L1',fail=false,importFail=false,projectFail=false,pendingProject=null,errors=[],saveCount=0,resourceLoads=0,importCount=0,disconnectFail=false,locationFail=false;
+let config={location:'/home/test/.agents/skills',default_location:'/home/test/.agents/skills',local_location:'/noctua/skills'};
+let batches=[],skills=[{id:'s1',name:'Review',description:'Review research',scope:'global'},{id:'s2',name:'Writing',description:'Write clearly',scope:'noctua'}],manifests={L1:{revision:1,skills:['s1']},L2:{revision:1,skills:[]}};
 function chatProjectTarget(){return active;} function renderWorkspaceTree(){} async function saveWorkspaceFile(){saveCount++;}
 function scholarSection(){return '';}function mountScholarSettings(){}
 function appearanceSection(){return '<section>Appearance</section>';}function agentSection(){return '<section>Assistant</section>';}function keySection(){return '';}function zoteroSection(){return '';}function dataSection(){return '<section>Data</section>';}function aboutSection(){return '<section>About</section>';}
 function toast(s){errors.push(s);}
 async function api(path,body){
  if(path==='/api/skills/settings'){if(body){if(locationFail)throw Error('folder unavailable');config.location=body.location??config.default_location;}return structuredClone(config);}
- if(path==='/api/skills/import-project'){
+ if(path==='/api/skills/import-folder'){
   if(importFail)throw Error('bad package');assert(body.packages.length,'missing project packages');
-  const group={id:'p'+config.projects.length,name:body.name,skill_ids:[]};
-  for(const pkg of body.packages){assert(pkg.files.some(f=>f.path==='SKILL.md'),'package root missing');assert(!pkg.files.some(f=>f.path.includes('secret')||f.path.endsWith('README.md')),'unrelated project files uploaded');const id='bulk'+skills.length;skills.push({id,name:'Project skill '+skills.length,source:'imported',project_id:group.id,project_name:group.name});group.skill_ids.push(id);}
-  config.projects.push(group);return group;
+  const batch={skill_ids:[]};assert(!body.name,'folder import must not create project metadata');
+  for(const pkg of body.packages){assert(pkg.files.some(f=>f.path==='SKILL.md'),'package root missing');assert(!pkg.files.some(f=>f.path.includes('secret')||f.path.endsWith('README.md')),'unrelated project files uploaded');const id='bulk'+skills.length;skills.push({id,name:'Project skill '+skills.length,scope:'noctua'});batch.skill_ids.push(id);}
+  batches.push(batch);return batch;
  }
 
- if(path==='/api/skills'){if(fail)throw Error('offline');if(body){if(importFail)throw Error('bad package');assert(body.files.some(f=>f.path.endsWith('SKILL.md')),'import is missing SKILL.md');assert(!body.files.some(f=>f.path.includes('.git')),'git contents imported');importCount++;skills.push({id:'new'+importCount,name:'Imported '+importCount});}return structuredClone(skills);}
+ if(path==='/api/skills'){if(fail)throw Error('offline');if(body){if(importFail)throw Error('bad package');assert(body.files.some(f=>f.path.endsWith('SKILL.md')),'import is missing SKILL.md');assert(!body.files.some(f=>f.path.includes('.git')),'git contents imported');importCount++;skills.push({id:'new'+importCount,name:'Imported '+importCount,scope:'noctua'});}return structuredClone(skills);}
  if(path.includes('/files/')){resourceLoads++;return path.endsWith('SKILL.md')?{files:['SKILL.md','rules/test.md'],text:'# Instructions'}:{text:'Supporting rules'};}
- const target=path.split('/').at(-1);if(target in manifests){if(projectFail)throw Error('project offline');if(pendingProject&&target==='L1'&&!body)return pendingProject;if(body){manifests[target]={revision:manifests[target].revision+1,skills:body.skills};}return structuredClone(manifests[target]);}throw Error(path);
+ throw Error(path);
 }
-const realFetch=window.fetch;window.fetch=async(path,options)=>{if(options.method==='DELETE'){if(disconnectFail)return {ok:false,json:async()=>({error:'disk unavailable'})};const id=path.split('/').at(-1);if(path.includes('/projects/')){const group=config.projects.find(p=>p.id===id);skills=skills.filter(s=>!group.skill_ids.includes(s.id));config.projects=config.projects.filter(p=>p.id!==id);}else skills=skills.filter(s=>s.id!==id);return {ok:true,json:async()=>({disconnected:id})};}assert(path==='/api/skills/import-zip'&&options.body,'ZIP upload endpoint');zipCount++;skills.push({id:'zip',name:'ZIP skill'});return {ok:true,json:async()=>({id:'zip'})};};
+const realFetch=window.fetch;window.fetch=async(path,options)=>{if(options.method==='DELETE'){if(disconnectFail)return {ok:false,json:async()=>({error:'disk unavailable'})};const id=path.split('/').at(-1);skills=skills.filter(s=>s.id!==id);return {ok:true,json:async()=>({disconnected:id})};}throw Error('Unexpected fetch: '+path);};
 function assert(ok,message){if(!ok)throw Error(message);}
 async function settle(){for(let i=0;i<40;i++)await Promise.resolve();await new Promise(r=>{const c=new MessageChannel();c.port1.onmessage=()=>{c.port1.close();c.port2.close();r();};c.port2.postMessage(null);});}
 async function importFiles(kind,files){const create=document.createElement.bind(document);let pending;document.createElement=name=>{const node=create(name);if(name==='input'){Object.defineProperty(node,'files',{value:files});node.click=()=>{pending=node.onchange();};}return node;};try{$(`[data-skill-import=${kind}]`).click();await pending;await settle();}finally{document.createElement=create;}}
@@ -36,38 +36,33 @@ window.addEventListener('load',()=>{(async()=>{
  assert(Math.abs(bounds.left+bounds.width/2-innerWidth/2)<2&&Math.abs(bounds.top+bounds.height/2-innerHeight/2)<2,'settings dialog must be centered');
  assert($('#settings-tab-skills').getAttribute('aria-selected')==='true'&&!$('#settings-panel-skills').hidden,'Skills tab opens');
  assert(!$('[data-override]')&&!$('#setup').textContent.includes('Override skills'),'no chat override control');assert($('[data-skill-package=s1]').textContent.includes('Global installation')&&$('#setup').textContent.includes('~/.agents/skills'),'shared global source is explained');assert(!$('[data-skill-package=s1] [data-skill-disconnect]'),'global source has no disconnect action');
- assert($('[data-skill-project]').value==='L1'&&$('[data-skill-default=s1]').checked,'active project defaults loaded');
+ assert(!$('[data-skill-project]')&&!$('[data-skill-save]')&&$('#setup').textContent.includes('All skills are available automatically'),'skills need no project selection');
+ assert($('[data-skill-local-location]').textContent==='/noctua/skills'&&$('[data-skill-list] > [data-skill-package=s2]'),'local location and legacy individual imports shown');
  const details=$('[data-skill-package=s1]');details.open=true;await settle();assert(details.querySelector('pre').textContent==='# Instructions','package inspection');
  const resource=details.querySelector('select');resource.value='rules/test.md';await resource.onchange();assert(details.querySelector('pre').textContent==='Supporting rules','supporting resource inspection');
- $('[data-skill-default=s2]').checked=true;
- $('#settings-tab-appearance').click();$('#settings-tab-skills').click();assert($('[data-skill-default=s2]').checked,'tab switches preserve unsaved selection');
- await $('[data-skill-save]').onclick();assert(manifests.L1.skills.join(',')==='s1,s2'&&saveCount===1&&W.fileRevision===2,'project defaults saved and workspace synchronized');
- const project=$('[data-skill-project]');project.value='L2';await project.onchange();assert(!$('[data-skill-default=s1]').checked,'other project has independent defaults');
- $('[data-skill-default=s2]').checked=true;await $('[data-skill-save]').onclick();assert(manifests.L2.skills.join(',')==='s2'&&manifests.L1.skills.length===2,'project choices isolated');
- $('[data-skill-default=s2]').checked=false;await $('[data-skill-save]').onclick();assert(!manifests.L2.skills.length,'empty selection clears defaults');
- projectFail=true;project.value='L1';await project.onchange();assert($('[data-skill-save]').disabled&&$('[data-skill-status]').textContent.includes('project offline'),'project errors disable saving');projectFail=false;await $('[data-skill-reload]').onclick();
- await importFiles('md',[new File(['# New'],'my-skill.md')]);assert(importCount===1&&$('[data-skill-package=new1]'),'standalone import refreshes list');
+ assert(document.querySelectorAll('[data-skill-import]').length===1&&$('[data-skill-import=folder]'),'one folder import action');
  const skillFile=new File(['# Folder'],'SKILL.md'),gitFile=new File(['ignore'],'config');Object.defineProperty(skillFile,'webkitRelativePath',{value:'example/SKILL.md'});Object.defineProperty(gitFile,'webkitRelativePath',{value:'example/.git/config'});
- await importFiles('folder',[skillFile,gitFile]);assert(importCount===2,'folder import');
- await importFiles('zip',[new File(['zip'],'example.zip')]);assert(zipCount===1&&$('[data-skill-package=zip]'),'ZIP import');
- importFail=true;await importFiles('md',[new File(['# Fail'],'SKILL.md')]);assert($('[data-skill-status]').textContent.includes('bad package')&&!$('[data-skill-import=md]').disabled,'import failure is recoverable');importFail=false;
- disconnectFail=true;await $('[data-skill-disconnect=new1]').onclick();assert($('[data-skill-package=new1]')&&$('[data-skill-status]').textContent.includes('disk unavailable')&&!$('[data-skill-disconnect=new1]').disabled,'failed disconnect keeps the skill and allows retry');
- disconnectFail=false;await $('[data-skill-disconnect=new1]').onclick();assert(!$('[data-skill-package=new1]')&&!$('[data-skill-default=new1]')&&$('[data-skill-status]').textContent.includes('original folder is unchanged'),'disconnect refreshes package and default lists');
+ await importFiles('folder',[skillFile,gitFile]);assert(batches[0].skill_ids.length===1,'single skill folder import');
+ const importedId=batches[0].skill_ids[0];assert($(`[data-skill-package=${importedId}]`),'folder import refreshes list');batches=[];
+ importFail=true;await importFiles('folder',[skillFile]);assert($('[data-skill-status]').textContent.includes('bad package')&&!$('[data-skill-import=folder]').disabled,'import failure is recoverable');importFail=false;
+ disconnectFail=true;await $(`[data-skill-disconnect=${importedId}]`).onclick();assert($(`[data-skill-package=${importedId}]`)&&$('[data-skill-status]').textContent.includes('disk unavailable'),'failed disconnect keeps skill');
+ disconnectFail=false;await $(`[data-skill-disconnect=${importedId}]`).onclick();assert(!$(`[data-skill-package=${importedId}]`)&&!$(`[data-skill-default=${importedId}]`),'disconnect refreshes package and default lists');
  $('[data-skill-location]').value='/custom/skills';await $('[data-skill-location-save]').onclick();assert(config.location==='/custom/skills'&&$('[data-skill-location]').value==='/custom/skills','location saved');
  locationFail=true;$('[data-skill-location]').value='/missing';await $('[data-skill-location-save]').onclick();assert(config.location==='/custom/skills'&&$('[data-skill-status]').textContent.includes('folder unavailable'),'invalid location preserves saved setting');locationFail=false;
  await $('[data-skill-location-reset]').onclick();assert(config.location===config.default_location,'default location restored');
  const projectFile=(name,text='# Skill')=>{const f=new File([text],name.split('/').at(-1));Object.defineProperty(f,'webkitRelativePath',{value:name});return f;};
- await importFiles('project',[projectFile('Project A/.agents/skills/a/SKILL.md'),projectFile('Project A/.agents/skills/b/SKILL.md'),projectFile('Project A/README.md'),projectFile('Project A/.git/secret')]);
- assert(config.projects[0].skill_ids.length===2&&$('[data-skill-group=p0] summary').textContent.includes('Project A'),'multiple skills grouped under source project');
- await importFiles('project',[projectFile('Project B/.agents/skills/c/SKILL.md')]);assert($('[data-skill-group=p1]'),'second project retained');
- const groupA=$('[data-skill-group=p0]'),groupB=$('[data-skill-group=p1]');assert(!groupA.open&&!groupB.open,'project groups start collapsed');groupA.open=true;await settle();assert(groupA.querySelectorAll('[data-skill-package]').length===2&&!groupB.open,'project expansion is independent');groupA.open=false;
- disconnectFail=true;await $('[data-skill-project-disconnect=p0]').onclick();assert($('[data-skill-group=p0]'),'failed project disconnect keeps group');disconnectFail=false;
- await $('[data-skill-project-disconnect=p0]').onclick();assert(!$('[data-skill-group=p0]')&&$('[data-skill-group=p1]')&&$('[data-global-skill-list] [data-skill-package=s1]'),'project disconnect is isolated');
- await importFiles('project',[projectFile('Empty/README.md')]);assert($('[data-skill-status]').textContent.includes('No SKILL.md'),'empty project guidance');
- fail=true;await $('[data-skill-reload]').onclick();assert($('[data-skill-status]').textContent.includes('offline')&&$('[data-skill-save]').disabled,'list failure cannot save stale selection');fail=false;await $('[data-skill-reload]').onclick();assert(!$('[data-skill-save]').disabled,'refresh recovers');
- let resolve;pendingProject=new Promise(r=>resolve=r);project.value='L1';const first=project.onchange();project.value='L2';await project.onchange();resolve({revision:100,skills:['s1']});await first;assert(!$('[data-skill-default=s1]').checked,'late project response ignored');pendingProject=null;
- $('#setup').noctuaClose();active=null;openSetup({tab:'skills'});await settle();assert(!$('[data-skill-project]').value&&$('[data-skill-save]').disabled&&$('[data-skill-package=s1]'),'imports available without a project');
- skills=[];config.projects=[];await $('[data-skill-reload]').onclick();assert($('[data-skill-list]').textContent.includes('No project skills imported'),'empty state');
- window.webkit.messageHandlers.result.postMessage('PASS: Global Agent Skills location/reset, grouped multi-skill project imports, independent expansion, project disconnect, resource inspection, legacy imports, chat defaults, errors and races');
+ await importFiles('folder',[projectFile('Project A/.agents/skills/a/SKILL.md'),projectFile('Project A/.agents/skills/b/SKILL.md'),projectFile('Project A/README.md'),projectFile('Project A/.git/secret')]);
+ assert(batches[0].skill_ids.length===2&&!$('[data-skill-group]'),'multiple skills appear without source project groups');
+ const [firstId,secondId]=batches[0].skill_ids;
+ assert($(`[data-skill-list] > [data-skill-package=${firstId}]`)&&$(`[data-skill-list] > [data-skill-package=${secondId}]`),'batch imports are direct local skills');
+ await importFiles('folder',[projectFile('Project B/.agents/skills/c/SKILL.md')]);
+ const otherId=batches[1].skill_ids[0];
+ disconnectFail=true;await $(`[data-skill-disconnect=${firstId}]`).onclick();assert($(`[data-skill-package=${firstId}]`),'failed disconnect keeps local skill');disconnectFail=false;
+ await $(`[data-skill-disconnect=${firstId}]`).onclick();assert(!$(`[data-skill-package=${firstId}]`)&&$(`[data-skill-package=${secondId}]`)&&$(`[data-skill-package=${otherId}]`)&&$('[data-global-skill-list] [data-skill-package=s1]'),'disconnect removes only one local skill');
+ await importFiles('folder',[projectFile('Empty/README.md')]);assert($('[data-skill-status]').textContent.includes('No SKILL.md'),'empty project guidance');
+ fail=true;await $('[data-skill-reload]').onclick();assert($('[data-skill-status]').textContent.includes('offline')&&!$('[data-skill-import]').disabled,'list failure remains recoverable');fail=false;await $('[data-skill-reload]').onclick();assert($('[data-skill-package=s1]'),'refresh recovers');
+ $('#setup').noctuaClose();active=null;openSetup({tab:'skills'});await settle();assert($('[data-skill-package=s1]')&&!$('[data-skill-project]'),'skills available without a project');
+ skills=[];batches=[];await $('[data-skill-reload]').onclick();assert($('[data-skill-list]').textContent.includes('No Noctua local skills imported'),'empty state');
+ window.webkit.messageHandlers.result.postMessage('PASS: Two skill locations, global location/reset, flat multi-skill folder imports, individual disconnect, resource inspection, legacy imports, automatic availability, errors and refresh');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));});
 </script></body></html>
