@@ -323,7 +323,7 @@ mod tests {
     #[tokio::test]
     async fn migrated_token_rejects_the_old_bearer(){
         let root=tempfile::tempdir().unwrap();let old="b".repeat(64);crate::paths::write_private(&root.path().join("server-token"),&old).unwrap();
-        let owner=Owner::acquire(root.path(),"http://127.0.0.1:1").unwrap();let current=owner.token.clone();
+        let owner=Owner::acquire_with_machine(root.path(), "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();let current=owner.token.clone();
         let runtime=Arc::new(Runtime::new(owner,vec!["localhost:1".into()],vec!["http://localhost:1".into()]));
         let router=Router::new().route("/auth/login",post(||async{StatusCode::OK})).layer(axum::middleware::from_fn_with_state((Arc::new(vec![]),Some(runtime)),guard));
         for(value,expected)in [(old,StatusCode::UNAUTHORIZED),(current,StatusCode::OK)]{let request=Request::builder().uri("/auth/login").method("POST").header("host","localhost:1").header("origin","http://localhost:1").header("authorization",format!("Bearer {value}")).body(Body::empty()).unwrap();assert_eq!(router.clone().oneshot(request).await.unwrap().status(),expected);}
@@ -331,7 +331,7 @@ mod tests {
     #[tokio::test]
     async fn token_reveal_requires_local_cookie_origin_and_csrf_headers() {
         let root=tempfile::tempdir().unwrap();
-        let owner=Owner::acquire(root.path(),"http://127.0.0.1:1").unwrap();
+        let owner=Owner::acquire_with_machine(root.path(), "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();
         let runtime=Arc::new(Runtime::new(owner,vec!["localhost:1".into(),"remote.example".into()],vec!["http://localhost:1".into(),"https://remote.example".into()]));
         let cookie=format!("{}={}",runtime.cookie_name(),runtime.session());
         let router=Router::new().route("/api/server/token",post(||async{StatusCode::FORBIDDEN})).layer(axum::middleware::from_fn_with_state((Arc::new(vec![]),Some(runtime.clone())),guard));
@@ -354,7 +354,7 @@ mod tests {
     #[tokio::test]
     async fn browser_connection_assets_do_not_expose_data_or_bypass_host_checks() {
         let root = tempfile::tempdir().unwrap();
-        let owner = Owner::acquire(root.path(), "http://127.0.0.1:1").unwrap();
+        let owner = Owner::acquire_with_machine(root.path(), "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();
         let runtime = Arc::new(Runtime::new(owner, vec!["127.0.0.1:1".into()], vec!["http://127.0.0.1:1".into()]));
         let router = Router::new()
             .route("/browser-connect", axum::routing::get(||async{"handoff"}))
@@ -375,7 +375,7 @@ mod tests {
     async fn lost_client_does_not_cancel_an_admitted_server_job() {
         let root =
             std::env::temp_dir().join(format!("noctua-request-test-{}", uuid::Uuid::new_v4()));
-        let owner = Owner::acquire(&root, "http://127.0.0.1:1").unwrap();
+        let owner = Owner::acquire_with_machine(&root, "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();
         let token = owner.token.clone();
         let runtime = Arc::new(Runtime::new(
             owner,
@@ -438,7 +438,7 @@ mod session_tests {
     async fn response_stream_retains_request_ownership_until_dropped() {
         let root =
             std::env::temp_dir().join(format!("noctua-stream-test-{}", uuid::Uuid::new_v4()));
-        let owner = Owner::acquire(&root, "http://127.0.0.1:1").unwrap();
+        let owner = Owner::acquire_with_machine(&root, "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();
         let token = owner.token.clone();
         let runtime = Arc::new(Runtime::new(owner, vec!["127.0.0.1:1".into()], vec![]));
         let router = Router::new()
@@ -476,12 +476,12 @@ mod session_tests {
         let root =
             std::env::temp_dir().join(format!("noctua-cookie-test-{}", uuid::Uuid::new_v4()));
         let first = Runtime::new(
-            Owner::acquire(&root.join("first"), "http://127.0.0.1:1").unwrap(),
+            Owner::acquire_with_machine(&root.join("first"), "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap(),
             vec![],
             vec![],
         );
         let second = Runtime::new(
-            Owner::acquire(&root.join("second"), "http://127.0.0.1:2").unwrap(),
+            Owner::acquire_with_machine(&root.join("second"), "http://127.0.0.1:2", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap(),
             vec![],
             vec![],
         );
@@ -511,7 +511,7 @@ mod session_tests {
     fn session_capacity_does_not_log_out_every_existing_client() {
         let root =
             std::env::temp_dir().join(format!("noctua-session-test-{}", uuid::Uuid::new_v4()));
-        let owner = Owner::acquire(&root, "http://127.0.0.1:1").unwrap();
+        let owner = Owner::acquire_with_machine(&root, "http://127.0.0.1:1", None, env!("CARGO_PKG_VERSION"), crate::server::backup).unwrap();
         let runtime = Runtime::new(owner, vec![], vec![]);
         for _ in 0..256 {
             runtime.session();

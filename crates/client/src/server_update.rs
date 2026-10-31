@@ -1,6 +1,6 @@
 //! Transactional local updates. The detached worker outlives the desktop installer.
 use crate::server;
-const SAFE_ENV: &[&str] = &[
+pub const SAFE_ENV: &[&str] = &[
     "NOCTUA_ORIGINS",
     "NOCTUA_SERVER_NAME",
     "NOCTUA_NOTES",
@@ -11,7 +11,7 @@ const SAFE_ENV: &[&str] = &[
     "CODEX_HOME",
     "CLAUDE_CONFIG_DIR",
 ];
-const SECRET_ENV: &[&str] = &[
+pub const SECRET_ENV: &[&str] = &[
     "NOCTUA_S2_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -25,7 +25,7 @@ fn handoff_path(id: &str) -> Result<PathBuf> {
         Sha256::digest(id.as_bytes())
     ))
 }
-pub(crate) fn absolute(path: &Path) -> Result<PathBuf> {
+pub fn absolute(path: &Path) -> Result<PathBuf> {
     if path.exists() {
         return Ok(fs::canonicalize(path)?);
     }
@@ -36,32 +36,6 @@ pub(crate) fn absolute(path: &Path) -> Result<PathBuf> {
         absolute(path.parent().context("Launch path has no parent")?)?
             .join(path.file_name().context("Launch path has no filename")?),
     )
-}
-/// Only the private local control endpoint exports this; ordinary API/browser clients cannot.
-pub(crate) fn launch_environment(app: &crate::App) -> Result<Value> {
-    let mut environment = serde_json::Map::new();
-    for key in SAFE_ENV.iter().chain(SECRET_ENV.iter()) {
-        if let Ok(value) = std::env::var(key) {
-            environment.insert((*key).into(), json!(value));
-        }
-    }
-    let runtime = app.runtime.as_ref().context("Server control unavailable")?;
-    environment.insert(
-        "NOCTUA_ORIGINS".into(),
-        json!(runtime
-            .origins
-            .iter()
-            .filter(|value| value.starts_with("https://"))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",")),
-    );
-    environment.insert("NOCTUA_NOTES".into(), json!(absolute(&app.notes.root)?));
-    environment.insert(
-        "NOCTUA_LAUNCH_PATH".into(),
-        json!(std::env::var("PATH").unwrap_or_default()),
-    );
-    Ok(Value::Object(environment))
 }
 fn validate_launch(data: &Path, environment: &Value) -> Result<()> {
     if let Some(notes) = environment["NOCTUA_NOTES"].as_str() {
@@ -95,7 +69,7 @@ fn save_launch(data: &Path, id: &str, environment: &Value) -> Result<()> {
     Ok(())
 }
 /// Run only after acquiring the real machine/data owner, before loading server settings/keys.
-pub(crate) fn restore_launch(data: &Path, id: &str) -> Result<()> {
+pub fn restore_launch(data: &Path, id: &str) -> Result<()> {
     for (file, keys) in [
         (data.join("server-launch.json"), SAFE_ENV),
         (handoff_path(id)?, SECRET_ENV),

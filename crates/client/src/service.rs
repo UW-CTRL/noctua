@@ -110,7 +110,7 @@ pub fn status() -> Value {
     })();
     result.unwrap_or_else(|e|json!({"supported":cfg!(any(target_os="macos",target_os="linux",windows)),"installed":null,"enabled":null,"error":e.to_string()}))
 }
-pub(crate) fn service_path(path: &std::path::Path) -> String {
+pub fn service_path(path: &std::path::Path) -> String {
     let path = path.to_string_lossy();
     if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{rest}")
@@ -138,8 +138,7 @@ pub fn stage(executable: &std::path::Path) -> Result<PathBuf> {
     use sha2::{Digest, Sha256};
     let digest = format!("{:x}", Sha256::digest(fs::read(executable)?));
     let root = crate::client::config_dir()?.join("servers").join(format!(
-        "{}-{}",
-        env!("CARGO_PKG_VERSION"),
+        "sha256-{}",
         &digest[..16]
     ));
     fs::create_dir_all(&root)?;

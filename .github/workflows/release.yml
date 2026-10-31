@@ -28,6 +28,8 @@ jobs:
       commit: ${{ steps.commit.outputs.sha }}
       updater: ${{ steps.updater.outputs.enabled }}
       macos_arch: ${{ steps.macos.outputs.arch }}
+      standalone: ${{ steps.server.outputs.enabled }}
+      server_version: ${{ steps.server.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,6 +49,16 @@ jobs:
         id: macos
         run: |
           python3 -c "from pathlib import Path; lines = Path('.github/workflows/release.yml').read_text().splitlines(); print('arch=' + ('universal' if any(line.strip() == 'args: --target universal-apple-darwin' for line in lines) else 'aarch64'))" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve independent server packaging
+        id: server
+        run: |
+          if [ -f .github/scripts/configure-prebuilt-server.py ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+            python3 -c 'import tomllib; m = tomllib.load(open("Cargo.toml", "rb")); v = m["package"]["version"]; print("version=" + (v if isinstance(v, str) else m["workspace"]["package"]["version"]))' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Validate update signing configuration
         id: updater
@@ -72,8 +84,16 @@ jobs:
             const prepare = require('./.github/scripts/prepare-release.cjs');
             await prepare({ github, context, core, tag: process.env.RELEASE_TAG });
 
-  build:
+  server-build:
     needs: prepare
+    if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+    uses: ./.github/workflows/build-server.yml
+    with:
+      commit: ${{ needs.prepare.outputs.commit }}
+
+  build:
+    needs: [prepare, server-build]
+    if: always() && needs.prepare.result == 'success' && (needs.server-build.result == 'success' || needs.server-build.result == 'skipped')
     permissions:
       contents: write
     strategy:
@@ -81,10 +101,13 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
+            server_target: aarch64-apple-darwin
             args: --target ${{ needs.prepare.outputs.macos_arch == 'universal' && 'universal-apple-darwin' || 'aarch64-apple-darwin' }}
           - platform: windows-latest
+            server_target: x86_64-pc-windows-msvc
             args: ""
           - platform: ubuntu-22.04
+            server_target: x86_64-unknown-linux-gnu
             args: ""
     runs-on: ${{ matrix.platform }}
     env:
@@ -125,6 +148,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+          RELEASE_PLATFORM: ${{ runner.os }}
         with:
           script: |
             const fs = require('node:fs');
@@ -134,6 +158,10 @@ jobs:
             }
             const path = 'app/tauri.release.conf.json';
             const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+            config.bundle ??= {};
+            config.bundle.targets = { macOS: ['dmg'], Windows: ['nsis'], Linux: ['appimage', 'deb'] }[process.env.RELEASE_PLATFORM];
+            if (!config.bundle.targets) throw new Error('Unsupported release platform');
+            config.bundle.createUpdaterArtifacts = process.env.RELEASE_PLATFORM !== 'macOS';
             config.plugins ??= {};
             config.plugins.updater = { ...config.plugins.updater, pubkey };
             // Hooks otherwise run from the frontend root, outside app/.
@@ -169,6 +197,19 @@ jobs:
       - name: Add Tauri CLI to PATH
         shell: bash
         run: echo "${{ runner.temp }}/noctua-tauri-cli/bin" >> "$GITHUB_PATH"
+
+      - name: Download prebuilt server
+        if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+        uses: actions/download-artifact@v4
+        with:
+          name: server-${{ matrix.server_target }}
+          path: prebuilt-server
+      - name: Configure prebuilt server for desktop packaging
+        if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+        shell: bash
+        env:
+          SERVER_TARGET: ${{ matrix.server_target }}
+        run: python .github/scripts/configure-prebuilt-server.py
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -212,6 +253,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
           UPDATER_ENABLED: ${{ needs.prepare.outputs.updater }}
+          NOCTUA_RELEASE_SERVER_VERSION: ${{ needs.prepare.outputs.server_version }}
           MACOS_ARCH: ${{ needs.prepare.outputs.macos_arch }}
         with:
           script: |

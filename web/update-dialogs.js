@@ -3,9 +3,12 @@
 globalThis.NoctuaUpdateDialogs = (() => {
 const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function summary(result, currentVersion = 'Current version') {
+  const warnings = (Array.isArray(result.warnings) ? result.warnings : []).map(text => `<p>${esc(text)}</p>`).join('');
+  const server = result.server ? `<p>Local server: ${esc(result.server.current_version)} → ${esc(result.server.version)}. Open edits are saved and active tasks finish before replacement.</p>` : '';
+  if (result.component === 'server') return server + `<p><a href="https://github.com/UW-CTRL/noctua/releases/tag/server-v${encodeURIComponent(result.version)}" target="_blank" rel="noopener">Server release notes</a></p>` + warnings;
   const labels = { breaking: 'Breaking changes', features: 'New', fixes: 'Fixed', improvements: 'Improved', other: 'Other' };
   const releases = Array.isArray(result.releases) && result.releases.length ? result.releases : [{ version: result.version, changes: [] }];
-  return `<p class="update-version">${esc(result.current_version || currentVersion || 'Current version')} → ${esc(result.version)}</p>` +
+  return server + warnings + `<p class="update-version">${esc(result.current_version || currentVersion || 'Current version')} → ${esc(result.version)}</p>` +
     '<p class="update-history-hint">Release highlights, newest first. Open each version’s release notes for full details.</p>' +
     releases.map(release => {
       const changes = Array.isArray(release.changes) ? release.changes : [];

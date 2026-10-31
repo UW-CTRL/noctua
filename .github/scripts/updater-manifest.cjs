@@ -1,9 +1,7 @@
 // Generate once, after all platform uploads, so parallel builds cannot lose targets.
-module.exports = async function uploadManifest({ github, context, release, assets, macosArch = 'aarch64' }) {
+module.exports = async function uploadManifest({ github, context, release, assets }) {
   const version = release.tag_name.slice(1);
   const targets = {
-    'darwin-aarch64': `Noctua_${macosArch}.app.tar.gz`,
-    ...(macosArch === 'universal' ? { 'darwin-x86_64': 'Noctua_universal.app.tar.gz' } : {}),
     'windows-x86_64': `Noctua_${version}_x64-setup.exe`,
     'linux-x86_64': `Noctua_${version}_amd64.AppImage`,
   };
@@ -38,7 +36,8 @@ module.exports = async function uploadManifest({ github, context, release, asset
   const history = await github.paginate(github.rest.repos.listReleases, { ...context.repo, per_page: 100 });
   const { releaseSummaries } = require('./release-summary.cjs');
   const release_summaries = releaseSummaries(release, history);
-  const data = Buffer.from(JSON.stringify({ version, notes: release.body || '', release_summaries, platforms }, null, 2));
+  const serverVersion = process.env.NOCTUA_RELEASE_SERVER_VERSION;
+  const data = Buffer.from(JSON.stringify({ version, ...(serverVersion ? { server_version: serverVersion } : {}), notes: release.body || '', release_summaries, platforms }, null, 2));
   const previous = assets.find(a => a.name === 'latest.json');
   if (previous) await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: previous.id });
   await github.rest.repos.uploadReleaseAsset({
