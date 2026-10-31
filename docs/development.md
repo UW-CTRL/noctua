@@ -289,8 +289,8 @@ and Origin, pins server identity, keeps tokens out of JavaScript, refuses upstre
 redirects and streams uploads/downloads/chat without buffering entire responses.
 Its saved port must remain available: a conflict fails rather than silently
 changing the origin and hiding recovery drafts. First connection imports existing
-Noctua preferences/drafts from the previous server origin using native WebView
-evaluation; original storage is retained and existing destination records are not
+Noctua preferences/drafts from the previous server origin using an authenticated read-only WebView and
+native evaluation; original storage is retained and existing destination records are not
 replaced. This migration never enables a remote native command endpoint.
 
 Standalone archives include an external `ui/` snapshot. Desktop also stages an

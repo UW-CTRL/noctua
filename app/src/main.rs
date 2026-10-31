@@ -608,7 +608,7 @@ async fn connect_server(
         if test_only {let _=w.close();return Ok(identity)}
         let _switch_guard=SwitchGuard(app.clone());
         if !keep_windows {if let Err(error)=flush_clients(&app,w.label()).await {let _=w.close();return Err(anyhow::Error::msg(error))}}
-        frontend::migrate_storage(&app,&w,&address,identity["server_id"].as_str().unwrap()).await?;
+        frontend::migrate_storage(&app,&w,&address,&secret,identity["server_id"].as_str().unwrap()).await?;
         if mode=="remote" {if let Err(error)=noctua::client::store_secret(&address,&secret){let _=w.close();return Err(error)}}
         w.navigate(destination)?;
         w.show()?;w.set_focus()?;

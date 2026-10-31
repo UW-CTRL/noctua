@@ -88,6 +88,26 @@ pub async fn start(
     });
     Ok(frontend)
 }
+/// Read only the server's scoped session name and opaque value. Attributes from
+/// a remote Set-Cookie header never choose the native WebView's cookie domain.
+pub fn legacy_session(header: &str) -> Result<(String, String)> {
+    let (name, value) = header
+        .split(';')
+        .next()
+        .and_then(|v| v.split_once('='))
+        .context("Invalid legacy browser session")?;
+    let scoped = name
+        .strip_prefix("noctua_session_")
+        .is_some_and(|suffix| suffix.len() == 16 && suffix.bytes().all(|b| b.is_ascii_hexdigit()));
+    anyhow::ensure!(
+        (name == "noctua_session" || scoped)
+            && value.len() == 32
+            && value.bytes().all(|b| b.is_ascii_hexdigit()),
+        "Invalid legacy browser session"
+    );
+    Ok((name.into(), value.into()))
+}
+
 fn equal(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0, |n, (a, b)| n | (a ^ b)) == 0
 }
@@ -291,6 +311,20 @@ mod tests {
             header::COOKIE,
             format!("{}={}", frontend.cookie_name, frontend.cookie_value),
         )
+    }
+    #[test]
+    fn legacy_sessions_accept_released_names_without_echoing_credentials() {
+        let secret = "a".repeat(32);
+        for name in ["noctua_session", "noctua_session_0123456789abcdef"] {
+            assert_eq!(
+                legacy_session(&format!("{name}={secret}; Domain=untrusted.example")).unwrap(),
+                (name.into(), secret.clone())
+            );
+        }
+        let error = legacy_session(&format!("unrelated={secret}"))
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains(&secret));
     }
     #[tokio::test]
     async fn desktop_assets_are_local_and_requests_keep_native_credentials_private() {
