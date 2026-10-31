@@ -102,6 +102,23 @@ prompts, tool descriptions, and relevant validation in sync when features change
 See [CI](ci.md) for coverage and known gaps, and [Releasing](releases.md) for
 versioning, packaging, and publication.
 
+## Pull requests and merging
+
+Keep each PR focused on one logical change. Use the
+[PR template](../.github/pull_request_template.md): write a plain-language summary
+in 1–2 sentences, list major and minor changes, and describe validation results.
+Use `type: short description` for the title, following the commit conventions in
+[AGENTS.md](../AGENTS.md).
+
+Changes to `main` require a PR and all seven checks listed in [CI](ci.md#checks)
+to pass. Reviewer approval is not required. Force pushes and deletion of `main`
+are blocked. Secret scanning and push protection are enabled; never commit
+credentials.
+
+Squash merging is the only merge option. Each merged PR becomes one commit on
+`main`, with the PR title and description as its default commit message. Review
+both before merging so the resulting history is clear and useful.
+
 ## Feature synchronization
 
 Update these together in the same change:

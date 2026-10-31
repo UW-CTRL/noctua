@@ -20,6 +20,10 @@ runs both the server and extracted client-library unit suites. Each lifecycle,
 recovery and update integration script has its own CI step so its duration and
 failures are visible separately from the server and update-fixture builds.
 
+All seven checks below are required before merging a PR into `main`. See
+[Pull requests and merging](development.md#pull-requests-and-merging) for the
+contribution and squash-merge conventions.
+
 ## Checks
 
 | Check | Runner | Coverage |
