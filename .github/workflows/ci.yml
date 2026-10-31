@@ -34,7 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Compile and test the backend
-        run: cargo test --locked -p noctua
+        run: cargo test --locked -p noctua -p noctua-client
       - name: Test isolated server lifecycle and authentication
         run: |
           cargo build --locked -p noctua

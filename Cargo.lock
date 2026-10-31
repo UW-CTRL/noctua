@@ -2653,6 +2653,7 @@ dependencies = [
  "dirs 5.0.1",
  "html5ever",
  "libc",
+ "noctua-client",
  "pdf-extract",
  "reqwest 0.12.28",
  "roxmltree",
@@ -2675,7 +2676,7 @@ version = "0.3.5"
 dependencies = [
  "anyhow",
  "axum",
- "noctua",
+ "noctua-client",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -2689,6 +2690,26 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "noctua-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs 5.0.1",
+ "libc",
+ "minisign-verify",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
  "tokio",
  "uuid",
 ]

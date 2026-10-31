@@ -12,6 +12,11 @@ older runs for that PR. Jobs have read-only repository access and no release or
 deployment steps. The separate release workflow still builds installers only
 for version tags or an explicit manual release run, then publishes the release
 automatically after every platform build and installer verification succeeds.
+The independent `release-server` workflow builds standalone archives only for
+`server-v*` tags or a manual server release run. Release checks also cover server
+tag validation, prebuilt-server platform and checksum validation, signed update
+metadata, archive contents, executable permissions, and checksums. Backend CI
+runs both the server and extracted client-library unit suites.
 
 ## Checks
 
@@ -115,7 +120,7 @@ The MCP regression verifies that a missing linked original reports download fail
 From the repository root:
 
 ```sh
-cargo test --locked -p noctua
+cargo test --locked -p noctua -p noctua-client
 cargo check --locked -p noctua-app
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 node --test .github/scripts/*.test.cjs

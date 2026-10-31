@@ -1,4 +1,5 @@
 /target
+/server-dist/
 key.txt
 noctua-cache.sqlite*
 .noctua-chat/

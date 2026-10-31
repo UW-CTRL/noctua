@@ -17,6 +17,11 @@ server remains running after ensure exits. Stop that isolated server explicitly
 with `NOCTUA_HOME=/absolute/isolated/data target/debug/noctua stop`. Never use
 production data for tests. See [Server operations](server.md) for CLI semantics.
 
+For an optimized standalone binary, run `cargo build --locked --release -p noctua`.
+This builds only the server and embedded web interface, without Tauri or desktop
+system libraries. See [Standalone installation](server.md#standalone-installation)
+for release downloads and runtime requirements.
+
 For desktop development, build the headless binary first, then the Tauri app:
 
 ```sh
@@ -31,11 +36,23 @@ cargo tauri build
 Installers appear under `target/release/bundle/`. The bundled local connection
 screen opens without starting a data server. The build hook explicitly uses the
 native app directory (`cwd: "."`); its default frontend-root working directory
-is outside `app/`. `app/prepare-server.py` builds the requested server target and puts it in the bundle's
-`binaries/` resources. Universal macOS builds combine both architectures with
+is outside `app/`. `app/prepare-server.py` puts the requested server in the bundle's `binaries/`
+resources. By default it builds the server locally. To reuse a prebuilt executable,
+set `NOCTUA_SERVER_BINARY` to its absolute path and `NOCTUA_SERVER_SHA256` to its
+SHA-256 digest before `cargo tauri build`. The hook checks the digest and executable
+header against the desktop target and never falls back to compilation when an
+explicit prebuilt binary is invalid. Official releases use current-run server
+artifacts this way. Universal macOS builds combine both architectures with
 lipo. Tauri supplies the target through its [build hook environment](https://v2.tauri.app/reference/config/#buildconfig).
-The desktop stages a version/content-addressed durable copy before ensure, so
+The desktop stages a content-addressed durable copy before ensure, so
 an app update does not remove a running server's executable.
+
+The desktop links `noctua-client`, which owns connection and lifecycle plumbing,
+instead of the research backend. Workspace web assets remain embedded in the
+server, so changing the reader, notes, library or chat UI still needs a server
+build and replacement. Native shell changes can use an existing verified server
+binary. API/data compatibility versions are shared by the client crate; package
+release versions are independent and never substitute for those checks.
 
 Use `NOCTUA_HOME` and `NOCTUA_CLIENT_HOME` pointing to separate temporary folders
 for parallel development. A second port does not permit a second writer to the
@@ -62,9 +79,10 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
 | `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
-| `src/server.rs`, `src/server_recovery.rs`, `src/server_update.rs`, `src/maintenance.rs`, `src/security.rs`, `src/service.rs`, `src/client.rs` | Ownership/CLI, release transactions and editor acknowledgments, authentication, local user services and device-local configuration/OS credentials. |
+| `crates/client/` | Client protocol, API/data compatibility versions, device-local credentials, storage/lifecycle management, signed server downloads and detached update transactions. Desktop depends on this crate instead of the research backend. |
+| `src/server.rs`, `src/server_launch.rs`, `src/maintenance.rs`, `src/security.rs` | Server identity, SQLite backup, private launch-environment capture, editor acknowledgments and authentication. |
 | `src/research.rs`, `web/research.js` | Revisioned collection goals, progress, and personal target dates; durable hidden `.workspace/research/` storage and its editor. |
-| `src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
+| `crates/client/src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
 | `tests/` | Frontend checks and manual demo fixtures. |
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
@@ -72,7 +90,7 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 Rebuild and restart after changing embedded web assets or prompts.
 
 ```sh
-cargo test --locked -p noctua
+cargo test --locked -p noctua -p noctua-client
 # macOS frontend checks:
 bash tests/run-frontend.sh
 ```
@@ -151,6 +169,7 @@ readable when no renderer is active; new previews require an active chat tab.
 | `NOCTUA_CLAUDE` / `NOCTUA_CODEX` | Assistant CLI paths |
 | `NOCTUA_PORT` | Preferred loopback server port; default 47878, free-port fallback on conflict |
 | `NOCTUA_PROFILE_HOME` | Isolated server profile/config root; preserves migration locking in tests |
+| `NOCTUA_SERVER_BINARY` / `NOCTUA_SERVER_SHA256` | Verified prebuilt executable for desktop packaging; unset for a local server build |
 | `NOCTUA_CLIENT_HOME` | Device-local connection preferences and staged server binaries |
 | `NOCTUA_ORIGINS` | Comma-separated exact HTTPS origins, overriding server-config.json |
 | `NOCTUA_SERVICE_HOME` / `NOCTUA_SERVICE_MANAGER` | Isolated definition directory and fake service manager for tests |

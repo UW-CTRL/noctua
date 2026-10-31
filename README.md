@@ -20,6 +20,8 @@ with Semantic Scholar.
 [Get started](docs/getting-started.md) ·
 [Release Note](https://github.com/UW-CTRL/noctua/releases)
 
+For headless machines, see [standalone server downloads and installation](docs/server.md#standalone-installation).
+
 ![Attach passages, figures, and tables from a paper to chat](docs/images/pr-3/attachments.gif)
 
 *[Scripted demo](docs/pr-3.md) of source-aware chat attachments.*

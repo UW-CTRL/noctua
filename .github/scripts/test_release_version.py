@@ -28,6 +28,25 @@ class ReleaseVersionTests(unittest.TestCase):
     def test_current_version_is_valid(self):
         self.assertEqual(MODULE.validate(self.root, self.tag), self.version)
 
+    def test_server_tag_needs_no_desktop_configuration(self):
+        shutil.rmtree(self.root / "app")
+        self.assertEqual(MODULE.validate(self.root, "server-" + self.tag, server=True), self.version)
+
+    def test_release_channels_reject_each_others_tags(self):
+        with self.assertRaises(ValueError):
+            MODULE.validate(self.root, self.tag, server=True)
+        with self.assertRaises(ValueError):
+            MODULE.validate(self.root, "server-" + self.tag)
+
+    def test_server_rejects_stale_lockfile(self):
+        path = self.root / "Cargo.lock"
+        path.write_text(path.read_text().replace(
+            f'name = "noctua"\nversion = "{self.version}"',
+            'name = "noctua"\nversion = "999.999.999"',
+        ))
+        with self.assertRaisesRegex(ValueError, "Refresh Cargo.lock"):
+            MODULE.validate(self.root, "server-" + self.tag, server=True)
+
     def test_stable_version_uses_the_same_validation(self):
         for name in ("Cargo.toml", "Cargo.lock"):
             path = self.root / name
@@ -35,6 +54,19 @@ class ReleaseVersionTests(unittest.TestCase):
                 f'version = "{self.version}"', 'version = "1.0.0"',
             ))
         self.assertEqual(MODULE.validate(self.root, "v1.0.0"), "1.0.0")
+
+    def test_server_and_desktop_versions_advance_independently(self):
+        manifest = self.root / "Cargo.toml"
+        manifest.write_text(manifest.read_text().replace(
+            f'version = "{self.version}"', 'version = "0.9.0"', 1))
+        lock = self.root / "Cargo.lock"
+        lock.write_text(lock.read_text().replace(
+            f'name = "noctua"\nversion = "{self.version}"',
+            'name = "noctua"\nversion = "0.9.0"'))
+        self.assertEqual(MODULE.validate(self.root, self.tag), self.version)
+        self.assertEqual(MODULE.validate(self.root, "server-v0.9.0", server=True), "0.9.0")
+        with self.assertRaises(ValueError):
+            MODULE.validate(self.root, "server-" + self.tag, server=True)
 
     def test_numeric_release_tags_only(self):
         for tag in ("main", "0.1.0", "v01.0.0", "v1.0", "v1.0.0-rc.1", "v1.0.0+build"):

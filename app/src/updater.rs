@@ -10,6 +10,8 @@ pub struct Updates(tokio::sync::Mutex<Pending>);
 #[derive(Default)]
 struct Pending {
     update: Option<Update>,
+    server: Option<noctua::releases::Offer>,
+    server_id: Option<String>,
     installed: bool,
     startup_checked: bool,
 }
@@ -47,29 +49,83 @@ pub async fn run(app: &AppHandle, action: UpdateAction, version: Option<String>)
     }
     match action {
         UpdateAction::Check | UpdateAction::StartupCheck => {
-            #[cfg(target_os = "linux")]
-            anyhow::ensure!(std::env::var_os("APPIMAGE").is_some(),
-                "In-app updates require the AppImage build on Linux. Update .deb and .rpm installations with your package manager.");
-            anyhow::ensure!(!option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim().is_empty(),
+            let public_key = option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or("").trim();
+            anyhow::ensure!(!public_key.is_empty(),
                 "This build has no update verification key. Install an official release to enable updates.");
             // Forget an earlier offer if this check fails: never install stale metadata.
             pending.update = None;
+            pending.server = None;
+            pending.server_id = None;
+            let mut warnings = Vec::new();
             let updater = app.updater_builder()
                 .timeout(std::time::Duration::from_secs(15 * 60)).build()?;
-            pending.update = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check())
-                .await.map_err(|_| anyhow::anyhow!("Checking for updates timed out. Please try again."))??;
-            Ok(match &pending.update {
+            if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {
+                warnings.push("Use your package manager to update this desktop installation. Local server updates are still available.".to_owned());
+            } else {
+                match tokio::time::timeout(std::time::Duration::from_secs(30), updater.check()).await {
+                    Ok(Ok(update)) => pending.update = update,
+                    Ok(Err(error)) => warnings.push(format!("Desktop update check failed: {error}")),
+                    Err(_) => warnings.push("Desktop update check timed out.".to_owned()),
+                }
+            }
+            let mut server_current = None;
+            if let Ok(data) = noctua::paths::existing_data_dir() {
+                if let Ok(local) = noctua::server::status(&data).await {
+                    let bundled = crate::bundled_server_executable(app)?;
+                    let identity = noctua::server_update::candidate(&bundled).await?;
+                    let current = local["version"].as_str().ok_or_else(|| anyhow::anyhow!("Local server version missing"))?;
+                    server_current = Some(current.to_owned());
+                    let mut baseline = semver::Version::parse(current)?;
+                    for version in [identity["version"].as_str(), pending.update.as_ref().and_then(|u| u.raw_json["server_version"].as_str())].into_iter().flatten() {
+                        baseline = baseline.max(semver::Version::parse(version)?);
+                    }
+                    match tokio::time::timeout(std::time::Duration::from_secs(45), noctua::releases::check(&baseline.to_string(), public_key, &identity["paper_compilers"])).await {
+                        Ok(Ok(offer)) => { pending.server = offer; pending.server_id = local["server_id"].as_str().map(str::to_owned); }
+                        Ok(Err(error)) => warnings.push(format!("Server update check failed: {error}")),
+                        Err(_) => warnings.push("Server update check timed out.".to_owned()),
+                    }
+                }
+            }
+            let mut result = match &pending.update {
                 Some(update) => json!({ "status": "available", "version": update.version,
                     "current_version": update.current_version,
                     "releases": summaries(&update.raw_json, &update.current_version, &update.version) }),
                 None => json!({ "status": "current" }),
-            })
+            };
+            if let Some(offer) = &pending.server {
+                result["server"] = json!({"version":offer.manifest.version,"current_version":server_current});
+                if pending.update.is_none() {
+                    result["status"] = json!("available");
+                    result["component"] = json!("server");
+                    result["version"] = json!(offer.manifest.version);
+                    result["current_version"] = json!(server_current);
+                }
+            }
+            result["warnings"] = json!(warnings);
+            if result["status"] == "current" && !warnings.is_empty() {
+                anyhow::bail!("{}", warnings.join(" "));
+            }
+            Ok(result)
         }
         UpdateAction::Install => {
-            let update = pending.update.as_ref()
+            let offered_version = pending.update.as_ref().map(|u| u.version.as_str())
+                .or_else(|| pending.server.as_ref().map(|s| s.manifest.version.as_str()))
                 .ok_or_else(|| anyhow::anyhow!("Check for updates before installing."))?;
-            anyhow::ensure!(version.as_ref().is_none_or(|version| version == &update.version),
+            anyhow::ensure!(version.as_deref() == Some(offered_version),
                 "The offered update changed in another window. Check for updates again before installing.");
+            if let Some(offer) = &pending.server {
+                let data = noctua::paths::existing_data_dir()?;
+                let current = noctua::server::status(&data).await?;
+                anyhow::ensure!(current["server_id"].as_str() == pending.server_id.as_deref(), "The local server changed. Check for updates again.");
+                anyhow::ensure!(semver::Version::parse(current["version"].as_str().ok_or_else(|| anyhow::anyhow!("Local server version missing"))?)? < semver::Version::parse(&offer.manifest.version)?, "The local server version changed. Check for updates again.");
+                let bundled = crate::bundled_server_executable(app)?;
+                let binary = noctua::releases::download(offer, option_env!("NOCTUA_UPDATER_PUBLIC_KEY").unwrap_or(""), &bundled).await?;
+                noctua::releases::begin(&binary, crate::PORT)?;
+                pending.server = None;
+            }
+            let Some(update) = pending.update.as_ref() else {
+                return Ok(json!({"status":"server_updating"}));
+            };
             update.download_and_install(|_, _| {}, || {}).await?;
             pending.installed = true;
             pending.update = None;
