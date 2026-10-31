@@ -10,7 +10,7 @@ base64 = "0.22"
 dirs = "5"
 libc = "0.2"
 minisign-verify = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
@@ -20,3 +20,8 @@ tokio = { version = "1", features = ["rt", "macros", "net", "time", "sync", "pro
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 
+
+axum = "0.8"
+
+[dev-dependencies]
+tokio-stream = "0.1"

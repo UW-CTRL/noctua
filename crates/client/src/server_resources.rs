@@ -56,7 +56,31 @@ fn copy(source: &Path, destination: &Path, root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Preserve the browser UI snapshot independently of the installed app bundle.
+/// Existing snapshots are immutable while that server executable is in use.
+fn stage_browser_ui(source: &Path, executable: &Path) -> Result<()> {
+    let Some(parent) = executable.parent() else { return Ok(()); };
+    let destination = parent.join("browser-ui");
+    anyhow::ensure!(!destination.is_symlink(), "Refuse a browser UI staging symlink");
+    if destination.is_dir() { return Ok(()); }
+    let ui = source.parent().map(|p|p.join("browser-ui")).filter(|p|p.is_dir())
+        .or_else(||bundled(source).map(|p|p.join("ui")).filter(|p|p.is_dir()));
+    let Some(ui) = ui else { return Ok(()); };
+    fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(".ui-stage-{}",uuid::Uuid::new_v4()));
+    let result = (|| -> Result<()> {
+        copy(&ui, &temporary, &fs::canonicalize(&ui)?)?;
+        if let Err(error) = fs::rename(&temporary,&destination) {
+            if !destination.is_dir() { return Err(error.into()); }
+        }
+        Ok(())
+    })();
+    if temporary.exists() { let _ = fs::remove_dir_all(temporary); }
+    result
+}
+
 pub fn stage(source: &Path, executable: &Path) -> Result<()> {
+    stage_browser_ui(source, executable)?;
     let Some(root) = bundled(source) else {
         return Ok(());
     };
@@ -92,6 +116,11 @@ pub fn stage(source: &Path, executable: &Path) -> Result<()> {
 }
 
 pub(crate) fn cleanup(parent: &Path) -> Result<()> {
+    let ui = parent.join("browser-ui");
+    if ui.exists() {
+        anyhow::ensure!(!ui.is_symlink(), "Refuse cleanup of a browser UI symlink");
+        fs::remove_dir_all(ui)?;
+    }
     let resources = parent.join("paper-resources");
     if resources.exists() {
         anyhow::ensure!(
@@ -106,6 +135,24 @@ pub(crate) fn cleanup(parent: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn browser_ui_is_durable_immutable_and_carried_to_server_updates() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("app/binaries/server");
+        fs::create_dir_all(source.parent().unwrap()).unwrap(); fs::write(&source,b"server").unwrap();
+        fs::create_dir_all(root.path().join("app/ui")).unwrap();
+        fs::write(root.path().join("app/ui/index.html"),"first UI").unwrap();
+        fs::create_dir_all(root.path().join("app/tectonic")).unwrap();
+        let target = root.path().join("staged/server"); fs::create_dir_all(target.parent().unwrap()).unwrap();
+        stage(&source,&target).unwrap();
+        fs::write(root.path().join("app/ui/index.html"),"new UI").unwrap();
+        stage(&source,&target).unwrap();
+        assert_eq!(fs::read_to_string(root.path().join("staged/browser-ui/index.html")).unwrap(),"first UI");
+        let updated = root.path().join("updated/server"); fs::create_dir_all(updated.parent().unwrap()).unwrap();
+        stage(&target,&updated).unwrap();
+        fs::remove_dir_all(root.path().join("app")).unwrap();
+        assert_eq!(fs::read_to_string(root.path().join("updated/browser-ui/index.html")).unwrap(),"first UI");
+    }
     #[test]
     fn staged_compilers_survive_bundle_removal_and_leave_other_files_untouched() {
         let temp = tempfile::tempdir().unwrap();

@@ -6,6 +6,7 @@ async fn main() -> Result<()> {
     let arguments = std::env::args().collect::<Vec<_>>();
     for (flag, variable) in [
         ("--data-dir", "NOCTUA_HOME"),
+        ("--ui-dir", "NOCTUA_UI_DIR"),
         ("--profile-dir", "NOCTUA_PROFILE_HOME"),
         ("--client-dir", "NOCTUA_CLIENT_HOME"),
     ] {

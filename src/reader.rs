@@ -5,13 +5,12 @@ use axum::{body::Bytes, extract::{DefaultBodyLimit, Path, Query, State}, http::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use crate::{App, ApiResult, ApiError, Shared, library::PDF_LIMIT};
-include!(concat!(env!("OUT_DIR"), "/pdf_assets.rs"));
 
 pub fn routes()->Router<Arc<App>> {
     Router::new()
-        .route("/pdf.js",get(||async{crate::asset(include_str!("../web/pdf.js"),"text/javascript; charset=utf-8")}))
-        .route("/library.js",get(||async{crate::asset(include_str!("../web/library.js"),"text/javascript; charset=utf-8")}))
-        .route("/pdf.css",get(||async{crate::asset(include_str!("../web/pdf.css"),"text/css; charset=utf-8")}))
+        .route("/pdf.js",get(||async{crate::web_assets::response("pdf.js")}))
+        .route("/library.js",get(||async{crate::web_assets::response("library.js")}))
+        .route("/pdf.css",get(||async{crate::web_assets::response("pdf.css")}))
         .route("/vendor/pdfjs/{*file}",get(pdf_asset))
         .route("/api/library/import-zotero",post(import_zotero))
         .route("/api/library/import-pdf",post(import_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
@@ -30,11 +29,7 @@ pub fn routes()->Router<Arc<App>> {
         .route("/api/library/papers/{key}/annotations/{id}/resolve-reply",post(resolve_reply))
         .route("/api/note-drawings/{target}/{note}/{block}/{updated}",post(save_drawing).layer(DefaultBodyLimit::max(5<<20)))
 }
-async fn pdf_asset(Path(file):Path<String>)->Response {
-    let Some((_,bytes))=PDF_ASSETS.iter().find(|(name,_)|*name==file) else{return StatusCode::NOT_FOUND.into_response()};
-    let mime=if file.ends_with(".mjs")||file.ends_with(".js"){"text/javascript"}else if file.ends_with(".wasm"){"application/wasm"}else if file.ends_with(".ttf"){"font/ttf"}else{"application/octet-stream"};
-    ([(header::CONTENT_TYPE,mime),(header::X_CONTENT_TYPE_OPTIONS,"nosniff"),(header::CACHE_CONTROL,"public, max-age=86400")],*bytes).into_response()
-}
+async fn pdf_asset(Path(file):Path<String>)->Response { crate::web_assets::response(&format!("vendor/pdfjs/{file}")) }
 async fn import_zotero(State(app):Shared,Json(mut b):Json<crate::zotero::ImportOptions>)->ApiResult {
     if b.pdf_mode.is_none() { b.pdf_mode=Some(app.settings.lock().unwrap().zotero_pdf_mode); }
     let result=tokio::task::spawn_blocking(move||app.library.import_zotero(&app.zotero,&app.notes,&b)).await.map_err(|e|ApiError(e.into()))??;Ok(Json(result))

@@ -18,8 +18,8 @@ with `NOCTUA_HOME=/absolute/isolated/data target/debug/noctua stop`. Never use
 production data for tests. See [Server operations](server.md) for CLI semantics.
 
 For an optimized standalone binary, run `cargo build --locked --release -p noctua`.
-This builds only the server and embedded web interface, without Tauri or desktop
-system libraries. See [Standalone installation](server.md#standalone-installation)
+This builds only the server, without compiling UI files, Tauri or desktop
+system libraries. Browser UI files are read from an external directory. See [Standalone installation](server.md#standalone-installation)
 for release downloads and runtime requirements.
 
 For desktop development, build the headless binary first, then the Tauri app:
@@ -44,17 +44,19 @@ resources. By default it builds the server locally. To reuse a prebuilt executab
 set `NOCTUA_SERVER_BINARY` to its absolute path and `NOCTUA_SERVER_SHA256` to its
 SHA-256 digest before `cargo tauri build`. The hook checks the digest and executable
 header against the desktop target and never falls back to compilation when an
-explicit prebuilt binary is invalid. Official releases use current-run server
-artifacts this way. Universal macOS builds combine both architectures with
+explicit prebuilt binary is invalid. Official Desktop releases reuse the pinned, published `server-v*` binaries
+after verifying metadata signatures, API/data versions and binary hashes; they
+do not build the research backend. Publish a new Server release first when the
+pinned server version changes. Universal macOS builds combine both architectures with
 lipo. Tauri supplies the target through its [build hook environment](https://v2.tauri.app/reference/config/#buildconfig).
 The desktop stages a content-addressed durable copy before ensure, so
 an app update does not remove a running server's executable.
 
 The desktop links `noctua-client`, which owns connection and lifecycle plumbing,
-instead of the research backend. Workspace web assets remain embedded in the
-server, so changing the reader, notes, library or chat UI still needs a server
-build and replacement. Native shell changes can use an existing verified server
-binary. API/data compatibility versions are shared by the client crate; package
+instead of the research backend. Desktop embeds the complete `web/` UI and
+serves it from a private loopback origin. Only API requests are streamed to the
+selected local or remote server, with credentials retained in native code. UI
+changes require a Desktop build, but no server build or replacement. API/data compatibility versions are shared by the client crate; package
 release versions are independent and never substitute for those checks.
 
 Use `NOCTUA_HOME` and `NOCTUA_CLIENT_HOME` pointing to separate temporary folders
@@ -62,13 +64,16 @@ for parallel development. A second port does not permit a second writer to the
 same data. `NOCTUA_SERVICE_HOME` redirects generated definitions and
 `NOCTUA_SERVICE_MANAGER` substitutes a fake manager executable for tests; always
 set both for service tests. Do not install a real service during development.
-Server web assets are embedded: rebuild, explicitly stop/restart your isolated
-server, then refresh. Rebuilding the desktop alone does not update a running
-server. Platform prerequisites are in the [release workflow](../.github/workflows/release.yml).
+Rebuild Desktop to change its UI; the data server can keep running. Browser
+UI files live beside a standalone server in `ui/`, or in the absolute directory
+selected by `NOCTUA_UI_DIR` / `--ui-dir`. The source checkout uses `web/` as the
+development default. API endpoints remain available without browser UI files. Platform prerequisites are in the [release workflow](../.github/workflows/release.yml).
 
 ## Project structure and checks
 
-The Rust backend in `src/` embeds the HTML/CSS/JavaScript interface in `web/`.
+The Rust backend in `src/` implements the data/API server. Desktop owns the
+HTML/CSS/JavaScript interface in `web/`; browser deployments serve a separate copy
+of those same files. There is no third independently versioned UI updater.
 
 `web/ui.css` owns shared theme tokens and controls. Connection and sign-in layouts
 use `web/connection.css`; the desktop build copies these and the shared appearance,
@@ -81,8 +86,8 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `src/` | Rust server, domain models, assistant integration, and MCP tools. |
 | `src/prompts/` | Shared and task-specific AI instructions in Markdown. |
 | `web/` | Browser UI, PDF reader, note editor, and chat rendering. |
-| `app/` | Server-independent connection UI, Tauri native management, bundled server builder, icons and desktop updater. |
-| `crates/client/` | Client protocol, API/data compatibility versions, device-local credentials, storage/lifecycle management, signed server downloads and detached update transactions. Desktop depends on this crate instead of the research backend. |
+| `app/` | Complete Desktop UI, private loopback frontend, native management, verified server packaging, icons and desktop updater. |
+| `crates/client/` | Desktop streaming API gateway, client protocol, API/data compatibility versions, device-local credentials, storage/lifecycle management, signed server downloads and detached update transactions. Desktop depends on this crate instead of the research backend. |
 | `src/server.rs`, `src/server_launch.rs`, `src/maintenance.rs`, `src/security.rs` | Server identity, SQLite backup, private launch-environment capture, editor acknowledgments and authentication. |
 | `src/research.rs`, `web/research.js` | Revisioned collection goals, progress, and personal target dates; durable hidden `.workspace/research/` storage and its editor. |
 | `crates/client/src/server_resources.rs` | Atomically stage packaged compilers with the independent server and retire them after verified replacement. |
@@ -90,7 +95,8 @@ Generated copies in `app/dist/` are ignored; edit the sources in `web/`.
 | `.github/` | CI, security, and release workflows and helpers. |
 | `docs/` | User guides, development references, and demo assets. |
 
-Rebuild and restart after changing embedded web assets or prompts.
+Rebuild Desktop after changing UI assets; rebuild/restart the server after
+changing server code or embedded prompts.
 
 ```sh
 cargo test --locked -p noctua -p noctua-client
@@ -274,3 +280,22 @@ build ownership during stop/update, app-bundle removal, persisted output and
 retired compiler cleanup. It runs in backend CI without installing TeX or services.
 
 `src/library_management.rs` implements revision-checked Library bulk operations, recoverable paper/folder trash and undo, collection ordering, and safe duplicate merging. Trash keeps original database rows and immutable file storage; active queries exclude its IDs.
+
+## Desktop UI and server boundary
+
+Desktop serves embedded UI files on a stable loopback origin per upstream server.
+The browser session uses a private HttpOnly cookie; the gateway validates Host
+and Origin, pins server identity, keeps tokens out of JavaScript, refuses upstream
+redirects and streams uploads/downloads/chat without buffering entire responses.
+Its saved port must remain available: a conflict fails rather than silently
+changing the origin and hiding recovery drafts. First connection imports existing
+Noctua preferences/drafts from the previous server origin using an authenticated read-only WebView and
+native evaluation; original storage is retained and existing destination records are not
+replaced. Completion is recorded in native client configuration rather than consuming the
+browser draft quota. This migration never enables a remote native command endpoint.
+
+Standalone archives include an external `ui/` snapshot. Desktop also stages an
+immutable browser UI snapshot beside its durable local server, and retains it
+across independent server updates. Replacing this snapshot is an explicit browser
+deployment operation; Desktop UI upgrades do not silently hot-swap open browser
+sessions. Update browser files between sessions and refresh clients together.

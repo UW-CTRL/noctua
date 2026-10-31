@@ -26,10 +26,12 @@ release installation step but does not prevent a release.
 `.github/workflows/release-server.yml` publishes standalone server archives for
 Linux x64, Windows x64, and macOS Apple Silicon. It runs on `server-v*` tags or a
 manual run with an existing server tag. The desktop `v*` workflow and bundled
-desktop installer format are preserved. Both release workflows use the reusable
-`build-server.yml` workflow to produce native server artifacts. Desktop packaging
-downloads those artifacts from its current run and does not invoke Cargo again
-for the server. Server releases explicitly set `make_latest: false`
+desktop installer format are preserved. Only the Server release uses the reusable `build-server.yml` workflow to
+compile native server artifacts. Desktop releases download the stable published
+`server-v<root package version>` binaries, verify their signed metadata and hashes
+using the client crate, and package them without compiling the research backend.
+A missing or incompatible pinned Server release blocks Desktop packaging; publish
+that Server version first when server code changes. Server releases explicitly set `make_latest: false`
 so desktop download aliases and updater URLs continue to use the desktop release.
 
 The server version is `[package].version` in the root `Cargo.toml`; the desktop
@@ -47,7 +49,7 @@ Validation checks the server manifest and lockfile version without requiring
 Tauri configuration. All platform jobs use the resolved tagged commit, restore
 Cargo caches, build with `cargo build --locked --release -p noctua --target TRIPLE`,
 and smoke-test the executable with `describe`, checking its embedded version.
-They archive the executable and license and generate a SHA-256 checksum for each
+They archive the executable, license and external browser `ui/` files and generate a SHA-256 checksum for each
 archive. It also produces raw executables and per-target update metadata binding
 the version, platform, API/data versions, compiler requirements, size and SHA-256.
 Native builds need no Tauri CLI, desktop libraries, or TeX setup. Publication uses
@@ -319,8 +321,8 @@ installation. Publication validates that the archive contains the bundled server
 and paper compiler resources, and requires its signature before generating the
 macOS manifest entry. Apple Silicon archives are not offered to Intel Macs.
 
-Desktop 0.3.6 disabled macOS desktop update checks and installation. Users of that
-version must manually install a newer Apple Silicon DMG once to restore in-app
+The original 0.3.6 build disabled macOS desktop update checks and installation.
+Users of that build must reinstall the corrected Apple Silicon DMG once to restore in-app
 updates: quit Noctua and replace it in Applications, keeping the data folder.
 Older builds with the updater enabled can consume the signed Mac manifest entry.
 Intel users must retain an older compatible Universal release.
@@ -471,3 +473,30 @@ can silently empty compiler resource trees. Before publication, each platform jo
 checks its actual Debian package and AppImage, macOS DMG, or Windows NSIS installer
 for the bundled server, Tectonic, pdfLaTeX, BibTeX, TeX packages, and license notices.
 A missing resource fails the build and leaves the release unpublished.
+
+## UI-only releases
+
+Change Desktop UI in `web/`, advance only `[workspace.package].version` and its
+lockfile entry, and retain the existing `[package].version` server pin. UI-only
+PR/main CI runs frontend and Desktop checks without compiling the server or real
+paper integration. Desktop packaging verifies/reuses the existing Server release.
+Changing `src/` requires server tests and a separately published `server-v*` release
+before a Desktop release can pin that new server version. API/data compatibility
+is checked independently of package versions. Historical tags without Desktop-owned UI, and Universal rebuilds, keep
+their legacy local hook. Current Desktop-owned UI releases use published servers.
+
+The corrected 0.3.6 Desktop build restores macOS in-app updates. Users of the
+original DMG-only 0.3.6 build must reinstall the corrected DMG once, even though
+the version number is unchanged; subsequent newer releases can install in-app.
+
+For the first external-UI Server release, advance the Server package version:
+its API generation is 2, so older Desktop clients will not independently install
+it and lose their server-hosted UI. The new Desktop supports generations 1 and 2
+and can initially retain the existing generation-1 Server pin. Ship the new
+Desktop first; publish/pin the new Server when needed. Data format stays version 1.
+
+Each Desktop release also includes `Noctua_VERSION_browser-ui.tar.gz`, its
+signature and SHA-256 checksum for manual browser deployments. This portable
+archive shares the Desktop version/tag and is produced without a Server build;
+there is no independent UI release channel. Publication requires all three files
+for Desktop-owned UI builds.

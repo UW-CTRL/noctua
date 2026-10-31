@@ -1,5 +1,5 @@
 // Run only after every platform build succeeds; never publish incomplete assets.
-module.exports = async function publishRelease({ github, context, core, tag, releaseId, updaterEnabled = false, macosArch = 'aarch64' }) {
+module.exports = async function publishRelease({ github, context, core, tag, releaseId, updaterEnabled = false, macosArch = 'aarch64', browserUiEnabled = false }) {
   if (!['aarch64', 'universal'].includes(macosArch)) throw new Error('Unsupported macOS release architecture.');
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[1-9]\d*$/.test(String(releaseId))) {
     throw new Error('A numeric version tag and release ID are required.');
@@ -20,6 +20,10 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
     `Noctua_${version}_amd64.AppImage`,
     `Noctua_${version}_amd64.deb`,
   ];
+  if (browserUiEnabled) {
+    const ui = `Noctua_${version}_browser-ui.tar.gz`;
+    required.push(ui, `${ui}.sig`, `${ui}.sha256`);
+  }
   const assets = await github.paginate(github.rest.repos.listReleaseAssets, { ...params, per_page: 100 });
   const excluded = assets.filter(asset => /\.(?:msi|rpm)$/.test(asset.name));
   if (excluded.length) throw new Error(`Remove excluded release assets before publication: ${excluded.map(a => a.name).join(', ')}`);

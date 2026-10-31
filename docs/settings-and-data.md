@@ -297,8 +297,8 @@ The update and dismissal buttons stay visible. Each version has a **Release note
 link for its full details; the popup shows summaries, not every changelog item.
 Older update manifests without history provide a link to the offered release.
 macOS uses a signed application archive for in-app installation; the DMG remains
-available for first installs and recovery. Desktop 0.3.6 disabled macOS in-app
-updates, so users of that version must install a newer DMG once to restore them.
+available for first installs and recovery. The original 0.3.6 build disabled macOS in-app
+updates, so users of that build must reinstall the corrected 0.3.6 DMG once.
 Quit Noctua and replace it in Applications; retain the data folder. Intel Macs
 must retain an older compatible Universal release.
 Linux desktop app updates require AppImage; use your package manager for DEB

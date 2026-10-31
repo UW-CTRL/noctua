@@ -37,6 +37,7 @@ jobs:
       macos_arch: ${{ steps.macos.outputs.arch }}
       standalone: ${{ steps.server.outputs.enabled }}
       server_version: ${{ steps.server.outputs.version }}
+      desktop_ui: ${{ steps.ui.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +68,11 @@ jobs:
             echo 'enabled=false' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve Desktop-owned UI packaging
+        id: ui
+        run: |
+          if [ -f app/src/frontend.rs ]; then echo 'enabled=true' >> "$GITHUB_OUTPUT"; else echo 'enabled=false' >> "$GITHUB_OUTPUT"; fi
+
       - name: Validate update signing configuration
         id: updater
         env:
@@ -91,16 +97,42 @@ jobs:
             const prepare = require('./.github/scripts/prepare-release.cjs');
             await prepare({ github, context, core, tag: process.env.RELEASE_TAG });
 
-  server-build:
+  server-artifacts:
     needs: prepare
-    if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
-    uses: ./.github/workflows/build-server.yml
-    with:
-      commit: ${{ needs.prepare.outputs.commit }}
+    if: needs.prepare.outputs.desktop_ui == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-artifact-verifier
+      - name: Download the pinned published server release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER_VERSION: ${{ needs.prepare.outputs.server_version }}
+        run: |
+          python3 -c 'import os,re; assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", os.environ["SERVER_VERSION"])'
+          gh release view "server-v$SERVER_VERSION" --json isDraft,isPrerelease --jq 'if .isDraft or .isPrerelease then error("Publish a stable server release first") else . end'
+          gh release download "server-v$SERVER_VERSION" --dir prebuilt-server --pattern 'server-update-*' --pattern "noctua-server-v$SERVER_VERSION-aarch64-apple-darwin" --pattern "noctua-server-v$SERVER_VERSION-x86_64-unknown-linux-gnu" --pattern "noctua-server-v$SERVER_VERSION-x86_64-pc-windows-msvc.exe"
+      - name: Verify published metadata signatures and binary checksums
+        env:
+          NOCTUA_UPDATER_PUBLIC_KEY: ${{ vars.NOCTUA_UPDATER_PUBLIC_KEY }}
+          SERVER_VERSION: ${{ needs.prepare.outputs.server_version }}
+        run: cargo run --locked -p noctua-client --example verify-server-artifacts -- prebuilt-server "$SERVER_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-server-release
+          path: prebuilt-server/*
+          if-no-files-found: error
 
   build:
-    needs: [prepare, server-build]
-    if: always() && needs.prepare.result == 'success' && (needs.server-build.result == 'success' || needs.server-build.result == 'skipped')
+    needs: [prepare, server-artifacts]
+    if: always() && needs.prepare.result == 'success' && (needs.server-artifacts.result == 'success' || needs.server-artifacts.result == 'skipped')
     permissions:
       contents: write
     strategy:
@@ -206,13 +238,13 @@ jobs:
         run: echo "${{ runner.temp }}/noctua-tauri-cli/bin" >> "$GITHUB_PATH"
 
       - name: Download prebuilt server
-        if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+        if: needs.prepare.outputs.desktop_ui == 'true' && needs.prepare.outputs.macos_arch != 'universal'
         uses: actions/download-artifact@v4
         with:
-          name: server-${{ matrix.server_target }}
+          name: verified-server-release
           path: prebuilt-server
       - name: Configure prebuilt server for desktop packaging
-        if: needs.prepare.outputs.standalone == 'true' && needs.prepare.outputs.macos_arch != 'universal'
+        if: needs.prepare.outputs.desktop_ui == 'true' && needs.prepare.outputs.macos_arch != 'universal'
         shell: bash
         env:
           SERVER_TARGET: ${{ matrix.server_target }}
@@ -232,6 +264,18 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }} ${{ needs.prepare.outputs.updater == 'true' && '--config tauri.release.conf.json' || '' }}
 
+      - name: Package and sign browser UI files under the Desktop version
+        if: matrix.platform == 'ubuntu-22.04' && needs.prepare.outputs.desktop_ui == 'true'
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          python .github/scripts/package-browser-ui.py
+          cargo tauri signer sign browser-dist/*.tar.gz
+          gh release upload "$RELEASE_TAG" browser-dist/* --clobber
+
       # Read packaging checks from the selected workflow, including draft rebuilds.
       - uses: actions/checkout@v4
         with:
@@ -242,6 +286,7 @@ jobs:
       - name: Verify packaged server and paper compilers
         env:
           NOCTUA_REQUIRE_MACOS_UPDATER: ${{ needs.prepare.outputs.updater }}
+          NOCTUA_REQUIRE_BROWSER_UI: ${{ hashFiles('app/src/frontend.rs') != '' }}
         shell: bash
         run: python release-tools/.github/scripts/check-release-resources.py
 
@@ -264,8 +309,10 @@ jobs:
           UPDATER_ENABLED: ${{ needs.prepare.outputs.updater }}
           NOCTUA_RELEASE_SERVER_VERSION: ${{ needs.prepare.outputs.server_version }}
           MACOS_ARCH: ${{ needs.prepare.outputs.macos_arch }}
+          DESKTOP_UI: ${{ needs.prepare.outputs.desktop_ui }}
         with:
           script: |
             const publish = require('./.github/scripts/publish-release.cjs');
             await publish({ github, context, core, tag: process.env.RELEASE_TAG, releaseId: process.env.RELEASE_ID,
-              updaterEnabled: process.env.UPDATER_ENABLED === 'true', macosArch: process.env.MACOS_ARCH });
+              updaterEnabled: process.env.UPDATER_ENABLED === 'true', macosArch: process.env.MACOS_ARCH,
+              browserUiEnabled: process.env.DESKTOP_UI === 'true' });

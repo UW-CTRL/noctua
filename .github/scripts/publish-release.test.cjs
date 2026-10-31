@@ -181,3 +181,14 @@ test('obsolete installer formats block publication on retries', async () => {
     assert.deepEqual(f.calls, []);
   }
 });
+
+test('Desktop-owned UI releases require the browser bundle, signature and checksum', async () => {
+  for (const missing of ['archive', 'signature', 'checksum']) {
+    const f = fixture();
+    const names = ['Noctua_0.1.1_browser-ui.tar.gz', 'Noctua_0.1.1_browser-ui.tar.gz.sig', 'Noctua_0.1.1_browser-ui.tar.gz.sha256'];
+    const skip = {archive:0,signature:1,checksum:2}[missing];
+    f.assets.push(...names.filter((_,i)=>i!==skip).map((name,i)=>({name,id:100+i,size:10,state:'uploaded'})));
+    await assert.rejects(publish({...f.args,browserUiEnabled:true}), /missing completed installers/);
+    assert.deepEqual(f.calls, []);
+  }
+});

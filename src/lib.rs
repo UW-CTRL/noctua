@@ -15,6 +15,7 @@ mod chat_files;
 mod history;
 mod library;
 mod reader;
+mod web_assets;
 mod pdf_outline;
 mod pdf_agent;
 mod pdf_autohighlight;
@@ -465,44 +466,7 @@ async fn library_add(State(app): Shared, Json(b): Json<AddBody>) -> ApiResult {
     Ok(Json(json!({ "ok": true, "key": key, "paper": app.library.paper(&key)?, "warning": warning })))
 }
 
-fn asset(body: &'static str, mime: &'static str) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, mime)], body)
-}
 
-/// KaTeX's math fonts, embedded so notes typeset offline.
-const KATEX_FONTS: &[(&str, &[u8])] = &[
-    ("KaTeX_AMS-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_AMS-Regular.woff2")),
-    ("KaTeX_Caligraphic-Bold.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2")),
-    ("KaTeX_Caligraphic-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2")),
-    ("KaTeX_Fraktur-Bold.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2")),
-    ("KaTeX_Fraktur-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2")),
-    ("KaTeX_Main-Bold.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Main-Bold.woff2")),
-    ("KaTeX_Main-BoldItalic.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2")),
-    ("KaTeX_Main-Italic.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Main-Italic.woff2")),
-    ("KaTeX_Main-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Main-Regular.woff2")),
-    ("KaTeX_Math-BoldItalic.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2")),
-    ("KaTeX_Math-Italic.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Math-Italic.woff2")),
-    ("KaTeX_SansSerif-Bold.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2")),
-    ("KaTeX_SansSerif-Italic.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2")),
-    ("KaTeX_SansSerif-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2")),
-    ("KaTeX_Script-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Script-Regular.woff2")),
-    ("KaTeX_Size1-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Size1-Regular.woff2")),
-    ("KaTeX_Size2-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Size2-Regular.woff2")),
-    ("KaTeX_Size3-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Size3-Regular.woff2")),
-    ("KaTeX_Size4-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Size4-Regular.woff2")),
-    ("KaTeX_Typewriter-Regular.woff2", include_bytes!("../web/vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2")),
-];
-
-async fn katex_font(Path(name): Path<String>) -> Response {
-    match KATEX_FONTS.iter().find(|(n, _)| *n == name) {
-        Some((_, bytes)) => (
-            [(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
-            *bytes,
-        )
-            .into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
 
 #[derive(Deserialize)]
 struct UrlBody {
@@ -652,8 +616,15 @@ fn page(app: &App, html: &str) -> Response {
     asset_owned(html.replace("<head>", &format!("<head><meta name=\"noctua-server-id\" content=\"{id}\">")), "text/html; charset=utf-8")
 }
 fn asset_owned(html: String, mime: &'static str) -> Response { ([(header::CONTENT_TYPE,mime)],html).into_response() }
-async fn page_index(State(app): Shared) -> Response { page(&app,include_str!("../web/index.html")) }
-async fn page_shell(State(app): Shared) -> Response { page(&app,include_str!("../web/shell.html")) }
+fn page_file(app: &App, name: &str) -> Response {
+    match web_assets::read(name) {
+        Some(bytes) => page(app, &String::from_utf8_lossy(&bytes)),
+        None => web_assets::response(name),
+    }
+}
+async fn katex_font(Path(name): Path<String>) -> Response { web_assets::response(&format!("vendor/katex/fonts/{name}")) }
+async fn page_index(State(app): Shared) -> Response { page_file(&app,"index.html") }
+async fn page_shell(State(app): Shared) -> Response { page_file(&app,"shell.html") }
 
 async fn server_identity(State(app): Shared, headers: axum::http::HeaderMap) -> Json<Value> {
     if let (Some(runtime),Some(client))=(app.runtime.as_ref(),headers.get("x-noctua-editor").and_then(|v|v.to_str().ok())) {runtime.maintenance.lock().unwrap().touch(client);}
@@ -699,48 +670,48 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/server/stop", post(server_stop))
         .route("/api/server/update", post(server_update_control))
         .route("/api/server/update/ack", post(server_update_ack))
-        .route("/browser-connect", get(||async{asset(include_str!("../web/browser-connect.html"),"text/html; charset=utf-8")}))
-        .route("/browser-connect.js", get(||async{asset(include_str!("../web/browser-connect.js"),"text/javascript; charset=utf-8")}))
+        .route("/browser-connect", get(||async{web_assets::response("browser-connect.html")}))
+        .route("/browser-connect.js", get(||async{web_assets::response("browser-connect.js")}))
         .route("/auth/login", post(||async{StatusCode::UNAUTHORIZED}))
-        .route("/drafts.js", get(||async{asset(include_str!("../web/drafts.js"),"text/javascript; charset=utf-8")}))
-        .route("/connection.js", get(||async{asset(include_str!("../web/connection.js"),"text/javascript; charset=utf-8")}))
+        .route("/drafts.js", get(||async{web_assets::response("drafts.js")}))
+        .route("/connection.js", get(||async{web_assets::response("connection.js")}))
         .route("/", get(page_index))
-        .route("/app.js", get(|| async { asset(include_str!("../web/app.js"), "text/javascript; charset=utf-8") }))
-        .route("/chat-render.js", get(|| async { asset(include_str!("../web/chat-render.js"), "text/javascript; charset=utf-8") }))
-        .route("/vendor/highlight/highlight.min.js", get(|| async { asset(include_str!("../web/vendor/highlight/highlight.min.js"), "text/javascript; charset=utf-8") }))
-        .route("/vendor/highlight/latex.min.js", get(|| async { asset(include_str!("../web/vendor/highlight/latex.min.js"), "text/javascript; charset=utf-8") }))
-        .route("/vendor/mermaid/mermaid.min.js", get(|| async { asset(include_str!("../web/vendor/mermaid/mermaid.min.js"), "text/javascript; charset=utf-8") }))
-        .route("/icons.css", get(|| async { asset(include_str!("../web/icons.css"), "text/css; charset=utf-8") }))
-        .route("/style.css", get(|| async { asset(include_str!("../web/style.css"), "text/css; charset=utf-8") }))
-        .route("/ui.css", get(|| async { asset(include_str!("../web/ui.css"), "text/css; charset=utf-8") }))
-        .route("/connection.css", get(|| async { asset(include_str!("../web/connection.css"), "text/css; charset=utf-8") }))
-        .route("/connection-status.css", get(|| async { asset(include_str!("../web/connection-status.css"), "text/css; charset=utf-8") }))
-        .route("/appearance.js", get(|| async { asset(include_str!("../web/appearance.js"), "text/javascript; charset=utf-8") }))
-        .route("/latex.js", get(|| async { asset(include_str!("../web/latex.js"), "text/javascript; charset=utf-8") }))
-        .route("/ink.js", get(|| async { asset(include_str!("../web/ink.js"), "text/javascript; charset=utf-8") }))
-        .route("/notes.js", get(|| async { asset(include_str!("../web/notes.js"), "text/javascript; charset=utf-8") }))
-        .route("/chat-files.js", get(|| async { asset(include_str!("../web/chat-files.js"), "text/javascript; charset=utf-8") }))
-        .route("/chat-selections.js", get(|| async { asset(include_str!("../web/chat-selections.js"), "text/javascript; charset=utf-8") }))
-        .route("/pdf-objects.js", get(|| async { asset(include_str!("../web/pdf-objects.js"), "text/javascript; charset=utf-8") }))
-        .route("/mentions.js", get(|| async { asset(include_str!("../web/mentions.js"), "text/javascript; charset=utf-8") }))
+        .route("/app.js", get(|| async { web_assets::response("app.js") }))
+        .route("/chat-render.js", get(|| async { web_assets::response("chat-render.js") }))
+        .route("/vendor/highlight/highlight.min.js", get(|| async { web_assets::response("vendor/highlight/highlight.min.js") }))
+        .route("/vendor/highlight/latex.min.js", get(|| async { web_assets::response("vendor/highlight/latex.min.js") }))
+        .route("/vendor/mermaid/mermaid.min.js", get(|| async { web_assets::response("vendor/mermaid/mermaid.min.js") }))
+        .route("/icons.css", get(|| async { web_assets::response("icons.css") }))
+        .route("/style.css", get(|| async { web_assets::response("style.css") }))
+        .route("/ui.css", get(|| async { web_assets::response("ui.css") }))
+        .route("/connection.css", get(|| async { web_assets::response("connection.css") }))
+        .route("/connection-status.css", get(|| async { web_assets::response("connection-status.css") }))
+        .route("/appearance.js", get(|| async { web_assets::response("appearance.js") }))
+        .route("/latex.js", get(|| async { web_assets::response("latex.js") }))
+        .route("/ink.js", get(|| async { web_assets::response("ink.js") }))
+        .route("/notes.js", get(|| async { web_assets::response("notes.js") }))
+        .route("/chat-files.js", get(|| async { web_assets::response("chat-files.js") }))
+        .route("/chat-selections.js", get(|| async { web_assets::response("chat-selections.js") }))
+        .route("/pdf-objects.js", get(|| async { web_assets::response("pdf-objects.js") }))
+        .route("/mentions.js", get(|| async { web_assets::response("mentions.js") }))
         .route("/shell", get(page_shell))
-        .route("/shell.js", get(|| async { asset(include_str!("../web/shell.js"), "text/javascript; charset=utf-8") }))
-        .route("/fonts.js", get(|| async { asset(include_str!("../web/fonts.js"), "text/javascript; charset=utf-8") }))
-        .route("/select.js", get(|| async { asset(include_str!("../web/select.js"), "text/javascript; charset=utf-8") }))
-        .route("/update-dialogs.js", get(||async{asset(include_str!("../web/update-dialogs.js"),"text/javascript; charset=utf-8")}))
-        .route("/setup.js", get(|| async { asset(include_str!("../web/setup.js"), "text/javascript; charset=utf-8") }))
-        .route("/edit-history.js",get(||async{asset(include_str!("../web/edit-history.js"),"text/javascript; charset=utf-8")}))
-        .route("/panes.js",get(||async{asset(include_str!("../web/panes.js"),"text/javascript; charset=utf-8")}))
-        .route("/split-drag.js",get(||async{asset(include_str!("../web/split-drag.js"),"text/javascript; charset=utf-8")}))
-        .route("/research.js",get(||async{asset(include_str!("../web/research.js"),"text/javascript; charset=utf-8")}))
-        .route("/workspace.js",get(||async{asset(include_str!("../web/workspace.js"),"text/javascript; charset=utf-8")}))
-        .route("/citations.js",get(||async{asset(include_str!("../web/citations.js"),"text/javascript; charset=utf-8")}))
-        .route("/find.js",get(||async{asset(include_str!("../web/find.js"),"text/javascript; charset=utf-8")}))
-        .route("/paper.js",get(||async{asset(include_str!("../web/paper.js"),"text/javascript; charset=utf-8")}))
-        .route("/figures.js", get(|| async { asset(include_str!("../web/figures.js"), "text/javascript; charset=utf-8") }))
-        .route("/lineage.js", get(|| async { asset(include_str!("../web/lineage.js"), "text/javascript; charset=utf-8") }))
-        .route("/vendor/katex/katex.min.js", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.js"), "text/javascript; charset=utf-8") }))
-        .route("/vendor/katex/katex.min.css", get(|| async { asset(include_str!("../web/vendor/katex/katex.min.css"), "text/css; charset=utf-8") }))
+        .route("/shell.js", get(|| async { web_assets::response("shell.js") }))
+        .route("/fonts.js", get(|| async { web_assets::response("fonts.js") }))
+        .route("/select.js", get(|| async { web_assets::response("select.js") }))
+        .route("/update-dialogs.js", get(||async{web_assets::response("update-dialogs.js")}))
+        .route("/setup.js", get(|| async { web_assets::response("setup.js") }))
+        .route("/edit-history.js",get(||async{web_assets::response("edit-history.js")}))
+        .route("/panes.js",get(||async{web_assets::response("panes.js")}))
+        .route("/split-drag.js",get(||async{web_assets::response("split-drag.js")}))
+        .route("/research.js",get(||async{web_assets::response("research.js")}))
+        .route("/workspace.js",get(||async{web_assets::response("workspace.js")}))
+        .route("/citations.js",get(||async{web_assets::response("citations.js")}))
+        .route("/find.js",get(||async{web_assets::response("find.js")}))
+        .route("/paper.js",get(||async{web_assets::response("paper.js")}))
+        .route("/figures.js", get(|| async { web_assets::response("figures.js") }))
+        .route("/lineage.js", get(|| async { web_assets::response("lineage.js") }))
+        .route("/vendor/katex/katex.min.js", get(|| async { web_assets::response("vendor/katex/katex.min.js") }))
+        .route("/vendor/katex/katex.min.css", get(|| async { web_assets::response("vendor/katex/katex.min.css") }))
         .route("/vendor/katex/fonts/{name}", get(katex_font))
         .route("/api/search", get(search))
         .route("/api/paper", get(paper))
@@ -801,8 +772,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/agent-edits", get(mcp_edits::list))
         .route("/api/agent-edits/{id}", get(mcp_edits::get).post(mcp_edits::decide))
         .route("/mcp", post(mcp_endpoint))
-        .route("/app-icons/dark.svg", get(|| async { asset(include_str!("../app/icons/icon-dark.svg"), "image/svg+xml") }))
-        .route("/app-icons/light.svg", get(|| async { asset(include_str!("../app/icons/icon-light.svg"), "image/svg+xml") }))
+        .route("/app-icons/dark.svg", get(|| async { web_assets::response("app-icons/dark.svg") }))
+        .route("/app-icons/light.svg", get(|| async { web_assets::response("app-icons/light.svg") }))
         .route("/api/scholar", get(scholar::get).post(scholar::configure).delete(scholar::disconnect))
         .route("/api/scholar/logs", get(scholar::logs))
         .route("/api/scholar/prompt", get(scholar::get_prompt).post(scholar::save_prompt))

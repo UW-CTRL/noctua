@@ -9,7 +9,14 @@ use std::{
     time::Duration,
 };
 
-pub const API_VERSION: u32 = 1;
+// Version 2 no longer embeds the browser UI. Older Desktop clients must not
+// auto-install such a server before updating their own UI. New clients retain
+// the unchanged v1 data/API contract for existing server installations.
+pub const API_VERSION: u32 = 2;
+pub fn compatible_api(version: u32) -> bool { matches!(version, 1 | 2) }
+pub fn compatible_identity(value: &Value) -> bool {
+    value["api_version"].as_u64().and_then(|n|u32::try_from(n).ok()).is_some_and(compatible_api)
+}
 pub const DATA_VERSION: u32 = 1;
 pub const DEFAULT_PORT: u16 = 47878;
 
@@ -198,7 +205,7 @@ pub fn preferred_port(data: &Path, requested: u16) -> u16 {
         .ok()
         .filter(|record| {
             record.product == "noctua"
-                && record.api_version == API_VERSION
+                && compatible_api(record.api_version)
                 && validate_local_record(record).is_ok()
                 && fs::canonicalize(data).ok().as_ref() == Some(&record.data_dir)
         })
@@ -231,14 +238,14 @@ pub(crate) async fn probe_any(address: &str, secret: &str) -> Result<Value> {
         .context("Server returned an invalid identity")?;
     anyhow::ensure!(
         value["product"] == "noctua"
-            && value["api_version"] == API_VERSION
+            && compatible_identity(&value)
             && value["server_id"].as_str().is_some_and(|s| !s.is_empty()),
         "Incompatible server identity"
     );
     Ok(value)
 }
 fn validate_identity(value: &Value) -> Result<()> {
-    anyhow::ensure!(value["product"] == "noctua" && value["api_version"] == API_VERSION && value["ready"] == true && value["capabilities"]["note_versions"] == true, "This server is incompatible or not ready. Update the client/server or choose another server");
+    anyhow::ensure!(value["product"] == "noctua" && compatible_identity(value) && value["ready"] == true && value["capabilities"]["note_versions"] == true, "This server is incompatible or not ready. Update the client/server or choose another server");
     anyhow::ensure!(
         value["server_id"].as_str().is_some_and(|s| !s.is_empty()),
         "Server identity missing"
@@ -262,7 +269,7 @@ pub async fn status(data: &Path) -> Result<Value> {
 pub(crate) async fn status_any(data: &Path) -> Result<Value> {
     let r = record(data)?;
     anyhow::ensure!(
-        r.product == "noctua" && r.api_version == API_VERSION,
+        r.product == "noctua" && compatible_api(r.api_version),
         "Incompatible server record; update the client/server before reconnecting"
     );
     validate_local_record(&r)?;
@@ -606,6 +613,7 @@ mod tests {
     fn incompatible_api_readiness_and_capabilities_are_rejected() {
         let valid = json!({"product":"noctua","api_version":API_VERSION,"server_id":"test","ready":true,"capabilities":{"note_versions":true}});
         assert!(validate_identity(&valid).is_ok());
+        let mut legacy=valid.clone();legacy["api_version"]=json!(1);assert!(validate_identity(&legacy).is_ok());
         for (field, value) in [
             ("api_version", json!(999)),
             ("ready", json!(false)),

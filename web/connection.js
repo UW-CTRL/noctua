@@ -18,7 +18,7 @@ window.readNoctuaServer = async () => {
   const r = await fetch('/api/server', {headers:noctuaEditor?{'X-Noctua-Editor':noctuaEditor}:{}});
   if (!r.ok) throw Error('Server disconnected; reconnect through Server & connection');
   const server = await r.json();
-  if (server.api_version !== 1 || server.server_id !== window.noctuaServerId) throw Error('Server identity or version changed; open Server & connection');
+  if (![1,2].includes(server.api_version) || server.server_id !== window.noctuaServerId) throw Error('Server identity or version changed; open Server & connection');
   return server;
 };
 window.verifyNoctuaServer = async () => {

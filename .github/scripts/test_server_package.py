@@ -25,6 +25,11 @@ class ServerPackageTests(unittest.TestCase):
         self.root = Path(folder.name)
         for name in ("Cargo.toml", "Cargo.lock", "LICENSE"):
             shutil.copyfile(SCRIPT.parents[2] / name, self.root / name)
+        (self.root / 'web').mkdir()
+        (self.root / 'web/index.html').write_text('<html>Browser UI</html>')
+        (self.root / 'app/icons').mkdir(parents=True)
+        for name in ['dark', 'light']:
+            (self.root / f'app/icons/icon-{name}.svg').write_text('<svg/>')
         import tomllib
         self.version = tomllib.loads((self.root / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         self.tag = "server-v" + self.version
@@ -47,11 +52,11 @@ class ServerPackageTests(unittest.TestCase):
                 self.assertEqual(archive.with_name(archive.name + ".sha256").read_text(), f"{digest}  {archive.name}\n")
                 if "windows" in target:
                     with zipfile.ZipFile(archive) as bundle:
-                        self.assertEqual(set(bundle.namelist()), {"noctua.exe", "LICENSE"})
+                        self.assertEqual(set(bundle.namelist()), {"noctua.exe", "LICENSE", "ui/index.html", "ui/app-icons/dark.svg", "ui/app-icons/light.svg"})
                         self.assertEqual(bundle.read("noctua.exe"), binary.read_bytes())
                 else:
                     with tarfile.open(archive) as bundle:
-                        self.assertEqual(set(bundle.getnames()), {"noctua", "LICENSE"})
+                        self.assertEqual(set(bundle.getnames()), {"noctua", "LICENSE", "ui/index.html", "ui/app-icons/dark.svg", "ui/app-icons/light.svg"})
                         self.assertTrue(bundle.getmember("noctua").mode & 0o111)
                         self.assertEqual(bundle.extractfile("noctua").read(), binary.read_bytes())
                 metadata = json.loads((archive.parent / f"server-update-{target}.json").read_text())

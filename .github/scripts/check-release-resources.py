@@ -18,6 +18,8 @@ def validate(names):
         'TeX packages': r'(^|/)texlive/texmf-dist/tex/.+',
         'compiler notices': r'(^|/)tectonic/notices/.+',
     }
+    if os.environ.get('NOCTUA_REQUIRE_BROWSER_UI') == 'true':
+        required['browser UI'] = r'(^|/)ui/index\.html$'
     missing = [label for label, pattern in required.items()
                if not any(re.search(pattern, path) for path in paths)]
     if missing:
