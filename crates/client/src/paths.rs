@@ -41,7 +41,7 @@ pub fn migrate_legacy(data: &Path) -> Result<Option<PathBuf>> {
     if data.join("key.txt").exists() || data.join("notes").exists() || data.join("noctua-chats.sqlite").exists() {
         return Ok(None);
     }
-    let candidates = [env::current_dir().ok(), Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")))];
+    let candidates = [env::current_dir().ok(), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().ok()];
     let Some(old) = candidates
         .into_iter()
         .flatten()

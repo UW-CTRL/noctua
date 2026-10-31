@@ -189,7 +189,7 @@ noctua token</code></pre><p><code>ensure</code> starts a background server or re
 
 function searchSettingsSection() {
   return `<section data-step="search"><h2>Search Engines</h2>
-    <p>Drag engines to change their order in the search menu and Tab switching. The first engine is your default and is selected when you reopen or reload the app.</p>
+    <p>Drag engines to change their order in the search menu and Tab switching. The first engine is your default and is selected when you reopen or reload the app. Drag an engine below the divider to disable it, or back above to enable it. Keep at least one engine enabled.</p>
     <ol class="search-engine-order" aria-label="Search engine order"></ol>
     <p class="setup-msg ok" data-search-order-status role="status">Changes save automatically for this browser and server.</p></section>`;
 }
@@ -198,18 +198,22 @@ function mountSearchEngineOrder(section) {
   let dragged = null;
   const grip = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
   const render = () => {
-    list.innerHTML = searchEngines.map((engine, index) => `<li draggable="true" data-search-engine="${engine}">
-      <span class="search-order-grip">${grip}</span><span class="search-order-name">${esc(searchEngineNames[engine])}${engine === 'google-scholar' ? ' ↗' : ''}${index === 0 ? '<span class="search-order-default">Default</span>' : ''}</span>
-      </li>`).join('');
+    const row = (engine, index, disabled = false) => `<li draggable="true" data-search-engine="${engine}" data-search-disabled="${disabled}"${disabled ? ' class="search-engine-disabled"' : ''}>
+      <span class="search-order-grip">${grip}</span><span class="search-order-name">${esc(searchEngineNames[engine])}${engine === 'google-scholar' ? ' ↗' : ''}${!disabled && index === 0 ? '<span class="search-order-default">Default</span>' : ''}</span>
+      </li>`;
+    const disabled = Object.keys(searchEngineNames).filter(engine => !searchEngines.includes(engine));
+    list.innerHTML = searchEngines.map((engine, index) => row(engine, index)).join('') +
+      '<li class="search-engine-divider" data-search-disabled-zone>Disabled — drop engines here</li>' +
+      disabled.map((engine, index) => row(engine, index, true)).join('');
   };
   const clearDrag = () => {
     dragged = null;
     list.querySelectorAll('li').forEach(row => row.classList.remove('dragging', 'drop-before', 'drop-after'));
   };
-  const save = order => {
-    setSearchEngineOrder(order);
+  const save = (order, disabled) => {
+    setSearchEngineOrder(order, disabled);
     clearDrag(); render();
-    section.querySelector('[data-search-order-status]').textContent = 'Search engine order saved.';
+    section.querySelector('[data-search-order-status]').textContent = 'Search engine preferences saved.';
   };
   list.addEventListener('dragstart', event => {
     const row = event.target.closest('[data-search-engine]');
@@ -220,7 +224,7 @@ function mountSearchEngineOrder(section) {
   });
   list.addEventListener('dragover', event => {
     if (!dragged) return;
-    const row = event.target.closest('[data-search-engine]');
+    const row = event.target.closest('[data-search-engine], [data-search-disabled-zone]');
     if (!row) return;
     event.preventDefault(); event.dataTransfer.dropEffect = 'move';
     list.querySelectorAll('li').forEach(item => item.classList.remove('drop-before', 'drop-after'));
@@ -228,17 +232,24 @@ function mountSearchEngineOrder(section) {
   });
   list.addEventListener('drop', event => {
     if (!dragged) return;
-    const row = event.target.closest('[data-search-engine]');
+    const row = event.target.closest('[data-search-engine], [data-search-disabled-zone]');
     if (!row) return;
     event.preventDefault();
     if (row.dataset.searchEngine === dragged) { clearDrag(); return; }
+    const disable = row.hasAttribute('data-search-disabled-zone') || row.dataset.searchDisabled === 'true';
+    if (disable && searchEngines.length === 1 && searchEngines.includes(dragged)) {
+      clearDrag();
+      section.querySelector('[data-search-order-status]').textContent = 'Keep at least one search engine enabled.';
+      return;
+    }
+    const engine = dragged;
+    const enabled = searchEngines.filter(item => item !== engine);
+    const disabled = Object.keys(searchEngineNames).filter(item => !searchEngines.includes(item) && item !== engine);
+    const order = disable ? disabled : enabled;
+    const targetIndex = order.indexOf(row.dataset.searchEngine);
     const after = event.clientY >= row.getBoundingClientRect().top + row.offsetHeight / 2;
-    const before = after ? row.nextElementSibling?.dataset.searchEngine : row.dataset.searchEngine;
-    // Dropping immediately before the dragged row leaves its order unchanged.
-    if (before === dragged) { clearDrag(); return; }
-    const engine = dragged, order = searchEngines.filter(item => item !== engine);
-    const index = before ? order.indexOf(before) : order.length;
-    order.splice(index, 0, engine); save(order);
+    order.splice(targetIndex < 0 ? order.length : targetIndex + (after ? 1 : 0), 0, engine);
+    save([...enabled, ...disabled], disabled);
   });
   list.addEventListener('dragend', clearDrag);
   render();
@@ -256,74 +267,50 @@ function serverSection() {
 
 function skillSettingsSection() {
   return `<section data-step="skills"><h2>Skills</h2><p>Use / in chat to select an available skill for one message.</p>
-    <div class="settings-group"><h3>Global Agent Skills</h3>
+    <div class="settings-group"><h3>Global skills</h3>
       <p>Read global installations on this server computer. The default location is ~/.agents/skills.</p>
       <label class="setting-field">Location<input class="setup-input" data-skill-location placeholder="~/.agents/skills" spellcheck="false"></label>
       <div class="setup-actions"><button type="button" data-skill-location-save data-icon="save">Save location</button><button type="button" data-skill-location-reset>Use default</button><button type="button" data-skill-reload data-icon="refresh-cw">Refresh</button></div>
       <div data-global-skill-list></div>
     </div>
-    <div class="settings-group"><h3>Project Skills</h3>
-      <p>Import multiple skills from a project folder or its skills folder. Expand each project to see its available skills. Disconnect removes only Noctua copies; the original project stays unchanged.</p>
-      <div class="setup-actions"><button type="button" data-skill-import="project" data-icon="folder-open">Import Skills from Project</button></div>
+    <div class="settings-group"><h3>Noctua local skills</h3>
+      <p>Skills copied into Noctua are available only in this Noctua data folder. All imports appear here, including older project imports.</p>
+      <p>Location: <code data-skill-local-location></code></p>
+      <div class="setup-actions"><button type="button" data-skill-import="folder" data-icon="folder-open">Import folder</button></div>
       <div data-skill-list></div>
-      <details class="skill-individual-import"><summary>Import An Individual Skill</summary><div class="setup-actions">
-        <button type="button" data-skill-import="folder" data-icon="folder-open">Import folder</button><button type="button" data-skill-import="zip" data-icon="file-up">Import ZIP</button><button type="button" data-skill-import="md" data-icon="file-up">Import SKILL.md</button>
-      </div></details>
     </div>
-    <div class="settings-group"><h3>Chat Project Defaults</h3>
-      <p>Choose skills to make available on every message in a Noctua project. Slash commands add skills for one message.</p>
-      <label class="setting-field">Project<select data-skill-project><option value="">Choose a project</option></select></label>
-      <div data-skill-defaults></div><button type="button" data-skill-save data-icon="save" disabled>Save project defaults</button>
-    </div><p data-skill-status role="status"></p></section>`;
+    <p>All skills are available automatically. The assistant chooses relevant skills; use / in chat to request a specific skill.</p><p data-skill-status role="status"></p></section>`;
 }
 
 function mountSkillSettings(host) {
-  const project=host.querySelector('[data-skill-project]'),status=host.querySelector('[data-skill-status]'),save=host.querySelector('[data-skill-save]');
-  let skills=[],manifest=null,request=0,loading=true,saving=false,importing=false;
-  const active=chatProjectTarget();
-  project.innerHTML='<option value="">Choose a project</option>'+collections.targets.map(t=>`<option value="${esc(t.id)}">${esc(t.name||t.id)}</option>`).join('');
-  project.value=collections.targets.some(t=>t.id===active)?active:'';
+  const status=host.querySelector('[data-skill-status]');
+  let skills=[],loading=true,importing=false;
   function controls(){
-    save.disabled=loading||saving||importing||!manifest;project.disabled=saving||importing;
-    host.querySelectorAll('[data-skill-default]').forEach(el=>el.disabled=loading||saving||importing);
-    host.querySelectorAll('[data-skill-import],[data-skill-reload],[data-skill-disconnect],[data-skill-project-disconnect],[data-skill-location-save],[data-skill-location-reset],[data-skill-location]').forEach(el=>el.disabled=loading||importing||saving);
-  }
-  function defaults(ids=manifest?.skills||[]){
-    host.querySelector('[data-skill-defaults]').innerHTML=!project.value?'<p>Choose a project to manage its default skills.</p>':!manifest?'<p>Project defaults are unavailable. Refresh to retry.</p>':skills.map(s=>`<label class="skill-default"><input type="checkbox" data-skill-default="${esc(s.id)}" ${ids.includes(s.id)?'checked':''}> ${esc(s.name||s.id)}</label>`).join('')||'<p>Import a skill to set project defaults.</p>';
-    controls();
-  }
-  async function loadProject(){
-    const ticket=++request,target=project.value;manifest=null;loading=true;defaults();
-    if(!target){loading=false;defaults();return;}
-    try{const m=await api(`/api/workspaces/${enc(target)}`);if(!host.isConnected||ticket!==request)return;manifest=m;status.textContent='';}
-    catch(e){if(ticket===request)status.textContent='Could not load project defaults: '+e.message;}
-    finally{if(ticket===request){loading=false;defaults();}}
+    host.querySelectorAll('[data-skill-import],[data-skill-reload],[data-skill-disconnect],[data-skill-location-save],[data-skill-location-reset],[data-skill-location]').forEach(el=>el.disabled=loading||importing);
   }
   async function reload(){
     loading=true;controls();status.textContent='Loading skills…';
     try{
       const [imported,config]=await Promise.all([api('/api/skills'),api('/api/skills/settings')]);if(!host.isConnected)return;skills=imported;
       host.querySelector('[data-skill-location]').value=config.location||'';
-      const packageHTML=(s,individual=false)=>`<details class="settings-skill" data-skill-package="${esc(s.id)}"><summary>${esc(s.name||s.id)}</summary><p>${esc(s.description)}</p><small>${s.source==='local'?'Global installation':'Imported into Noctua'}</small>${individual?`<div class="setup-actions"><button type="button" data-skill-disconnect="${esc(s.id)}" data-icon="x" aria-label="Disconnect ${esc(s.name||s.id)} from Noctua">Disconnect</button></div>`:''}<div data-skill-resource></div></details>`;
-      host.querySelector('[data-global-skill-list]').innerHTML=skills.filter(s=>s.source==='local').map(s=>packageHTML(s)).join('')||'<p>No global skills found at this location.</p>';
-      const groups=config.projects||[],grouped=new Set(groups.flatMap(g=>g.skill_ids));
-      const projects=groups.map(group=>{const entries=skills.filter(s=>group.skill_ids.includes(s.id));return `<details class="settings-skill-project" data-skill-group="${esc(group.id)}"><summary>${esc(group.name)} <small>(${entries.length} ${entries.length===1?'skill':'skills'})</small></summary><div class="setup-actions"><button type="button" data-skill-project-disconnect="${esc(group.id)}" data-icon="x" aria-label="Disconnect ${esc(group.name)} from Noctua">Disconnect</button></div>${entries.map(s=>packageHTML(s)).join('')||'<p>No available skills in this project.</p>'}</details>`;}).join('');
-      const individual=skills.filter(s=>s.source!=='local'&&!grouped.has(s.id));
-      host.querySelector('[data-skill-list]').innerHTML=projects+(individual.length?`<details class="settings-skill-project" data-skill-group="individual"><summary>Other Imported Skills (${individual.length})</summary>${individual.map(s=>packageHTML(s,true)).join('')}</details>`:'')||'<p>No project skills imported yet.</p>';
+      host.querySelector('[data-skill-local-location]').textContent=config.local_location||'';
+      const packageHTML=(s,individual=false)=>`<details class="settings-skill" data-skill-package="${esc(s.id)}"><summary>${esc(s.name||s.id)}</summary><p>${esc(s.description)}</p><small>${s.scope==='global'?'Global installation':'Noctua local skill'}</small>${individual?`<div class="setup-actions"><button type="button" data-skill-disconnect="${esc(s.id)}" data-icon="x" aria-label="Disconnect ${esc(s.name||s.id)} from Noctua">Disconnect</button></div>`:''}<div data-skill-resource></div></details>`;
+      host.querySelector('[data-global-skill-list]').innerHTML=skills.filter(s=>s.scope==='global').map(s=>packageHTML(s)).join('')||'<p>No global skills found at this location.</p>';
+      host.querySelector('[data-skill-list]').innerHTML=skills.filter(s=>s.scope==='noctua').map(s=>packageHTML(s,true)).join('')||'<p>No Noctua local skills imported yet.</p>';
       host.querySelectorAll('[data-skill-package]').forEach(details=>details.addEventListener('toggle',()=>{if(details.open&&!details.querySelector('pre'))inspect(details);}));
-      host.querySelectorAll('[data-skill-disconnect],[data-skill-project-disconnect]').forEach(button=>button.onclick=async()=>{
-        if(importing||loading||saving)return;importing=true;controls();status.textContent='Disconnecting skill…';
+      host.querySelectorAll('[data-skill-disconnect]').forEach(button=>button.onclick=async()=>{
+        if(importing||loading)return;importing=true;controls();status.textContent='Disconnecting skill…';
         try{
-          const path=button.dataset.skillProjectDisconnect?`/api/skills/projects/${enc(button.dataset.skillProjectDisconnect)}`:`/api/skills/${enc(button.dataset.skillDisconnect)}`;
+          const path=`/api/skills/${enc(button.dataset.skillDisconnect)}`;
           const response=await fetch(path,{method:'DELETE'}),result=await response.json();
           if(!response.ok)throw Error(result.error||'Could not disconnect skill');
           if(host.isConnected&&await reload())status.textContent='Disconnected from Noctua. The original folder is unchanged.';
         }catch(e){status.textContent='Could not disconnect skill: '+e.message;}
         finally{importing=false;controls();}
       });
-      status.textContent='';await loadProject();return !project.value||!!manifest;
-    }catch(e){loading=false;manifest=null;defaults();status.textContent='Could not load skills: '+e.message;return false;}
-    finally{controls();}
+      status.textContent='';return true;
+    }catch(e){status.textContent='Could not load skills: '+e.message;return false;}
+    finally{loading=false;controls();}
   }
   async function inspect(details){
     const container=details.querySelector('[data-skill-resource]'),id=details.dataset.skillPackage;
@@ -337,59 +324,34 @@ function mountSkillSettings(host) {
     }catch(e){container.textContent='Could not read skill: '+e.message;}
   }
   const changeLocation=async(reset)=>{
-    if(importing||loading||saving)return;importing=true;controls();status.textContent='Saving global skills location…';
+    if(importing||loading)return;importing=true;controls();status.textContent='Saving global skills location…';
     try{await api('/api/skills/settings',{location:reset?null:host.querySelector('[data-skill-location]').value});if(await reload())status.textContent='Global skills location saved.';}
     catch(e){status.textContent='Could not save global skills location: '+e.message;}
     finally{importing=false;controls();}
   };
   host.querySelector('[data-skill-location-save]').onclick=()=>changeLocation(false);
   host.querySelector('[data-skill-location-reset]').onclick=()=>changeLocation(true);
-  project.onchange=loadProject;
   host.querySelector('[data-skill-reload]').onclick=reload;
-  save.onclick=async()=>{
-    if(!manifest||saving)return;const target=project.value,ids=[...host.querySelectorAll('[data-skill-default]:checked')].map(el=>el.dataset.skillDefault);saving=true;controls();status.textContent='Saving project defaults…';
-    try{
-      if(W.target===target)await saveWorkspaceFile();
-      const current=await api(`/api/workspaces/${enc(target)}`);
-      const updated=await api(`/api/workspaces/${enc(target)}`,{revision:current.revision,op:'config',skills:ids});
-      if(W.target===target){W.manifest=updated;W.fileRevision=updated.revision;renderWorkspaceTree();}
-      if(host.isConnected&&project.value===target){manifest=updated;status.textContent='Project defaults saved. They apply to the next chat turn.';}
-    }catch(e){status.textContent='Could not save project defaults: '+e.message;}
-    finally{saving=false;controls();}
-  };
   host.querySelectorAll('[data-skill-import]').forEach(button=>button.onclick=()=>{
-    const kind=button.dataset.skillImport,input=document.createElement('input');input.type='file';
-    if(kind==='folder'||kind==='project'){input.multiple=true;input.setAttribute('webkitdirectory','');}else input.accept=kind==='zip'?'.zip':'.md';
+    const input=document.createElement('input');input.type='file';
+    input.multiple=true;input.setAttribute('webkitdirectory','');
     input.onchange=async()=>{
       if(!input.files.length)return;importing=true;controls();status.textContent='Importing skill…';
       try{
-        if(kind==='project'){
-          const entries=[...input.files].filter(f=>!(f.webkitRelativePath||f.name).split('/').some(p=>['.DS_Store','__MACOSX','.git','node_modules'].includes(p)));
-          const path=f=>f.webkitRelativePath||f.name;
-          let roots=entries.filter(f=>path(f).split('/').at(-1)==='SKILL.md').map(f=>path(f).slice(0,-'SKILL.md'.length));
-          roots=roots.filter(root=>!roots.some(other=>other!==root&&root.startsWith(other)));
-          if(!roots.length)throw Error('No SKILL.md packages found in the selected project.');
-          if(roots.length>100)throw Error('Import at most 100 skills per project.');
-          let total=0,count=0;const packages=[];
-          for(const root of roots){const files=[];for(const f of entries.filter(f=>path(f).startsWith(root))){
-            total+=f.size;if(total>32*1024*1024||++count>512)throw Error('Project skill imports support at most 512 files and 32 MB.');
-            const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-            files.push({path:path(f).slice(root.length),data:btoa(binary)});
-          }packages.push({files});}
-          await api('/api/skills/import-project',{name:path(entries[0]).split('/')[0],packages});
-        }else if(kind==='zip'){
-          const response=await fetch('/api/skills/import-zip',{method:'POST',body:input.files[0]}),result=await response.json();if(!response.ok)throw Error(result.error||'Import failed');
-        }else{
-          const files=[];let total=0;
-          for(const f of input.files){
-            if((f.webkitRelativePath||f.name).split('/').some(p=>['.DS_Store','__MACOSX','.git'].includes(p)))continue;
-            total+=f.size;if(total>32*1024*1024||files.length>=512)throw Error('Skill packages support at most 512 files and 32 MB.');
-            const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-            files.push({path:kind==='md'?'SKILL.md':f.webkitRelativePath||f.name,data:btoa(binary)});
-          }
-          await api('/api/skills',{files});
-        }
-        if(host.isConnected&&await reload())status.textContent='Skill imported. Use / in chat or select it as a project default.';
+        const entries=[...input.files].filter(f=>!(f.webkitRelativePath||f.name).split('/').some(p=>['.DS_Store','__MACOSX','.git','node_modules'].includes(p)));
+        const path=f=>f.webkitRelativePath||f.name;
+        let roots=entries.filter(f=>path(f).split('/').at(-1)==='SKILL.md').map(f=>path(f).slice(0,-'SKILL.md'.length));
+        roots=roots.filter(root=>!roots.some(other=>other!==root&&root.startsWith(other)));
+        if(!roots.length)throw Error('No SKILL.md packages found in the selected folder.');
+        if(roots.length>100)throw Error('Import at most 100 skills per folder.');
+        let total=0,count=0;const packages=[];
+        for(const root of roots){const files=[];for(const f of entries.filter(f=>path(f).startsWith(root))){
+          total+=f.size;if(total>32*1024*1024||++count>512)throw Error('Folder imports support at most 512 files and 32 MB.');
+          const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+          files.push({path:path(f).slice(root.length),data:btoa(binary)});
+        }packages.push({files});}
+        await api('/api/skills/import-folder',{packages});
+        if(host.isConnected&&await reload())status.textContent='Skill imported. It is now available automatically in chat.';
       }catch(e){status.textContent='Could not import skill: '+e.message;}
       finally{importing=false;controls();}
     };input.click();
@@ -772,8 +734,8 @@ function aboutSection(s) {
   return `<section data-step="about"><h2>About Noctua</h2>
     <p>Version ${esc((isDesktopConnectionClient() && window.top.noctuaAppVersion) || s.version || 'unknown')} · ${(s.desktop || isDesktopConnectionClient()) ? 'Desktop app' : 'Browser app'}</p>
     ${(isDesktopConnectionClient() || s.desktop) ? `<div class="settings-group" data-update>
-      <h3>App Updates</h3>
-      <p>Noctua checks for new releases at startup. You can also check here. Save your work before installing; installation may close and restart Noctua.</p>
+      <h3>App and Local Server Updates</h3>
+      <p>Noctua checks desktop and running local server releases at startup. Save your work before installing; installation may close and restart Noctua. Remote servers are updated on their own computer.</p>
       <div class="update-summary" hidden></div>
       <div class="setup-actions"><button data-act="update" data-update-action="check" data-icon="refresh-cw">Check for updates</button></div>
       <p class="setup-msg" role="status" aria-live="polite"></p>
@@ -807,6 +769,7 @@ async function updateApp(button, section, msg, { confirmInstall = true } = {}) {
       available: ['install', `Update to ${result.version}`, `Version ${result.version} is available.`],
       current: ['check', 'Check for updates', 'You are using the latest published version.'],
       installed: ['restart', 'Restart Noctua', 'Update installed. Restart Noctua to use the new version.'],
+      server_updating: ['check', 'Check for updates', 'The local server is updating. Follow progress in Server & Connection.'],
     }[result.status];
     if (!next) throw new Error('Unexpected response from the desktop updater.');
     button.dataset.updateAction = next[0];

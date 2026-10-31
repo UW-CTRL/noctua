@@ -33,6 +33,16 @@ window.addEventListener('load', async () => {
     assert(calls.at(-1).path==='native' && calls.at(-1).body.action==='check','About must call this desktop updater');
     about.remove();calls=[];desktopClient=false;
 
+    const serverSummary = NoctuaUpdateDialogs.summary({component:'server',version:'0.3.6',server:{current_version:'0.3.5',version:'0.3.6'},warnings:['Desktop check <failed>']});
+    assert(serverSummary.includes('/releases/tag/server-v0.3.6') && serverSummary.includes('0.3.5 → 0.3.6'), 'server-only release links and versions are missing');
+    assert(serverSummary.includes('&lt;failed&gt;') && !serverSummary.includes('/compare/'), 'component warnings must be escaped and server-only offers must not link desktop comparisons');
+    status='server_updating';
+    const serverPanel=document.createElement('section');
+    serverPanel.innerHTML='<div class="update-summary"></div><button data-update-action="install" data-update-version="0.3.6"></button>';
+    await updateApp(serverPanel.querySelector('button'), serverPanel, ()=>{}, {confirmInstall:false});
+    assert(serverPanel.querySelector('button').dataset.updateAction==='check' && !serverPanel.textContent.includes('Restart Noctua'), 'server-only installation must not request desktop restart');
+    calls=[];status='available';
+
     await checkStartupUpdate({desktop:false, skipped:true});
     await checkStartupUpdate({desktop:true, skipped:false});
     assert(calls.length === 0, 'browser mode or first-run setup checked for updates');

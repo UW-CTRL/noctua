@@ -137,24 +137,20 @@ immediately, without approval requests or popups.** Plan is read-only. Note/PDF
 suggestions and skill-script execution retain their existing review rules. File deletion
 and bibliography activation remain UI actions. See [Notes](notes.md#project-files-bibliographies-and-skills).
 
-Open **Settings → Skills**. **Global Agent Skills → Location** defaults to
+Open **Settings → Skills**. **Global skills → Location** defaults to
 `~/.agents/skills`; save another existing folder or choose **Use default**.
-Global packages are read in place. **Import Skills from Project** imports multiple
-`SKILL.md` packages from a project or skills folder as one named group. Expand
-Project A or Project B to browse its skills; **Disconnect** removes only that
-group's Noctua copies and leaves originals and other groups unchanged. Imports
-are snapshots. Individual folder, ZIP, and `SKILL.md` imports remain available.
-See [Skills settings](settings-and-data.md#skills) for limits and reconnection.
-Both providers share the available skills. Under **Chat project defaults**,
-choose a project, select its skills, and save. These defaults apply to every
-message in that project. In the chat input, type `/`
+Global packages are read in place. **Noctua local skills** lists all imports
+together in Noctua's data folder. Choose **Import folder** and select a folder containing one or more skills. Imports are snapshots; **Disconnect** removes
+one Noctua copy and preserves original files and global installations.
+See [Skills settings](settings-and-data.md#skills) for locations and limits.
+Both providers can automatically use relevant global and Noctua local skills in
+every chat, without project selection. In the chat input, type `/`
 to list available skills, then type to filter by name or description. Use Up/Down
 and Enter/Tab, or click a result, to insert its `/skill-name` command; Esc closes
 the list. Include a question after the command, or send it alone to invoke the
-skill. Commands add those skills for that message alongside the project
-defaults, without saving new defaults. Delete a command to remove that invocation.
-The assistant can read
-enabled instructions and supporting resources. Every bundled script invocation
+skill. Commands explicitly request those skills for that message; all installed skills
+remain available. Delete a command to remove that invocation. The assistant can
+read their instructions and supporting resources. Every bundled script invocation
 requires approval of its script, arguments, and inputs, followed by separate
 review before applying output changes. Scripts run with local user permissions
 on temporary input copies, not inside an OS sandbox. Plan mode cannot request

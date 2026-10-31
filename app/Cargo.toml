@@ -8,7 +8,7 @@ description = "Noctua desktop app"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-noctua = { path = ".." }
+noctua = { package = "noctua-client", path = "../crates/client" }
 tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"

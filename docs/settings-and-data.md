@@ -11,6 +11,11 @@ The first engine is marked **Default** and is selected immediately after reorder
 and whenever the app reopens or reloads. Choosing another engine in the search
 menu temporarily changes the current search. arXiv is first initially.
 
+Drag an engine below the **Disabled** divider to remove it from the search menu
+and Tab cycling. Drag it above the divider to enable it again. At least one engine
+must remain enabled. Disabled choices save for this browser and server, including
+after a reload. Disabling the default selects the first remaining enabled engine.
+
 ## Server & connection
 
 Connection, recovery and browser sign-in screens use the app’s light/dark colors,
@@ -180,7 +185,7 @@ To revoke Google's grant too, remove the app from your Google Account connection
 
 ## Skills
 
-Open **Settings → Skills**. **Global Agent Skills** reads installed packages in
+Open **Settings → Skills**. **Global skills** reads installed packages in
 place on the server computer. **Location** defaults to `~/.agents/skills`, the
 [Vercel Skills CLI's shared global location](https://github.com/vercel-labs/skills/blob/main/src/installer.ts).
 Enter an existing absolute folder path (or a path beginning with `~/`) and choose
@@ -189,31 +194,32 @@ This preference persists in Noctua. Changing it does not move or modify packages
 Use **Refresh** to see local updates; `/` searches also read the current location.
 CLI link-mode package folders are supported; internal resource symlinks are not.
 
-Under **Project Skills**, choose **Import Skills from Project** and select a
-project folder or its skills folder. Noctua finds folders containing `SKILL.md`
-and imports all their supporting files together. Unrelated project files, `.git`,
-and `node_modules` are excluded. Each import appears as a named project with a
-skill count. Click its heading to expand or collapse its available skills, then
-expand a skill to inspect its instructions and resources. Project A and Project B
-keep independent lists even if their skills have identical names.
+**Noctua local skills** contains all skills copied into this Noctua data folder,
+including older project and individual imports, in one flat list. Its location is
+shown in Settings (`skills/` inside the Noctua data folder). Global skills remain
+in the global folder; importing never writes to it.
 
-Imports are snapshots copied into Noctua, not live links. A project import supports
-up to 100 skills, 512 files, and 32 MB total; each `SKILL.md` must be under 256 KB.
-**Disconnect** on a project removes all of that group's Noctua copies. It keeps
-the original project, global installations, and other imported projects unchanged.
-Stop any running scripts for that group before disconnecting. Import the project
-again to reconnect; reselect any desired chat defaults.
+Choose **Import folder** to select a skill folder or a folder containing multiple
+skills. Noctua finds `SKILL.md` packages and copies their supporting files;
+unrelated files, `.git`, and `node_modules` are excluded. For a skill with only instructions, select the
+folder containing its `SKILL.md`. Unzip downloaded packages before importing.
+Expand a skill to inspect
+its instructions and resources.
 
-**Import an individual skill** retains folder, ZIP, and standalone `SKILL.md`
-imports. These and older ungrouped imports appear under **Other imported skills**
-with individual Disconnect actions. Global installations have no Disconnect action.
+Imports are snapshots, not live links. Folder imports support up to 100 skills,
+512 files, and 32 MB total; each `SKILL.md` must be under 256 KB.
+**Disconnect** removes that skill's Noctua copy. Original folders and global
+installations stay unchanged. Stop its running scripts before disconnecting.
+Existing imports and chat selections are preserved when upgrading. Older source-project
+groups are dropped from settings; their skills remain in the local list. Existing
+global-location preferences are carried forward automatically.
 
-Under **Chat Project Defaults**, choose a Noctua project, select skills to make
-available on every chat message there, and choose **Save project defaults**.
-This is separate from the source-project import groups. An empty selection clears
-its defaults. Use `/` in chat to search all available skills and invoke additional
-skills for one message without changing these defaults. Both providers share the
-available skills. Discovery and import never enable skills or run scripts.
+All global and Noctua local skills are available automatically in every chat,
+with or without a project. The assistant chooses relevant skills and reads their
+instructions as needed. No skill selection or project defaults are required;
+older project selections no longer restrict availability. Use `/` in chat to
+explicitly request a skill for one message. Both providers share the same skills.
+Making a skill available does not run its scripts.
 Scripts require approval and separate output review; see
 [Research assistant](assistant.md#project-files-and-imported-skills).
 
@@ -274,25 +280,47 @@ location you want to select.
 
 ## Updates
 
-Open **Settings → About & Shortcuts**, then choose **Check for updates** under
-**App Updates**. If a newer version is available, the button offers installation;
+On macOS, desktop app updates are manual. Download the Apple Silicon DMG from
+[the latest desktop release](https://github.com/UW-CTRL/noctua/releases/latest),
+quit Noctua, and replace it in Applications. Your data folder is retained. The
+app does not check for macOS desktop archives at startup; it can still check
+for and install signed local-server releases. Older installations may show an
+update-check error because macOS updater archives are no longer published.
+Intel Macs must retain an older Universal release.
+
+On Windows or Linux AppImage, open **Settings → About & Shortcuts**, then choose
+**Check for updates** under **App and Local Server Updates**. If a newer desktop
+version is available, the button offers installation;
 confirm the native prompt to install. Choose **Restart Noctua** after installation.
 The app saves open edits before installation and restart. Official builds also check
-at startup after restoring or retrying a saved connection. Save work before installing.
+at startup after restoring or retrying a saved connection. The same check looks
+for newer compatible standalone releases for an existing running local server.
+A server-only update starts its own worker without requiring a desktop restart;
+a combined offer installs both components. A failed component check is shown
+with the offer rather than reporting that component as up to date. Save work before installing.
 The startup popup lists release highlights from your installed version through
 the offered update, newest first, including versions you skipped. Scroll the
 history with a mouse or trackpad, or focus it with Tab and use the arrow keys.
 The update and dismissal buttons stay visible. Each version has a **Release notes**
 link for its full details; the popup shows summaries, not every changelog item.
 Older update manifests without history provide a link to the offered release.
-Linux in-app updates require AppImage; use your package manager for other builds.
+Linux desktop app updates require AppImage; use your package manager for DEB
+installations. Signed local-server updates remain available on both.
 Browser mode is updated by rebuilding or replacing the server binary.
 
 See [Development](development.md#environment-overrides) for environment overrides.
 
 ## Independent server updates
 
-After the updated desktop opens, an existing local server is upgraded separately.
+Installing a desktop update also supplies its bundled server update. After the
+updated desktop opens, it automatically upgrades an older existing local server
+through a separate worker; no manual server download is needed. A newer
+compatible local server is reused instead of downgraded. **Check for updates**
+also discovers signed `server-v*` releases for the running local server. Downloads
+are checked against signed version/platform metadata and a SHA-256 digest before
+execution. Updates retain managed paper compilers; releases requiring different
+compiler resources need a compatible desktop update or manual deployment.
+Remote servers are updated on their own computer.
 Clients receive a maintenance notice and save open edits; active tasks finish
 before the server is stopped, backed up and replaced. Failed saves or a task wait
 timeout keep the old owner running. An enabled login service follows the verified

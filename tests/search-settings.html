@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"></head><body>
+<select id="search-engine"></select><div id="settings"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const values=new Map(),store={get:k=>values.get(k),set:(k,v)=>values.set(k,v)};
+function setSearchEngine(engine){searchEngine=engine;$('#search-engine').value=engine;}
+function assert(ok,message){if(!ok)throw Error(message);}
+window.addEventListener('load',()=>{
+ try {
+  $('#settings').innerHTML=searchSettingsSection();mountSearchEngineOrder($('#settings section'));
+  const row=engine=>$(`[data-search-engine="${engine}"]`),zone=()=>$('[data-search-disabled-zone]');
+  const drop=(engine,target,after=false)=>{
+   const transfer=new DataTransfer();row(engine).dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   const rect=target.getBoundingClientRect(),clientY=after?rect.bottom-1:rect.top+1;
+   const over=new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY});target.dispatchEvent(over);assert(over.defaultPrevented,'drop zone accepts local drag');
+   target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY}));
+  };
+  assert(searchEngines.length===4&&searchEngine==='arxiv','all engines initially enabled');
+  drop('openalex',row('arxiv'));
+  assert(searchEngine==='openalex'&&searchEngines[0]==='openalex','reorder changes default');
+  drop('openalex',zone());
+  assert(!searchEngines.includes('openalex')&&!$('#search-engine option[value="openalex"]'),'disabled engine removed from menu and cycling array');
+  assert(searchEngine==='arxiv'&&row('openalex').dataset.searchDisabled==='true','disabling default selects next and displays disabled row');
+  assert(JSON.parse(store.get('noctua.disabledSearchEngines')).includes('openalex'),'disabled preference persists');
+  drop('semantic-scholar',row('openalex'));
+  assert(!searchEngines.includes('semantic-scholar'),'dropping on disabled row disables engine');
+  drop('google-scholar',zone());
+  drop('arxiv',zone());
+  assert(searchEngines.join(',')==='arxiv'&&$('#settings').textContent.includes('Keep at least one'),'last enabled engine cannot be disabled');
+  drop('openalex',row('arxiv'));
+  assert(searchEngines.join(',')==='openalex,arxiv'&&searchEngine==='openalex'&&$('#search-engine option[value="openalex"]'),'drag above divider re-enables engine and updates default');
+  assert(!JSON.parse(store.get('noctua.disabledSearchEngines')).includes('openalex'),'enabled preference persists');
+  const saved=[...searchEngines];row('arxiv').dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:new DataTransfer()}));row('arxiv').dispatchEvent(new DragEvent('dragend',{bubbles:true}));
+  assert(searchEngines.join(',')===saved.join(',')&&!$('.dragging'),'cancelled drag leaves preferences unchanged');
+  window.webkit.messageHandlers.result.postMessage('PASS: search engine reorder, divider disable, disabled row drop, re-enable, menu, persistence, last-engine protection and cancelled drag');
+ }catch(e){window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack);}
+});
+</script></body></html>

@@ -19,10 +19,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 pub struct Settings {
     #[serde(default)]
     pub library: LibrarySettings,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skills_location: Option<String>,
-    #[serde(default)]
-    pub skill_projects: Vec<crate::skills::SkillProject>,
+    #[serde(default, alias = "skills_location", skip_serializing_if = "Option::is_none")]
+    pub global_skills_location: Option<String>,
     #[serde(default)]
     pub app_icon: AppIcon,
     #[serde(default)]
@@ -64,13 +62,7 @@ pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<LibrarySe
     Ok(Json(json!({"include_subfolders": body.include_subfolders})))
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AppIcon {
-    Dark,
-    #[default]
-    Light,
-}
+pub use noctua_client::AppIcon;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

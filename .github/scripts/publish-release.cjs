@@ -16,14 +16,13 @@ module.exports = async function publishRelease({ github, context, core, tag, rel
   const version = tag.slice(1);
   const required = [
     `Noctua_${version}_${macosArch}.dmg`,
-    `Noctua_${macosArch}.app.tar.gz`,
     `Noctua_${version}_x64-setup.exe`,
-    `Noctua_${version}_x64_en-US.msi`,
     `Noctua_${version}_amd64.AppImage`,
     `Noctua_${version}_amd64.deb`,
-    `Noctua-${version}-1.x86_64.rpm`,
   ];
   const assets = await github.paginate(github.rest.repos.listReleaseAssets, { ...params, per_page: 100 });
+  const excluded = assets.filter(asset => /\.(?:msi|rpm)$|\.app\.tar\.gz(?:\.sig)?$/.test(asset.name));
+  if (excluded.length) throw new Error(`Remove excluded release assets before publication: ${excluded.map(a => a.name).join(', ')}`);
   const missing = required.filter(name => !assets.some(asset => asset.name === name && asset.state === 'uploaded' && asset.size > 0));
   if (missing.length) {
     throw new Error(`Release ${tag} is missing completed installers: ${missing.join(', ')}`);

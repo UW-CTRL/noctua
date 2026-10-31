@@ -17,10 +17,9 @@ test('web assets, documentation, and tests skip desktop checks', () => {
   }
 });
 
-test('runtime Markdown, unknown files, and mixed PRs require desktop checks', () => {
-  for (const path of ['src/prompts/notes.md', 'src/prompts/chat-formatting.md', 'src/main.rs',
-    'app/src/main.rs', 'app/tauri.conf.json', 'app/Cargo.toml', 'app/build.rs', 'app/icons/icon.png',
-    'Cargo.toml', 'Cargo.lock', 'build.rs', '.cargo/config.toml', 'rust-toolchain.toml',
+test('native, shared and unknown inputs require desktop checks', () => {
+  for (const path of ['crates/client/src/client.rs', 'app/src/main.rs', 'app/tauri.conf.json', 'app/Cargo.toml', 'app/build.rs', 'app/icons/icon.png',
+    'Cargo.toml', 'Cargo.lock', '.cargo/config.toml', 'rust-toolchain.toml',
     '.github/workflows/ci.yml', 'other.md', 'web-native/config.json', 'tests-native/build.rs']) {
     assert.equal(detect.requiresDesktop(['web/app.js', 'tests/reader.html', 'docs/ci.md', path]), true, path);
   }
@@ -43,6 +42,7 @@ test('main pushes and manual runs always require desktop checks', async () => {
     const log = logger();
     assert.equal(await detect({ context: { eventName }, core: log.core }), true);
     assert.equal(log.output.run_desktop, 'true');
+    assert.equal(log.output.run_paper, 'true');
   }
 });
 
@@ -50,6 +50,7 @@ test('missing PR comparison data does not skip checks', async () => {
   const log = logger();
   assert.equal(await detect({ context: { eventName: 'pull_request', payload: {} }, core: log.core }), true);
   assert.equal(log.output.run_desktop, 'true');
+  assert.equal(log.output.run_paper, 'true');
   assert.equal(log.warnings.length, 1);
 });
 
@@ -75,5 +76,57 @@ test('Git comparisons distinguish documentation additions from source-to-documen
   commit('Move source to documentation');
   const files = detect.changedFiles(docsHead, git('rev-parse', 'HEAD'), cwd);
   assert.deepEqual(files.sort(), ['docs/feature.md', 'src/feature.rs']);
-  assert.equal(detect.requiresDesktop(files), true);
+  assert.equal(detect.requiresDesktop(files), false);
+  assert.equal(detect.requiresPaper(files), true);
+});
+
+test('paper-only test changes reach the real compiler suite without native UI checks', () => {
+  for (const path of ['tests/paper-integration.py', 'tests/paper_fixture.py',
+    'tests/test_paper_synctex.py', 'tests/test_paper_fixture.py', 'tests/server-detach.py',
+    'src/paper.rs', 'src/workspace.rs', 'src/prompts/notes.md', 'build.rs',
+    'scripts/setup-tectonic.py', 'scripts/setup-pdflatex.py', 'third-party/texlive/README.md']) {
+    assert.equal(detect.requiresPaper([path]), true, path);
+    assert.equal(detect.requiresDesktop([path]), false, path);
+  }
+});
+
+test('native window/menu changes do not schedule real paper compilation', () => {
+  for (const path of ['app/src/main.rs', 'app/src/icons.rs', 'app/build.rs', 'app/Cargo.toml']) {
+    assert.equal(detect.requiresDesktop([path]), true, path);
+    assert.equal(detect.requiresPaper([path]), false, path);
+  }
+});
+
+test('shared lifecycle, dependencies and CI changes schedule both native suites', () => {
+  for (const path of ['crates/client/src/server_resources.rs', 'Cargo.toml', 'Cargo.lock',
+    '.github/workflows/ci.yml', '.github/scripts/desktop-changes.cjs', 'unknown-input']) {
+    assert.equal(detect.requiresDesktop([path]), true, path);
+    assert.equal(detect.requiresPaper([path]), true, path);
+  }
+});
+
+test('frontend-only changes leave real compiler checks off; fixture image changes run them', () => {
+  for (const path of ['web/paper.js', 'tests/paper-source.html', 'tests/reader.swift', 'docs/ci.md']) {
+    assert.equal(detect.requiresPaper([path]), false, path);
+  }
+  assert.equal(detect.requiresPaper(['app/icons/32x32.png']), true);
+  assert.equal(detect.requiresPaper([]), true);
+});
+
+test('a paper-test-only Git change schedules paper integration', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'noctua-paper-routing-'));
+  t.after(() => rmSync(cwd, {recursive:true,force:true}));
+  const git = (...args) => execFileSync('git', args, {cwd,encoding:'utf8'}).trim();
+  git('init', '--quiet');
+  mkdirSync(join(cwd, 'tests'));
+  writeFileSync(join(cwd, 'tests', 'paper-integration.py'), '# fixture v1\n');
+  git('add', '.');
+  const commit = message => git('-c','user.name=CI test','-c','user.email=ci@example.invalid','commit','--quiet','-m',message);
+  commit('Initial fixture');
+  const base = git('rev-parse','HEAD');
+  writeFileSync(join(cwd, 'tests', 'paper-integration.py'), '# fixture v2\n');
+  git('add','.');commit('Change only the paper test');
+  const files = detect.changedFiles(base,git('rev-parse','HEAD'),cwd);
+  assert.equal(detect.requiresPaper(files),true);
+  assert.equal(detect.requiresDesktop(files),false);
 });

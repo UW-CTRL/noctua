@@ -406,19 +406,31 @@ function normalizeSearchEngineOrder(order) {
   const known = Array.isArray(order) ? [...new Set(order.filter(engine => defaultSearchEngines.includes(engine)))] : [];
   return [...known, ...defaultSearchEngines.filter(engine => !known.includes(engine))];
 }
+let disabledSearchEngines;
+try {
+  const saved = JSON.parse(store.get('noctua.disabledSearchEngines'));
+  disabledSearchEngines = Array.isArray(saved) ? [...new Set(saved.filter(engine => defaultSearchEngines.includes(engine)))] : [];
+} catch { disabledSearchEngines = []; }
+// Keep one usable provider even if a stored preference disables every engine.
+if (disabledSearchEngines.length === defaultSearchEngines.length) disabledSearchEngines = disabledSearchEngines.filter(engine => engine !== defaultSearchEngines[0]);
 let searchEngines;
 try { searchEngines = normalizeSearchEngineOrder(JSON.parse(store.get('noctua.searchEngineOrder'))); }
 catch { searchEngines = [...defaultSearchEngines]; }
+searchEngines = searchEngines.filter(engine => !disabledSearchEngines.includes(engine));
 const searchEngineNames = { arxiv: 'arXiv', 'semantic-scholar': 'Semantic Scholar', openalex: 'OpenAlex', 'google-scholar': 'Google Scholar' };
 let searchEngine = searchEngines[0];
 function syncSearchEngineOrder() {
   const select = $('#search-engine');
-  select.append(...searchEngines.map(engine => select.querySelector(`option[value="${engine}"]`)));
+  select.replaceChildren(...searchEngines.map(engine => new Option(searchEngineNames[engine] + (engine === 'google-scholar' ? ' ↗' : ''), engine)));
   select.value = searchEngine;
 }
-function setSearchEngineOrder(order) {
-  searchEngines = normalizeSearchEngineOrder(order);
-  store.set('noctua.searchEngineOrder', JSON.stringify(searchEngines));
+function setSearchEngineOrder(order, disabled = disabledSearchEngines) {
+  const all = normalizeSearchEngineOrder(order);
+  disabledSearchEngines = [...new Set(disabled.filter(engine => defaultSearchEngines.includes(engine)))];
+  if (disabledSearchEngines.length === all.length) disabledSearchEngines = disabledSearchEngines.filter(engine => engine !== all[0]);
+  searchEngines = all.filter(engine => !disabledSearchEngines.includes(engine));
+  store.set('noctua.searchEngineOrder', JSON.stringify(all));
+  store.set('noctua.disabledSearchEngines', JSON.stringify(disabledSearchEngines));
   syncSearchEngineOrder();
   setSearchEngine(searchEngines[0]);
 }

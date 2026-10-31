@@ -67,6 +67,56 @@ that server to view them. Closing a chat subscriber does not cancel its reply;
 request Stop explicitly to cancel and preserve the partial result. Admitted HTTP
 AI/write jobs also retain their server lifetime when a response subscriber leaves. No server is stopped by a connection switch.
 
+## Standalone installation
+
+Download a `server-vMAJOR.MINOR.PATCH` release from the
+[releases list](https://github.com/UW-CTRL/noctua/releases). Server releases are
+separate from desktop `v*` releases and do not replace the Latest desktop download.
+Choose the archive matching your server computer:
+
+| Platform | Archive target | Format |
+| --- | --- | --- |
+| Linux x64 (glibc 2.35 or newer) | `x86_64-unknown-linux-gnu` | `.tar.gz` |
+| macOS Apple Silicon | `aarch64-apple-darwin` | `.tar.gz` |
+| Windows x64 | `x86_64-pc-windows-msvc` | `.zip` |
+
+Download the matching `.sha256` file too. On Linux run
+`sha256sum --check ARCHIVE.sha256`; on macOS use
+`shasum -a 256 --check ARCHIVE.sha256`. On Windows compare
+`(Get-FileHash .\ARCHIVE.zip -Algorithm SHA256).Hash` with the hash in the
+checksum file. Substitute the actual downloaded filename. Checksums detect
+corruption; these archives are not signed desktop installers.
+
+Extract the archive into a permanent directory owned by your user. It contains
+`noctua` (`noctua.exe` on Windows) and the license. No Tauri, desktop installation,
+or Rust toolchain is needed to run it. From that directory:
+
+```sh
+./noctua ensure
+./noctua token
+```
+
+On Windows use `.\noctua.exe ensure` and `.\noctua.exe token`. Open the URL
+returned by `ensure` in a browser and sign in with the token. Keep the executable
+available for future starts; use `noctua stop` to stop safely. See the remote
+connection instructions below before exposing the loopback server to another
+computer. Assistant features require a separately installed assistant CLI.
+Standalone archives include the web interface but omit managed TeX distributions.
+For LaTeX paper compilation, use the desktop-bundled server or a source build with
+[managed compiler setup](development.md#managed-paper-compilers).
+
+To build without Tauri, run `cargo build --locked --release -p noctua` in a
+source checkout. The executable is `target/release/noctua` (`noctua.exe` on
+Windows). This needs neither desktop libraries nor managed TeX to build.
+
+Server and desktop releases have independent package versions and schedules. Prefer matching server/client versions. The server
+serves its own matching browser UI; native clients also check API compatibility
+when connecting. Independent tags do not promise that arbitrary desktop/server
+versions are compatible. A desktop update can offer a bundled local server
+upgrade; remote servers remain independently managed. Use the coordinated
+`update --server` command below for an existing server rather than overwriting a
+running executable, and retain backups before updates.
+
 ## Local commands
 
 Build with `cargo build --locked -p noctua`, then use `target/debug/noctua`
@@ -241,13 +291,16 @@ clears the exact snapshot acknowledged, preserving edits made while saving.
 Explicitly reloading the server copy discards the current draft only after the
 server copy was fetched successfully. See [Notes](notes.md).
 
-After opening a new desktop release, an existing local server is upgraded by an
-independent worker. This also applies to a local server left running while the
+After opening a new desktop release, an older existing local server is
+automatically upgraded to the desktop's bundled server by an independent worker.
+A newer compatible server is reused instead of downgraded. The app's update
+checker can also install newer signed standalone `server-v*` releases for a
+running local server. Server-only updates need no desktop restart. It also applies to a local server left running while the
 client uses a remote connection; remote servers are updated on their own computer.
 A remote-only client never starts a local data server. **Retry server update** appears under **Server management** when an update fails or cleanup remains. Update progress/errors appear in
 the local connection popup, including while the data server is stopped.
 
-The worker stages the bundled executable outside the app bundle, checks its API,
+The worker stages the selected verified executable outside the app bundle, checks its API,
 data format and content hash, and announces maintenance for 30 seconds. Connected
 editor shells finish current input, save drafts/files/annotations, and acknowledge
 the pause. Failed saves, conflicts, open editor dialogs or missing acknowledgments

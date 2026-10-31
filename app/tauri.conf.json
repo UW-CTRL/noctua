@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [],
     "category": "Education",
     "shortDescription": "Research-paper explorer with citation graphs and LaTeX notes",
     "longDescription": "Noctua explores Semantic Scholar citation graphs, a native PDF library with annotations, and LaTeX/handwritten notes, with a built-in Codex or Claude Code research assistant.",
