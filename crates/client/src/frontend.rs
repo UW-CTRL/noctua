@@ -88,6 +88,28 @@ pub async fn start(
     });
     Ok(frontend)
 }
+/// Native completion markers cannot exhaust the browser's draft-storage quota.
+pub fn storage_marker(
+    directory: &Path,
+    address: &str,
+    server_id: &str,
+    origin: &str,
+) -> std::path::PathBuf {
+    let key = serde_json::to_vec(&[address, server_id, origin]).expect("String tuples serialize");
+    directory
+        .join("ui-migrations")
+        .join(format!("{:x}.done", Sha256::digest(key)))
+}
+
+pub fn complete_storage_migration(marker: &Path) -> Result<()> {
+    std::fs::create_dir_all(
+        marker
+            .parent()
+            .context("Migration marker has no directory")?,
+    )?;
+    crate::paths::write_private(marker, "1")
+}
+
 /// Read only the server's scoped session name and opaque value. Attributes from
 /// a remote Set-Cookie header never choose the native WebView's cookie domain.
 pub fn legacy_session(header: &str) -> Result<(String, String)> {
@@ -311,6 +333,37 @@ mod tests {
             header::COOKIE,
             format!("{}={}", frontend.cookie_name, frontend.cookie_value),
         )
+    }
+    #[test]
+    fn migration_markers_are_private_native_records_scoped_to_each_origin_and_server() {
+        let root = tempfile::tempdir().unwrap();
+        let first = storage_marker(
+            root.path(),
+            "https://server.example",
+            "../../data",
+            "http://127.0.0.1:10000",
+        );
+        assert!(first.starts_with(root.path().join("ui-migrations")));
+        assert_ne!(
+            first,
+            storage_marker(
+                root.path(),
+                "https://server.example",
+                "other",
+                "http://127.0.0.1:10000"
+            )
+        );
+        assert_ne!(
+            first,
+            storage_marker(
+                root.path(),
+                "https://server.example",
+                "../../data",
+                "http://127.0.0.1:20000"
+            )
+        );
+        complete_storage_migration(&first).unwrap();
+        assert_eq!(std::fs::read_to_string(first).unwrap(), "1");
     }
     #[test]
     fn legacy_sessions_accept_released_names_without_echoing_credentials() {

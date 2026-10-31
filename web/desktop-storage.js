@@ -19,7 +19,7 @@ window.noctuaStorageMigration = {
           if (localStorage.getItem(recovered)===null) localStorage.setItem(recovered,value);
         }
       }
-      localStorage.setItem(marker,'1');
+      if (typeof marker==='string') localStorage.setItem(marker,'1');
       return true;
     } catch { return false; }
   },

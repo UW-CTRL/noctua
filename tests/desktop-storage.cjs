@@ -40,3 +40,11 @@ test('legacy note draft conflicts are preserved in a recoverable v2 slot',()=>{
   assert.equal(migration(target).apply([[key,'old']],'marker'),true);
   assert.equal(target.getItem('noctua.draft.v2:server:L1:note:migrated'),'old');
 });
+
+test('native migration can keep its completion marker outside the draft-storage quota',()=>{
+  const target=new Store(),helper=migration(target);
+  target.setItem=function(key,value){if(key.includes('migrated'))throw Error('no room for a marker');Store.prototype.setItem.call(this,key,value)};
+  assert.equal(helper.apply([['noctua.theme','dark']],null),true);
+  assert.equal(target.getItem('noctua.theme'),'dark');
+  assert.deepEqual(Object.keys(target),['setItem','noctua.theme']);
+});

@@ -291,7 +291,8 @@ Its saved port must remain available: a conflict fails rather than silently
 changing the origin and hiding recovery drafts. First connection imports existing
 Noctua preferences/drafts from the previous server origin using an authenticated read-only WebView and
 native evaluation; original storage is retained and existing destination records are not
-replaced. This migration never enables a remote native command endpoint.
+replaced. Completion is recorded in native client configuration rather than consuming the
+browser draft quota. This migration never enables a remote native command endpoint.
 
 Standalone archives include an external `ui/` snapshot. Desktop also stages an
 immutable browser UI snapshot beside its durable local server, and retains it

@@ -36,10 +36,13 @@ pub async fn migrate_storage(
     secret: &str,
     id: &str,
 ) -> anyhow::Result<()> {
-    let marker = serde_json::to_string(&format!("noctua.desktop-storage-migrated.{id}"))?;
-    if evaluate(target, format!("localStorage.getItem({marker}) === '1'")).await?
-        == serde_json::json!(true)
-    {
+    let marker = noctua::frontend::storage_marker(
+        &noctua::client::config_dir()?,
+        address,
+        id,
+        &target.url()?.origin().ascii_serialization(),
+    );
+    if marker.is_file() {
         return Ok(());
     }
     let response = noctua::server::http()?
@@ -107,11 +110,12 @@ pub async fn migrate_storage(
         );
         let entries = serde_json::to_string(&value["entries"])?;
         let script =
-            format!("{STORAGE_SCRIPT}\nwindow.noctuaStorageMigration.apply({entries},{marker})");
+            format!("{STORAGE_SCRIPT}\nwindow.noctuaStorageMigration.apply({entries},null)");
         anyhow::ensure!(
             evaluate(target, script).await? == serde_json::json!(true),
             "Could not import previous UI preferences/drafts; original storage was kept"
         );
+        noctua::frontend::complete_storage_migration(&marker)?;
         Ok(())
     }
     .await;
