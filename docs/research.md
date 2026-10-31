@@ -24,9 +24,9 @@ view; your last visualization is remembered. The selected tab uses an accent
 underline and a view icon, matching the other sidebar tabs.
 In Library, choose the library root or a collection in the left sidebar to browse
 its papers in a table. All saved papers appear, including items that Semantic
-Scholar cannot match. Use the magnifying glass beside the title in the compact table header
-to filter by title, author, or publication. Hover or focus it to expand the field; it stays
-expanded while it contains text. Filtering updates the table as you type,
+Scholar cannot match. Use the always-visible filter field beside the title in the compact table header
+to filter by title, author, or publication. The field keeps the same width when
+hovered, focused, or filled. Filtering updates the table as you type,
 and Escape clears the filter. Click the Title or Year column heading to sort (click Year again to reverse the order).
 Titles stay plain on hover; click one to inspect or edit its details. Double-click
 a paper with an attached PDF to open Reader in a new tab. Papers without a PDF
@@ -51,7 +51,8 @@ size as “Filter 276 papers” and filters locally as you type. Escape clears i
 which list fills the lower pane. The folder tree stays visible, and your list
 choice is remembered in this browser. Graph always shows Papers. Selecting a
 thread on the timeline opens the Threads list.
-Both graph views have an expanding magnifying-glass filter at the upper right.
+Both graph views have an always-visible filter field at the upper right. It keeps
+a stable width while you hover, focus, or type, matching the Library filter.
 Type a title, author, publication, or year to filter the graph and Papers list
 locally. The Papers filter stays in sync; Escape in the top-right field clears
 it. Filtering does not start a new search or automatic AI summary. The filter
