@@ -93,6 +93,19 @@ optimize the `sha2` dependency because these checks repeatedly hash complete
 debug executables. Server code and debug information retain their normal debug
 settings; release builds and integrity checks are unchanged.
 
+Desktop CI separately caches Tectonic's downloaded TeX support files and generated
+formats under the runner's temporary `tectonic-resources` directory. The paper
+test step sets `TECTONIC_CACHE_DIR` so the server, compiler subprocesses and
+offline `--only-cached` check use the same restored resources. This is separate
+from the existing `target/tectonic` and `target/texlive` distribution cache.
+The resource-cache key includes the runner OS/architecture and a content hash of
+`scripts/setup-tectonic.py` and `tests/paper-integration.py`. Changing either file
+produces a new key; there is no fallback to another key. On a miss, tests populate
+the cache normally and a successful job saves it for matching later runs,
+subject to GitHub's branch scope and cache eviction. Tests still run on cache
+hits, including the offline compilation assertion. Temporary compiler-resource
+copies remain part of the staging-independence regression.
+
 The frontend runner automatically includes `tests/*.swift` except the two
 explicit WebKit launchers, which it invokes separately with selected fixtures,
 and the manual PR media generators `tests/pr3-recordings.swift`,

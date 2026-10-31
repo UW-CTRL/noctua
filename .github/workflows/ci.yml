@@ -130,9 +130,17 @@ jobs:
       - name: Check the desktop app
         if: needs.release-checks.outputs.run_desktop != 'false'
         run: cargo check --locked -p noctua-app ${{ matrix.args }}
+      - name: Restore Tectonic resource cache
+        if: needs.release-checks.outputs.run_desktop != 'false'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tectonic-resources
+          key: tectonic-resources-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-tectonic.py', 'tests/paper-integration.py') }}
       - name: Exercise real paper compilation
         if: needs.release-checks.outputs.run_desktop != 'false'
         shell: bash
+        env:
+          TECTONIC_CACHE_DIR: ${{ runner.temp }}/tectonic-resources
         run: |
           cargo build --locked --bin noctua
           python -m unittest discover -s tests -p test_paper_synctex.py
