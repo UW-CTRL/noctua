@@ -3,7 +3,7 @@
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const chat={busy:false,switching:false},calls=[];
-let skills=[{id:'react',name:'vercel-react-best-practices',description:'React performance'},{id:'paper',name:'Paper review',description:'Review research methods'}],fail=false,pending=null;
+let skills=[{id:'react',name:'vercel-react-best-practices',description:'React performance',scope:'global'},{id:'paper',name:'Paper review',description:'Review research methods',scope:'noctua'}],fail=false,pending=null;
 async function api(path){calls.push(path);if(path==='/api/skills'){if(pending)return pending;if(fail)throw Error('offline');return skills;}if(path==='/api/workspaces/L1')return {skills:['default']};throw Error(path);}
 function assert(ok,message){if(!ok)throw Error(message);}
 async function settle(){for(let i=0;i<30;i++)await Promise.resolve();}
@@ -13,6 +13,7 @@ function key(value,options={}){const e=new KeyboardEvent('keydown',{key:value,ca
 const input=$('#chat-input'),popup=$('#skill-picker');
 (async()=>{
  await type('/');assert(!popup.hidden&&popup.querySelectorAll('[role=option]').length===2,'slash lists all imported skills');
+ assert(popup.textContent.includes('Global skill')&&popup.textContent.includes('Noctua local skill'),'picker shows the two skill locations');
  const box=popup.getBoundingClientRect();assert(box.top>=0&&box.bottom<=input.getBoundingClientRect().top&&box.width<=420,'picker fits above composer');
  key('ArrowDown');assert(popup.querySelector('[aria-selected=true]').textContent.includes('vercel'),'arrow selects next');
  assert(key('Enter')&&input.value==='/vercel-react-best-practices '&&popup.hidden,'Enter picks without sending');

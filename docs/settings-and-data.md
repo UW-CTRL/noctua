@@ -180,7 +180,7 @@ To revoke Google's grant too, remove the app from your Google Account connection
 
 ## Skills
 
-Open **Settings → Skills**. **Global Agent Skills** reads installed packages in
+Open **Settings → Skills**. **Global skills** reads installed packages in
 place on the server computer. **Location** defaults to `~/.agents/skills`, the
 [Vercel Skills CLI's shared global location](https://github.com/vercel-labs/skills/blob/main/src/installer.ts).
 Enter an existing absolute folder path (or a path beginning with `~/`) and choose
@@ -189,31 +189,32 @@ This preference persists in Noctua. Changing it does not move or modify packages
 Use **Refresh** to see local updates; `/` searches also read the current location.
 CLI link-mode package folders are supported; internal resource symlinks are not.
 
-Under **Project Skills**, choose **Import Skills from Project** and select a
-project folder or its skills folder. Noctua finds folders containing `SKILL.md`
-and imports all their supporting files together. Unrelated project files, `.git`,
-and `node_modules` are excluded. Each import appears as a named project with a
-skill count. Click its heading to expand or collapse its available skills, then
-expand a skill to inspect its instructions and resources. Project A and Project B
-keep independent lists even if their skills have identical names.
+**Noctua local skills** contains all skills copied into this Noctua data folder,
+including older project and individual imports, in one flat list. Its location is
+shown in Settings (`skills/` inside the Noctua data folder). Global skills remain
+in the global folder; importing never writes to it.
 
-Imports are snapshots copied into Noctua, not live links. A project import supports
-up to 100 skills, 512 files, and 32 MB total; each `SKILL.md` must be under 256 KB.
-**Disconnect** on a project removes all of that group's Noctua copies. It keeps
-the original project, global installations, and other imported projects unchanged.
-Stop any running scripts for that group before disconnecting. Import the project
-again to reconnect; reselect any desired chat defaults.
+Choose **Import folder** to select a skill folder or a folder containing multiple
+skills. Noctua finds `SKILL.md` packages and copies their supporting files;
+unrelated files, `.git`, and `node_modules` are excluded. For a skill with only instructions, select the
+folder containing its `SKILL.md`. Unzip downloaded packages before importing.
+Expand a skill to inspect
+its instructions and resources.
 
-**Import an individual skill** retains folder, ZIP, and standalone `SKILL.md`
-imports. These and older ungrouped imports appear under **Other imported skills**
-with individual Disconnect actions. Global installations have no Disconnect action.
+Imports are snapshots, not live links. Folder imports support up to 100 skills,
+512 files, and 32 MB total; each `SKILL.md` must be under 256 KB.
+**Disconnect** removes that skill's Noctua copy. Original folders and global
+installations stay unchanged. Stop its running scripts before disconnecting.
+Existing imports and chat selections are preserved when upgrading. Older source-project
+groups are dropped from settings; their skills remain in the local list. Existing
+global-location preferences are carried forward automatically.
 
-Under **Chat Project Defaults**, choose a Noctua project, select skills to make
-available on every chat message there, and choose **Save project defaults**.
-This is separate from the source-project import groups. An empty selection clears
-its defaults. Use `/` in chat to search all available skills and invoke additional
-skills for one message without changing these defaults. Both providers share the
-available skills. Discovery and import never enable skills or run scripts.
+All global and Noctua local skills are available automatically in every chat,
+with or without a project. The assistant chooses relevant skills and reads their
+instructions as needed. No skill selection or project defaults are required;
+older project selections no longer restrict availability. Use `/` in chat to
+explicitly request a skill for one message. Both providers share the same skills.
+Making a skill available does not run its scripts.
 Scripts require approval and separate output review; see
 [Research assistant](assistant.md#project-files-and-imported-skills).
 
