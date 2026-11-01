@@ -33,6 +33,10 @@ notes are retained. See [Zotero import](getting-started.md#import-from-zotero-op
 
 ## Note information and tags
 
+**Show Notes and Files** in Settings → View affects only the left sidebar;
+the central Library list continues to show notes according to its All / Papers /
+Notes filter. Applied title tags use the same spacing for notes and papers.
+
 In the Library list, click a note once to select it and show **Note Info** on the
 right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
 tag row to reveal its removal button; removing it applies immediately to that
