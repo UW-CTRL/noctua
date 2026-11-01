@@ -1252,7 +1252,6 @@ body.library-view #tab-library > .list-tools, body.library-view #lib-items { dis
 .library-kind button.active { background: var(--bg); color: var(--ink); font-weight: 600; }
 #library-new-note { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
 #library-new-note:hover { color: var(--accent); }
-#library-rows .library-note-row [data-open-note] { display: inline-flex; align-items: center; gap: 6px; }
 #library-rows .library-note-row [data-open-note]::before { width: 14px; height: 14px; color: var(--accent); }
 #library-rows .library-note-kind { color: var(--muted); }
 #library-table-scroll { overflow: auto; flex: 1; min-height: 0; }

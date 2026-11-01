@@ -229,9 +229,11 @@ Scripts require approval and separate output review; see
 and **Storage**, using the same bold headings and section dividers as the other Settings pages.
 
 Open **Settings → View** to choose what Library shows. **Show Notes and Files**
-controls the combined list beneath the selected collection, including imported
-files; empty collections leave no extra space beneath their sidebar row. Notes
-keeps its files available when this Library list is hidden.
+controls only the combined list beneath the selected collection in the left
+sidebar, including imported files. Empty collections leave no extra space
+beneath their sidebar row. The central Library list keeps its notes;
+use its All / Papers / Notes filter to choose which items appear. Notes keeps
+its files available when the sidebar list is hidden.
 **Show papers/notes from subfolders** includes descendant collections in Library
 paper and note lists and paper counts, Graph, and Lineage. It is on by default, preserves
 your previous subfolder preference, and the library root always includes all
