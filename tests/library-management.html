@@ -54,11 +54,13 @@ const tick=()=>new Promise(r=>setTimeout(r,30));const assert=(ok,msg)=>{if(!ok)t
 
 
  openLibraryTags(lib.items);d=document.querySelector('dialog');d.querySelector('[name="tags"]').value='retain';fail=true;await d.querySelector('form').onsubmit({preventDefault(){}});assert(d.open&&d.querySelector('[role="alert"]').textContent.includes('elsewhere')&&d.querySelector('[name="tags"]').value==='retain','failed batch lost form edits');fail=false;d.close();
- const papers=[{key:'p1',title:'Graph paper'}],notes=[{id:'n1',title:'Lineage notes',updated:Date.UTC(2026,9,1)},{id:'n2',title:'Other',updated:Date.UTC(2026,9,2)}];
+ const papers=[{key:'p1',title:'Graph paper'}],notes=[{id:'n1',title:'Lineage notes',target:'C1',tags:['read'],updated:Date.UTC(2026,9,1)},{id:'n2',title:'Other',updated:Date.UTC(2026,9,2)}];
  const all=libraryTableRows(papers,notes);
- assert(all.length===3&&all.filter(r=>r.kind==='note').map(r=>r.key).join()==='note:n1,note:n2'&&all[1].year===2026&&all[1].dateAdded.startsWith('2026-10-01'),'notes join papers in the Library table');
+ const restored=libraryTableRows([], [{id:'same',target:'C1',title:'Source copy'},{id:'same',target:'C2',title:'Moved copy'}]);
+ assert(new Set(restored.map(n=>n.key)).size===2,'restored and moved notes must retain distinct collection identities');
+ assert(all.length===3&&all.filter(r=>r.kind==='note').map(r=>r.key).join()==='note:C1:n1,note:C1:n2'&&all[1].year===2026&&all[1].dateAdded.startsWith('2026-10-01'),'notes join papers in the Library table');
  assert(libraryTableRows(papers,notes,{kind:'papers'}).length===1&&libraryTableRows(papers,notes,{kind:'notes'}).every(r=>r.kind==='note'),'All / Papers / Notes filter');
- assert(libraryTableRows(papers,notes,{filter:'lineage'}).filter(r=>r.kind==='note').length===1&&libraryTableRows(papers,notes,{tag:'read'}).every(r=>!r.kind),'note rows follow the text filter and hide under tag filters');
+ assert(libraryTableRows(papers,notes,{filter:'lineage'}).filter(r=>r.kind==='note').length===1&&libraryTableRows([],notes,{tag:'read'}).length===1&&libraryTableRows([],notes,{tag:'read'})[0].target==='C1','note rows follow text and tag filters while preserving collection identity');
  window.renderLibItems=()=>{};setLibraryKind('notes');assert(lib.kind==='notes'&&cache.get('noctua.libKind')==='notes','kind choice is remembered');
  window.webkit.messageHandlers.result.postMessage('PASS: Library multi-selection, copy/cut/paste, drag, batch tags/trash, restore/undo, folder move/order, duplicate candidates, failure retention, and notes beside papers');
 })().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+'\n'+error.stack));

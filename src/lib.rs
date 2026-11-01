@@ -364,11 +364,30 @@ struct InkBody {
 }
 
 async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
-    let folder = app.library.folder_id(&q.target)?;
-    let mut list=app.notes.list(&folder)?;
-    let workspace=workspace::snapshot(&app,&q.target)?;
-    list.as_array_mut().unwrap().retain(|n|!workspace["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true));
-    Ok(Json(list))
+    let include=app.settings.lock().unwrap().library.include_subfolders;
+    let collections=app.library.collections()?["targets"].as_array().cloned().unwrap_or_default();
+    let mut targets=std::collections::HashSet::from([q.target.clone()]);
+    if include || q.target=="L1" {
+        loop {
+            let before=targets.len();
+            for c in &collections {
+                if c["parent"].as_str().is_some_and(|p|targets.contains(p)) { targets.insert(c["id"].as_str().unwrap().into()); }
+            }
+            if targets.len()==before {break;}
+        }
+    }
+    let mut list=Vec::new();
+    for target in targets {
+        let folder=app.library.folder_id(&target)?;
+        let workspace=workspace::snapshot(&app,&target)?;
+        for mut n in app.notes.list(&folder)?.as_array().cloned().unwrap_or_default() {
+            if workspace["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true) {continue;}
+            n["tags"]=app.library.note_tags(&folder,n["id"].as_str().unwrap_or(""))?;
+            n["target"]=json!(target);
+            list.push(n);
+        }
+    }
+    Ok(Json(json!(list)))
 }
 
 /// All notes across folders, for @-mentions and note links.
@@ -379,6 +398,7 @@ async fn notes_all(State(app): Shared) -> ApiResult {
         let workspace=target.as_deref().map(|t|workspace::snapshot(&app,t)).transpose()?;
         for mut n in list.as_array().cloned().unwrap_or_default() {
             if workspace.as_ref().is_some_and(|m|m["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true)){continue;}
+            n["tags"] = app.library.note_tags(&folder,n["id"].as_str().unwrap_or(""))?;
             n["folder"] = json!(folder);
             n["target"] = json!(target);
             out.push(n);
@@ -735,6 +755,8 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/chat", post(chat_endpoint))
         .route("/api/notes", get(notes_list).post(notes_create))
         .route("/api/notes/all", get(notes_all))
+        .route("/api/notes/{target}/{id}/tags", axum::routing::post(library::tags::note))
+        .route("/api/library/tags", get(library::tags::list).post(library::tags::change))
         .route(
             "/api/notes/{target}/{id}",
             get(notes_get).put(notes_save).delete(notes_delete).layer(DefaultBodyLimit::max(32 << 20)),

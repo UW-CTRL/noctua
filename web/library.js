@@ -1,4 +1,7 @@
 'use strict';
+const libraryShortcutDigits=['1','2','3','4','5','6','7','8','9','0'];
+let libraryTags = [];
+let libraryTagQueue = Promise.resolve();
 async function libraryRequest(path, method='GET', body) {
   const task = Symbol('library-request');
   const timer = setTimeout(() => notifyProgress(task, method === 'GET' ? 'Loading paper…' : 'Updating library…'), 250);
@@ -62,10 +65,7 @@ function libraryPaperActions(el,it) {
   libraries.innerHTML=`<summary>${paperInfoIcon('library')}<span>Libraries and Collections</span>${paperInfoIcon('chevron')}</summary>`;membership.append(libraries);
   const assigned=document.createElement('div');assigned.className='paper-assigned-collections';assigned.setAttribute('aria-label','Libraries and Collections');assigned.setAttribute('aria-live','polite');libraries.append(assigned);
   renderPaperCollections(assigned,it.key);
-  const tags=document.createElement('details');tags.open=true;tags.className='paper-info-section paper-info-tags';tags.setAttribute('aria-label','Paper tags');
-  const values=[...new Set((it.tags||[]).filter(tag=>typeof tag==='string'&&tag.trim()))];
-  tags.innerHTML=`<summary>${paperInfoIcon('tag')}<span>${values.length} Tags</span>${paperInfoIcon('chevron')}</summary>`+(values.length?'<ul>'+values.map(tag=>`<li>${paperInfoIcon('tag')}<span>${esc(tag)}</span></li>`).join('')+'</ul>':'<p class="hint">No tags</p>');membership.after(tags);
-  addPaperTagEditor(tags,it,values);
+  const tags=createItemTagSection(it);membership.after(tags);
 
   const label=document.createElement('label');label.className='paper-collection-label';label.htmlFor='paper-collection-target';label.textContent='Collection';
   const row=document.createElement('div');row.className='paper-collection-row';
@@ -90,7 +90,7 @@ function addPaperTagEditor(section,paper,assigned){
   };
   input.addEventListener('focus',async()=>{
     if(!loaded){
-      if(!loading)loading=api('/api/library/items?target=L1').then(items=>{existing=[...libraryTagCounts(items).keys()].sort((a,b)=>a.localeCompare(b));loaded=true;}).catch(e=>{error.textContent=e.message;}).finally(()=>{loading=null;});
+      if(!loading)loading=loadLibraryTags().then(()=>{existing=sortLibraryTags(libraryTags.map(t=>t.name));loaded=true;}).catch(e=>{error.textContent=e.message;}).finally(()=>{loading=null;});
       await loading;
     }
     render();
@@ -110,13 +110,8 @@ function addPaperTagEditor(section,paper,assigned){
     const tag=value.trim();if(!tag||button.disabled)return;
     button.disabled=true;error.textContent='';
     try{
-      const current=await api(paperURL(paper.key));
-      const tags=[...new Set([...(current.tags||[]),tag])];
-      const saved=tags.length===(current.tags||[]).length?current:await libraryRequest(paperURL(paper.key),'PUT',{revision:current.revision,tags});
-      if(lib.detail?.key===paper.key)lib.detail=saved;
-      if(typeof PDF!=='undefined'&&PDF.paper?.key===paper.key)PDF.paper=saved;
-      await loadLibItems();
-      if(lib.detail?.key===paper.key||(typeof PDF!=='undefined'&&PDF.paper?.key===paper.key))renderDetails();
+      await updateItemTag(paper,tag,false);
+      input.value='';
     }catch(e){error.textContent=e.message;button.disabled=false;}
   }
   form.addEventListener('submit',e=>{e.preventDefault();save(input.value);});
@@ -369,12 +364,13 @@ function confirmDeleteLibraryFolder(target){
     if(descendants.has(lib.target))lib.target='L1';
   });d.querySelector('[type="submit"]').focus();
 }
-// Notes appear beside papers in the Library table. Notes have no tags, so a
-// tag filter lists papers only; the text filter matches note titles.
+// Note IDs are local to collections, including copies retained by move/restore.
+function libraryNoteKey(note){return 'note:'+(note.target||(typeof lib!=='undefined'?lib.target:''))+':'+note.id;}
+// Notes and papers share tags and the same Library filters.
 function libraryTableRows(papers,notes,{kind='all',tag='',filter=''}={}){
   const query=filter.trim().toLowerCase();
-  const noteRows=kind==='papers'||tag||!Array.isArray(notes)?[]:notes.map(n=>({kind:'note',key:'note:'+n.id,id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
-    .filter(n=>!query||n.title.toLowerCase().includes(query));
+  const noteRows=kind==='papers'||!Array.isArray(notes)?[]:notes.map(n=>({...n,kind:'note',key:libraryNoteKey(n),id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
+    .filter(n=>(!tag||(n.tags||[]).includes(tag))&&(!query||[n.title,...(n.tags||[])].join(' ').toLowerCase().includes(query)));
   return [...(kind==='notes'?[]:papers),...noteRows];
 }
 function setLibraryKind(kind){
@@ -522,7 +518,9 @@ async function renderPaperCollections(host,key){
     const path=target=>{const names=[target.name],seen=new Set([target.id]);let parent=target.parent;while(parent&&parent!=='L1'&&!seen.has(parent)){seen.add(parent);const ancestor=byId.get(parent);if(!ancestor)break;names.unshift(ancestor.name);parent=ancestor.parent;}return names.join(' / ');};
     const assigned=result.targets.filter(target=>target.id!=='L1');
     const root=result.targets.find(target=>target.id==='L1')||byId.get('L1');
-    host.innerHTML=`<div class="paper-info-library-row">${paperInfoIcon('library')}<strong>${esc(root?.name||'Noctua Library')}</strong></div>`+(assigned.length?'<ul>'+assigned.map(target=>`<li>${paperInfoIcon('folder')}<span>${esc(path(target))}</span></li>`).join('')+'</ul>':'<p class="hint">No collection assigned.</p>');
+    host.innerHTML=`<div class="paper-info-library-row">${paperInfoIcon('library')}<strong>${esc(root?.name||'Noctua Library')}</strong><button type="button" class="info-hover-remove" data-paper-remove-library data-icon="trash-2" data-icon-only aria-label="Remove paper from Library" title="Remove paper from Library"></button></div>`+(assigned.length?'<ul>'+assigned.map(target=>`<li>${paperInfoIcon('folder')}<span>${esc(path(target))}</span><button type="button" class="info-hover-remove" data-remove-membership="${esc(target.id)}" data-icon="x" data-icon-only aria-label="Remove from ${esc(path(target))}" title="Remove from ${esc(path(target))}"></button></li>`).join('')+'</ul>':'<p class="hint">No collection assigned.</p>');
+    host.querySelector('[data-paper-remove-library]').onclick=async()=>{try{await confirmDeleteLibraryPaper(await api(paperURL(key)));}catch(error){toast(error.message,{error:true});}};
+    host.querySelectorAll('[data-remove-membership]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await api(paperURL(key)+'/membership',{target:button.dataset.removeMembership,remove:true});await loadCollections();await loadLibItems();await renderPaperCollections(host,key);}catch(error){toast(error.message,{error:true});button.disabled=false;}});
   }catch(error){if(host.isConnected)host.textContent=error.message;}
 }
 
@@ -533,23 +531,161 @@ function libraryTagCounts(items){
 }
 function renderLibraryTagPanel(){
   const panel=document.getElementById('library-tags');if(!panel)return;
-  const input=panel.querySelector('[data-search-tags]'),clear=panel.querySelector('[data-clear-tag]');
+  const preferences=typeof settings==='undefined'?{}:settings;
+  panel.toggleAttribute('data-view-hidden',preferences.show_tags===false);
+  document.getElementById('tags-divider')?.toggleAttribute('data-view-hidden',preferences.show_tags===false);
+  const input=panel.querySelector('[data-search-tags]');
+  // Older client markup may still contain the former clear-filter control.
+  panel.querySelector('[data-clear-tag]')?.remove();
   if(!panel.dataset.bound){panel.dataset.bound='true';
     input.addEventListener('input',()=>renderLibraryTagPanel());
-    input.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();input.value='';renderLibraryTagPanel();}});
-    clear.onclick=()=>{lib.tag='';renderLibItems();};
+    input.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();input.value='';lib.tag='';renderLibItems();}});
   }
-  const counts=libraryTagCounts(lib.items),query=input.value.trim().toLocaleLowerCase();
-  const tags=[...counts.keys()].sort((a,b)=>a.localeCompare(b)).filter(tag=>tag.toLocaleLowerCase().includes(query));
-  panel.querySelector('[data-tag-count]').textContent=String(counts.size);
-  clear.disabled=!lib.tag;
+  const counts=libraryTagCounts([...(lib.items||[]),...(lib.notes||[])]),query=input.value.trim().toLocaleLowerCase();
+  const names=sortLibraryTags([...counts.keys(),...libraryTags.filter(t=>t.digit!==null).map(t=>t.name)]).filter(tag=>tag.toLocaleLowerCase().includes(query));
+  panel.querySelector('[data-tag-count]').textContent=preferences.show_tag_counts===false?'':String(names.length);
   const list=panel.querySelector('[data-library-tag-list]');
-  list.innerHTML=tags.length?tags.map(tag=>`<button type="button" data-library-tag="${esc(tag)}" aria-pressed="${lib.tag===tag}" title="${esc(tag)}"><span>${esc(tag)}</span><small>${counts.get(tag)}</small></button>`).join(''):`<p class="hint">${lib.items===null?'Loading tags…':query?'No matching tags.':'No tags in this collection.'}</p>`;
-  list.querySelectorAll('[data-library-tag]').forEach(button=>button.onclick=()=>{
-    const tag=button.dataset.libraryTag;lib.tag=lib.tag===tag?'':tag;renderLibItems();
-    [...list.querySelectorAll('[data-library-tag]')].find(button=>button.dataset.libraryTag===tag)?.focus();
+  list.innerHTML=names.length?names.map(tag=>`<button type="button" data-library-tag="${esc(tag)}" aria-pressed="${lib.tag===tag}" title="${esc(tag)}"><span>${esc(tag)}</span>${preferences.show_tag_counts===false?'':`<small>${counts.get(tag)||0}</small>`}</button>`).join(''):`<p class="hint">${lib.items===null?'Loading tags…':query?'No matching tags.':'No tags in this collection.'}</p>`;
+  list.querySelectorAll('[data-library-tag]').forEach(button=>{
+    button.onclick=()=>{
+      const tag=button.dataset.libraryTag;lib.tag=lib.tag===tag?'':tag;renderLibItems();
+      [...list.querySelectorAll('[data-library-tag]')].find(button=>button.dataset.libraryTag===tag)?.focus();
+    };
+    button.oncontextmenu=event=>{event.preventDefault();openLibraryTagMenu(button.dataset.libraryTag,button,event);};
   });
 }
 
+function sortLibraryTags(names){
+  const priority=new Map();
+  for(const digit of libraryShortcutDigits){const tag=libraryTags.find(t=>t.digit===digit);if(tag&&!priority.has(tag.name))priority.set(tag.name,priority.size);}
+  return [...new Set(names)].sort((a,b)=>(priority.get(a)??100)-(priority.get(b)??100)||a.localeCompare(b));
+}
+async function loadLibraryTags(){
+  const tags=await api('/api/library/tags');
+  if(!Array.isArray(tags))throw Error('Could not load Library tags.');
+  libraryTags=tags;
+  return tags;
+}
+function libraryTitleTags(item){
+  const names=sortLibraryTags((item.tags||[]).filter(name=>libraryTags.some(t=>t.name===name&&t.digit!==null)));
+  return names.map(name=>`<span class="library-title-tag" title="${esc(name)}">${esc(name)}</span>`).join('');
+}
+function createItemTagSection(item){
+  const section=document.createElement('details');section.open=true;section.className='paper-info-section paper-info-tags';section.setAttribute('aria-label',item.kind==='note'?'Note tags':'Paper tags');
+  const values=sortLibraryTags((item.tags||[]).filter(tag=>typeof tag==='string'&&tag.trim()));
+  section.innerHTML=`<summary>${paperInfoIcon('tag')}<span>${values.length} Tags</span>${paperInfoIcon('chevron')}</summary>`+(values.length?'<ul>'+values.map(tag=>`<li>${paperInfoIcon('tag')}<span>${esc(tag)}</span><button type="button" class="info-hover-remove" data-tag-remove="${esc(tag)}" data-icon="x" data-icon-only aria-label="Remove tag ${esc(tag)}" title="Remove tag ${esc(tag)}"></button></li>`).join('')+'</ul>':'<p class="hint">No tags</p>');
+  section.querySelectorAll('[data-tag-remove]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await updateItemTag(item,button.dataset.tagRemove,true);}catch(error){toast(error.message,{error:true});button.disabled=false;}});
+  addPaperTagEditor(section,item,values);
+  return section;
+}
+function renderNoteDetails(item){
+  const el=document.getElementById('details');
+  const target=item.target||lib.target;
+  el.innerHTML=`<div class="roles"><span class="role exp">Note Info</span></div><h2>${esc(item.title||'Untitled note')}</h2><p class="hint">${esc(targetName(target)||target)}</p>${item.updated?`<p class="hint">Edited ${esc(new Date(item.updated).toLocaleString())}</p>`:''}<button type="button" data-note-info-open data-icon="notebook-pen">Open note</button>`;
+  el.append(createItemTagSection({...item,target}));
+  el.querySelector('[data-note-info-open]').onclick=()=>openNoteFrom(target,item.id);
+}
+async function refreshTaggedItems(){
+  const selected=lib.detail;
+  await loadLibItems();
+  if(selected?.kind==='note'){
+    const current=(lib.notes||[]).find(n=>n.id===selected.id&&(n.target||lib.target)===(selected.target||lib.target));
+    if(lib.detail?.key===selected.key&&current)lib.detail={...selected,...current};
+  }else if(selected?.key){
+    const current=await api(paperURL(selected.key));
+    if(lib.detail?.key===selected.key)lib.detail=current;
+  }
+  if(typeof PDF!=='undefined'&&PDF.paper)PDF.paper=await api(paperURL(PDF.paper.key));
+  if(typeof N!=='undefined'&&N.target&&Array.isArray(N.list)){
+    const notes=await api(`/api/notes?target=${enc(N.target)}`);
+    N.list=N.list.map(note=>{const current=notes.find(n=>n.id===note.id&&(n.target||N.target)===N.target);return current?{...note,tags:current.tags||[]}:note;});
+  }
+  renderDetails();
+  if(typeof REF!=='undefined')REF.at=0;
+}
+async function updateItemTag(item,name,remove){
+  if(item.kind==='note'){
+    const target=item.target||lib.target;
+    const tags=await api(`/api/notes/${enc(target)}/${enc(item.id)}/tags`,{name,remove});
+    if(lib.detail?.key===item.key)lib.detail={...lib.detail,tags};
+    if(typeof N!=='undefined'&&N.target===target){const note=N.list.find(n=>n.id===item.id);if(note)note.tags=tags;}
+  }else{
+    const current=await api(paperURL(item.key));
+    const tags=remove?(current.tags||[]).filter(tag=>tag!==name):[...new Set([...(current.tags||[]),name])];
+    const changed=tags.length!==(current.tags||[]).length||tags.some((tag,index)=>tag!==(current.tags||[])[index]);
+    const saved=changed?await libraryRequest(paperURL(item.key),'PUT',{revision:current.revision,tags}):current;
+    if(lib.detail?.key===item.key)lib.detail=saved;
+    if(typeof PDF!=='undefined'&&PDF.paper?.key===item.key)PDF.paper=saved;
+  }
+  await refreshTaggedItems();
+}
+let closeLibraryTagMenu=null;
+function openLibraryTagMenu(name,anchor,event={}){
+  closeLibraryTagMenu?.();
+  const tag=libraryTags.find(tag=>tag.name===name);if(!tag)return;
+  const menu=document.createElement('div');menu.className='library-folder-menu library-tag-menu';menu.setAttribute('role','menu');menu.setAttribute('popover','manual');menu.setAttribute('aria-label',`Tag ${name}`);
+  menu.innerHTML='<button type="button" role="menuitem" data-icon="trash-2">Delete</button>';
+  document.body.append(menu);if(menu.showPopover)menu.showPopover();else menu.removeAttribute('popover');
+  const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX||rect.left,window.innerWidth-box.width-8))+'px';menu.style.top=Math.max(8,Math.min(event.clientY||rect.bottom,window.innerHeight-box.height-8))+'px';
+  const controller=new AbortController();
+  const close=(restore=true)=>{if(!menu.isConnected)return;controller.abort();if(menu.matches(':popover-open'))menu.hidePopover();menu.remove();if(closeLibraryTagMenu===close)closeLibraryTagMenu=null;if(restore&&anchor.isConnected)anchor.focus();};closeLibraryTagMenu=close;
+  const button=menu.querySelector('button');button.focus();
+  button.onclick=async()=>{
+    close(false);
+    try{libraryTags=await api('/api/library/tags',{op:'delete',id:tag.id});if(lib.tag===name)lib.tag='';await refreshTaggedItems();}catch(error){toast(error.message,{error:true});}
+  };
+  menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();close();}else if(event.key==='Tab')close(false);},{signal:controller.signal});
+  document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target))close(false);},{signal:controller.signal,capture:true});
+  menu.addEventListener('toggle',event=>{if(event.newState==='closed')close(false);},{signal:controller.signal});
+}
+function tagShortcutSettings(){
+  return `<div class="tag-shortcut-settings"><h4>Numeric shortcuts</h4><p class="hint">Press a digit while the Library list is focused to toggle its tag. Emoji changes save immediately.</p><div data-tag-shortcuts></div><p class="paper-tag-error" data-tag-shortcut-status role="status"></p></div>`;
+}
+function mountTagShortcuts(host){
+  if(!host)return;
+  const list=host.querySelector('[data-tag-shortcuts]'),status=host.querySelector('[data-tag-shortcut-status]');if(!list)return;
+  const emoji=['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','0️⃣','🟡','🔵','🟢','🔴','🟠','🟣','⚪','⚫','⭐','✅','📖','🔬','💡','❓'];
+  const render=()=>{
+    if(!list.isConnected)return;
+    list.innerHTML=libraryShortcutDigits.map(digit=>{
+      const tag=libraryTags.find(t=>t.digit===digit);
+      return `<div class="tag-shortcut-row" data-shortcut-row="${digit}"><kbd>${digit}</kbd><label>Tag<select data-shortcut-tag="${digit}" aria-label="Tag for key ${digit}"><option value="" ${!tag?'selected':''} disabled>Choose a tag</option>${sortLibraryTags(libraryTags.map(t=>t.name)).map(name=>`<option value="${esc(name)}" ${name===tag?.name?'selected':''}>${esc(name)}</option>`).join('')}</select></label><label>Emoji<select data-shortcut-emoji="${digit}" aria-label="Emoji for key ${digit}"><option value="" selected disabled>Choose emoji</option>${emoji.map(name=>`<option value="${name}">${name}</option>`).join('')}</select></label></div>`;
+    }).join('');
+    list.querySelectorAll('select').forEach(control=>control.onchange=async()=>{
+      const digit=control.dataset.shortcutTag||control.dataset.shortcutEmoji,name=control.value;
+      const row=control.closest('[data-shortcut-row]');list.querySelectorAll('select').forEach(select=>select.disabled=true);status.textContent='Saving…';
+      try{
+        libraryTags=await api('/api/library/tags',{op:'shortcut',digit,name});
+        await refreshTaggedItems();status.textContent='Saved.';render();
+      }catch(error){status.textContent=error.message;list.querySelectorAll('select').forEach(select=>select.disabled=false);}
+    });
+  };
+  status.textContent='Loading tags…';loadLibraryTags().then(()=>{status.textContent='';render();}).catch(error=>{status.textContent=error.message;});
+}
+document.addEventListener('keydown',event=>{
+  if(event.defaultPrevented||event.isComposing||event.repeat||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey||!/^\d$/.test(event.key)||document.querySelector('dialog[open]'))return;
+  if(document.body.classList.contains('notes-mode')||document.body.classList.contains('pdf-mode')||(typeof G!=='undefined'&&G.layout&&G.layout!=='library'))return;
+  if(!(event.target instanceof Element)||event.target.closest('input,textarea,select,[contenteditable]')||!event.target.closest('#library-rows'))return;
+  const row=event.target.closest('[data-key]');if(!row)return;
+  const mapping=libraryTags.find(t=>t.digit===event.key);if(!mapping)return;
+  const key=row.dataset.key;
+  const item=key.startsWith('note:')?(lib.notes||[]).find(n=>libraryNoteKey(n)===key):(lib.items||[]).find(p=>p.key===key);if(!item)return;
+  event.preventDefault();
+  libraryTagQueue=libraryTagQueue.catch(()=>{}).then(async()=>{
+    let current;
+    if(key.startsWith('note:')){
+      const target=item.target||lib.target;
+      current=(await api(`/api/notes?target=${enc(target)}`)).find(n=>n.id===item.id&&(n.target||target)===target);
+      if(!current)throw Error('Note is no longer available.');current={...current,kind:'note',key,target};
+    }else current=await api(paperURL(key));
+    const focus=document.activeElement;
+    await updateItemTag(current,mapping.name,(current.tags||[]).includes(mapping.name));
+    if(document.activeElement===focus||(!focus?.isConnected&&document.activeElement===document.body))document.querySelector(`#library-rows [data-key="${CSS.escape(key)}"]`)?.focus();
+  }).catch(error=>toast(error.message,{error:true}));
+});
+
 // Bind the tag search even if collection loading finished before this script arrived.
-if(typeof lib!=='undefined')renderLibraryManagement();
+if(typeof lib!=='undefined'){
+  renderLibraryManagement();
+  if(document.getElementById('library-tags'))loadLibraryTags().then(()=>{if(lib.items&&typeof renderLibItems==='function')renderLibItems();}).catch(error=>toast(error.message,{error:true}));
+}

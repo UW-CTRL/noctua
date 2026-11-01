@@ -12,6 +12,7 @@
 <script>
 window.addEventListener('error',e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message));
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const settings={show_notes_files:true},G={layout:'library'},lib={target:'L1'};
 const N={target:'L1',doc:{id:'note',title:'Note',blocks:[]},list:[{id:'note',title:'Note'}],items:new Map(),dirty:false,saving:false};
 const chat={id:'chat',mode:'direct'},store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;},remove(k){delete this.data[k];}};
 let rejectMove=false,rejectDelete=false,errors=[],server={revision:1,entries:[{id:'folder',kind:'folder',name:'Sources',parent:'',deleted:false},{id:'f1',kind:'file',name:'references.bib',parent:'folder',deleted:false},{id:'n',kind:'note',note:'note',name:'Note',parent:'',deleted:false}],bibliographies:[],skills:[],history:{}},source='@book{k,title={Old}}';
@@ -23,7 +24,8 @@ function typeset(){} function renderEditor(){$('#notes-stage').textContent='No d
 window.prompt=window.confirm=()=>{throw Error('Native dialogs must not be used');};
 // Drain mocked API promises, then allow one task for dialog close events.
 // MessageChannel yields a task without background WebKit timer throttling.
-async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});}
+// Dialog close events follow the rendering step; wait for it only after closing a dialog.
+async function settle(){for(let i=0;i<20;i++)await Promise.resolve();await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});if(document.querySelector('dialog:not([open])'))await new Promise(resolve=>requestAnimationFrame(resolve));}
 async function restoreTrashEntry(id){$(`dialog [data-trash-select="${id}"]`).click();$('dialog [data-restore-selected]').click();await settle();}
 function assert(ok,message){if(!ok)throw Error(message)}
 </script>
@@ -44,10 +46,10 @@ function assert(ok,message){if(!ok)throw Error(message)}
  assert(workspaceDragIds({ids:['folder','f1']}).join(',')==='folder','selected descendants are moved with their parent only once');W.selected.clear();W.anchor=null;
  $('#workspace-tree [data-file="folder"]').click();await settle();assert(!$('#workspace-tree [data-file="f1"]'),'folder collapses');
  for(const folder of [true,false]){
-  $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');assert(dialog.getBoundingClientRect().width<=420&&dialog.getBoundingClientRect().height<320,'creation form is not compact');
+  $(folder?'[data-new-folder]':'[data-new-file]').click();const dialog=$('dialog');assert(dialog?.open,'creation dialog opens');assert(dialog.getBoundingClientRect().width<=420&&dialog.getBoundingClientRect().height<380,'creation form is not compact');
   if(!folder){assert([...dialog.querySelector('[data-kind]').options].map(o=>o.value).join(',')==='note,tex,file','creation types ordered Note, LaTeX, File');dialog.querySelector('[data-kind]').value='file';}
   dialog.querySelector('[data-name]').value=folder?'Drafts':'new.bib';dialog.querySelector('[data-parent]').value='folder';dialog.querySelector('form').requestSubmit();await settle();
-  assert(!$('dialog'),'successful creation closes dialog');assert(server.entries.some(e=>e.name===(folder?'Drafts':'new.bib')&&e.parent==='folder'),'entry created in selected folder');
+  assert(!$('dialog'),'successful creation closes dialog: '+($('dialog [data-error]')?.textContent||'pending'));assert(server.entries.some(e=>e.name===(folder?'Drafts':'new.bib')&&e.parent==='folder'),'entry created in selected folder');
   if(!folder)assert(W.file.startsWith('created')&&$('#workspace-editor textarea'),'new file opens');
  }
  for(const [name,expected] of [['draft','draft.tex'],['appendix.TEX','appendix.TEX']]){
@@ -192,6 +194,50 @@ function assert(ok,message){if(!ok)throw Error(message)}
  for(const modifier of ['metaKey','ctrlKey'])for(const redo of [false,true]){$('#workspace-tree').focus();const event=new KeyboardEvent('keydown',{key:'z',[modifier]:true,shiftKey:redo,bubbles:true,cancelable:true});$('#workspace-tree').dispatchEvent(event);assert(event.defaultPrevented,'file-list history shortcut handled');}
  assert(historyCalls.length===4&&historyCalls.every(call=>!call.fileOnly)&&historyCalls[0].redo===false&&historyCalls[1].redo===true,'Command/Ctrl Z and Shift Z route to project history');workspaceUndo=originalWorkspaceUndo;
  assert($('[data-history="workspace"] [data-undo]')&&$('[data-history="workspace"] [data-redo]'),'history buttons remain available');
- window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, and drag-to-trash');
+ // The same Library setting hides notes and imported files together, while Notes keeps them visible.
+ const visibilityEntries=[{id:'visible-note',kind:'note',note:'visible-note',name:'Visible note',parent:'',deleted:false},{id:'visible-file',kind:'file',name:'imported.csv',parent:'',deleted:false}];
+ W.manifest={revision:1,entries:visibilityEntries,history:{}};W.target=N.target='L1';W.file=null;N.list=[{id:'visible-note',title:'Visible note',tags:['🟡']}];
+ document.body.classList.add('library-view');document.body.classList.remove('notes-mode');settings.show_notes_files=false;renderWorkspaceTree();
+ assert($('#workspace-tree [data-file="visible-note"]')&&$('#workspace-tree [data-file="visible-file"]'),'visibility must retain both entries');
+ assert(getComputedStyle($('#workspace-tree')).display==='none'&&getComputedStyle($('#lib-tree .tree-files')).display==='none','one preference must hide notes and imported files in Library');
+ settings.show_notes_files=true;placeWorkspaceTree();assert(getComputedStyle($('#workspace-tree')).display!=='none','enabling combined list must show entries');
+ settings.show_notes_files=false;placeWorkspaceTree();document.body.classList.add('notes-mode');assert(getComputedStyle($('#workspace-tree')).display!=='none','Library setting must not hide Notes files');
+ let inspected=null,openedEntry=null;window.showLibItem=item=>{inspected=item;};const previousOpen=openWorkspaceFile;
+ openWorkspaceFile=async id=>{openedEntry=id;};document.body.classList.remove('notes-mode');settings.show_notes_files=true;renderWorkspaceTree();
+ $('#workspace-tree [data-file="visible-note"]').click();assert(inspected?.id==='visible-note'&&inspected.tags[0]==='🟡'&&!openedEntry&&!document.body.classList.contains('notes-mode'),'Library sidebar note click must select Note Info without opening');
+ $('#workspace-tree [data-file="visible-note"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await settle();assert(openedEntry==='visible-note','Library sidebar note double click must open');
+ openedEntry=null;$('#workspace-tree [data-file="visible-file"]').click();await settle();assert(openedEntry==='visible-file','imported files must retain click-to-open behavior');openWorkspaceFile=previousOpen;
+ W.manifest={revision:1,entries:[],history:{}};renderWorkspaceTree();assert(!$('#workspace-tree').textContent.includes('No files yet'),'empty Notes and Files list must stay quiet');
+ // New notes, created files, and imports capture the explicitly chosen collection.
+ const collectionApi=api,collectionCreate=createNote,collectionSave=saveWorkspaceFile,collectionOpen=openWorkspaceFile;
+ const destinationServer={revision:7,entries:[],history:{}},writes=[];let selectedDestination=null;
+ window.collectionOptions=selected=>['L1','C2'].map(id=>`<option value="${id}" ${id===selected?'selected':''}>${id}</option>`).join('');
+ window.loadNoteFolder=async target=>{selectedDestination=target;N.target=W.target=target;W.manifest=clone(destinationServer);};
+ saveWorkspaceFile=async()=>{};openWorkspaceFile=async()=>{};
+ api=async(path,body)=>{
+  if(path==='/api/workspaces/C2'){
+   if(body){writes.push({path,...body});destinationServer.entries.push({id:'new-file',kind:'file',name:body.name,parent:body.parent,deleted:false});destinationServer.revision++;}
+   return clone(destinationServer);
+  }
+  if(path==='/api/workspaces/L1')return {revision:1,entries:[],history:{}};
+  throw Error('Unexpected destination API '+path);
+ };
+ createNote=async title=>{writes.push({path:'/api/notes',target:N.target,title});return {id:'new-destination-note',title};};
+ for(const kind of ['note','file']){
+  lib.target=N.target=W.target='L1';W.manifest={revision:1,entries:[],history:{}};
+  workspaceCreate(false);let dialog=$('dialog');assert(dialog.querySelector('[data-collection]').value==='L1','current collection must start selected');
+  dialog.querySelector('[data-collection]').value='C2';dialog.querySelector('[data-collection]').dispatchEvent(new Event('change',{bubbles:true}));await settle();
+  assert(N.target==='L1','choosing destination must not switch collection before submission');
+  dialog.querySelector('[data-kind]').value=kind;dialog.querySelector('[data-name]').value=kind==='note'?'Chosen note':'chosen.txt';dialog.querySelector('form').requestSubmit();await settle();
+  assert(!$('dialog')&&selectedDestination==='C2','creation must select chosen destination');
+ }
+ assert(writes.some(w=>w.path==='/api/notes'&&w.target==='C2')&&writes.some(w=>w.path==='/api/workspaces/C2'&&w.op==='create'&&w.name==='chosen.txt'),'notes and created files must use chosen collection');
+ lib.target=N.target=W.target='L1';W.manifest={revision:1,entries:[],history:{}};workspaceImport();let importDialog=$('dialog');assert(importDialog.querySelector('[data-collection]').value==='L1','import preselects current collection');
+ importDialog.querySelector('[data-collection]').value='C2';const fixtureFile=new File(['a,b\n1,2'],'chosen.csv',{type:'text/csv'});
+ const previousFetch=window.fetch;window.fetch=async(path,options)=>{writes.push({path,body:options.body});return {ok:true,json:async()=>clone(destinationServer)};};
+ const collectionDrop=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(collectionDrop,'dataTransfer',{value:{files:[fixtureFile]}});importDialog.querySelector('.workspace-upload-zone').dispatchEvent(collectionDrop);importDialog.querySelector('form').requestSubmit();await settle();
+ assert(!$('dialog')&&writes.some(w=>w.path.startsWith('/api/workspaces/C2/upload?')&&w.body===fixtureFile),'import must upload chosen file into selected collection');
+ window.fetch=previousFetch;api=collectionApi;createNote=collectionCreate;saveWorkspaceFile=collectionSave;openWorkspaceFile=collectionOpen;
+ window.webkit.messageHandlers.result.postMessage('PASS: project tree, file editor, save, undo controls, cross-window draft protection, trash cancellation/errors, descendant cleanup, restoration, Lucide icons, folder/root moves, invalid drops, drag-to-trash, Library visibility, Note Info selection, and collection destinations');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
 </script></body></html>

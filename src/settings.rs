@@ -51,15 +51,30 @@ pub struct Settings {
 pub struct LibrarySettings {
     #[serde(default = "enabled")]
     pub include_subfolders: bool,
+    #[serde(default = "enabled")]
+    pub show_notes_files: bool,
+    #[serde(default = "enabled")]
+    pub show_tags: bool,
+    #[serde(default = "enabled")]
+    pub show_tag_counts: bool,
 }
 fn enabled() -> bool { true }
 impl Default for LibrarySettings {
-    fn default() -> Self { Self { include_subfolders: true } }
+    fn default() -> Self { Self { include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
 }
 
-pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<LibrarySettings>) -> ApiResult {
-    update(&app, |s| s.library = body.clone())?;
-    Ok(Json(json!({"include_subfolders": body.include_subfolders})))
+pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
+    let fields=["include_subfolders", "show_notes_files", "show_tags", "show_tag_counts"];
+    if !body.is_object() || fields.iter().any(|key|body.get(key).is_some_and(|v|!v.is_boolean())) {
+        return Err(crate::Status(StatusCode::UNPROCESSABLE_ENTITY,"View preferences must be true or false".into()).into());
+    }
+    update(&app, |s| {
+        if let Some(value)=body["include_subfolders"].as_bool(){s.library.include_subfolders=value;}
+        if let Some(value)=body["show_notes_files"].as_bool(){s.library.show_notes_files=value;}
+        if let Some(value)=body["show_tags"].as_bool(){s.library.show_tags=value;}
+        if let Some(value)=body["show_tag_counts"].as_bool(){s.library.show_tag_counts=value;}
+    })?;
+    Ok(Json(serde_json::to_value(&app.settings.lock().unwrap().library)?))
 }
 
 pub use noctua_client::AppIcon;
@@ -232,6 +247,9 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "agent": s.agent,
         "app_icon": s.app_icon,
         "include_subfolders": s.library.include_subfolders,
+        "show_notes_files": s.library.show_notes_files,
+        "show_tags": s.library.show_tags,
+        "show_tag_counts": s.library.show_tag_counts,
         "assistant": s.assistant,
         "highlight_colors": s.highlight_colors,
         "highlight_palette": s.highlight_palette,

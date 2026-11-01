@@ -1,0 +1,83 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/ui.css"><link rel="stylesheet" href="../web/style.css"><style>body{display:block;padding:12px}.fixture-layout{display:flex;gap:20px}#left{position:static;display:block;width:220px;height:360px}#library-tags{height:320px;width:220px}#details{position:static;width:320px}#library-view{display:block;width:420px}#settings-fixture{width:500px}</style></head><body class="library-view">
+<div class="fixture-layout"><aside id="left"><div id="tags-divider"></div><section id="library-tags"><header><strong>Tags</strong><span data-tag-count></span><button data-clear-tag>X</button></header><div data-library-tag-list></div><footer><input data-search-tags aria-label="Filter tags"></footer></section></aside><div id="library-view"><table><tbody id="library-rows"></tbody></table><input id="outside-input"><div contenteditable="true" id="outside-editor"></div><button id="outside-button">Other panel</button></div><aside id="details"></aside></div><div id="settings-fixture"></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const settings={show_tags:true,show_tag_counts:true},G={},calls=[],messages=[],store={get(){},set(){},remove(){}};
+const collections={targets:[{id:'L1',name:'Library'},{id:'C1',name:'Collection',parent:'L1'}]},targetName=id=>collections.targets.find(t=>t.id===id)?.name;
+const fixturePapers=[{key:'p1',title:'First paper',revision:1,tags:['read','🟡']},{key:'p2',title:'Other paper',revision:1,tags:['1️⃣']}];
+const fixtureNotes=[{id:'n1',target:'C1',title:'Tagged note',updated:1700000000000,tags:['read','🟡']}];
+let registry=['1','2','3','4','5','6','7','8','9','0'].map(digit=>({id:'digit'+digit,name:digit+'\ufe0f\u20e3',digit}));registry.push({id:'existing-yellow',name:'🟡',digit:null},{id:'read',name:'read',digit:null});
+const lib={target:'C1',kind:'all',items:fixturePapers,notes:fixtureNotes,selected:new Set(),detail:null};
+const clone=value=>JSON.parse(JSON.stringify(value));
+async function api(path,body){
+ calls.push({path,body:clone(body||null)});
+ if(path==='/api/library/tags'){
+  if(body?.op==='shortcut'){
+   const previous=registry.find(t=>t.digit===body.digit),matching=registry.find(t=>t.name===body.name);
+   if(matching){if(previous)previous.digit=null;matching.digit=body.digit;}
+   else if(previous){const old=previous.name;previous.name=body.name;for(const item of [...fixturePapers,...fixtureNotes])item.tags=item.tags.map(t=>t===old?body.name:t);}
+   else registry.push({id:'new-'+body.digit,name:body.name,digit:body.digit});
+  }else if(body?.op==='delete'){
+   const tag=registry.find(t=>t.id===body.id);if(!tag)throw Error('Unknown tag');registry=registry.filter(t=>t!==tag);for(const item of [...fixturePapers,...fixtureNotes])item.tags=item.tags.filter(t=>t!==tag.name);
+  }
+  for(const item of [...fixturePapers,...fixtureNotes])for(const name of item.tags)if(!registry.some(t=>t.name===name))registry.push({id:'tag-'+name,name,digit:null});
+  return clone(registry);
+ }
+ if(path.startsWith('/api/notes?'))return clone(fixtureNotes);
+ if(path==='/api/notes/C1/n1/tags'){
+  fixtureNotes[0].tags=body.remove?fixtureNotes[0].tags.filter(t=>t!==body.name):[...new Set([...fixtureNotes[0].tags,body.name])];return clone(fixtureNotes[0].tags);
+ }
+ if(path.endsWith('/membership'))return {targets:collections.targets};
+ if(path.startsWith('/api/library/papers/'))return clone(fixturePapers.find(p=>p.key===path.split('/').pop()));
+ throw Error('Unexpected '+path);
+}
+async function fetch(path,options){
+ const body=JSON.parse(options.body);calls.push({path,body});const paper=fixturePapers.find(p=>p.key===path.split('/').pop());
+ if(!paper||body.revision!==paper.revision)return {ok:false,json:async()=>({error:'Conflict'})};paper.tags=body.tags;paper.revision++;return {ok:true,json:async()=>clone(paper)};
+}
+function toast(message){messages.push(message);}function notifyProgress(){}async function loadCollections(){}
+function renderDetails(){const item=lib.detail;if(!item)return;if(item.kind==='note')renderNoteDetails(item);else{$('#details').replaceChildren(createItemTagSection(item));}}
+function showLibItem(item){lib.detail=item;lib.selected=new Set([item.key]);renderDetails();updateLibrarySelection();}
+function renderLibItems(){renderLibraryTagPanel();const rows=libraryTableRows(lib.items,lib.notes,{tag:lib.tag});$('#library-rows').innerHTML=rows.map(it=>`<tr tabindex="0" data-key="${esc(it.key)}"><td>${libraryTitleTags(it)}${esc(it.title)}</td></tr>`).join('');$('#library-rows').querySelectorAll('tr').forEach(row=>row.onclick=()=>{showLibItem(rows.find(it=>it.key===row.dataset.key));row.focus();});}
+async function loadLibItems(){lib.items=clone(fixturePapers);lib.notes=clone(fixtureNotes);await loadLibraryTags();renderLibItems();}
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const settle=async()=>{for(let n=0;n<100;n++)await Promise.resolve();};
+function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true});target.dispatchEvent(e);return e;}
+</script><script src="../web/library.js"></script><script>
+(async()=>{
+ await loadLibItems();
+ assert(!$('#library-tags [data-clear-tag]'),'old sidebar X control remains');
+ const names=[...document.querySelectorAll('[data-library-tag]')].map(b=>b.dataset.libraryTag);assert(names[0]==='1️⃣'&&names.indexOf('read')>names.indexOf('0️⃣'),'shortcut tags must precede ordinary tags');
+ assert($('#library-tags [data-library-tag="read"] small').textContent==='2','counts must include notes and papers');
+ const first=()=>$('#library-rows [data-key="p1"]');first().click();
+ assert(digit(first(),'1').defaultPrevented,'digit in central list not handled');await libraryTagQueue;
+ assert(fixturePapers[0].tags.includes('1️⃣')&&first().querySelector('.library-title-tag').textContent==='1️⃣','shortcut did not add tag and title prefix');
+ digit(first(),'1');await libraryTagQueue;assert(!fixturePapers[0].tags.includes('1️⃣')&&!first().querySelector('.library-title-tag'),'same shortcut did not remove assignment and prefix');
+ digit(first(),'1');digit(first(),'1');await libraryTagQueue;assert(!fixturePapers[0].tags.includes('1️⃣')&&fixturePapers[1].tags.includes('1️⃣'),'rapid toggles duplicate assignments or affect another item');
+ for(const target of [$('#outside-input'),$('#outside-editor'),$('#outside-button')]){target.focus();assert(!digit(target,'1').defaultPrevented,'digit hijacked typing or another panel');}
+ document.body.classList.add('notes-mode');assert(!digit(first(),'1').defaultPrevented,'hidden Library list must not tag items while Notes is active');document.body.classList.remove('notes-mode');
+ const note=()=>$('#library-rows [data-key="note:C1:n1"]');note().click();assert($('#details').textContent.includes('Note Info')&&$('#details [data-tag-remove="read"]'),'note info lacks tags');
+ digit(note(),'1');await libraryTagQueue;assert(fixtureNotes[0].tags.includes('1️⃣')&&note().querySelector('.library-title-tag'),'note shortcut failed');
+ const remove=$('#details [data-tag-remove="read"]');assert(getComputedStyle(remove).opacity==='0','remove control should be hidden until hover or focus');remove.focus();assert(getComputedStyle(remove).opacity==='1','keyboard focus did not reveal remove control');remove.click();await settle();assert(!fixtureNotes[0].tags.includes('read')&&fixturePapers[0].tags.includes('read')&&!document.querySelector('dialog'),'per-note remove affected other assignments or opened popup');
+ const input=$('#details .paper-tag-editor input');input.value='fresh note tag';input.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await settle();assert(fixtureNotes[0].tags.includes('fresh note tag'),'adding a note tag failed');
+ $('#settings-fixture').innerHTML=tagShortcutSettings();mountTagShortcuts($('#settings-fixture'));await settle();
+ assert(document.querySelectorAll('[data-shortcut-tag]').length===10&&document.querySelectorAll('[data-shortcut-emoji]').length===10&&!$('#settings-fixture button[type="submit"]'),'ten autosaving shortcut mappings and emoji pickers required');
+ let chooser=$('[data-shortcut-emoji="1"]');chooser.value='🟡';await chooser.onchange();
+ assert(registry.find(t=>t.digit==='1').id==='existing-yellow'&&registry.filter(t=>t.name==='🟡').length===1,'emoji picker failed to reuse existing tag');
+ assert(fixturePapers[1].tags.includes('1️⃣')&&fixtureNotes[0].tags.includes('1️⃣'),'reusing existing tag moved previous assignments');
+ chooser=$('[data-shortcut-emoji="1"]');chooser.value='🔵';await chooser.onchange();
+ assert(registry.find(t=>t.digit==='1').id==='existing-yellow'&&fixturePapers[0].tags.includes('🔵')&&fixtureNotes[0].tags.includes('🔵'),'new emoji failed to retain identity and assignments');
+ assert(!document.querySelector('[data-library-tag="🟡"]')&&document.querySelector('[data-library-tag="🔵"]'),'emoji rename did not refresh sidebar');
+ settings.show_tag_counts=false;renderLibraryTagPanel();assert(!$('#library-tags small')&&$('#library-tags [data-library-tag="read"]'),'hiding counts hid names or left counts');
+ const wrapping=$('#library-tags [data-library-tag-list]');assert(getComputedStyle(wrapping).display==='flex'&&getComputedStyle(wrapping).flexWrap==='wrap','tags must always wrap');
+ const narrowRows=new Set([...wrapping.querySelectorAll('button')].map(b=>Math.round(b.getBoundingClientRect().top))).size;
+ $('#library-tags').style.width='420px';renderLibraryTagPanel();const wide=$('#library-tags [data-library-tag-list]');const wideRows=new Set([...wide.querySelectorAll('button')].map(b=>Math.round(b.getBoundingClientRect().top))).size;assert(wideRows<narrowRows,'tag wrapping did not respond to available width');
+ for(const button of wide.querySelectorAll('button'))assert(getComputedStyle(button).borderTopWidth==='0px'&&button.getBoundingClientRect().width<=420,'tag item has persistent border or overflows');
+ settings.show_tags=false;renderLibraryTagPanel();assert(getComputedStyle($('#library-tags')).display==='none'&&getComputedStyle($('#tags-divider')).display==='none','tag visibility did not hide list and divider');settings.show_tags=true;renderLibraryTagPanel();
+ const blue=$('#library-tags [data-library-tag="🔵"]');blue.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:10,clientY:10}));const menu=$('.library-tag-menu');assert(menu&&menu.querySelector('[role="menuitem"]').textContent==='Delete','sidebar context Delete unavailable');await menu.querySelector('button').onclick();
+ assert(!registry.some(t=>t.name==='🔵')&&[...fixturePapers,...fixtureNotes].every(it=>!it.tags.includes('🔵'))&&fixturePapers.length===2&&fixtureNotes.length===1,'global deletion lost items or retained assignments');
+ first().click();const paperRemove=$('#details [data-tag-remove="read"]');paperRemove.click();await settle();assert(!fixturePapers[0].tags.includes('read')&&registry.some(t=>t.name==='read'),'paper assignment removal deleted tag identity');
+ assert(messages.length===0,'unexpected errors: '+messages.join('; '));
+ window.webkit.messageHandlers.result.postMessage('PASS: shared tags, immediate removal, global delete, focus-scoped rapid digit toggles, prefix order, emoji reuse/rename, counts, visibility and wrapping');
+})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack));
+</script></body></html>

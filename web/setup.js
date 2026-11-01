@@ -137,7 +137,7 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
-  ['appearance', 'Appearance'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
+  ['appearance', 'Appearance'], ['view', 'View'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
   ['search', 'Search'], ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
 
@@ -698,12 +698,24 @@ function mountScholarSettings(host) {
   const timer = setInterval(() => { if (!host.isConnected) clearInterval(timer); else refresh(); }, 3000);
 }
 
+function viewSection(s) {
+  const toggle = (key, label, hint = '') => `<label class="setting-field" for="setup-view-${key}"><span>${label}${hint ? `<span class="hint">${hint}</span>` : ''}</span><input id="setup-view-${key}" data-view-preference="${key}" type="checkbox" ${s[key] !== false ? 'checked' : ''}></label>`;
+  return `<section data-step="view"><h2>View</h2>
+    <div class="settings-group" role="group" aria-labelledby="settings-view-library"><h3 id="settings-view-library">Library</h3>
+    ${toggle('show_notes_files', 'Show Notes and Files', 'Show notes and imported files beneath the selected collection in Library.')}
+    <label class="setting-field" for="setup-include-subfolders"><span>Show papers/notes from subfolders<span class="hint library-setting-hint">Include descendant collections in paper and note lists. The library root always includes all papers and notes.</span></span><input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
+    </div>
+    <div class="settings-group" role="group" aria-labelledby="settings-view-tags"><h3 id="settings-view-tags">Tags</h3>
+    ${toggle('show_tags', 'Show sidebar tag list')}
+    ${toggle('show_tag_counts', 'Show tag counts')}
+    ${typeof tagShortcutSettings === 'function' ? tagShortcutSettings() : ''}
+    </div><p class="setup-msg" role="status"></p></section>`;
+}
+
 function dataSection(s) {
   const temporary = /^(\/private)?\/(tmp|var\/folders)\//.test(s.data_dir);
   return `<section data-step="data"><h2>Data & Storage</h2>
     <div class="settings-group library-settings" role="group" aria-labelledby="settings-library-title"><h3 id="settings-library-title">Library</h3>
-    <label class="setting-field" for="setup-include-subfolders"><span>Include papers from subfolders<span class="hint library-setting-hint">Include nested papers in lists, counts, Graph, and Lineage. The library root always shows all papers.</span></span>
-      <input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     <div class="library-duplicates"><button type="button" data-act="check-library-duplicates" data-icon="search">Check for duplicate papers</button>
     <p class="hint">Review matches by DOI, arXiv ID, PDF content, or title before merging.</p></div>
     </div>
@@ -945,15 +957,16 @@ function openSetup({ firstRun = false, tab } = {}) {
       card.querySelector('.setup-input')?.focus();
       return;
     }
-    const panels = { appearance: appearanceSection(), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
+    const panels = { appearance: appearanceSection(), view: viewSection(settings), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
       search: searchSettingsSection(), connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',server:'server',agent:'bot',skills:'sparkles',search:'search',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',view:'eye',server:'server',agent:'bot',skills:'sparkles',search:'search',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
     mountScholarSettings(card.querySelector('[data-step="scholar"]'));
     mountSearchEngineOrder(card.querySelector('[data-step="search"]'));
+    if (typeof mountTagShortcuts === 'function') mountTagShortcuts(card.querySelector('[data-step="view"]'));
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
   };
@@ -1126,6 +1139,23 @@ function openSetup({ firstRun = false, tab } = {}) {
       msg(e.target.closest('section'), 'Lineage summary preference saved.', true);
       return;
     }
+    if (e.target.dataset?.viewPreference) {
+      const control = e.target, key = control.dataset.viewPreference;
+      const previous = settings[key] !== false;
+      control.disabled = true;
+      try {
+        const saved = await api('/api/settings/library', { [key]: control.checked });
+        Object.assign(settings, saved);
+        control.checked = settings[key] !== false;
+        if (typeof placeWorkspaceTree === 'function') placeWorkspaceTree();
+        if (typeof renderLibItems === 'function') renderLibItems();
+        if (typeof renderLibraryTagPanel === 'function') renderLibraryTagPanel();
+        msg(control.closest('section'), 'View preference saved.', true);
+      } catch (error) {
+        control.checked = previous; msg(control.closest('section'), error.message);
+      } finally { control.disabled = false; }
+      return;
+    }
     if (e.target.id === 'setup-include-subfolders') {
       const control = e.target;
       const previous = settings.include_subfolders !== false;
@@ -1243,6 +1273,9 @@ function renderKeyBanner() {
 
 async function loadSettings() {
   settings = await api('/api/settings');
+  if (typeof placeWorkspaceTree === 'function') placeWorkspaceTree();
+  if (typeof renderLibItems === 'function') renderLibItems();
+  if (typeof renderLibraryTagPanel === 'function') renderLibraryTagPanel();
   if (typeof renderChatEffort === 'function') renderChatEffort();
   applyPDFHighlightColors(settings.highlight_colors,settings.highlight_palette);
   return settings;

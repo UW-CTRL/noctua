@@ -10,7 +10,10 @@ and failures also raise a notification.
 
 Library and Notes share one collection tree in the left sidebar: selecting a
 collection in either mode selects it in both, and the collection's notes and
-files appear nested under its row. Select a collection and use **New note or
+files appear nested under its row. **Settings → View** controls whether this combined
+Notes and Files list is visible in Library; Notes keeps its project navigation.
+Selecting a collection or opening Notes does not load Semantic Scholar graphs.
+Graph and Lineage load relationships when used in Library. Select a collection and use **New note or
 file** (above the tree, in Library or Notes) and select **Note**; Noctua switches
 to Notes to open it. You can also create a note from the Library table header,
 a collection's right-click menu, or the Reader's **More document actions**
@@ -28,6 +31,22 @@ untouched imported content and preserves local edits, reporting conflicting sour
 changes. **Overwrite from Zotero** replaces imported note content. Noctua-only
 notes are retained. See [Zotero import](getting-started.md#import-from-zotero-optional).
 
+## Note information and tags
+
+In the Library list, click a note once to select it and show **Note Info** on the
+right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
+tag row to reveal its removal button; removing it applies immediately to that
+note. Right-click a tag in the left Tags sidebar and choose **Delete** to remove
+the tag and all its paper and note assignments while keeping the items.
+
+**Settings → View → Tags** controls sidebar tag and count visibility and the ten
+digit shortcuts. With the Library central list focused, a digit toggles its tag
+on the selected paper or note. Shortcut tags appear before ordinary tags and
+before the item title while applied. Shortcut assignment and emoji selection
+save automatically; choosing an existing emoji tag reuses it and keeps its
+assignments. These controls do not change note text, and typing digits in Notes
+or other text fields never applies tags.
+
 ## Project files, bibliographies, and skills
 
 Refreshing Notes reopens the last viewed file or note in the selected collection.
@@ -35,7 +54,8 @@ TeX and text files restore their cursor selection and source scroll position.
 If the saved file was removed, Noctua falls back to the last available note.
 
 The **Collections** header above the tree has New note or file, New folder, and
-Import files icons, which act on the selected collection. Hover or focus one of these icons
+Import files icons, which initially target the selected collection. New note or file and Import files
+let you choose another collection in their forms. Hover or focus one of these icons
 to reveal its label underneath without moving the file list. To create a note, choose Note in
 the New note or file form; File creates an empty file and LaTeX (.tex) creates a starter paper. All three
 use the name and destination folder in the form. Creation forms use compact aligned fields. Import files opens a compact queue: choose or drop files, remove unwanted selections, then click Import. Each file is limited to 32 MB. Failed uploads keep the remaining files available for retry.
