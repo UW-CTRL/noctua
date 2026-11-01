@@ -21,6 +21,15 @@ main checks cannot be rebuilt through these gated workflows.
 Tauri CLI cache preparation runs separately from CI. A missing cache slows the
 release installation step but does not prevent a release.
 
+## Ship maintainer-approved issues
+
+The Claude Code skill [`ship-liked-issues`](../.claude/skills/ship-liked-issues/SKILL.md)
+automates a patch release: it resolves open issues whose only reaction is a 👍
+from the maintainer, opens PRs that close them, squash-merges each PR after CI,
+then bumps the patch version and tags Server before Desktop once main CI and
+Dependency security pass. Others' reactions are ignored because the repository
+is public. It stops without a release when nothing qualifies or merges.
+
 ## Standalone server releases
 
 `.github/workflows/release-server.yml` publishes standalone server archives for
