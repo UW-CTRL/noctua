@@ -38,10 +38,14 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-pub(crate) const WRITE_TOOLS: [&str; 14] = [
+pub(crate) const WRITE_TOOLS: [&str; 17] = [
     "trash_papers",
     "restore_library_trash",
     "purge_library_trash",
+
+    "edit_paper_info",
+    "edit_paper_memo",
+    "set_paper_info_layout",
     "download_pdf",
     "save_to_library",
     "edit_note",
@@ -333,6 +337,13 @@ async fn run(
         "trash_papers" | "restore_library_trash" | "purge_library_trash" | "edit_collection" => {
             let result=crate::mcp_library::change(app,name,args)?;
             ui(json!({"action":"library"}));
+            Ok(result)
+        }
+        "edit_paper_info" | "list_paper_memos" | "edit_paper_memo" | "get_paper_info_layout" | "set_paper_info_layout" => {
+            let result=crate::mcp_paper_info::run(app,name,args)?;
+            if WRITE_TOOLS.contains(&name) {
+                ui(json!({"action":"paper_info","kind":match name {"edit_paper_info"=>"metadata","edit_paper_memo"=>"memo",_=>"layout"},"key":args["paper_key"],"sections":result["sections"]}));
+            }
             Ok(result)
         }
         "search_library" | "list_folder_items" => data::library(app, args),

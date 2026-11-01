@@ -19,7 +19,13 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
 }
 pub fn catalog(list: &mut Value) {
     let tools = list.as_array_mut().unwrap();
+    let sections=json!({"type":"array","maxItems":4,"items":{"type":"object","properties":{"id":{"type":"string","enum":["libraries","tags","abstract","memo"]},"enabled":boolean()},"required":["id","enabled"],"additionalProperties":false}});
     tools.extend([
+  tool("edit_paper_info","Edit selected metadata fields of a saved local paper using revision from get_paper. Omitted fields and personal memos remain unchanged. fields uses the same names as get_paper: title, creators, year (null clears), doi, arxiv, venue, abstract, pdf_url, tags. Tags replaces the full tag list; read current tags before adding/removing. Collection assignment uses update_paper_memberships. Applies immediately in Suggest and Direct.",json!({"paper_key":string(),"revision":integer(0,i64::MAX as u64),"fields":{"type":"object","properties":{"title":{"type":"string","minLength":1,"maxLength":5000},"creators":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":100},"year":{"type":["integer","null"],"minimum":0,"maximum":9999},"doi":string(),"arxiv":string(),"venue":string(),"abstract":{"type":"string","maxLength":100000},"pdf_url":string(),"tags":{"type":"array","items":{"type":"string","minLength":1,"maxLength":200},"maxItems":100}},"additionalProperties":false}}),&["paper_key","revision","fields"]),
+  tool("list_paper_memos","Read saved personal memos for a local paper, with stable memo IDs, full plain text and revision for edits/deletes. These are separate from block Notes and PDF annotations. Page through offset/limit (up to 10 memos per call); memo_id optionally selects one memo.",json!({"paper_key":string(),"memo_id":string(),"offset":integer(0,u32::MAX as u64),"limit":integer(1,10)}),&["paper_key"]),
+  tool("edit_paper_memo","Create, edit, or delete one personal paper memo. create requires text and no memo_id/revision; edit requires memo_id, revision and replacement text; delete requires memo_id/revision and no text. Read list_paper_memos first before editing/deleting. Max 4000 characters per memo. Returns only the affected memo; other entries stay intact. Use request_id for retry-safe creation. Applies immediately in Suggest and Direct.",json!({"paper_key":string(),"op":{"type":"string","enum":["create","edit","delete"]},"memo_id":string(),"revision":integer(1,i64::MAX as u64),"text":{"type":"string","minLength":1,"maxLength":4000}}),&["paper_key","op"]),
+  tool("get_paper_info_layout","Read the server-wide Paper Info section order and visibility. sections contains libraries, tags, abstract, memo exactly once; enabled=false corresponds to Excluded. This is a view preference, not paper content.",json!({}),&[]),
+  tool("set_paper_info_layout","Set server-wide Paper Info section order/visibility. Supply all four section IDs exactly once, each with enabled. Pass previous_sections unchanged from get_paper_info_layout to detect conflicting settings changes. Reordering/hiding never removes paper data or memos. Applies immediately in Suggest and Direct.",json!({"sections":sections,"previous_sections":sections}),&["sections","previous_sections"]),
   tool("search_library","Search saved local papers without a Semantic Scholar request. Includes direct collection IDs; descendant scope is explicit.",json!({"query":string(),"folder_id":string(),"has_pdf":boolean(),"include_subfolders":boolean()}),&[]),
   tool("update_paper_memberships","Add/remove existing paper keys in multiple collections. Each paper is atomic; returns per-paper partial failures. Never deletes a Library paper. Library organization applies immediately in Suggest and Direct.",json!({"paper_keys":strings(),"add":strings(),"remove":strings()}),&["paper_keys"]),
   tool("edit_collection","Manage Library collection folders. create requires parent/name; rename requires folder_id/name. move requires folder_id/parent, optionally anchor with position=before/after. reorder requires parent/folder_ids containing every active direct child in order. trash requires folder_id and includes descendants while preserving papers, notes and files. move/reorder/trash require library_revision from list_library_collections or list_library_trash. IDs and research metadata stay unchanged; cycles and root deletion are rejected. Applies immediately in Suggest and Direct.",json!({"op":{"type":"string","enum":["create","rename","move","reorder","trash"]},"parent":string(),"folder_id":string(),"name":string(),"folder_ids":strings(),"anchor":string(),"position":{"type":"string","enum":["before","after"]},"library_revision":integer(0,i64::MAX as u64)}),&["op"]),
@@ -194,6 +200,9 @@ pub fn catalog(list: &mut Value) {
 }
 /// Validate the schema subset actually used in our catalog, including nested edit fields.
 pub fn validate(schema: &Value, v: &Value) -> Result<()> {
+    if let Some(kinds)=schema["type"].as_array() {
+        if !kinds.iter().any(|kind|validate(&json!({"type":kind}),v).is_ok()) {bail!("Unexpected argument type");}
+    }
     if let Some(kind) = schema["type"].as_str() {
         let valid = match kind {
             "object" => v.is_object(),
@@ -201,6 +210,7 @@ pub fn validate(schema: &Value, v: &Value) -> Result<()> {
             "string" => v.is_string(),
             "integer" => v.as_u64().is_some(),
             "boolean" => v.is_boolean(),
+            "null" => v.is_null(),
             _ => false,
         };
         if !valid {
@@ -427,6 +437,8 @@ pub fn local_paper(app: &App, p: &Value, detail: bool) -> Result<Value> {
         .library
         .memberships(p["key"].as_str().context("Paper key missing")?)?);
     if detail {
+        out["tags"] = p["tags"].clone();
+        out["pdf_url"] = p["pdf_url"].clone();
         out["abstract"] = p["abstractNote"].clone();
         out["cite_keys"] = p["cite_keys"].clone();
         out["url"] = p["url"].clone();

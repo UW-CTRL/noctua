@@ -35,7 +35,7 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 
 | Mode | Behavior |
 | --- | --- |
-| Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization and downloads apply immediately. |
+| Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization, Paper Info metadata/memo/layout edits, and downloads apply immediately. |
 | Plan | Investigates and answers without writing changes |
 | Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
@@ -157,9 +157,18 @@ on temporary input copies, not inside an OS sandbox. Plan mode cannot request
 execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skills)
 for package limits, runtimes, and timeouts.
 
+The note author is the current profile Name configured in **Settings → General**;
+it defaults to the server operating-system username. Changing it updates the
+displayed author of existing notes without editing note contents or paper authors.
+
 Note tags are managed through the Library's **Note Info** panel and numeric
-shortcuts configured in **Settings → View → Tags**. They are item metadata,
+shortcuts configured in **Settings → View → Tags**. Each key can be enabled
+independently and its tag entered with existing-tag suggestions; new libraries
+enable only 1, 2, and 3 with numeric emoji. Disabling a key preserves assignments.
+They are item metadata,
 separate from note text; note block-editing tools do not add or remove tags.
+The Show Notes and Files preference affects only the left sidebar, while the
+central Library list retains its All / Papers / Notes filter.
 Opening or editing Notes does not automatically request Semantic Scholar
 relationships. Use Library's Graph or Lineage when you want those relationships.
 
@@ -292,6 +301,21 @@ This tool does not trigger compilation or edit generated files.
 The paper preview supports double-click PDF-to-source navigation via SyncTeX.
 It opens the corresponding project source and centers the line; this is a UI
 control, separate from the assistant’s read-only build-log inspection.
+
+## Personal paper memos
+
+Saved-paper information includes a **Memo** section for short personal thoughts.
+Users can add multiple entries with **+**, save, edit, and delete them in the panel.
+Chat can read and edit saved paper details (including tags and abstracts), manage
+collection assignments, and add, edit, or delete personal memos through dedicated
+Paper Info tools. Memo text is separate from block Notes and PDF annotations.
+Plan can inspect these values but cannot change them. Requested Paper Info edits
+apply immediately in Suggest and Direct, with version checks and retry-safe writes.
+The panel refreshes without leaving Reader or discarding local memo drafts. **Settings → View → Paper Info**
+controls the order and visibility of Libraries and Collections, Tags, Abstract,
+and Memo through Shown/Excluded drag-and-drop lists. Hiding a section preserves
+its data. You can ask chat to change this layout too; it checks the last-read
+layout before saving and applies the preference across this server. See [Paper memos](research.md#paper-memos-and-information-layout).
 
 ## Collection research details
 

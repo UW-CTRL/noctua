@@ -14,6 +14,10 @@
 <script src="/fonts.js"></script>
 </head>
 <body>
+  <script>
+    // Select the Reader before the first paint when opening a paper tab.
+    if (location.hash.startsWith('#pdf=')) document.body.classList.add('pdf-mode');
+  </script>
   <header>
     <div class="brand">🦉 <span>Noctua</span></div>
     <div class="mode-switch" role="tablist">

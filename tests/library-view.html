@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/ui.css"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body class="library-view">
+<button data-icon="eye" id="view-icon">View</button><h1 id="library-title"></h1><span id="library-count"></span><p id="library-table-status"></p>
+<input id="lib-filter"><select id="lib-sort"><option value="title">Title</option></select><ul id="lib-items"></ul>
+<table id="library-table"><tbody id="library-rows"></tbody></table>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const settings={show_notes_files:false},G={},libraryShortcutDigits=['1','2','3','4','5','6','7','8','9','0'];
+const libraryTags=[{name:'1️⃣',digit:'1'},{name:'2️⃣',digit:'2'}];
+const lib={target:'L1',kind:'all',tag:'',selected:new Set(),items:[{key:'p1',title:'Same title',tags:[]}],notes:[{id:'n1',target:'L1',title:'Same title',tags:[],updated:1700000000000}]};
+const targetName=()=> 'Library',libAuthors=()=> 'Author';
+function assert(ok,message){if(!ok)throw Error(message);}
+function install(source,name){const start=source.indexOf('function '+name+'('),end=source.indexOf('\n}',start);assert(start>=0&&end>start,'Missing production function '+name);window[name]=new Function('return '+source.slice(start,end+2))();}
+function libraryNoteKey(note){return 'note:'+note.target+':'+note.id;}
+(async()=>{
+ const app=await(await fetch('../web/app.js')).text(),library=await(await fetch('../web/library.js')).text();
+ for(const name of ['libraryTableRows','sortLibraryTags','libraryTitleTags'])install(library,name);
+ for(const name of ['renderLibraryTable','renderLibItems'])install(app,name);
+ for(const enabled of [false,true]){
+  settings.show_notes_files=enabled;lib.kind='all';renderLibItems();
+  assert($('#library-rows [data-key="p1"]')&&$('#library-rows [data-key="note:L1:n1"]'),'sidebar preference must retain both central item types');
+  lib.kind='notes';renderLibItems();assert($('#library-rows').children.length===1&&$('.library-note-row'),'Notes filter must remain available with sidebar hidden');
+  lib.kind='papers';renderLibItems();assert($('#library-rows').children.length===1&&!$('.library-note-row'),'Papers filter must remain independent');
+ }
+ lib.kind='all';
+ for(const tags of [[],['1️⃣'],['1️⃣','2️⃣']]){
+  lib.items[0].tags=tags;lib.notes[0].tags=tags;renderLibItems();
+  const paper=$('[data-select-paper]'),note=$('[data-open-note]');
+  assert(Math.abs(paper.getBoundingClientRect().height-note.getBoundingClientRect().height)<1,'note and paper title heights must match with '+tags.length+' tags');
+  if(tags.length){
+   const gap=button=>{const tag=button.querySelector('.library-title-tag:last-of-type'),range=document.createRange();range.selectNodeContents(button.lastChild);return range.getBoundingClientRect().left-tag.getBoundingClientRect().right;};
+   assert(Math.abs(gap(paper)-gap(note))<1,'note and paper tag-to-title gaps must match');
+  }
+ }
+ const icon=getComputedStyle($('#view-icon'),'::before');assert(icon.maskImage.includes('data:image/svg+xml')&&icon.maskImage.includes('circle'),'View must have a bundled eye mask rather than a solid square');
+ window.webkit.messageHandlers.result.postMessage('PASS: independent sidebar visibility, central All/Papers/Notes filters, matching title spacing with zero/one/two tags, and bundled View icon');
+})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+'\n'+error.stack));
+</script></body></html>

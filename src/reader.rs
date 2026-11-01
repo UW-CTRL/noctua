@@ -16,6 +16,7 @@ pub fn routes()->Router<Arc<App>> {
         .route("/api/library/import-pdf",post(import_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
         .route("/api/library/papers/{key}",get(paper).put(edit_paper).delete(delete_paper))
         .route("/api/library/papers/{key}/membership",get(paper_memberships).post(membership))
+        .route("/api/library/papers/{key}/memos",get(crate::library::memos::list).post(crate::library::memos::change))
         .route("/api/library/papers/{key}/download",post(download))
         .route("/api/library/papers/{key}/pdf",get(pdf).put(attach_pdf).layer(DefaultBodyLimit::max(PDF_LIMIT)))
         .route("/api/library/papers/{key}/index",get(index).put(save_index).layer(DefaultBodyLimit::max(64<<20)))

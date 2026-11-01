@@ -173,11 +173,15 @@ Up/Down and Home/End, and double-click restores the default. Tag and paper text 
 **Edit details** also edits tags, one per line.
 
 In **Settings → View → Tags**, each digit from **1–9** and **0** maps to a tag.
-Defaults use the corresponding numeric emoji. Choose an existing tag or select
-an emoji from its picker; each choice saves immediately. Choosing a new emoji
-renames the mapped tag while keeping its assignments. Choosing an emoji that
+Each key can be enabled independently; new libraries enable only **1, 2, and 3**,
+using **1️⃣, 2️⃣, and 3️⃣**. Upgrades disable the default numeric mappings
+for 4–0 while preserving custom mappings and all assignments. Type a
+tag name and choose from existing tag suggestions, or enter a new name. Leaving
+the field or pressing Enter saves it. The emoji picker and enabled switch save
+immediately. Disabling a key keeps its mapping and item assignments. A new name or emoji
+renames the mapped tag while keeping its assignments. Choosing a name or emoji that
 already exists links to that tag and leaves the previous tag’s assignments intact.
-With the central Library list focused, press a mapped digit to add its tag to the
+With the central Library list focused, press an enabled mapped digit to add its tag to the
 selected paper or note; press it again to remove that assignment. Applied shortcut
 tags appear before the title. Digits in search fields, editors, Settings, and other
 panels retain their normal typing behavior.
@@ -227,6 +231,36 @@ selection. To empty Trash, the assistant processes that selection in batches; ne
 changed Library state requires a fresh read. Deleting a collection permanently
 also removes its owned notes and files, while its papers remain in Library.
 Duplicate merging remains a UI action.
+
+## Paper memos and information layout
+
+Use **Memo** in a saved paper's information panel to keep short personal thoughts
+for your next reading. Click **+**, write a memo, and choose **Save memo**. Repeat
+to add separate entries; each supports up to 4,000 characters of plain text,
+including line breaks. The text uses the same size as the abstract. Edit or delete
+an individual memo with its pencil or trash button. Memos are also available in
+Reader's Paper tab and load again when you reopen the paper.
+
+Memos are separate from the abstract, block Notes, and PDF annotations. Changing
+paper details does not overwrite them. Recoverable paper Trash preserves them;
+restoration brings them back. Duplicate merges combine the memos of both papers,
+and permanently deleting a paper removes its memos. If another window edits a
+memo, your draft stays available: choose **Reload memos**, review it, then save
+again. Unsaved drafts remain while this page is open, including when you hide
+or reorder the section; close/reload the page only after saving.
+
+In **Settings → View → Paper Info**, drag the four information sections to set
+their order. Drop sections into **Excluded** to hide them, or drag them back to
+**Shown**. All four are enabled by default. Dividers separate sections, with none
+below the last section. Hiding Memo does not delete its saved entries.
+
+You can also ask chat to update saved paper details and tags, change collection
+assignments, or read and manage individual memos. For example: “Add a memo that
+I should revisit the calibration results” or “Correct this paper’s abstract.”
+Chat can change the Paper Info section order/visibility when you request it.
+These edits apply immediately in Suggest and Direct; Plan only reads. Stale
+paper, memo, or layout versions are rejected rather than silently overwritten,
+and live updates keep Reader open and preserve unsaved memo drafts.
 
 ## Organize a collection
 

@@ -1252,7 +1252,6 @@ body.library-view #tab-library > .list-tools, body.library-view #lib-items { dis
 .library-kind button.active { background: var(--bg); color: var(--ink); font-weight: 600; }
 #library-new-note { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
 #library-new-note:hover { color: var(--accent); }
-#library-rows .library-note-row [data-open-note] { display: inline-flex; align-items: center; gap: 6px; }
 #library-rows .library-note-row [data-open-note]::before { width: 14px; height: 14px; color: var(--accent); }
 #library-rows .library-note-kind { color: var(--muted); }
 #library-table-scroll { overflow: auto; flex: 1; min-height: 0; }
@@ -1349,6 +1348,7 @@ body.notes-mode #lib-tree .library-trash-row, body.notes-mode #library-root-drop
 body.pdf-mode #collection-tools { display: none; }
 #lib-tree > li.tree-files { display: block; min-height: 0; padding: 2px 0 6px; cursor: default; background: none; box-shadow: none; }
 #lib-tree > li.tree-files:hover { background: none; }
+body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree > li.tree-files:has(.workspace-entries:empty):not(:has(.workspace-error, .workspace-dragging)) { display: none; }
 #lib-tree > li.tree-files #workspace-tree { overflow: visible; }
 #lib-tree > li.tree-files .workspace-entry { margin-left: calc(var(--tree-indent, 8px) + 18px); }
 #workspace-footer-host { display: none; }
@@ -1863,8 +1863,38 @@ body.library-trash-view :is(#library-table-scroll,#library-filter-control,#libra
 .paper-info-section .info-hover-remove:is(:hover,:focus-visible) { color:var(--danger); }
 .paper-info-section :is(li,.paper-info-library-row)>:is(span,strong) { flex:1; min-width:0; }
 .paper-info-tags li { align-items:center; min-height:30px; }
-.tag-shortcut-row { display:grid; grid-template-columns:26px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
-.tag-shortcut-row label { display:flex; flex-direction:column; gap:4px; font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); min-width:0; }
-.tag-shortcut-row select { width:100%; min-width:0; }
+.tag-shortcut-row, .tag-shortcut-header { display:grid; grid-template-columns:26px 54px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
+.tag-shortcut-header { font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); }
+.tag-shortcut-row :is(input[type="text"],select) { width:100%; min-width:0; }
+.tag-shortcut-row input[type="checkbox"] { justify-self:center; width:16px; height:16px; accent-color:var(--accent); }
 .tag-shortcut-row kbd { text-align:center; }
+
 body.library-view:not(.notes-mode):not(.pdf-mode) #workspace-tree[data-view-hidden],body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree>li.tree-files[data-view-hidden] { display:none !important; }
+
+/* Saved-paper sections share dividers; no section adds a bottom rule. */
+.paper-info-sections>.paper-info-section { border-top:1px solid var(--line); border-bottom:0; }
+.paper-info-abstract>.abstract { margin:12px 0 0; }
+.paper-info-memo>summary [data-memo-add] { margin-left:auto; width:26px; min-height:26px; padding:0; border:0; border-radius:6px; color:var(--muted); background:transparent; }
+.paper-info-memo>summary .paper-info-chevron { margin-left:0; }
+.paper-info-memo>summary [data-memo-add]:hover { color:var(--accent); background:var(--bg); }
+.paper-memo-list { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+.paper-memo-list>.hint { margin:0; }
+.paper-memo>p,.paper-memo-editor textarea,.paper-memo-saved p { font:inherit; font-size:calc(12px * var(--ui-font-scale)); line-height:1.7; color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere; }
+.paper-memo>p { margin:0; }
+.paper-memo footer { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font-size:calc(11px * var(--ui-font-scale)); }
+.paper-memo footer button { width:26px; min-height:26px; padding:0; border:0; background:transparent; color:var(--muted); }
+.paper-memo footer button:hover { color:var(--accent); }
+.paper-memo-editor textarea { display:block; width:100%; box-sizing:border-box; resize:vertical; min-height:100px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); }
+.paper-memo-editor>div { display:flex; justify-content:flex-end; gap:6px; margin-top:6px; }
+.paper-memo-editor button { min-height:28px; padding:3px 9px; font-size:calc(12px * var(--ui-font-scale)); }
+.paper-info-layout-zone h4 { margin:12px 0 6px; color:var(--muted); font-weight:500; font-size:calc(12px * var(--ui-font-scale)); }
+.paper-info-layout-list { display:flex; flex-direction:column; gap:5px; min-height:42px; padding:6px; border:1px solid var(--line); border-radius:10px; }
+[data-section-zone="excluded"] .paper-info-layout-list { border-style:dashed; background:var(--bg); }
+.paper-info-layout-row { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--ink); cursor:grab; font-size:calc(12px * var(--ui-font-scale)); }
+.paper-info-layout-row button { width:22px; min-height:24px; padding:0; border:0; background:transparent; color:var(--muted); cursor:grab; }
+.paper-info-layout-row.dragging { opacity:.45; }
+.paper-info-layout-zone.drag-over .paper-info-layout-list { border-color:var(--accent); background:var(--raise); }
+.paper-info-layout-list>.hint { margin:4px 6px; }
+
+.paper-memo-saved { margin-top:6px; font-size:calc(11px * var(--ui-font-scale)); color:var(--muted); }
+.paper-memo-saved p { margin:6px 0; }

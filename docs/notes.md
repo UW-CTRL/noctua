@@ -38,6 +38,15 @@ Trash. Moving a folder keeps its notes and files; trashing hides the subtree unt
 restored. Permanently deleting a trashed collection also deletes its owned notes
 and files. Library Trash is separate from the project-file Trash.
 
+Notes show the current **Settings → General → Profile → Name** as their author
+in Library and Note Info. It defaults to the server operating-system username;
+**Use username** restores that default. Name changes also apply to existing notes
+without editing their contents or modification times. Paper authors are unchanged.
+
+**Show Notes and Files** in Settings → View affects only the left sidebar;
+the central Library list continues to show notes according to its All / Papers /
+Notes filter. Applied title tags use the same spacing for notes and papers.
+
 In the Library list, click a note once to select it and show **Note Info** on the
 right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
 tag row to reveal its removal button; removing it applies immediately to that
@@ -45,7 +54,10 @@ note. Right-click a tag in the left Tags sidebar and choose **Delete** to remove
 the tag and all its paper and note assignments while keeping the items.
 
 **Settings → View → Tags** controls sidebar tag and count visibility and the ten
-digit shortcuts. With the Library central list focused, a digit toggles its tag
+digit shortcuts. Enable each key separately and type a tag name with existing-tag
+suggestions. New libraries enable only 1, 2, and 3, mapped to 1️⃣, 2️⃣, and 3️⃣.
+Disabling a key preserves its assignments. With the Library central list focused,
+an enabled digit toggles its tag
 on the selected paper or note. Shortcut tags appear before ordinary tags and
 before the item title while applied. Shortcut assignment and emoji selection
 save automatically; choosing an existing emoji tag reuses it and keeps its

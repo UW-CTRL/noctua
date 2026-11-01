@@ -208,6 +208,15 @@ function assert(ok,message){if(!ok)throw Error(message)}
  $('#workspace-tree [data-file="visible-note"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await settle();assert(openedEntry==='visible-note','Library sidebar note double click must open');
  openedEntry=null;$('#workspace-tree [data-file="visible-file"]').click();await settle();assert(openedEntry==='visible-file','imported files must retain click-to-open behavior');openWorkspaceFile=previousOpen;
  W.manifest={revision:1,entries:[],history:{}};renderWorkspaceTree();assert(!$('#workspace-tree').textContent.includes('No files yet'),'empty Notes and Files list must stay quiet');
+ const emptyHost=$('#lib-tree .tree-files');
+ assert(emptyHost.getBoundingClientRect().height===0,'empty collection must leave no sidebar space with Notes and Files enabled');
+ assert($('#lib-tree [data-id="C2"]').getBoundingClientRect().top===$('#lib-tree [data-id="L1"]').getBoundingClientRect().bottom,'next collection must immediately follow the empty selected collection');
+ W.manifest.entries=visibilityEntries.map(entry=>({...entry,deleted:true}));renderWorkspaceTree();
+ assert(emptyHost.getBoundingClientRect().height===0,'trashed entries must not leave sidebar space');
+ W.manifest.bib_error='Missing bibliography';renderWorkspaceTree();
+ assert(emptyHost.getBoundingClientRect().height>0&&$('.workspace-error'),'bibliography errors must remain visible in an empty collection');
+ delete W.manifest.bib_error;W.manifest.entries=visibilityEntries;renderWorkspaceTree();
+ assert(emptyHost.getBoundingClientRect().height>0&&$('#workspace-tree [data-file="visible-note"]'),'adding or restoring entries must show the collection list again');
  // New notes, created files, and imports capture the explicitly chosen collection.
  const collectionApi=api,collectionCreate=createNote,collectionSave=saveWorkspaceFile,collectionOpen=openWorkspaceFile;
  const destinationServer={revision:7,entries:[],history:{}},writes=[];let selectedDestination=null;

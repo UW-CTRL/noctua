@@ -17,6 +17,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(default)]
     pub library: LibrarySettings,
     #[serde(default, alias = "skills_location", skip_serializing_if = "Option::is_none")]
@@ -49,6 +51,8 @@ pub struct Settings {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LibrarySettings {
+    #[serde(default = "default_paper_info_sections")]
+    pub paper_info_sections: Vec<PaperInfoSection>,
     #[serde(default = "enabled")]
     pub include_subfolders: bool,
     #[serde(default = "enabled")]
@@ -60,7 +64,26 @@ pub struct LibrarySettings {
 }
 fn enabled() -> bool { true }
 impl Default for LibrarySettings {
-    fn default() -> Self { Self { include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
+    fn default() -> Self { Self { paper_info_sections: default_paper_info_sections(), include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PaperInfoSection { pub id: String, pub enabled: bool }
+fn default_paper_info_sections() -> Vec<PaperInfoSection> {
+    ["libraries","tags","abstract","memo"].map(|id|PaperInfoSection{id:id.into(),enabled:true}).to_vec()
+}
+pub(crate) fn parse_paper_info_sections(value:&Value)->Result<Vec<PaperInfoSection>> {
+    let sections:Vec<PaperInfoSection>=serde_json::from_value(value.clone()).map_err(|_|bad("Invalid Paper Info sections"))?;
+    let ids:std::collections::HashSet<_>=sections.iter().map(|section|section.id.as_str()).collect();
+    if sections.len()!=4 || ids!=std::collections::HashSet::from(["libraries","tags","abstract","memo"]) {return Err(bad("Include each Paper Info section exactly once"));}
+    Ok(sections)
+}
+pub(crate) fn set_paper_info_layout(app:&App,sections:Vec<PaperInfoSection>,expected:Vec<PaperInfoSection>)->Result<Value> {
+    let mut current=app.settings.lock().unwrap();
+    if current.library.paper_info_sections!=expected {return Err(Status(StatusCode::CONFLICT,"Paper Info layout changed. Read it again before saving.".into()).into());}
+    let mut next=current.clone();next.library.paper_info_sections=sections;next.save(&app.data_dir)?;*current=next;
+    Ok(json!({"status":"applied","sections":current.library.paper_info_sections}))
 }
 
 pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
@@ -68,7 +91,9 @@ pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -
     if !body.is_object() || fields.iter().any(|key|body.get(key).is_some_and(|v|!v.is_boolean())) {
         return Err(crate::Status(StatusCode::UNPROCESSABLE_ENTITY,"View preferences must be true or false".into()).into());
     }
+    let sections = body.get("paper_info_sections").map(parse_paper_info_sections).transpose()?;
     update(&app, |s| {
+        if let Some(sections)=sections {s.library.paper_info_sections=sections;}
         if let Some(value)=body["include_subfolders"].as_bool(){s.library.include_subfolders=value;}
         if let Some(value)=body["show_notes_files"].as_bool(){s.library.show_notes_files=value;}
         if let Some(value)=body["show_tags"].as_bool(){s.library.show_tags=value;}
@@ -113,6 +138,10 @@ impl Default for HighlightPalette {
     fn default()->Self {Self(["#ffd400","#5fb236","#2ea8e5","#e56eee","#a28ae5","#ff6666"].map(str::to_string).to_vec())}
 }
 impl Settings {
+    pub fn author_name(&self) -> String {
+        self.name.as_deref().map(str::trim).filter(|name| !name.is_empty())
+            .map(str::to_owned).unwrap_or_else(username)
+    }
     fn normalize_highlight_colors(&mut self) {
         for color in &mut self.highlight_palette.0 {*color=color.to_ascii_lowercase();}
         if self.highlight_palette.0.len()!=6||self.highlight_palette.0.iter().any(|color|!crate::library::valid_color(color))||self.highlight_palette.0.iter().collect::<std::collections::HashSet<_>>().len()!=6 {self.highlight_palette=HighlightPalette::default();}
@@ -121,6 +150,24 @@ impl Settings {
             self.highlight_colors.0.insert(category.to_string(),if self.highlight_palette.0.contains(&color){color}else{self.highlight_palette.0[index].clone()});
         }
     }
+}
+
+/// Noctua has one profile per data server; browser clients use that profile.
+pub fn username() -> String {
+    let keys = if cfg!(windows) { ["USERNAME", "USER", "LOGNAME"] } else { ["USER", "LOGNAME", "USERNAME"] };
+    keys.iter().find_map(|key| env::var(key).ok().filter(|name| !name.trim().is_empty()))
+        .or_else(|| dirs::home_dir().and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned())))
+        .unwrap_or_else(|| "user".into())
+}
+
+pub async fn set_profile(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
+    let name = body["name"].as_str().ok_or_else(|| bad("Enter a name"))?.trim();
+    if name.chars().count() > 100 || name.chars().any(char::is_control) {
+        return Err(bad("Use a name of up to 100 characters without line breaks or control characters").into());
+    }
+    update(&app, |settings| settings.name = (!name.is_empty()).then(|| name.to_owned()))?;
+    let name = app.settings.lock().unwrap().author_name();
+    Ok(Json(json!({"name": name, "username": username()})))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -244,10 +291,13 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
     };
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
+        "name": s.author_name(),
+        "username": username(),
         "agent": s.agent,
         "app_icon": s.app_icon,
         "include_subfolders": s.library.include_subfolders,
         "show_notes_files": s.library.show_notes_files,
+        "paper_info_sections": s.library.paper_info_sections,
         "show_tags": s.library.show_tags,
         "show_tag_counts": s.library.show_tag_counts,
         "assistant": s.assistant,
