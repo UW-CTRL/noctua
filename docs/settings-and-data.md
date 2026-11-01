@@ -229,8 +229,11 @@ Scripts require approval and separate output review; see
 and **Storage**, using the same bold headings and section dividers as the other Settings pages.
 
 Open **Settings → View** to choose what Library shows. **Show Notes and Files**
-controls the combined list beneath the selected collection, including imported
-files; Notes keeps its files available when this Library list is hidden.
+controls only the combined list beneath the selected collection in the left
+sidebar, including imported files. Empty collections leave no extra space
+beneath their sidebar row. The central Library list keeps its notes;
+use its All / Papers / Notes filter to choose which items appear. Notes keeps
+its files available when the sidebar list is hidden.
 **Show papers/notes from subfolders** includes descendant collections in Library
 paper and note lists and paper counts, Graph, and Lineage. It is on by default, preserves
 your previous subfolder preference, and the library root always includes all
@@ -238,7 +241,9 @@ papers and notes. Scope changes keep existing graph lookups cached.
 
 Under **View → Tags**, show or hide the sidebar tag list and its numeric counts
 independently. These view preferences are saved with Noctua's data and restored
-after restart.
+after restart. Each numeric shortcut has its own enabled switch and editable
+tag field with existing-tag suggestions. New libraries enable only **1, 2, and 3**
+with **1️⃣, 2️⃣, and 3️⃣**. Disabling a shortcut preserves its tag assignments.
 
 The sidebar **New note or file** and **Import files** dialogs include a
 **Collection** selector. The current collection starts selected; choose another

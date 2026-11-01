@@ -1252,7 +1252,6 @@ body.library-view #tab-library > .list-tools, body.library-view #lib-items { dis
 .library-kind button.active { background: var(--bg); color: var(--ink); font-weight: 600; }
 #library-new-note { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
 #library-new-note:hover { color: var(--accent); }
-#library-rows .library-note-row [data-open-note] { display: inline-flex; align-items: center; gap: 6px; }
 #library-rows .library-note-row [data-open-note]::before { width: 14px; height: 14px; color: var(--accent); }
 #library-rows .library-note-kind { color: var(--muted); }
 #library-table-scroll { overflow: auto; flex: 1; min-height: 0; }
@@ -1349,6 +1348,7 @@ body.notes-mode #lib-tree .library-trash-row, body.notes-mode #library-root-drop
 body.pdf-mode #collection-tools { display: none; }
 #lib-tree > li.tree-files { display: block; min-height: 0; padding: 2px 0 6px; cursor: default; background: none; box-shadow: none; }
 #lib-tree > li.tree-files:hover { background: none; }
+body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree > li.tree-files:has(.workspace-entries:empty):not(:has(.workspace-error, .workspace-dragging)) { display: none; }
 #lib-tree > li.tree-files #workspace-tree { overflow: visible; }
 #lib-tree > li.tree-files .workspace-entry { margin-left: calc(var(--tree-indent, 8px) + 18px); }
 #workspace-footer-host { display: none; }
@@ -1863,8 +1863,10 @@ body.library-trash-view :is(#library-table-scroll,#library-filter-control,#libra
 .paper-info-section .info-hover-remove:is(:hover,:focus-visible) { color:var(--danger); }
 .paper-info-section :is(li,.paper-info-library-row)>:is(span,strong) { flex:1; min-width:0; }
 .paper-info-tags li { align-items:center; min-height:30px; }
-.tag-shortcut-row { display:grid; grid-template-columns:26px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
-.tag-shortcut-row label { display:flex; flex-direction:column; gap:4px; font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); min-width:0; }
-.tag-shortcut-row select { width:100%; min-width:0; }
+.tag-shortcut-row, .tag-shortcut-header { display:grid; grid-template-columns:26px 54px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
+.tag-shortcut-header { font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); }
+.tag-shortcut-row :is(input[type="text"],select) { width:100%; min-width:0; }
+.tag-shortcut-row input[type="checkbox"] { justify-self:center; width:16px; height:16px; accent-color:var(--accent); }
 .tag-shortcut-row kbd { text-align:center; }
+
 body.library-view:not(.notes-mode):not(.pdf-mode) #workspace-tree[data-view-hidden],body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree>li.tree-files[data-view-hidden] { display:none !important; }

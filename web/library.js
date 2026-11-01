@@ -542,7 +542,7 @@ function renderLibraryTagPanel(){
     input.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();input.value='';lib.tag='';renderLibItems();}});
   }
   const counts=libraryTagCounts([...(lib.items||[]),...(lib.notes||[])]),query=input.value.trim().toLocaleLowerCase();
-  const names=sortLibraryTags([...counts.keys(),...libraryTags.filter(t=>t.digit!==null).map(t=>t.name)]).filter(tag=>tag.toLocaleLowerCase().includes(query));
+  const names=sortLibraryTags([...counts.keys(),...libraryTags.filter(t=>t.digit!==null&&t.enabled!==false).map(t=>t.name)]).filter(tag=>tag.toLocaleLowerCase().includes(query));
   panel.querySelector('[data-tag-count]').textContent=preferences.show_tag_counts===false?'':String(names.length);
   const list=panel.querySelector('[data-library-tag-list]');
   list.innerHTML=names.length?names.map(tag=>`<button type="button" data-library-tag="${esc(tag)}" aria-pressed="${lib.tag===tag}" title="${esc(tag)}"><span>${esc(tag)}</span>${preferences.show_tag_counts===false?'':`<small>${counts.get(tag)||0}</small>`}</button>`).join(''):`<p class="hint">${lib.items===null?'Loading tags…':query?'No matching tags.':'No tags in this collection.'}</p>`;
@@ -557,7 +557,7 @@ function renderLibraryTagPanel(){
 
 function sortLibraryTags(names){
   const priority=new Map();
-  for(const digit of libraryShortcutDigits){const tag=libraryTags.find(t=>t.digit===digit);if(tag&&!priority.has(tag.name))priority.set(tag.name,priority.size);}
+  for(const digit of libraryShortcutDigits){const tag=libraryTags.find(t=>t.digit===digit&&t.enabled!==false);if(tag&&!priority.has(tag.name))priority.set(tag.name,priority.size);}
   return [...new Set(names)].sort((a,b)=>(priority.get(a)??100)-(priority.get(b)??100)||a.localeCompare(b));
 }
 async function loadLibraryTags(){
@@ -567,7 +567,7 @@ async function loadLibraryTags(){
   return tags;
 }
 function libraryTitleTags(item){
-  const names=sortLibraryTags((item.tags||[]).filter(name=>libraryTags.some(t=>t.name===name&&t.digit!==null)));
+  const names=sortLibraryTags((item.tags||[]).filter(name=>libraryTags.some(t=>t.name===name&&t.digit!==null&&t.enabled!==false)));
   return names.map(name=>`<span class="library-title-tag" title="${esc(name)}">${esc(name)}</span>`).join('');
 }
 function createItemTagSection(item){
@@ -639,7 +639,7 @@ function openLibraryTagMenu(name,anchor,event={}){
   menu.addEventListener('toggle',event=>{if(event.newState==='closed')close(false);},{signal:controller.signal});
 }
 function tagShortcutSettings(){
-  return `<div class="tag-shortcut-settings"><h4>Numeric shortcuts</h4><p class="hint">Press a digit while the Library list is focused to toggle its tag. Emoji changes save immediately.</p><div data-tag-shortcuts></div><p class="paper-tag-error" data-tag-shortcut-status role="status"></p></div>`;
+  return `<div class="tag-shortcut-settings"><h4>Numeric shortcuts</h4><p class="hint">Enable the digits you use. Type a tag name or choose an existing suggestion; changes save when you leave the field or press Enter. Emoji and enabled changes save immediately.</p><div data-tag-shortcuts></div><p class="paper-tag-error" data-tag-shortcut-status role="status"></p></div>`;
 }
 function mountTagShortcuts(host){
   if(!host)return;
@@ -647,17 +647,25 @@ function mountTagShortcuts(host){
   const emoji=['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','0️⃣','🟡','🔵','🟢','🔴','🟠','🟣','⚪','⚫','⭐','✅','📖','🔬','💡','❓'];
   const render=()=>{
     if(!list.isConnected)return;
-    list.innerHTML=libraryShortcutDigits.map(digit=>{
+    list.innerHTML=`<div class="tag-shortcut-header" aria-hidden="true"><span>Key</span><span>Enabled</span><span>Tag</span><span>Emoji</span></div>`+libraryShortcutDigits.map(digit=>{
       const tag=libraryTags.find(t=>t.digit===digit);
-      return `<div class="tag-shortcut-row" data-shortcut-row="${digit}"><kbd>${digit}</kbd><label>Tag<select data-shortcut-tag="${digit}" aria-label="Tag for key ${digit}"><option value="" ${!tag?'selected':''} disabled>Choose a tag</option>${sortLibraryTags(libraryTags.map(t=>t.name)).map(name=>`<option value="${esc(name)}" ${name===tag?.name?'selected':''}>${esc(name)}</option>`).join('')}</select></label><label>Emoji<select data-shortcut-emoji="${digit}" aria-label="Emoji for key ${digit}"><option value="" selected disabled>Choose emoji</option>${emoji.map(name=>`<option value="${name}">${name}</option>`).join('')}</select></label></div>`;
+      return `<div class="tag-shortcut-row" data-shortcut-row="${digit}"><kbd>${digit}</kbd><input type="checkbox" data-shortcut-enabled="${digit}" aria-label="Enable key ${digit}" ${tag&&tag.enabled!==false?'checked':''}><input type="text" class="setup-input" data-shortcut-tag="${digit}" aria-label="Tag for key ${digit}" value="${esc(tag?.name||'')}" placeholder="Enter a tag" list="shortcut-tags-${digit}" maxlength="200" autocomplete="off"><datalist id="shortcut-tags-${digit}">${sortLibraryTags([...new Set(libraryTags.map(t=>t.name))]).map(name=>`<option value="${esc(name)}"></option>`).join('')}</datalist><select data-shortcut-emoji="${digit}" aria-label="Emoji for key ${digit}"><option value="" selected disabled>Choose emoji</option>${emoji.map(name=>`<option value="${name}">${name}</option>`).join('')}</select></div>`;
     }).join('');
-    list.querySelectorAll('select').forEach(control=>control.onchange=async()=>{
-      const digit=control.dataset.shortcutTag||control.dataset.shortcutEmoji,name=control.value;
-      const row=control.closest('[data-shortcut-row]');list.querySelectorAll('select').forEach(select=>select.disabled=true);status.textContent='Saving…';
-      try{
-        libraryTags=await api('/api/library/tags',{op:'shortcut',digit,name});
-        await refreshTaggedItems();status.textContent='Saved.';render();
-      }catch(error){status.textContent=error.message;list.querySelectorAll('select').forEach(select=>select.disabled=false);}
+    list.querySelectorAll('input,select').forEach(control=>{
+      control.onchange=async()=>{
+        const row=control.closest('[data-shortcut-row]'),digit=row.dataset.shortcutRow;
+        const name=(control.matches('select')?control.value:row.querySelector('[data-shortcut-tag]').value).trim();
+        if(!name){status.textContent='Enter a tag name.';return;}
+        const enabled=row.querySelector('[data-shortcut-enabled]').checked;
+        const previous=libraryTags.find(t=>t.digit===digit);
+        if(previous?.name===name&&(previous.enabled!==false)===enabled)return;
+        list.querySelectorAll('input,select').forEach(input=>input.disabled=true);status.textContent='Saving…';
+        try{
+          libraryTags=await api('/api/library/tags',{op:'shortcut',digit,name,enabled});
+          await refreshTaggedItems();status.textContent='Saved.';render();
+        }catch(error){status.textContent=error.message;list.querySelectorAll('input,select').forEach(input=>input.disabled=false);}
+      };
+      if(control.matches('input[type="text"]'))control.onkeydown=event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();control.onchange();}};
     });
   };
   status.textContent='Loading tags…';loadLibraryTags().then(()=>{status.textContent='';render();}).catch(error=>{status.textContent=error.message;});
@@ -667,7 +675,7 @@ document.addEventListener('keydown',event=>{
   if(document.body.classList.contains('notes-mode')||document.body.classList.contains('pdf-mode')||(typeof G!=='undefined'&&G.layout&&G.layout!=='library'))return;
   if(!(event.target instanceof Element)||event.target.closest('input,textarea,select,[contenteditable]')||!event.target.closest('#library-rows'))return;
   const row=event.target.closest('[data-key]');if(!row)return;
-  const mapping=libraryTags.find(t=>t.digit===event.key);if(!mapping)return;
+  const mapping=libraryTags.find(t=>t.digit===event.key&&t.enabled!==false);if(!mapping)return;
   const key=row.dataset.key;
   const item=key.startsWith('note:')?(lib.notes||[]).find(n=>libraryNoteKey(n)===key):(lib.items||[]).find(p=>p.key===key);if(!item)return;
   event.preventDefault();

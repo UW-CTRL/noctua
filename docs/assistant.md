@@ -158,8 +158,13 @@ execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skill
 for package limits, runtimes, and timeouts.
 
 Note tags are managed through the Library's **Note Info** panel and numeric
-shortcuts configured in **Settings → View → Tags**. They are item metadata,
+shortcuts configured in **Settings → View → Tags**. Each key can be enabled
+independently and its tag entered with existing-tag suggestions; new libraries
+enable only 1, 2, and 3 with numeric emoji. Disabling a key preserves assignments.
+They are item metadata,
 separate from note text; note block-editing tools do not add or remove tags.
+The Show Notes and Files preference affects only the left sidebar, while the
+central Library list retains its All / Papers / Notes filter.
 Opening or editing Notes does not automatically request Semantic Scholar
 relationships. Use Library's Graph or Lineage when you want those relationships.
 

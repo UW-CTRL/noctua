@@ -12,14 +12,30 @@ pub(super) fn initialize(c: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS tag_shortcuts(digit TEXT PRIMARY KEY,tag TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS note_tags(folder TEXT NOT NULL,note TEXT NOT NULL,tag TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,PRIMARY KEY(folder,note,tag));
         CREATE TABLE IF NOT EXISTS tag_state(id INTEGER PRIMARY KEY);")?;
+    let has_enabled = c
+        .prepare("PRAGMA table_info(tag_shortcuts)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|name| name == "enabled");
+    if !has_enabled {
+        let tx = c.unchecked_transaction()?;
+        tx.execute(
+            "ALTER TABLE tag_shortcuts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+        // Adopt the smaller default set on upgrade without disabling custom mappings.
+        tx.execute("UPDATE tag_shortcuts SET enabled=0 WHERE digit IN ('4','5','6','7','8','9','0') AND tag IN (SELECT id FROM tags WHERE name=digit || '️⃣')", [])?;
+        tx.commit()?;
+    }
     sync_papers(c)?;
     if c.query_row("SELECT count(*) FROM tag_state", [], |r| r.get::<_, i64>(0))? == 0 {
         let tx = c.unchecked_transaction()?;
         for digit in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'] {
             let tag = ensure(&tx, &format!("{digit}\u{fe0f}\u{20e3}"))?;
             tx.execute(
-                "INSERT INTO tag_shortcuts VALUES(?1,?2)",
-                params![digit.to_string(), tag],
+                "INSERT INTO tag_shortcuts(digit,tag,enabled) VALUES(?1,?2,?3)",
+                params![digit.to_string(), tag, matches!(digit, '1' | '2' | '3')],
             )?;
         }
         tx.execute("INSERT INTO tag_state VALUES(1)", [])?;
@@ -94,8 +110,8 @@ impl Library {
     pub fn tag_list(&self) -> Result<Value> {
         let c = self.conn.lock().unwrap();
         sync_papers(&c)?;
-        let mut s=c.prepare("SELECT t.id,t.name,s.digit FROM tags t LEFT JOIN tag_shortcuts s ON s.tag=t.id ORDER BY CASE WHEN s.digit='0' THEN '9z' ELSE COALESCE(s.digit,'z') END,t.name")?;
-        let rows=s.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"digit":r.get::<_,Option<String>>(2)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut s=c.prepare("SELECT t.id,t.name,s.digit,COALESCE(s.enabled,0) FROM tags t LEFT JOIN tag_shortcuts s ON s.tag=t.id ORDER BY CASE WHEN s.digit='0' THEN '9z' ELSE COALESCE(s.digit,'z') END,t.name")?;
+        let rows=s.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"digit":r.get::<_,Option<String>>(2)?,"enabled":r.get::<_,bool>(3)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(json!(rows))
     }
     pub fn change_tag(&self, b: &Value) -> Result<()> {
@@ -132,9 +148,16 @@ impl Library {
             } else {
                 ensure(&tx, name)?
             };
+            let enabled = b
+                .get("enabled")
+                .map(|v| {
+                    v.as_bool()
+                        .context("Choose whether the shortcut is enabled")
+                })
+                .transpose()?;
             tx.execute(
-                "INSERT OR REPLACE INTO tag_shortcuts VALUES(?1,?2)",
-                params![digit, tag],
+                "INSERT INTO tag_shortcuts(digit,tag,enabled) VALUES(?1,?2,COALESCE(?3,1)) ON CONFLICT(digit) DO UPDATE SET tag=excluded.tag,enabled=COALESCE(?3,tag_shortcuts.enabled)",
+                params![digit, tag, enabled],
             )?;
         } else if b["op"] == "delete" {
             let tag = b["id"].as_str().context("Choose a tag")?;
@@ -213,6 +236,70 @@ pub async fn note(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shortcut_defaults_disable_and_restart() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let lib = Library::open(dir.path().into())?;
+        let tags = lib.tag_list()?;
+        let active: Vec<_> = tags
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["enabled"] == true)
+            .map(|t| t["digit"].as_str().unwrap())
+            .collect();
+        assert_eq!(active, ["1", "2", "3"]);
+        assert_eq!(tags[0]["name"], "1️⃣");
+        lib.set_note_tag("L1", "n1", "1️⃣", false)?;
+        lib.change_tag(&json!({"op":"shortcut","digit":"1","name":"1️⃣","enabled":false}))?;
+        assert_eq!(lib.note_tags("L1", "n1")?, json!(["1️⃣"]));
+        // Renaming a disabled mapping must not implicitly enable it.
+        lib.change_tag(&json!({"op":"shortcut","digit":"1","name":"Reading"}))?;
+        assert_eq!(lib.tag_list()?[0]["enabled"], false);
+        lib.change_tag(&json!({"op":"shortcut","digit":"4","name":"4️⃣","enabled":true}))?;
+        let before = lib.tag_list()?;
+        drop(lib);
+        assert_eq!(Library::open(dir.path().into())?.tag_list()?, before);
+        Ok(())
+    }
+    #[test]
+    fn migrate_existing_shortcuts_without_resetting_them() -> Result<()> {
+        let c = Connection::open_in_memory()?;
+        c.execute_batch("CREATE TABLE papers(data TEXT); CREATE TABLE tags(id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE); CREATE TABLE tag_shortcuts(digit TEXT PRIMARY KEY,tag TEXT NOT NULL REFERENCES tags(id)); CREATE TABLE tag_state(id INTEGER PRIMARY KEY); INSERT INTO tags VALUES('custom','Custom'); INSERT INTO tag_shortcuts VALUES('7','custom'); INSERT INTO tag_state VALUES(1);")?;
+        initialize(&c)?;
+        initialize(&c)?;
+        let mapping: (String, String, bool) =
+            c.query_row("SELECT digit,tag,enabled FROM tag_shortcuts", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+        assert_eq!(mapping, ("7".into(), "custom".into(), true));
+        Ok(())
+    }
+    #[test]
+    fn migrate_numeric_defaults_to_three_enabled_keys() -> Result<()> {
+        let c = Connection::open_in_memory()?;
+        c.execute_batch("CREATE TABLE papers(data TEXT); CREATE TABLE tags(id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE); CREATE TABLE tag_shortcuts(digit TEXT PRIMARY KEY,tag TEXT NOT NULL REFERENCES tags(id)); CREATE TABLE tag_state(id INTEGER PRIMARY KEY); INSERT INTO tag_state VALUES(1); INSERT INTO tags VALUES('one','1️⃣'),('four','4️⃣'); INSERT INTO tag_shortcuts VALUES('1','one'),('4','four');")?;
+        initialize(&c)?;
+        assert!(c.query_row(
+            "SELECT enabled FROM tag_shortcuts WHERE digit='1'",
+            [],
+            |r| r.get::<_, bool>(0)
+        )?);
+        assert!(!c.query_row(
+            "SELECT enabled FROM tag_shortcuts WHERE digit='4'",
+            [],
+            |r| r.get::<_, bool>(0)
+        )?);
+        // A later explicit opt-in survives subsequent starts.
+        c.execute("UPDATE tag_shortcuts SET enabled=1 WHERE digit='4'", [])?;
+        initialize(&c)?;
+        assert!(c.query_row(
+            "SELECT enabled FROM tag_shortcuts WHERE digit='4'",
+            [],
+            |r| r.get::<_, bool>(0)
+        )?);
+        Ok(())
+    }
     #[test]
     fn identities_reuse_rename_delete_and_restart() -> Result<()> {
         let dir = tempfile::tempdir()?;
