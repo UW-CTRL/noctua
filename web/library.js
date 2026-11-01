@@ -573,7 +573,7 @@ function libraryTitleTags(item){
 function createItemTagSection(item){
   const section=document.createElement('details');section.open=true;section.className='paper-info-section paper-info-tags';section.setAttribute('aria-label',item.kind==='note'?'Note tags':'Paper tags');
   const values=sortLibraryTags((item.tags||[]).filter(tag=>typeof tag==='string'&&tag.trim()));
-  section.innerHTML=`<summary>${paperInfoIcon('tag')}<span>${values.length} Tags</span>${paperInfoIcon('chevron')}</summary>`+(values.length?'<ul>'+values.map(tag=>`<li>${paperInfoIcon('tag')}<span>${esc(tag)}</span><button type="button" class="info-hover-remove" data-tag-remove="${esc(tag)}" data-icon="x" data-icon-only aria-label="Remove tag ${esc(tag)}" title="Remove tag ${esc(tag)}"></button></li>`).join('')+'</ul>':'<p class="hint">No tags</p>');
+  section.innerHTML=`<summary>${paperInfoIcon('tag')}<span>${values.length} Tags</span>${paperInfoIcon('chevron')}</summary>`+(values.length?'<ul>'+values.map(tag=>`<li>${paperInfoIcon('tag')}<span>${esc(tag)}</span><button type="button" class="info-hover-remove" tabindex="0" data-tag-remove="${esc(tag)}" data-icon="x" data-icon-only aria-label="Remove tag ${esc(tag)}" title="Remove tag ${esc(tag)}"></button></li>`).join('')+'</ul>':'<p class="hint">No tags</p>');
   section.querySelectorAll('[data-tag-remove]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await updateItemTag(item,button.dataset.tagRemove,true);}catch(error){toast(error.message,{error:true});button.disabled=false;}});
   addPaperTagEditor(section,item,values);
   return section;
