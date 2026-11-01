@@ -230,6 +230,7 @@ impl Library {
         let linked=tx.execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![target,key])?>0;tx.commit()?;Ok((key,created,linked))
     }
     pub fn edit(&self, key: &str, data: &Value) -> Result<Value> {
+        let _gate=self.edit_gate.lock().unwrap();
         let mut p=self.paper(key)?;
         let revision=data["revision"].as_i64().context("Missing paper revision")?;
         for k in ["title","creators","year","DOI","arxiv","s2","venue","abstractNote","pdf_url","tags"] { if let Some(v)=data.get(k) {

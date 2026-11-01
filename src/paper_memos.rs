@@ -25,6 +25,10 @@ impl Library {
         read(&self.conn.lock().unwrap(), key)
     }
     pub fn change_paper_memo(&self, key: &str, body: &Value) -> Result<Value> {
+        Ok(self.change_paper_memo_result(key, body)?.0)
+    }
+    /// Return both the UI list and the single affected memo for bounded agent replies.
+    pub fn change_paper_memo_result(&self, key: &str, body: &Value) -> Result<(Value, Value)> {
         let _gate = self.edit_gate.lock().unwrap();
         let mut c = self.conn.lock().unwrap();
         let tx = c.transaction()?;
@@ -39,6 +43,7 @@ impl Library {
             }
             content
         };
+        let changed_id;
         match op {
             "create" => {
                 let count: i64 = tx.query_row(
@@ -49,13 +54,15 @@ impl Library {
                 if count >= 1000 {
                     return Err(bad("A paper can have at most 1000 memos"));
                 }
+                changed_id = id("memo-");
                 tx.execute(
                     "INSERT INTO paper_memos(id,paper,text,created,updated) VALUES(?1,?2,?3,?4,?4)",
-                    params![id("memo-"), key, content, now()],
+                    params![changed_id, key, content, now()],
                 )?;
             }
             "edit" | "delete" => {
                 let memo = body["id"].as_str().context("Choose a memo")?;
+                changed_id = memo.to_owned();
                 let revision = body["revision"]
                     .as_i64()
                     .context("Read the memo revision before editing")?;
@@ -76,8 +83,19 @@ impl Library {
             _ => return Err(bad("Unknown memo action")),
         }
         let result = read(&tx, key)?;
+        let changed = if op == "delete" {
+            json!({"id":changed_id,"deleted":true})
+        } else {
+            result
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|memo| memo["id"] == changed_id)
+                .context("Saved memo not found")?
+                .clone()
+        };
         tx.commit()?;
-        Ok(result)
+        Ok((result, changed))
     }
 }
 pub async fn list(State(app): Shared, Path(key): Path<String>) -> ApiResult {

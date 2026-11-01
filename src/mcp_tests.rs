@@ -1,5 +1,61 @@
 // Included in agent::tests to share the isolated app/router fixture.
 #[tokio::test]
+async fn mcp_paper_info_updates_metadata_and_independent_memos() -> Result<()> {
+    let f=Fixture::new()?;let mut events=f.app.actions.subscribe();
+    let key=f.app.library.save(&json!({"title":"Original paper","tags":["keep"],"year":2025}),"L1")?;
+    let original=mcp_value(&f,"get_paper",json!({"paper_key":key}),"plan").await;
+    assert_eq!(original["tags"],json!(["keep"]));
+    let edited=mcp_value(&f,"edit_paper_info",json!({"paper_key":key,"revision":original["revision"],"fields":{"title":"Corrected paper","abstract":"An updated abstract.","doi":"10.1234/example","year":null,"tags":["keep","read"]}}),"suggest").await;
+    assert_eq!(edited["status"],"applied");
+    let event=events.try_recv()?;assert_eq!(event["action"],"paper_info");assert_eq!(event["kind"],"metadata");assert_eq!(event["key"],key);
+    let paper=mcp_value(&f,"get_paper",json!({"paper_key":key}),"plan").await;
+    assert_eq!(paper["title"],"Corrected paper");assert_eq!(paper["abstract"],"An updated abstract.");assert_eq!(paper["doi"],"10.1234/example");assert_eq!(paper["year"],Value::Null);assert_eq!(paper["tags"],json!(["keep","read"]));
+    for fields in [json!({"title":"Stale"}),json!({"year":"not a year"}),json!({"unexpected":"hidden"}),json!({})] {
+        assert_eq!(mcp_value(&f,"edit_paper_info",json!({"paper_key":key,"revision":original["revision"],"fields":fields}),"direct").await["isError"],true);
+    }
+    assert_eq!(mcp_value(&f,"list_paper_memos",json!({"paper_key":key}),"plan").await["total"],0);
+    let args=json!({"paper_key":key,"op":"create","text":"Remember this result.","request_id":"create-one-memo"});
+    let created=mcp_value(&f,"edit_paper_memo",args.clone(),"suggest").await;
+    assert_eq!(created["status"],"applied");assert!(created.get("items").is_none());
+    assert_eq!(mcp_value(&f,"edit_paper_memo",args,"suggest").await,created);
+    let event=events.try_recv()?;assert_eq!(event["kind"],"memo");
+    let id=created["memo"]["id"].as_str().unwrap();
+    assert_eq!(mcp_value(&f,"list_paper_memos",json!({"paper_key":key,"memo_id":id}),"plan").await["total"],1);
+    let changed=mcp_value(&f,"edit_paper_memo",json!({"paper_key":key,"op":"edit","memo_id":id,"revision":1,"text":"Remember the limitations too."}),"direct").await;
+    assert_eq!(changed["memo"]["revision"],2);
+    assert_eq!(mcp_value(&f,"edit_paper_memo",json!({"paper_key":key,"op":"delete","memo_id":id,"revision":1}),"direct").await["code"],"CONFLICT");
+    for args in [json!({"paper_key":key,"op":"edit","memo_id":id,"text":"Missing version"}),json!({"paper_key":key,"op":"create","memo_id":id,"text":"Wrong operation"}),json!({"paper_key":key,"op":"delete","memo_id":id,"revision":2,"text":"Wrong text"})] {
+        assert_eq!(mcp_value(&f,"edit_paper_memo",args,"direct").await["isError"],true);
+    }
+    for i in 0..10 {mcp_value(&f,"edit_paper_memo",json!({"paper_key":key,"op":"create","text":format!("Separate thought {i}")}),"direct").await;}
+    let page=mcp_value(&f,"list_paper_memos",json!({"paper_key":key}),"plan").await;
+    assert_eq!(page["returned_count"],10);assert_eq!(page["has_more"],true);
+    assert_eq!(mcp_value(&f,"list_paper_memos",json!({"paper_key":key,"offset":page["next_offset"]}),"plan").await["returned_count"],1);
+    assert_eq!(mcp_value(&f,"list_paper_memos",json!({"paper_key":key,"limit":11}),"plan").await["isError"],true);
+    let deleted=mcp_value(&f,"edit_paper_memo",json!({"paper_key":key,"op":"delete","memo_id":id,"revision":2}),"direct").await;
+    assert_eq!(deleted["memo"]["deleted"],true);assert_eq!(f.app.library.paper(&key)?["revision"],paper["revision"]);
+    f.app.library.delete_paper(&key,paper["revision"].as_i64().unwrap())?;
+    assert_eq!(mcp_value(&f,"edit_paper_info",json!({"paper_key":key,"revision":paper["revision"],"fields":{"title":"Must not edit Trash"}}),"direct").await["code"],"NOT_FOUND");
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_paper_info_layout_detects_conflicts_and_preserves_hidden_content() -> Result<()> {
+    let f=Fixture::new()?;
+    let key=f.app.library.save(&json!({"title":"Keep hidden content","tags":["keep"]}),"L1")?;
+    let memos=f.app.library.change_paper_memo(&key,&json!({"op":"create","text":"Keep this thought"}))?;
+    let current=mcp_value(&f,"get_paper_info_layout",json!({}),"plan").await["sections"].clone();
+    let sections=json!([{"id":"memo","enabled":true},{"id":"abstract","enabled":true},{"id":"libraries","enabled":false},{"id":"tags","enabled":false}]);
+    assert_eq!(mcp_value(&f,"set_paper_info_layout",json!({"previous_sections":current,"sections":sections}),"direct").await["status"],"applied");
+    assert_eq!(serde_json::to_value(Settings::load(&f.root).library)?["paper_info_sections"],sections);
+    assert_eq!(mcp_value(&f,"set_paper_info_layout",json!({"previous_sections":current,"sections":current}),"direct").await["code"],"CONFLICT");
+    assert_eq!(mcp_value(&f,"set_paper_info_layout",json!({"previous_sections":sections,"sections":[]}),"direct").await["isError"],true);
+    assert_eq!(mcp_value(&f,"get_paper_info_layout",json!({}),"plan").await["sections"],sections);
+    assert_eq!(f.app.library.paper_memos(&key)?,memos);assert_eq!(f.app.library.paper(&key)?["tags"],json!(["keep"]));
+    Ok(())
+}
+
+#[tokio::test]
 async fn missing_linked_original_is_a_download_failure_instead_of_success()->Result<()> {
     let f=Fixture::new()?;
     let key=f.app.library.upload("L1","paper.pdf",b"%PDF-1.7\noriginal")?;

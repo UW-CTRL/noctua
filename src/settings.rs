@@ -65,11 +65,23 @@ impl Default for LibrarySettings {
     fn default() -> Self { Self { paper_info_sections: default_paper_info_sections(), include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PaperInfoSection { pub id: String, pub enabled: bool }
 fn default_paper_info_sections() -> Vec<PaperInfoSection> {
     ["libraries","tags","abstract","memo"].map(|id|PaperInfoSection{id:id.into(),enabled:true}).to_vec()
+}
+pub(crate) fn parse_paper_info_sections(value:&Value)->Result<Vec<PaperInfoSection>> {
+    let sections:Vec<PaperInfoSection>=serde_json::from_value(value.clone()).map_err(|_|bad("Invalid Paper Info sections"))?;
+    let ids:std::collections::HashSet<_>=sections.iter().map(|section|section.id.as_str()).collect();
+    if sections.len()!=4 || ids!=std::collections::HashSet::from(["libraries","tags","abstract","memo"]) {return Err(bad("Include each Paper Info section exactly once"));}
+    Ok(sections)
+}
+pub(crate) fn set_paper_info_layout(app:&App,sections:Vec<PaperInfoSection>,expected:Vec<PaperInfoSection>)->Result<Value> {
+    let mut current=app.settings.lock().unwrap();
+    if current.library.paper_info_sections!=expected {return Err(Status(StatusCode::CONFLICT,"Paper Info layout changed. Read it again before saving.".into()).into());}
+    let mut next=current.clone();next.library.paper_info_sections=sections;next.save(&app.data_dir)?;*current=next;
+    Ok(json!({"status":"applied","sections":current.library.paper_info_sections}))
 }
 
 pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
@@ -77,12 +89,7 @@ pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -
     if !body.is_object() || fields.iter().any(|key|body.get(key).is_some_and(|v|!v.is_boolean())) {
         return Err(crate::Status(StatusCode::UNPROCESSABLE_ENTITY,"View preferences must be true or false".into()).into());
     }
-    let sections = body.get("paper_info_sections").map(|value| -> Result<Vec<PaperInfoSection>> {
-        let sections:Vec<PaperInfoSection>=serde_json::from_value(value.clone()).map_err(|_|bad("Invalid Paper Info sections"))?;
-        let ids:std::collections::HashSet<_>=sections.iter().map(|section|section.id.as_str()).collect();
-        if sections.len()!=4 || ids!=std::collections::HashSet::from(["libraries","tags","abstract","memo"]) {return Err(bad("Include each Paper Info section exactly once"));}
-        Ok(sections)
-    }).transpose()?;
+    let sections = body.get("paper_info_sections").map(parse_paper_info_sections).transpose()?;
     update(&app, |s| {
         if let Some(sections)=sections {s.library.paper_info_sections=sections;}
         if let Some(value)=body["include_subfolders"].as_bool(){s.library.include_subfolders=value;}

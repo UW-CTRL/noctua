@@ -1573,6 +1573,7 @@ function runChatAction(a, host) {
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
   if (a.action === 'file_edit_approval') { showFileEditApproval(a, host); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
+  if (a.action === 'paper_info') { refreshPaperInfo(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_changed') { refreshAgentNote(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'agent_edit_proposal') { showAgentEdit(a.proposal_id).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_drawing') { prepareNoteDrawing(a).catch(e=>toast(e.message,{error:true})); return; }

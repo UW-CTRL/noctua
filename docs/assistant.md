@@ -35,7 +35,7 @@ agent's image tool. Total attachment context is capped at 60,000 characters.
 
 | Mode | Behavior |
 | --- | --- |
-| Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization and downloads apply immediately. |
+| Suggest (default) | Stores note creation/edits for review and asks inline for project-file approval during chat; PDF annotations/replies remain pending. Requested Library organization, Paper Info metadata/memo/layout edits, and downloads apply immediately. |
 | Plan | Investigates and answers without writing changes |
 | Direct | Saves supported changes before reporting completion; version checks protect concurrent edits (note edits to different blocks combine) and note edits can be undone |
 
@@ -297,11 +297,16 @@ control, separate from the assistant’s read-only build-log inspection.
 
 Saved-paper information includes a **Memo** section for short personal thoughts.
 Users can add multiple entries with **+**, save, edit, and delete them in the panel.
-These are separate from block Notes and PDF annotations; the assistant's note and
-annotation tools do not read or edit paper memos. **Settings → View → Paper Info**
+Chat can read and edit saved paper details (including tags and abstracts), manage
+collection assignments, and add, edit, or delete personal memos through dedicated
+Paper Info tools. Memo text is separate from block Notes and PDF annotations.
+Plan can inspect these values but cannot change them. Requested Paper Info edits
+apply immediately in Suggest and Direct, with version checks and retry-safe writes.
+The panel refreshes without leaving Reader or discarding local memo drafts. **Settings → View → Paper Info**
 controls the order and visibility of Libraries and Collections, Tags, Abstract,
 and Memo through Shown/Excluded drag-and-drop lists. Hiding a section preserves
-its data. See [Paper memos](research.md#paper-memos-and-information-layout).
+its data. You can ask chat to change this layout too; it checks the last-read
+layout before saving and applies the preference across this server. See [Paper memos](research.md#paper-memos-and-information-layout).
 
 ## Collection research details
 

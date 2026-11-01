@@ -1,31 +1,34 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/ui.css"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><style>
 body{display:block;overflow:auto;background:var(--bg);padding:28px;margin:0}.preview-grid{display:grid;grid-template-columns:360px 480px;gap:28px;max-width:900px;margin:auto;align-items:start}.preview-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;box-sizing:border-box}.preview-panel>h2{margin:0 0 18px;font-size:18px}.preview-panel .settings-group{margin:0}.preview-panel .settings-group>h3{margin-top:0}#details{position:static;display:block;width:auto;height:auto;padding:0;overflow:visible}.preview-caption{font-size:11px;color:var(--muted);margin-bottom:8px}.preview-panel .paper-info-section:first-child{margin-top:22px}.preview-panel .paper-primary-actions{margin-bottom:22px}
-</style></head><body class="library-view"><div class="preview-grid"><section class="preview-panel settings-content"><p class="preview-caption">SETTINGS / VIEW</p><h2>View</h2><div id="settings-fixture"></div></section><section class="preview-panel"><p class="preview-caption">PAPER INFO</p><div id="details" class="details"></div></section></div>
+</style></head><body class="library-view"><div class="preview-grid"><section class="preview-panel settings-content" id="settings-panel-view"><p class="preview-caption">SETTINGS / VIEW</p><h2>View</h2><div id="settings-fixture"></div></section><section class="preview-panel"><p class="preview-caption">PAPER INFO</p><div id="details" class="details"></div></section></div>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const settings={},store={get(){},set(){},remove(){}},G={layout:'library',libKey:null};
 const paper={key:'p1',title:'Foresight: Failure Detection for Long-Horizon Robotic Manipulation',creators:['Haoran Zhang','Yifu Lu','Boyang Wang'],venue:'arXiv',year:2026,arxiv:'',has_pdf:true,tags:['Reading'],abstractNote:'Long-horizon robotic manipulation requires reliable failure detection. This paper predicts future outcomes through an action-conditioned world model, then calibrates its estimates across different policies.'};
 const lib={target:'C1',items:[paper],notes:[],selected:new Set(),detail:paper},collections={targets:[{id:'L1',name:'Noctua Library'},{id:'C1',name:'Robotics',parent:'L1'}]};
 const targetName=id=>collections.targets.find(t=>t.id===id)?.name,collectionOptions=selected=>collections.targets.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${t.name}</option>`).join('');
-let memos=[],writes=0,failMemo=false,failLayout=false;
+const PDF={paper};let memos=[],writes=0,failMemo=false,failLayout=false,pendingMemo=null;
 const clone=value=>JSON.parse(JSON.stringify(value));
 async function api(path,body){
  if(path==='/api/settings/library'){if(failLayout)throw Error('Could not save layout');writes++;return clone(body);}
  if(path.endsWith('/memos')){
-  if(body){if(failMemo)throw Error('Memo changed in another window');if(body.op==='create')memos.push({id:'memo'+(++writes),text:body.text,revision:1,created:1793482800000+writes,updated:1793482800000+writes});else{const memo=memos.find(m=>m.id===body.id);if(!memo||memo.revision!==body.revision)throw Error('Memo changed in another window');if(body.op==='delete')memos=memos.filter(m=>m!==memo);else{memo.text=body.text;memo.revision++;}}}
+  if(body){if(pendingMemo){const pending=pendingMemo;pendingMemo=null;await pending;}if(failMemo)throw Error('Memo changed in another window');if(body.op==='create')memos.push({id:'memo'+(++writes),text:body.text,revision:1,created:1793482800000+writes,updated:1793482800000+writes});else{const memo=memos.find(m=>m.id===body.id);if(!memo||memo.revision!==body.revision)throw Error('Memo changed in another window');if(body.op==='delete')memos=memos.filter(m=>m!==memo);else{memo.text=body.text;memo.revision++;}}}
   return clone(memos);
  }
+ if(path==='/api/library/papers/p1')return clone(paper);
  if(path.endsWith('/membership'))return {targets:collections.targets};
  if(path==='/api/library/tags')return [{id:'reading',name:'Reading',digit:null}];
  throw Error('Unexpected '+path);
 }
 function toast(message){throw Error(message);}function notifyProgress(){}function graphFromLibrary(){}function openNoteFrom(){}
 function abstractHTML(item){return `<div class="abstract">${esc(item.abstractNote)}</div>`;}
-function renderDetails(){renderLibDetails(paper);}
+function renderDetails(){renderLibDetails(document.body.classList.contains('pdf-mode')?PDF.paper:lib.detail||paper);}
+function setMode(){throw Error('Paper Info updates must not switch modes');}
 const assert=(ok,message)=>{if(!ok)throw Error(message);},settle=async()=>{for(let i=0;i<120;i++)await Promise.resolve();};
 </script><script src="../web/library.js"></script><script>
 (async()=>{
  const source=await(await fetch('../web/app.js')).text(),start=source.indexOf('function renderLibDetails('),end=source.indexOf('\n}',start);window.renderLibDetails=new Function('return '+source.slice(start,end+2))();
+ const actionStart=source.indexOf('function runChatAction('),actionEnd=source.indexOf('\n}',actionStart);window.runChatAction=new Function('return '+source.slice(actionStart,actionEnd+2))();
  const host=$('#settings-fixture');host.innerHTML=paperInfoLayoutSettings();mountPaperInfoSettings(host);renderDetails();await settle();
  const order=()=>[...document.querySelectorAll('[data-paper-info-section]')].map(node=>node.dataset.paperInfoSection).join(',');
  assert(order()==='libraries,tags,abstract,memo','all four sections must default to shown in order');
@@ -48,10 +51,21 @@ const assert=(ok,message)=>{if(!ok)throw Error(message);},settle=async()=>{for(l
  await $('.paper-memo [data-delete]').onclick();assert(memos.length===1&&document.querySelectorAll('.paper-memo').length===1,'memo deletion must affect only one entry');
  renderDetails();await settle();assert(document.querySelectorAll('.paper-memo').length===1,'memos must load when reopening Paper Info');
  $('.paper-memo [data-edit]').click();input=$('.paper-memo-editor textarea');input.value='Keep a draft after deletion elsewhere';input.oninput();memos=[];await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));await $('[data-memo-reload]').onclick();assert($('.paper-memo-editor textarea').value==='Keep a draft after deletion elsewhere','reload must preserve drafts of remotely deleted memos');await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));assert(memos[0].text==='Keep a draft after deletion elsewhere','an orphan draft can be saved as a new memo');
+ // Chat events refresh details without navigating or dropping drafts, including pending UI saves.
+ $('.paper-info-memo [data-memo-add]').click();input=$('.paper-memo-editor textarea');input.value='Pending save during chat refresh';input.oninput();
+ let release;pendingMemo=new Promise(resolve=>{release=resolve;});const saving=$('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));
+ document.body.classList.add('pdf-mode');runChatAction({action:'paper_info',kind:'memo',key:paper.key});await settle();
+ assert($('.paper-memo-editor textarea').disabled,'a refreshed editor must wait for an in-flight UI save');release();await saving;await settle();
+ assert(!$('.paper-memo-editor')&&memos.some(m=>m.text==='Pending save during chat refresh')&&document.body.classList.contains('pdf-mode'),'chat refresh must finish the save without changing Reader mode');
+ $('.paper-memo [data-edit]').click();input=$('.paper-memo-editor textarea');input.value='Unsaved local thought';input.oninput();memos.push({id:'chat-memo',text:'Memo added in chat',revision:1,created:1793482809999});
+ runChatAction({action:'paper_info',kind:'memo',key:paper.key});await settle();assert($('.paper-memo-editor textarea').value==='Unsaved local thought'&&$('.paper-memo-list').textContent.includes('Memo added in chat'),'chat changes must preserve local draft text');
+ paper.abstractNote='Abstract corrected in chat';runChatAction({action:'paper_info',kind:'metadata',key:paper.key});await settle();assert(PDF.paper.abstractNote===paper.abstractNote&&$('.paper-info-abstract').textContent.includes('Abstract corrected in chat'),'chat metadata changes must refresh Reader Paper Info');
+ runChatAction({action:'paper_info',kind:'layout',sections:[{id:'memo',enabled:true},{id:'libraries',enabled:true},{id:'tags',enabled:true},{id:'abstract',enabled:false}]});await settle();assert(!$('.paper-info-abstract')&&host.querySelector('[data-section-zone="excluded"] [data-section-row="abstract"]'),'chat layout changes must update both Paper Info and Settings');
+ document.body.classList.remove('pdf-mode');
  // Leave a representative, fully rendered production UI for visual review.
  settings.paper_info_sections=[{id:'libraries',enabled:true},{id:'tags',enabled:true},{id:'memo',enabled:true},{id:'abstract',enabled:true}];
  memos=[{id:'sample1',text:'Useful early warning signal. Compare its calibration with our current failure detector.',revision:1,created:1793482800000},{id:'sample2',text:'Revisit the failure cases before adapting this to our robot setup.',revision:1,created:1793486400000}];
- paperMemoDrafts.clear();mountPaperInfoSettings(host);renderDetails();await settle();
+ paper.abstractNote='Long-horizon robotic manipulation requires reliable failure detection. This paper predicts future outcomes through an action-conditioned world model, then calibrates its estimates across different policies.';paperMemoDrafts.clear();mountPaperInfoSettings(host);renderDetails();await settle();
  window.previewReady=true;window.webkit.messageHandlers.result.postMessage('PASS: four default sections, DnD order/exclusion/restoration, persistence failures, dividers, memo icon, multiple memos, editing/deletion, draft retention and conflict recovery');
 })().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack));
 </script></body></html>

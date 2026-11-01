@@ -241,6 +241,14 @@ their order. Drop sections into **Excluded** to hide them, or drag them back to
 **Shown**. All four are enabled by default. Dividers separate sections, with none
 below the last section. Hiding Memo does not delete its saved entries.
 
+You can also ask chat to update saved paper details and tags, change collection
+assignments, or read and manage individual memos. For example: “Add a memo that
+I should revisit the calibration results” or “Correct this paper’s abstract.”
+Chat can change the Paper Info section order/visibility when you request it.
+These edits apply immediately in Suggest and Direct; Plan only reads. Stale
+paper, memo, or layout versions are rejected rather than silently overwritten,
+and live updates keep Reader open and preserve unsaved memo drafts.
+
 ## Organize a collection
 
 Copy files in your file manager, select a folder or project in the list,

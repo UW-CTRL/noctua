@@ -243,7 +243,9 @@ into **Excluded** to hide it, and drag it back into Shown to restore it. Changes
 save immediately and persist after restart. Hiding a section keeps its data.
 Sections have dividers above them, including the last section; there is no divider
 below the last section. Keyboard users can focus a drag handle and use Up/Down
-to reorder, or Space to move it between Shown and Excluded.
+to reorder, or Space to move it between Shown and Excluded. Chat can also change
+this section order and visibility on request, after reading the current layout;
+conflicting settings changes require a fresh read.
 
 Under **View → Tags**, show or hide the sidebar tag list and its numeric counts
 independently. These view preferences are saved with Noctua's data and restored

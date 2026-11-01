@@ -40,6 +40,22 @@ function paperInfoIcon(kind){
   return `<svg class="paper-info-icon ${kind==='chevron'?'paper-info-chevron':''}" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`;
 }
 const paperInfoLabels={libraries:'Libraries and Collections',tags:'Tags',abstract:'Abstract',memo:'Memo'};
+let paperInfoRefresh=0;
+async function refreshPaperInfo(action){
+  if(action.kind==='layout'){
+    settings.paper_info_sections=action.sections;
+    const host=document.querySelector('#settings-panel-view');if(host)mountPaperInfoSettings(host);
+    renderDetails();return;
+  }
+  if(action.kind==='metadata'){
+    const token=++paperInfoRefresh,paper=await api(paperURL(action.key));if(token!==paperInfoRefresh)return;
+    if(lib.detail?.key===action.key)lib.detail=paper;
+    if(typeof PDF!=='undefined'&&PDF.paper?.key===action.key)PDF.paper=paper;
+    if(lib.target&&typeof loadLibItems==='function')await loadLibItems();
+  }
+  const selected=typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')?PDF.paper:lib.detail;
+  if(selected?.key===action.key)renderDetails();
+}
 function paperInfoSections(){
   const configured=typeof settings!=='undefined'?settings?.paper_info_sections:null;
   const result=[],seen=new Set();
@@ -87,12 +103,13 @@ function mountPaperInfoSettings(host){
   render();
 }
 const paperMemoDrafts=new Map();
+const paperMemoSaves=new Map();
 function createPaperMemoSection(paper){
   const section=document.createElement('details');section.open=true;section.className='paper-info-section paper-info-memo';
   section.innerHTML=`<summary>${paperInfoIcon('memo')}<span>Memo</span><button type="button" data-memo-add data-icon="plus" data-icon-only aria-label="Add memo" title="Add memo"></button>${paperInfoIcon('chevron')}</summary><div class="paper-memo-list"></div><p class="paper-tag-error" role="status"></p><button type="button" data-memo-reload hidden>Reload memos</button>`;
   const list=section.querySelector('.paper-memo-list'),status=section.querySelector('[role="status"]'),add=section.querySelector('[data-memo-add]'),reload=section.querySelector('[data-memo-reload]');
   if(!paperMemoDrafts.has(paper.key))paperMemoDrafts.set(paper.key,new Map());
-  const drafts=paperMemoDrafts.get(paper.key);let memos=[],busy=false,loadToken=0;
+  const drafts=paperMemoDrafts.get(paper.key);let memos=[],busy=paperMemoSaves.has(paper.key),loadToken=0;
   const render=()=>{
     list.replaceChildren();
     const editor=(id,memo)=>{
@@ -119,10 +136,10 @@ function createPaperMemoSection(paper){
     section.querySelectorAll('button,textarea').forEach(control=>control.disabled=busy);
   };
   const change=async(body,draftId)=>{
-    if(busy)return;++loadToken;busy=true;render();status.textContent='Saving…';
+    if(busy)return;++loadToken;busy=true;let done,failed='';paperMemoSaves.set(paper.key,new Promise(resolve=>{done=resolve;}));render();status.textContent='Saving…';
     try{memos=await api(paperURL(paper.key)+'/memos',body);if(draftId)drafts.delete(draftId);status.textContent='';reload.hidden=true;}
-    catch(error){status.textContent=error.message;reload.hidden=false;}
-    finally{busy=false;render();}
+    catch(error){failed=error.message;status.textContent=failed;reload.hidden=false;}
+    finally{busy=false;paperMemoSaves.delete(paper.key);render();done(failed);}
   };
   const load=async(review=false)=>{
     const token=++loadToken;status.textContent='Loading memos…';
@@ -130,6 +147,8 @@ function createPaperMemoSection(paper){
     catch(error){if(token!==loadToken)return;status.textContent=error.message;reload.hidden=false;}
   };
   add.onclick=event=>{event.preventDefault();event.stopPropagation();section.open=true;if(!drafts.has('new'))drafts.set('new',{text:''});render();list.querySelector('.paper-memo-editor:last-child textarea')?.focus();};
+  const pending=paperMemoSaves.get(paper.key);
+  if(pending)pending.then(async error=>{if(!section.isConnected)return;busy=false;await load();if(error){status.textContent=error;reload.hidden=false;}});
   reload.onclick=()=>load(true);render();load();return section;
 }
 function libraryPaperActions(el,it) {
