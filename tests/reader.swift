@@ -31,7 +31,6 @@ if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspac
  window.ignoresMouseEvents=true
  if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
   app.setActivationPolicy(.regular)
-  app.finishLaunching()
   window.makeKeyAndOrderFront(nil)
   window.makeFirstResponder(web)
   app.activate(ignoringOtherApps:true)
@@ -40,6 +39,15 @@ if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspac
 }
 web.navigationDelegate=handler
 web.loadFileURL(root.appendingPathComponent(CommandLine.arguments.dropFirst().first ?? "tests/reader.html"),allowingReadAccessTo:root)
+// Focus pseudo-classes need AppKit to dispatch activation and keyboard events.
+// A Foundation-only run loop is enough for rendering fixtures, but not this one.
+if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
+ DispatchQueue.main.asyncAfter(deadline:.now()+35) {
+  print("FAIL: WebKit test timed out during \(handler.phase)")
+  exit(1)
+ }
+ app.run()
+}
 let deadline=Date().addingTimeInterval(35)
 while !handler.finished && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.05))}
 print("FAIL: WebKit test timed out during \(handler.phase)");exit(1)
