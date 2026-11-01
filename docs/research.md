@@ -32,6 +32,10 @@ Titles stay plain on hover; click one to inspect or edit its details. Double-cli
 a paper with an attached PDF to open Reader in a new tab. Papers without a PDF
 only show details. Use the details pane to open a PDF or build a citation graph.
 
+Selecting collections in Notes or the Library list does not fetch Semantic Scholar relationships.
+Graph lookups and automatic Lineage summaries run only while Library Graph or
+Lineage is active.
+
 Switching to Graph or Lineage with no graph open builds a graph for the
 selected library or collection. Graph and Lineage share a single sidebar: a
 folder tree above selects the graph target, and **Papers** below

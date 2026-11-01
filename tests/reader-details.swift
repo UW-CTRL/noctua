@@ -10,6 +10,7 @@ func section(_ source:String,_ start:String,_ end:String)->String {
  return String(source[a..<b])
 }
 let mocks=#"""
+let projectFolderTimer=null;function clearTimeout(){}
 const modes=new Set(),shown=[],G={selected:'original-selection',nodes:new Map()},results=[],lib={detail:{key:'previous',title:'Previous selection'}},PDF={paper:{key:'reader-a',title:'Reader A'}};
 const document={body:{classList:{contains:k=>modes.has(k),toggle(k,v){if(v)modes.add(k);else modes.delete(k);}}},querySelectorAll:()=>[]};
 const $=()=>({classList:{add(){}}});
