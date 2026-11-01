@@ -528,6 +528,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn view_preferences_note_scope_and_tags_persist() -> Result<()> {
+        let f=Fixture::new()?;
+        let parent=f.app.library.create_collection("L1","Parent")?;
+        let child=f.app.library.create_collection(&parent,"Child")?;
+        let sibling=f.app.library.create_collection("L1","Other")?;
+        let create=|target:&str| f.app.notes.create(&f.app.library.folder_id(target).unwrap(),"Tagged note");
+        let note=create(&parent)?;let nested=create(&child)?;create(&sibling)?;
+        let url=format!("/api/notes/{parent}/{}/tags",note["id"].as_str().unwrap());
+        assert_eq!(f.json(&url,Some(json!({"name":"🟡"}))).await,json!(["🟡"]));
+        assert_eq!(f.json(&url,Some(json!({"name":"🟡"}))).await,json!(["🟡"]));
+        let listed=f.json(&format!("/api/notes?target={parent}"),None).await;
+        assert_eq!(listed.as_array().unwrap().len(),2);
+        assert!(listed.as_array().unwrap().iter().any(|n|n["id"]==nested["id"]&&n["target"]==child));
+        assert!(listed.as_array().unwrap().iter().any(|n|n["id"]==note["id"]&&n["tags"]==json!(["🟡"])));
+        f.json("/api/settings/library",Some(json!({"include_subfolders":false,"show_notes_files":false,"show_tags":false,"show_tag_counts":false}))).await;
+        assert_eq!(f.json(&format!("/api/notes?target={parent}"),None).await.as_array().unwrap().len(),1);
+        f.json("/api/settings/library",Some(json!({"show_tags":true}))).await;
+        let persisted=Settings::load(&f.root).library;
+        assert!(persisted.show_tags);assert!(!persisted.include_subfolders);assert!(!persisted.show_notes_files);assert!(!persisted.show_tag_counts);
+        assert_eq!(f.json(&url,Some(json!({"name":"🟡","remove":true}))).await,json!([]));
+        assert!(f.json("/api/library/tags",None).await.as_array().unwrap().iter().any(|t|t["name"]=="🟡"));
+        assert_eq!(f.json("/api/notes?target=L1",None).await.as_array().unwrap().len(),3);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn project_bibliographies_index_automatically() -> Result<()> {
         let f=Fixture::new()?;let m=crate::workspace::list(&f.app,"L1")?;
         let m=crate::workspace::change(&f.app,"L1",&json!({"op":"create","name":"refs.BIB","text":"@book{automatic,title={Automatic}}","revision":m["revision"]}),None)?;
@@ -547,11 +573,20 @@ mod tests {
         let folder=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="Drafts").unwrap()["id"].clone();
         let m=crate::workspace::change(&f.app,"L1",&json!({"op":"create","name":"main.tex","parent":folder,"text":"test source","revision":m["revision"]}),None)?;
         let file=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="main.tex").unwrap()["id"].clone();
+        let nested=crate::workspace::create_note(&f.app,"L1",&json!({"title":"Nested tagged note","parent":folder,"revision":m["revision"]}))?;
+        let nested_id=nested["note_id"].as_str().unwrap();
+        let source_folder=f.app.library.folder_id("L1")?;
+        let destination_folder=f.app.library.folder_id(&destination)?;
+        f.app.library.set_note_tag(&source_folder,nested_id,"🟡",false)?;
+        let m=crate::workspace::list(&f.app,"L1")?;
         let dest=crate::workspace::list(&f.app,&destination)?;
         let request=json!({"op":"transfer","id":folder,"destination":destination,"revision":m["revision"],"destination_revision":dest["revision"]});
         let mut stale=request.clone();stale["destination_revision"]=json!(999);
         assert!(crate::workspace::change(&f.app,"L1",&stale,None).is_err());
+        assert_eq!(f.app.library.note_tags(&destination_folder,nested_id)?,json!([]),"Rejected transfers must not publish tag assignments");
         let source=crate::workspace::change(&f.app,"L1",&request,None)?;
+        assert_eq!(f.app.library.note_tags(&destination_folder,nested_id)?,json!(["🟡"]),"Folder transfers must preserve nested note tags");
+        assert_eq!(f.app.library.note_tags(&source_folder,nested_id)?,json!(["🟡"]),"Source Trash retains note tags");
         assert!(source["entries"].as_array().unwrap().iter().all(|e|e["deleted"]==true));
         let moved=crate::workspace::read(&f.app,&destination,file.as_str().unwrap())?;
         assert_eq!(moved["text"],"test source");assert_eq!(moved["entry"]["parent"],folder);
@@ -572,6 +607,8 @@ mod tests {
         assert!(dest["entries"].as_array().unwrap().iter().any(|e|e["id"]==replacement&&e["deleted"]!=true));
         let folder_id=f.app.library.folder_id("L1")?;
         let note=f.app.notes.create(&folder_id,"Transfer note")?;
+        let note_id=note["id"].as_str().unwrap();
+        f.app.library.set_note_tag(&folder_id,note_id,"review",false)?;
         let source=crate::workspace::list(&f.app,"L1")?;
         let entry=source["entries"].as_array().unwrap().iter().find(|e|e["note"]==note["id"]).unwrap()["id"].clone();
         let dest=crate::workspace::list(&f.app,&destination)?;
@@ -579,6 +616,13 @@ mod tests {
         let path=crate::workspace::dir(&f.app,&destination)?.join(format!("{}.json",note["id"].as_str().unwrap()));
         let copied:Value=serde_json::from_slice(&std::fs::read(path)?)?;
         assert_eq!(copied["title"],"Transfer note");
+        assert_eq!(f.app.library.note_tags(&destination_folder,note_id)?,json!(["review"]),"Individual note transfer preserves tags");
+        let source=crate::workspace::list(&f.app,"L1")?;
+        crate::workspace::change(&f.app,"L1",&json!({"op":"restore","id":entry,"revision":source["revision"]}),None)?;
+        let restored=f.json("/api/notes?target=L1",None).await;
+        let copies=restored.as_array().unwrap().iter().filter(|n|n["id"]==note["id"]).collect::<Vec<_>>();
+        assert_eq!(copies.len(),2,"The restored source and destination remain separate notes");
+        assert!(copies.iter().all(|n|n["tags"]==json!(["review"])),"Both published notes retain their assignments");
         let current=crate::workspace::list(&f.app,&destination)?;
         assert!(crate::workspace::change(&f.app,&destination,&json!({"op":"purge","ids":[entry],"revision":current["revision"]}),None).is_err());
         let trashed=crate::workspace::change(&f.app,&destination,&json!({"op":"delete","id":entry,"revision":current["revision"]}),None)?;

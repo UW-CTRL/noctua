@@ -228,10 +228,22 @@ Scripts require approval and separate output review; see
 **Data & Storage** groups its controls under **Library**, **Save Destination**,
 and **Storage**, using the same bold headings and section dividers as the other Settings pages.
 
-**Settings → Data & Storage → Include papers from subfolders** is enabled by
-default and saved with Noctua's data. Turn it off to show only direct collection
-members in folder lists, counts, and graphs. The library root always includes
-all papers. Scope changes keep existing graph lookups cached.
+Open **Settings → View** to choose what Library shows. **Show Notes and Files**
+controls the combined list beneath the selected collection, including imported
+files; Notes keeps its files available when this Library list is hidden.
+**Show papers/notes from subfolders** includes descendant collections in Library
+paper and note lists and paper counts, Graph, and Lineage. It is on by default, preserves
+your previous subfolder preference, and the library root always includes all
+papers and notes. Scope changes keep existing graph lookups cached.
+
+Under **View → Tags**, show or hide the sidebar tag list and its numeric counts
+independently. These view preferences are saved with Noctua's data and restored
+after restart.
+
+The sidebar **New note or file** and **Import files** dialogs include a
+**Collection** selector. The current collection starts selected; choose another
+to create or import there. The creation dialog also lets you choose a folder
+inside that collection. Cancelling keeps the original destination and files.
 
 Choose **Settings → Data & Storage → Default save folder** for papers added
 from search or a graph. The choice is remembered in this browser; if the folder

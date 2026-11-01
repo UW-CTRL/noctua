@@ -43,11 +43,26 @@ function renderWorkspaceTree(){
   return `<div class="workspace-entry ${active?'active':''} ${W.selected.has(e.id)?'selected':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" aria-pressed="${W.selected.has(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-rename="${esc(e.id)}" data-icon="pencil" data-icon-only title="Rename ${esc(title)}" aria-label="Rename ${esc(title)}"></button><button data-file-trash="${esc(e.id)}" data-icon="trash-2" data-icon-only title="Move ${esc(title)} to trash" aria-label="Move ${esc(title)} to trash"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
- tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')||'<p class="hint">No files yet. Create a note or import a file.</p>'}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
+ tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
  tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
  tree.querySelector('[data-latex-settings]').onclick=()=>showPaperSettings().catch(e=>toast(e.message,{error:true}));
- tree.querySelectorAll('[data-file]').forEach(b=>b.onclick=event=>{const modified=event.ctrlKey||event.metaKey||event.shiftKey;selectWorkspaceEntry(b.dataset.file,event);tree.focus({preventScroll:true});if(modified)return;const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);if(entry?.kind!=='folder'&&typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true}));});
+ const libraryNote=entry=>entry?.kind==='note'&&typeof G!=='undefined'&&G.layout==='library'&&!document.body.classList.contains('notes-mode')&&!document.body.classList.contains('pdf-mode');
+ const openEntry=id=>{if(typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');return openWorkspaceFile(id).catch(e=>toast(e.message,{error:true}));};
+ tree.querySelectorAll('[data-file]').forEach(b=>{
+  b.onclick=event=>{
+   const modified=event.ctrlKey||event.metaKey||event.shiftKey;
+   selectWorkspaceEntry(b.dataset.file,event);tree.focus({preventScroll:true});if(modified)return;
+   const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);
+   if(libraryNote(entry)){
+    const note=N.list.find(n=>n.id===entry.note);
+    showLibItem({kind:'note',key:typeof libraryNoteKey==='function'?libraryNoteKey({id:entry.note,target:W.target}):'note:'+W.target+':'+entry.note,id:entry.note,title:entry.renamed?entry.name:note?.title||entry.name,target:W.target,tags:note?.tags||[],created:note?.created,updated:note?.updated});
+    return;
+   }
+   if(entry?.kind==='folder')openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true}));else openEntry(b.dataset.file);
+  };
+  b.ondblclick=()=>{const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);if(libraryNote(entry))openEntry(b.dataset.file);};
+ });
  tree.querySelectorAll('[data-file-rename]').forEach(b=>b.onclick=()=>workspaceRename(b.dataset.fileRename));
  tree.querySelectorAll('[data-file-trash]').forEach(b=>b.onclick=()=>confirmWorkspaceTrash(b.dataset.fileTrash));
  tree.tabIndex=0;tree.setAttribute('aria-label','Project files');
@@ -71,11 +86,14 @@ function renderWorkspaceTree(){
 // example in a fixture without the tree) they stay in the notes side panel.
 function placeWorkspaceTree(){
  const tree=W.treeEl;if(!tree)return;
+ const hidden=typeof settings!=='undefined'&&settings?.show_notes_files===false;
+ tree.toggleAttribute('data-view-hidden',hidden);
  const row=W.target&&document.querySelector(`#lib-tree > li[data-id="${CSS.escape(W.target)}"]`);
  let host=document.querySelector('#lib-tree > li.tree-files');
  if(!row){host?.remove();if(tree.parentElement?.id!=='notes-side')$('#note-list')?.before(tree);return;}
  if(host&&host.previousElementSibling!==row){host.remove();host=null;}
  if(!host){host=document.createElement('li');host.className='tree-files';host.setAttribute('role','none');row.after(host);}
+ host.toggleAttribute('data-view-hidden',hidden);
  host.style.setProperty('--tree-indent',row.style.paddingLeft||'8px');
  if(tree.parentElement!==host)host.append(tree);
  bindProjectRows();
@@ -217,52 +235,78 @@ Refer to Equation~\eqref{eq:energy}.
 
 \end{document}
 `;}
+// Keep collection selection local to the dialog until creation is submitted.
+function workspaceDestinationOptions(selected) {
+ if(typeof collectionOptions==='function')return collectionOptions(selected);
+ return `<option value="${esc(selected)}">${esc(selected)}</option>`;
+}
+function workspaceInitialDestination(){
+ return typeof lib!=='undefined'&&lib.target&&!lib.trash?lib.target:W.target;
+}
+async function useWorkspaceDestination(target){
+ if(W.target!==target||N.target!==target)await loadNoteFolder(target);
+ if(W.target!==target||N.target!==target||!W.manifest)throw Error('Could not open the selected collection. Your edits have been kept.');
+}
 function workspaceCreate(folder){
- const target=W.target,folders=W.manifest.entries.filter(e=>e.kind==='folder'&&!e.deleted);
- const d=workspaceDialog(folder?'New folder':'New note or file',`<form class="workspace-create">${folder?'':'<label>Type <select data-kind><option value="note">Note</option><option value="tex">LaTeX (.tex)</option><option value="file">File</option></select></label>'}<label>Name <input data-name required maxlength="200" placeholder="${folder?'Folder name':''}" autocomplete="off"></label><label>Folder <select data-parent><option value="">Project root</option>${folders.map(f=>`<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}</select></label><p class="workspace-error" role="alert" data-error></p><footer><button type="button" data-cancel>Cancel</button><button type="submit" class="primary">Create</button></footer></form>`);
+ const initial=workspaceInitialDestination();
+ const d=workspaceDialog(folder?'New folder':'New note or file',`<form class="workspace-create"><label>Collection <select data-collection>${workspaceDestinationOptions(initial)}</select></label>${folder?'':'<label>Type <select data-kind><option value="note">Note</option><option value="tex">LaTeX (.tex)</option><option value="file">File</option></select></label>'}<label>Name <input data-name required maxlength="200" placeholder="${folder?'Folder name':''}" autocomplete="off"></label><label>Folder <select data-parent><option value="">Project root</option></select></label><p class="workspace-error" role="alert" data-error></p><footer><button type="button" data-cancel>Cancel</button><button type="submit" class="primary">Create</button></footer></form>`);
  d.classList.add('workspace-compact');
+ const destination=d.querySelector('[data-collection]'),parent=d.querySelector('[data-parent]'),button=d.querySelector('[type="submit"]'),error=d.querySelector('[data-error]');
+ let folderSequence=0,busy=false;
+ const renderFolders=m=>{parent.innerHTML='<option value="">Project root</option>'+m.entries.filter(e=>e.kind==='folder'&&!e.deleted).map(f=>`<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('');};
+ const loadFolders=async()=>{
+  const seq=++folderSequence,target=destination.value;button.disabled=true;error.textContent='';
+  try {const m=target===W.target&&W.manifest?W.manifest:await api(`/api/workspaces/${enc(target)}`);if(seq!==folderSequence)return;renderFolders(m);button.disabled=false;}
+  catch(e){if(seq===folderSequence)error.textContent=e.message;}
+ };
+ destination.onchange=loadFolders;loadFolders();
  d.querySelector('[data-cancel]').onclick=()=>d.close();
+ d.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
  d.querySelector('form').onsubmit=async event=>{
-  event.preventDefault();const button=d.querySelector('[type="submit"]');button.disabled=true;
+  event.preventDefault();if(busy||button.disabled)return;
+  busy=true;const target=destination.value,selectedParent=parent.value;
+  const controls=[...d.querySelectorAll('button,input,select')];controls.forEach(control=>control.disabled=true);
   try{
-   if(W.target!==target)throw Error('The selected project changed. Close this dialog and try again.');
    let name=d.querySelector('[data-name]').value.trim();if(!name)throw Error('Enter a name.');
    const tex=!folder&&d.querySelector('[data-kind]').value==='tex';
    if(tex&&!/\.tex$/i.test(name))name+='.tex';
+   await useWorkspaceDestination(target);
+   if(selectedParent&&!W.manifest.entries.some(e=>e.id===selectedParent&&e.kind==='folder'&&!e.deleted))throw Error('The destination folder changed. Choose it again.');
    if(!folder&&d.querySelector('[data-kind]').value==='note'){
     const doc=await createNote(name);if(!doc)throw Error('Could not create the note.');
-    const parent=d.querySelector('[data-parent]').value,entry=W.manifest.entries.find(e=>e.note===doc.id&&!e.deleted);
-    if(parent&&entry){await workspaceChange({op:'move',id:entry.id,parent});W.expanded.add(parent);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();}
+    const entry=W.manifest.entries.find(e=>e.note===doc.id&&!e.deleted);
+    if(selectedParent&&entry){await workspaceChange({op:'move',id:entry.id,parent:selectedParent});W.expanded.add(selectedParent);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();}
     d.close();$('.note-title')?.focus();return;
    }
    const ids=new Set(W.manifest.entries.map(e=>e.id));
-   const m=await workspaceChange({op:folder?'folder':'create',name,text:tex?defaultPaperTemplate():'',parent:d.querySelector('[data-parent]').value});
+   const m=await workspaceChange({op:folder?'folder':'create',name,text:tex?defaultPaperTemplate():'',parent:selectedParent});
    const entry=m.entries.find(e=>!ids.has(e.id)&&e.kind===(folder?'folder':'file'));
    if(tex&&entry&&!m.entries.some(e=>e.id===m.paper?.main_file&&!e.deleted))await workspaceChange({op:'config',paper:{main_file:entry.id}});
    if(entry?.parent){W.expanded.add(entry.parent);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();}
    d.close();if(entry&&!folder)await openWorkspaceFile(entry.id);
-  }catch(e){d.querySelector('[data-error]').textContent=e.message;}finally{button.disabled=false;}
+  }catch(e){error.textContent=e.message;}finally{busy=false;controls.forEach(control=>control.disabled=false);}
  };
  d.querySelector('[data-name]').focus();
 }
 function workspaceImport(){
- const target=W.target,files=[];let busy=false;
- const d=workspaceDialog('Import files',`<form class="workspace-create workspace-import"><div class="workspace-upload-zone"><button type="button" data-pick data-icon="file-up">Choose files</button><small>or drop them here · up to 32 MB each</small><input type="file" data-files multiple hidden></div><ul class="workspace-upload-list" aria-label="Files to import"></ul><p class="workspace-error" role="alert" data-error></p><footer><button type="button" data-cancel>Cancel</button><button type="submit" class="primary" disabled>Import</button></footer></form>`);
+ const files=[];let busy=false;
+ const d=workspaceDialog('Import files',`<form class="workspace-create workspace-import"><label>Collection <select data-collection>${workspaceDestinationOptions(workspaceInitialDestination())}</select></label><div class="workspace-upload-zone"><button type="button" data-pick data-icon="file-up">Choose files</button><small>or drop them here · up to 32 MB each</small><input type="file" data-files multiple hidden></div><ul class="workspace-upload-list" aria-label="Files to import"></ul><p class="workspace-error" role="alert" data-error></p><footer><button type="button" data-cancel>Cancel</button><button type="submit" class="primary" disabled>Import</button></footer></form>`);
  d.classList.add('workspace-compact');
- const input=d.querySelector('[data-files]'),zone=d.querySelector('.workspace-upload-zone'),submit=d.querySelector('[type="submit"]'),error=d.querySelector('[data-error]');
+ const input=d.querySelector('[data-files]'),zone=d.querySelector('.workspace-upload-zone'),submit=d.querySelector('[type="submit"]'),error=d.querySelector('[data-error]'),destination=d.querySelector('[data-collection]');
  const render=()=>{d.querySelector('ul').innerHTML=files.map((file,index)=>`<li><span title="${esc(file.name)}">${esc(file.name)}</span><small>${file.size<1024*1024?Math.ceil(file.size/1024)+' KB':(file.size/1024/1024).toFixed(1)+' MB'}</small><button type="button" data-remove="${index}" data-icon="x" data-icon-only title="Remove ${esc(file.name)}" aria-label="Remove ${esc(file.name)}"></button></li>`).join('');submit.disabled=busy||!files.length;d.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{if(!busy){files.splice(Number(button.dataset.remove),1);render();}});};
  const add=selected=>{if(busy)return;error.textContent='';for(const file of selected){if(file.size>32*1024*1024){error.textContent='Files can be up to 32 MB each. Use Image / Video in a note for larger videos.';continue;}if(!files.some(f=>f.name===file.name&&f.size===file.size&&f.lastModified===file.lastModified))files.push(file);}render();};
  d.querySelector('[data-pick]').onclick=()=>input.click();input.onchange=()=>{add([...input.files]);input.value='';};
  zone.ondragover=event=>{event.preventDefault();if(!busy)zone.classList.add('drag-over');};zone.ondragleave=()=>zone.classList.remove('drag-over');zone.ondrop=event=>{event.preventDefault();zone.classList.remove('drag-over');add([...event.dataTransfer.files]);};
  d.querySelector('[data-cancel]').onclick=()=>d.close();d.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
  d.querySelector('form').onsubmit=async event=>{
-  event.preventDefault();if(busy||!files.length)return;busy=true;error.textContent='';d.querySelectorAll('button').forEach(button=>button.disabled=true);
+  event.preventDefault();if(busy||!files.length)return;busy=true;error.textContent='';const target=destination.value;
+  d.querySelectorAll('button,input,select').forEach(control=>control.disabled=true);
   try{
-   if(W.target!==target)throw Error('The selected project changed. Close this dialog and try again.');
-   await saveWorkspaceFile();let manifest=W.manifest;
+   await saveWorkspaceFile();let manifest=await api(`/api/workspaces/${enc(target)}`);
    while(files.length){const file=files[0];submit.textContent='Importing…';const response=await fetch(`/api/workspaces/${enc(target)}/upload?name=${enc(file.name)}&revision=${manifest.revision}`,{method:'POST',body:file});const result=await response.json();if(!response.ok)throw Error(result.error||'Import failed');manifest=result;files.shift();if(W.target===target){W.manifest=manifest;W.fileRevision=manifest.revision;renderWorkspaceTree();applyBibliography();}}
+   if(W.target!==target)await useWorkspaceDestination(target);
    d.close();
-  }catch(e){error.textContent=e.message;}finally{busy=false;d.querySelectorAll('button').forEach(button=>button.disabled=false);submit.textContent='Import';render();}
+  }catch(e){error.textContent=e.message;}finally{busy=false;d.querySelectorAll('button,input,select').forEach(control=>control.disabled=false);submit.textContent='Import';render();}
  };
 }
 

@@ -99,7 +99,7 @@ async function loadNoteFolder(target) {
     // Citations resolve against the whole library; the collection's own items
     // (including project bibliography keys) take precedence.
     const [list, items, all] = await Promise.all([api(`/api/notes?target=${enc(target)}`), api(`/api/library/items?target=${enc(target)}`), target === 'L1' ? [] : api('/api/library/items?target=L1').catch(() => [])]);
-    N.list = list;
+    N.list = list.filter(n => !n.target || n.target === target);
     for (const it of [...all, ...items]) { N.items.set(it.key, it); for (const key of it.cite_keys || []) N.items.set(key, it); }
   } catch (e) {
     N.list = [];
@@ -120,7 +120,7 @@ function renderNoteList() {
   if(W.manifest&&W.target===N.target)renderWorkspaceTree();
   // Keep the Library table's note rows current.
   if (typeof lib !== 'undefined' && lib.target === N.target && lib.items) {
-    lib.notes = N.list.map(({ id, title, created, updated }) => ({ id, title, created, updated }));
+    lib.notes = [...(lib.notes || []).filter(n => n.target && n.target !== N.target), ...N.list.map(n => ({ ...n, target: N.target }))];
     if (!document.body.classList.contains('notes-mode') && typeof renderLibItems === 'function') renderLibItems();
   }
   renderSplitNoteBar();
@@ -547,6 +547,7 @@ function showNoteHelp() {
     const example = source => `<pre><code>${esc(source)}</code></pre>`;
     dialog.innerHTML = `<div class="note-help-header"><h2 id="note-help-title">Note guide</h2><form method="dialog"><button data-icon="x" data-icon-only aria-label="Close note guide" title="Close" autofocus></button></form></div>
       <p class="note-help-intro">Write, add media, and connect your research.</p>
+      <section><h3>Note information and tags</h3><p>In Library, single-click a note to view Note Info; double-click to open it. Add tags in Note Info and hover over a tag to remove it immediately. Right-click a sidebar tag and choose Delete to remove it from every paper and note. Settings → View controls Notes and Files visibility, subfolders, tag counts, and digit shortcuts. Press a configured digit with the Library list focused to toggle its tag. Tag metadata is separate from note text and is managed through these controls.</p></section>
       <section><h3>Collection research details</h3><p>Choose Folder or Research project when creating a Library collection. Projects use a briefcase icon; Notes file folders are separate. Edit the type, goal, progress, and personal target dates using Research details in the Library collection tree. This data is stored separately and stays hidden from the Notes file tree. Include hidden collection data in your backups.</p></section>
       <section><h3>Zotero notes</h3><p>Choose Library → Import from Zotero → Notes to copy paper and standalone notes into their collections. Imported notes are editable text with paragraph breaks; HTML formatting and embedded images are not reproduced. On re-import, Sync updates untouched imported content and keeps local edits, reporting conflicts. Overwrite replaces imported note content from Zotero.</p></section>
       <section><h3>Selected passages in chat</h3><p>Drag across rendered note text and click Add to chat. You can attach several passages, hover over the annotation count to preview them, and remove individual passages before sending. Theme-colored numbered badges and faint highlights mark attached source passages. The badges match the attachment preview; click a badge to open it. Removing or sending attachments removes the badges and faint highlights without changing your note. These are chat attachments, not saved PDF annotations. The assistant receives the quoted text and note identifiers; adding or removing attachments is a UI-only control.</p></section>

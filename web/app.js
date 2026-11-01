@@ -667,6 +667,8 @@ async function setIncludeSubfolders(include) {
     if (target === 'L1') G.project.include_subfolders = saved.include_subfolders;
     else if (!document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode') && G.layout !== 'library') openProject(target);
   }
+  await loadLibItems();
+  if (typeof loadNoteFolder === 'function' && N.target) await loadNoteFolder(N.target);
   return saved.include_subfolders;
 }
 
@@ -689,7 +691,7 @@ function renderDetails() {
   const n = G.nodes.get(G.selected);
   const p = n?.p || results.find((r) => r.paperId && r.paperId === G.selected);
   if (!p) {
-    if (lib.detail) return renderLibDetails(lib.detail);
+    if (lib.detail) return lib.detail.kind === 'note' ? renderNoteDetails(lib.detail) : renderLibDetails(lib.detail);
     el.innerHTML = '<p class="hint">Click a node to see the paper and add it to Noctua.</p>';
     return;
   }
@@ -924,6 +926,7 @@ async function loadLibItems() {
     if (target !== lib.target || lib.trash) return;
     lib.items = items;
     lib.notes = Array.isArray(notes) ? notes : [];
+    if (typeof loadLibraryTags === 'function') await loadLibraryTags();
   } catch (e) {
     if (target !== lib.target) return;
     lib.items = null;
@@ -947,8 +950,8 @@ function renderLibItems() {
   const f = $('#lib-filter').value.trim().toLowerCase();
   let items = lib.items;
   if (lib.selectionTarget !== lib.target) { lib.selected.clear(); lib.selectionTarget=lib.target; lib.anchor=null; }
-  lib.selected=new Set([...lib.selected].filter(key=>items.some(item=>item.key===key)));
-  if(lib.tag&&!items.some(item=>(item.tags||[]).includes(lib.tag)))lib.tag='';
+  lib.selected=new Set([...lib.selected].filter(key=>items.some(item=>item.key===key)||(lib.notes||[]).some(note=>typeof libraryNoteKey==='function'&&libraryNoteKey(note)===key)));
+  if(lib.tag&&![...items,...(lib.notes||[])].some(item=>(item.tags||[]).includes(lib.tag))&&!libraryTags.some(t=>t.name===lib.tag))lib.tag='';
   if (lib.tag) items=items.filter(item=>(item.tags||[]).includes(lib.tag));
   if (f) items = items.filter((it) => [it.title, libAuthors(it), it.venue, ...(it.tags||[])].join(' ').toLowerCase().includes(f));
   const cmp = {
@@ -958,7 +961,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
-  renderLibraryTable((typeof libraryTableRows === 'function' ? libraryTableRows(items, lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }) : items).sort(cmp));
+  renderLibraryTable((typeof libraryTableRows === 'function' ? libraryTableRows(items, typeof settings !== 'undefined' && settings?.show_notes_files === false ? [] : lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }) : items).sort(cmp));
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;
@@ -1002,23 +1005,33 @@ function renderLibraryTable(items) {
   });
   if (typeof renderLibraryManagement==='function') renderLibraryManagement();
   const rows = $('#library-rows');
-  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row">
-    <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${esc(it.title)}</button></td>
+  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row ${lib.detail?.key === it.key ? 'selected' : ''}">
+    <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title)}</button></td>
     <td>—</td><td>${esc(it.year || '—')}</td>
     <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
-  </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${it.key === lib.detail?.key ? 'selected' : ''}">
-    <td><button class="library-paper-title" data-select-paper>${esc(it.title || '(untitled)')}</button></td>
+  </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${lib.selected.has(it.key) ? 'selected' : ''}">
+    <td><button class="library-paper-title" data-select-paper>${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td title="${esc(it.venue || '')}">${esc(it.venue || '—')}</td>
   </tr>`).join('');
+  rows.onkeydown = event => {
+    if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.target.closest('input,textarea,select,[contenteditable]') || !['ArrowUp','ArrowDown'].includes(event.key)) return;
+    const visible = [...rows.querySelectorAll('tr[data-key]')];
+    const current = event.target.closest('tr[data-key]');
+    const index = visible.indexOf(current);
+    if (index < 0) return;
+    event.preventDefault();
+    const next = visible[Math.max(0, Math.min(visible.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))];
+    next.click(); next.focus(); next.scrollIntoView({block:'nearest'});
+  };
   const byKey = new Map(items.map(it => [it.key, it]));
   rows.querySelectorAll('tr').forEach(row => {
     const it = byKey.get(row.dataset.key);
     if (it.kind === 'note') {
-      const open = () => openNoteFrom(lib.target, it.id);
-      row.querySelector('[data-open-note]').addEventListener('click', open);
+      const open = () => openNoteFrom(it.target || lib.target, it.id);
+      row.addEventListener('click', () => { showLibItem(it); row.focus(); });
       row.addEventListener('dblclick', open);
-      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) open(); });
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } });
       return;
     }
     row.addEventListener('click', (e) => {

@@ -140,10 +140,15 @@ last deletion. Linked external PDFs and collection project files are preserved.
 Paper info has collapsible **Libraries and Collections** and **Tags** sections.
 It shows the abstract saved in the Library; selecting a paper does not fetch a missing abstract.
 The library and assigned collection paths have distinct icons; the Tags heading
-shows the count and each tag appears on its own row. Empty tags show **No tags**.
+shows the count and each tag appears on its own row. Hover a tag row to reveal
+its remove button; clicking it immediately removes only that item’s assignment.
+Empty tags show **No tags**.
 Add a tag directly in Paper info by typing its name and pressing Enter or the
 add button. Matching tags from the entire Library appear below the field; select
 one to add it. The display refreshes after editing tags or applying bulk tag changes.
+Notes use the same tag system in **Note Info**. A single click in Library selects
+a note and shows its information; double-click opens it in Notes. Up and Down
+select adjacent Library rows and keep the information pane in sync.
 **Libraries and Collections** lists the library and direct collection assignments with parent paths. This shows direct
 assignments, independent of the include-subfolders setting; a paper with none
 shows the library with **No collection assigned**. Membership changes refresh the list.
@@ -155,13 +160,27 @@ ranges, and Command+A/Ctrl+A selects visible papers. Use dragging and
 copy/cut/paste for collection changes, Delete for trash, and Command+Z/Ctrl+Z
 for undo. Right-click selected papers for bulk tag editing or removal from the
 current collection. Paper info retains individual edit and collection actions. The **Tags** panel at the bottom of the Library sidebar lists tags
-from the selected collection with paper counts. **Filter tags** searches tag names
-without changing the paper search. Click a tag to filter papers; click it again or
-use **Clear tag filter** to show all tags. The list scrolls independently and
+from the selected collection with paper and note counts. Tags fill the available
+sidebar width and wrap as needed. **Settings → View** controls tag-list visibility
+and, independently, whether counts appear. Shortcut tags stay above ordinary tags. **Filter tags** searches tag names
+without changing the item search. Click a tag to filter papers and notes; click it
+again, or press Escape in the tag search, to clear the filter. Right-click a tag
+and choose **Delete** to remove the tag and all paper/note assignments while
+keeping the items themselves. The list scrolls independently and
 respects the include-subfolders setting. Drag the boundary above it to resize the
 folder and tag areas; the height is remembered, the focused boundary supports
 Up/Down and Home/End, and double-click restores the default. Tag and paper text filters combine. Paper info
 **Edit details** also edits tags, one per line.
+
+In **Settings → View → Tags**, each digit from **1–9** and **0** maps to a tag.
+Defaults use the corresponding numeric emoji. Choose an existing tag or select
+an emoji from its picker; each choice saves immediately. Choosing a new emoji
+renames the mapped tag while keeping its assignments. Choosing an emoji that
+already exists links to that tag and leaves the previous tag’s assignments intact.
+With the central Library list focused, press a mapped digit to add its tag to the
+selected paper or note; press it again to remove that assignment. Applied shortcut
+tags appear before the title. Digits in search fields, editors, Settings, and other
+panels retain their normal typing behavior.
 
 Collections are links to papers; Library always contains every active paper.
 Copy/paste or drag papers into another collection to add links while keeping all
@@ -216,11 +235,12 @@ Folders with children have a chevron on the left: click it to collapse or expand
 their subfolders without changing the selected folder or graph. Clicking the
 folder name selects it. Initially only the library root is expanded; other
 branches start collapsed. Your later choices are remembered in this browser.
-**Settings → Data & storage → Include papers from subfolders** is on by default.
-It controls folder paper lists, counts, and folder graphs, including assistant
-folder tools. Duplicate papers appear once even if saved in multiple nested
-folders. The library root always shows all papers. Notes and project files keep
-their own folder scope.
+**Settings → View → Show papers/notes from subfolders** is on by default.
+It controls Library paper and note lists, paper counts, and folder graphs,
+including assistant folder tools. Duplicate papers appear once even if saved in
+multiple nested folders. The library root always shows all papers and notes.
+Project files keep their own collection scope. **Show Notes and Files in Library**
+in View hides or shows the combined folder list, including imported files.
 Folder counts align at the right edge. Hover a folder or focus its controls to
 replace its count with rename, new-folder, and available import actions.
 The library supports filtering, sorting, and metadata editing.

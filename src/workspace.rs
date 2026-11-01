@@ -188,13 +188,14 @@ fn transfer(app:&App,target:&str,b:&Value,mut source:Value)->Result<Value>{
  let Some(name)=resolve_move_name(&mut dest,root,"",b["conflict"].as_str().unwrap_or(""))? else{return Ok(source);};if root["name"]!=name{root["renamed"]=json!(true);}root["name"]=json!(name);
  dest["entries"].as_array_mut().unwrap().extend(moved.clone());validate(&dest)?;
  // Copy content before either manifest is committed.
- let mut notes_to_write=Vec::new();
+ let mut notes_to_write=Vec::new();let mut transferred_notes=Vec::new();
  for e in &mut moved{
   if e["kind"]=="file"{let data=bytes(app,target,e)?;let hash=blob(app,destination,&data)?;
    let copied=dest["entries"].as_array_mut().unwrap().iter_mut().find(|d|d["id"]==e["id"]).unwrap();copied["blob"]=json!(hash);copied.as_object_mut().unwrap().remove("legacy");
   }else if e["kind"]=="note"{
    let note=e["note"].as_str().context("Note id missing")?;crate::notes::check_id(note)?;
    let doc=std::fs::read_to_string(dir(app,target)?.join(format!("{note}.json")))?;
+   transferred_notes.push(note.to_owned());
    // File-ID references need their target entries, not just the note JSON.
    for dependency in source["entries"].as_array().unwrap().iter().filter(|d|d["kind"]=="file"&&d["deleted"]!=true){
     let key=format!("files/{}",dependency["id"].as_str().unwrap());
@@ -207,7 +208,11 @@ fn transfer(app:&App,target:&str,b:&Value,mut source:Value)->Result<Value>{
  for e in source["entries"].as_array_mut().unwrap(){if ids.contains(e["id"].as_str().unwrap()){e["deleted"]=json!(true);}}
  stamp_deletions(&previous_dest,&mut dest);stamp_deletions(&previous_source,&mut source);
  dest["revision"]=json!(dest["revision"].as_u64().unwrap_or(0)+1);source["revision"]=json!(source["revision"].as_u64().unwrap_or(0)+1);
- let published=(||->Result<()>{for (path,doc) in &notes_to_write{crate::notes::write_atomic(path,doc)?;}save(app,destination,&dest)})();
+ let published=(||->Result<()>{
+  for (path,doc) in &notes_to_write{crate::notes::write_atomic(path,doc)?;}
+  app.library.copy_note_tags(&app.library.folder_id(target)?,&app.library.folder_id(destination)?,&transferred_notes)?;
+  save(app,destination,&dest)
+ })();
  if let Err(error)=published{for (path,_) in &notes_to_write{let _=std::fs::remove_file(path);}return Err(error);}
  save(app,target,&source)?;
  Ok(source)
