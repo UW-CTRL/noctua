@@ -219,6 +219,28 @@ metadata, annotations and folder project files, and cannot be undone. External
 original PDFs are preserved; immutable PDF cache blobs may remain for reuse.
 There is no automatic purge.
 
+## Paper memos and information layout
+
+Use **Memo** in a saved paper's information panel to keep short personal thoughts
+for your next reading. Click **+**, write a memo, and choose **Save memo**. Repeat
+to add separate entries; each supports up to 4,000 characters of plain text,
+including line breaks. The text uses the same size as the abstract. Edit or delete
+an individual memo with its pencil or trash button. Memos are also available in
+Reader's Paper tab and load again when you reopen the paper.
+
+Memos are separate from the abstract, block Notes, and PDF annotations. Changing
+paper details does not overwrite them. Recoverable paper Trash preserves them;
+restoration brings them back. Duplicate merges combine the memos of both papers,
+and permanently deleting a paper removes its memos. If another window edits a
+memo, your draft stays available: choose **Reload memos**, review it, then save
+again. Unsaved drafts remain while this page is open, including when you hide
+or reorder the section; close/reload the page only after saving.
+
+In **Settings → View → Paper Info**, drag the four information sections to set
+their order. Drop sections into **Excluded** to hide them, or drag them back to
+**Shown**. All four are enabled by default. Dividers separate sections, with none
+below the last section. Hiding Memo does not delete its saved entries.
+
 ## Organize a collection
 
 Copy files in your file manager, select a folder or project in the list,

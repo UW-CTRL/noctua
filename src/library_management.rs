@@ -170,6 +170,7 @@ impl Library {
                 tx.execute("UPDATE papers SET data=?1,s2=?2,doi=?3,arxiv=?4,title_norm=?5,pdf_hash=?6,revision=revision+1 WHERE key=?7",params![retained.to_string(),text(&retained,"s2"),text(&retained,"DOI").to_lowercase(),text(&retained,"arxiv").to_lowercase(),norm(text(&retained,"title")),hash.clone().or(other_hash.clone()),target])?;
                 if hash.is_none()&&other_hash.is_some(){tx.execute("INSERT OR REPLACE INTO pdf_links SELECT ?1,path FROM pdf_links WHERE paper=?2",params![target,source])?;}
                 tx.execute("INSERT OR IGNORE INTO memberships SELECT collection,?1 FROM memberships WHERE paper=?2",params![target,source])?;
+                tx.execute("UPDATE paper_memos SET paper=?1 WHERE paper=?2",params![target,source])?;
                 let annotations:Vec<(String,String)>={let mut stmt=tx.prepare("SELECT id,data FROM annotations WHERE paper=?1")?;let rows=stmt.query_map([source],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;rows};
                 for(id,s)in annotations{let mut data:Value=serde_json::from_str(&s)?;data["paper"]=json!(target);tx.execute("UPDATE annotations SET paper=?1,data=?2,revision=revision+1 WHERE id=?3",params![target,data.to_string(),id])?;}
                 tx.execute("UPDATE zotero_imports SET target=?1 WHERE kind='paper' AND target=?2 AND NOT EXISTS(SELECT 1 FROM zotero_imports z WHERE z.kind='paper' AND z.source=zotero_imports.source AND z.target=?1)",params![target,source])?;

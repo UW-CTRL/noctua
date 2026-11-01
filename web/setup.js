@@ -705,6 +705,7 @@ function viewSection(s) {
     ${toggle('show_notes_files', 'Show Notes and Files', 'Show notes and imported files beneath the selected collection in Library.')}
     <label class="setting-field" for="setup-include-subfolders"><span>Show papers/notes from subfolders<span class="hint library-setting-hint">Include descendant collections in paper and note lists. The library root always includes all papers and notes.</span></span><input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     </div>
+    ${typeof paperInfoLayoutSettings === 'function' ? paperInfoLayoutSettings() : ''}
     <div class="settings-group" role="group" aria-labelledby="settings-view-tags"><h3 id="settings-view-tags">Tags</h3>
     ${toggle('show_tags', 'Show sidebar tag list')}
     ${toggle('show_tag_counts', 'Show tag counts')}
@@ -967,6 +968,7 @@ function openSetup({ firstRun = false, tab } = {}) {
     mountScholarSettings(card.querySelector('[data-step="scholar"]'));
     mountSearchEngineOrder(card.querySelector('[data-step="search"]'));
     if (typeof mountTagShortcuts === 'function') mountTagShortcuts(card.querySelector('[data-step="view"]'));
+    if (typeof mountPaperInfoSettings === 'function') mountPaperInfoSettings(card.querySelector('[data-step="view"]'));
     selectTab(tab || store.get('noctua.settingsTab'), true);
     checkAgent().catch((err) => toast(err.message, { error: true }));
   };

@@ -1,0 +1,57 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/ui.css"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><style>
+body{display:block;overflow:auto;background:var(--bg);padding:28px;margin:0}.preview-grid{display:grid;grid-template-columns:360px 480px;gap:28px;max-width:900px;margin:auto;align-items:start}.preview-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;box-sizing:border-box}.preview-panel>h2{margin:0 0 18px;font-size:18px}.preview-panel .settings-group{margin:0}.preview-panel .settings-group>h3{margin-top:0}#details{position:static;display:block;width:auto;height:auto;padding:0;overflow:visible}.preview-caption{font-size:11px;color:var(--muted);margin-bottom:8px}.preview-panel .paper-info-section:first-child{margin-top:22px}.preview-panel .paper-primary-actions{margin-bottom:22px}
+</style></head><body class="library-view"><div class="preview-grid"><section class="preview-panel settings-content"><p class="preview-caption">SETTINGS / VIEW</p><h2>View</h2><div id="settings-fixture"></div></section><section class="preview-panel"><p class="preview-caption">PAPER INFO</p><div id="details" class="details"></div></section></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const settings={},store={get(){},set(){},remove(){}},G={layout:'library',libKey:null};
+const paper={key:'p1',title:'Foresight: Failure Detection for Long-Horizon Robotic Manipulation',creators:['Haoran Zhang','Yifu Lu','Boyang Wang'],venue:'arXiv',year:2026,arxiv:'',has_pdf:true,tags:['Reading'],abstractNote:'Long-horizon robotic manipulation requires reliable failure detection. This paper predicts future outcomes through an action-conditioned world model, then calibrates its estimates across different policies.'};
+const lib={target:'C1',items:[paper],notes:[],selected:new Set(),detail:paper},collections={targets:[{id:'L1',name:'Noctua Library'},{id:'C1',name:'Robotics',parent:'L1'}]};
+const targetName=id=>collections.targets.find(t=>t.id===id)?.name,collectionOptions=selected=>collections.targets.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${t.name}</option>`).join('');
+let memos=[],writes=0,failMemo=false,failLayout=false;
+const clone=value=>JSON.parse(JSON.stringify(value));
+async function api(path,body){
+ if(path==='/api/settings/library'){if(failLayout)throw Error('Could not save layout');writes++;return clone(body);}
+ if(path.endsWith('/memos')){
+  if(body){if(failMemo)throw Error('Memo changed in another window');if(body.op==='create')memos.push({id:'memo'+(++writes),text:body.text,revision:1,created:1793482800000+writes,updated:1793482800000+writes});else{const memo=memos.find(m=>m.id===body.id);if(!memo||memo.revision!==body.revision)throw Error('Memo changed in another window');if(body.op==='delete')memos=memos.filter(m=>m!==memo);else{memo.text=body.text;memo.revision++;}}}
+  return clone(memos);
+ }
+ if(path.endsWith('/membership'))return {targets:collections.targets};
+ if(path==='/api/library/tags')return [{id:'reading',name:'Reading',digit:null}];
+ throw Error('Unexpected '+path);
+}
+function toast(message){throw Error(message);}function notifyProgress(){}function graphFromLibrary(){}function openNoteFrom(){}
+function abstractHTML(item){return `<div class="abstract">${esc(item.abstractNote)}</div>`;}
+function renderDetails(){renderLibDetails(paper);}
+const assert=(ok,message)=>{if(!ok)throw Error(message);},settle=async()=>{for(let i=0;i<120;i++)await Promise.resolve();};
+</script><script src="../web/library.js"></script><script>
+(async()=>{
+ const source=await(await fetch('../web/app.js')).text(),start=source.indexOf('function renderLibDetails('),end=source.indexOf('\n}',start);window.renderLibDetails=new Function('return '+source.slice(start,end+2))();
+ const host=$('#settings-fixture');host.innerHTML=paperInfoLayoutSettings();mountPaperInfoSettings(host);renderDetails();await settle();
+ const order=()=>[...document.querySelectorAll('[data-paper-info-section]')].map(node=>node.dataset.paperInfoSection).join(',');
+ assert(order()==='libraries,tags,abstract,memo','all four sections must default to shown in order');
+ for(const section of document.querySelectorAll('[data-paper-info-section]')){const style=getComputedStyle(section);assert(style.borderTopWidth==='1px'&&style.borderBottomWidth==='0px','section dividers must be above each section and never below the last');}
+ assert($('.paper-info-memo summary svg').innerHTML.includes('path'),'Memo needs its own SVG icon');
+ async function drop(id,zoneId,targetId){const row=host.querySelector(`[data-section-row="${id}"]`),zone=host.querySelector(`[data-section-zone="${zoneId}"]`),target=targetId?host.querySelector(`[data-section-row="${targetId}"]`):zone;row.ondragstart({preventDefault(){},dataTransfer:{setData(){}}});await zone.ondrop({preventDefault(){},target,clientY:target.getBoundingClientRect().top});await settle();}
+ await drop('memo','shown','libraries');assert(order()==='memo,libraries,tags,abstract','dragging must reorder live Paper Info');
+ await drop('tags','excluded');assert(!$('.paper-info-tags')&&host.querySelector('[data-section-zone="excluded"] [data-section-row="tags"]'),'Excluded must hide a section');
+ await drop('tags','shown');assert($('.paper-info-tags'),'dragging back must restore a section');
+ const savedLayout=clone(settings.paper_info_sections);failLayout=true;await drop('abstract','excluded');failLayout=false;
+ assert(JSON.stringify(settings.paper_info_sections)===JSON.stringify(savedLayout)&&$('.paper-info-abstract'),'failed layout saves must restore the previous layout');
+ $('.paper-info-memo').open=false;$('.paper-info-memo [data-memo-add]').click();assert($('.paper-info-memo').open,'plus must open a collapsed Memo section');let input=$('.paper-memo-editor textarea');input.value='Useful early warning signal; compare calibration with the current baseline.';input.oninput();await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));
+ $('.paper-info-memo [data-memo-add]').click();input=$('.paper-memo-editor textarea');input.value='Revisit the failure cases before adapting this to our robot setup.';input.oninput();await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));
+ assert(document.querySelectorAll('.paper-memo').length===2,'plus must support multiple independent memos');
+ assert(getComputedStyle($('.paper-memo>p')).fontSize===getComputedStyle($('.paper-info-abstract .abstract')).fontSize,'memo text must match abstract font size');
+ $('.paper-memo [data-edit]').click();input=$('.paper-memo-editor textarea');input.value='Draft kept during layout changes';input.oninput();
+ await drop('memo','excluded');await drop('memo','shown','libraries');assert($('.paper-memo-editor textarea').value==='Draft kept during layout changes','hiding or reordering must retain memo drafts');
+ failMemo=true;await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));assert($('.paper-memo-editor textarea').value==='Draft kept during layout changes'&&!$('[data-memo-reload]').hidden,'conflicts must retain draft and expose reload');failMemo=false;
+ await $('[data-memo-reload]').onclick();await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));assert(!$('.paper-memo-editor')&&memos.some(m=>m.text==='Draft kept during layout changes'),'draft must be saveable after explicit reload');
+ await $('.paper-memo [data-delete]').onclick();assert(memos.length===1&&document.querySelectorAll('.paper-memo').length===1,'memo deletion must affect only one entry');
+ renderDetails();await settle();assert(document.querySelectorAll('.paper-memo').length===1,'memos must load when reopening Paper Info');
+ $('.paper-memo [data-edit]').click();input=$('.paper-memo-editor textarea');input.value='Keep a draft after deletion elsewhere';input.oninput();memos=[];await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));await $('[data-memo-reload]').onclick();assert($('.paper-memo-editor textarea').value==='Keep a draft after deletion elsewhere','reload must preserve drafts of remotely deleted memos');await $('.paper-memo-editor').onsubmit(new Event('submit',{cancelable:true}));assert(memos[0].text==='Keep a draft after deletion elsewhere','an orphan draft can be saved as a new memo');
+ // Leave a representative, fully rendered production UI for visual review.
+ settings.paper_info_sections=[{id:'libraries',enabled:true},{id:'tags',enabled:true},{id:'memo',enabled:true},{id:'abstract',enabled:true}];
+ memos=[{id:'sample1',text:'Useful early warning signal. Compare its calibration with our current failure detector.',revision:1,created:1793482800000},{id:'sample2',text:'Revisit the failure cases before adapting this to our robot setup.',revision:1,created:1793486400000}];
+ paperMemoDrafts.clear();mountPaperInfoSettings(host);renderDetails();await settle();
+ window.previewReady=true;window.webkit.messageHandlers.result.postMessage('PASS: four default sections, DnD order/exclusion/restoration, persistence failures, dividers, memo icon, multiple memos, editing/deletion, draft retention and conflict recovery');
+})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack));
+</script></body></html>

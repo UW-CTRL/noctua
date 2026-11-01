@@ -1074,8 +1074,7 @@ function renderLibDetails(it) {
     <div class="paper-primary-actions" role="group" aria-label="Paper actions">
       <button id="act-lib-graph" data-icon="network" data-icon-only data-label="Graph" aria-label="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}"></button>
     </div>
-    <div class="paper-collection-tools"></div>
-    <div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
+    <div class="paper-info-sections"></div>`;
   el.querySelector('#act-lib-graph').addEventListener('click', () => graphFromLibrary(it));
   libraryPaperActions(el, it);
 }

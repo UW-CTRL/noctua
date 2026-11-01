@@ -293,6 +293,16 @@ The paper preview supports double-click PDF-to-source navigation via SyncTeX.
 It opens the corresponding project source and centers the line; this is a UI
 control, separate from the assistant’s read-only build-log inspection.
 
+## Personal paper memos
+
+Saved-paper information includes a **Memo** section for short personal thoughts.
+Users can add multiple entries with **+**, save, edit, and delete them in the panel.
+These are separate from block Notes and PDF annotations; the assistant's note and
+annotation tools do not read or edit paper memos. **Settings → View → Paper Info**
+controls the order and visibility of Libraries and Collections, Tags, Abstract,
+and Memo through Shown/Excluded drag-and-drop lists. Hiding a section preserves
+its data. See [Paper memos](research.md#paper-memos-and-information-layout).
+
 ## Collection research details
 
 Library collections can store a goal, progress, and personal target dates through

@@ -236,6 +236,15 @@ paper and note lists and paper counts, Graph, and Lineage. It is on by default, 
 your previous subfolder preference, and the library root always includes all
 papers and notes. Scope changes keep existing graph lookups cached.
 
+Under **View → Paper Info**, drag **Libraries and Collections**, **Tags**,
+**Abstract**, and **Memo** within **Shown** to change their order in saved-paper
+information, including Reader's Paper tab. All four start enabled. Drag a section
+into **Excluded** to hide it, and drag it back into Shown to restore it. Changes
+save immediately and persist after restart. Hiding a section keeps its data.
+Sections have dividers above them, including the last section; there is no divider
+below the last section. Keyboard users can focus a drag handle and use Up/Down
+to reorder, or Space to move it between Shown and Excluded.
+
 Under **View → Tags**, show or hide the sidebar tag list and its numeric counts
 independently. These view preferences are saved with Noctua's data and restored
 after restart.

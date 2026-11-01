@@ -49,6 +49,8 @@ pub struct Settings {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LibrarySettings {
+    #[serde(default = "default_paper_info_sections")]
+    pub paper_info_sections: Vec<PaperInfoSection>,
     #[serde(default = "enabled")]
     pub include_subfolders: bool,
     #[serde(default = "enabled")]
@@ -60,7 +62,14 @@ pub struct LibrarySettings {
 }
 fn enabled() -> bool { true }
 impl Default for LibrarySettings {
-    fn default() -> Self { Self { include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
+    fn default() -> Self { Self { paper_info_sections: default_paper_info_sections(), include_subfolders: true, show_notes_files: true, show_tags: true, show_tag_counts: true } }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PaperInfoSection { pub id: String, pub enabled: bool }
+fn default_paper_info_sections() -> Vec<PaperInfoSection> {
+    ["libraries","tags","abstract","memo"].map(|id|PaperInfoSection{id:id.into(),enabled:true}).to_vec()
 }
 
 pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
@@ -68,7 +77,14 @@ pub async fn set_library(State(app): State<Arc<App>>, Json(body): Json<Value>) -
     if !body.is_object() || fields.iter().any(|key|body.get(key).is_some_and(|v|!v.is_boolean())) {
         return Err(crate::Status(StatusCode::UNPROCESSABLE_ENTITY,"View preferences must be true or false".into()).into());
     }
+    let sections = body.get("paper_info_sections").map(|value| -> Result<Vec<PaperInfoSection>> {
+        let sections:Vec<PaperInfoSection>=serde_json::from_value(value.clone()).map_err(|_|bad("Invalid Paper Info sections"))?;
+        let ids:std::collections::HashSet<_>=sections.iter().map(|section|section.id.as_str()).collect();
+        if sections.len()!=4 || ids!=std::collections::HashSet::from(["libraries","tags","abstract","memo"]) {return Err(bad("Include each Paper Info section exactly once"));}
+        Ok(sections)
+    }).transpose()?;
     update(&app, |s| {
+        if let Some(sections)=sections {s.library.paper_info_sections=sections;}
         if let Some(value)=body["include_subfolders"].as_bool(){s.library.include_subfolders=value;}
         if let Some(value)=body["show_notes_files"].as_bool(){s.library.show_notes_files=value;}
         if let Some(value)=body["show_tags"].as_bool(){s.library.show_tags=value;}
@@ -248,6 +264,7 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
         "app_icon": s.app_icon,
         "include_subfolders": s.library.include_subfolders,
         "show_notes_files": s.library.show_notes_files,
+        "paper_info_sections": s.library.paper_info_sections,
         "show_tags": s.library.show_tags,
         "show_tag_counts": s.library.show_tag_counts,
         "assistant": s.assistant,

@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 pub mod management;
 #[path = "tags.rs"]
 pub mod tags;
+#[path = "paper_memos.rs"]
+pub mod memos;
 pub const PDF_LIMIT: usize = 128 << 20;
 pub const COLORS: [&str; 6] = ["#ffd400", "#5fb236", "#2ea8e5", "#e56eee", "#a28ae5", "#ff6666"];
 pub const HIGHLIGHT_CATEGORIES:[&str;4]=["novelty","method","results","limitations"];
@@ -79,6 +81,7 @@ impl Library {
             INSERT OR IGNORE INTO library_state VALUES(1,0);")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         tags::initialize(&conn)?;
+        memos::initialize(&conn)?;
         Ok(Self { edit_gate:Mutex::new(()), conn: Mutex::new(conn), root,verified_pdfs:Mutex::new(HashMap::new()),
             #[cfg(test)] pdf_verifications:std::sync::atomic::AtomicUsize::new(0),
         })
