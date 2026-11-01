@@ -2,6 +2,10 @@
 
 <!-- Explain the change and its benefit in plain language, in 1–2 sentences. -->
 
+## Linked issues
+
+<!-- Use Closes #123 for each issue fully resolved by this PR; use Refs #123 for partial work. Write "None" if unrelated to an issue. -->
+
 ## Major changes
 
 <!-- List the main changes. -->

@@ -2,6 +2,44 @@
 
 [Documentation](README.md) · [Project README](../README.md)
 
+## Issues and pull requests
+
+Choose a compact [issue template](../.github/ISSUE_TEMPLATE/): Bug report for
+broken behavior (`Bug`), Feature request for new features or usability improvements
+(`Feature`), or Task for refactoring, documentation, tests, and maintenance
+(`Task`). Templates set GitHub's Issue type automatically. Free-form issues remain
+available and should also have an Issue type. Use Type for the kind of work and
+labels for affected areas or triage; do not duplicate types with labels.
+
+Resolve issues through pull requests. Include `Closes #123` in the PR body for
+each issue fully resolved by the change, or `Refs #123` for partial work. Keep
+issues open until the resolving PR is merged; closing keywords automatically
+close linked issues when the PR merges into the default branch.
+
+### Issue labels
+
+Add at least one area label based on the affected feature, rather than the file
+extension or implementation language. Use multiple areas for cross-feature work.
+
+| Label | Scope |
+| --- | --- |
+| `area:library` | Paper lists, collections, tags, search, graphs, Lineage, and research goals. |
+| `area:notes` | Note editing, LaTeX rendering, drawings, media, and project files. |
+| `area:reader` | PDF reading, annotations, outlines, and figure extraction. |
+| `area:papers` | LaTeX paper authoring, compilation, templates, and preview. |
+| `area:assistant` | Chat, AI providers, prompts, approvals, skills, and assistant tools. |
+| `area:integrations` | Zotero, external scholarly services, and MCP interoperability. |
+| `area:settings` | Preferences, themes, shortcuts, and data management UI. |
+| `area:desktop` | Native app, bundled frontend, connection UI, and desktop updater. |
+| `area:server` | Server lifecycle, authentication, storage, backups, and client/server protocol. |
+| `area:build` | Builds, dependencies, CI, tests infrastructure, packaging, and releases. |
+
+For example, linking Notes into collections uses `area:notes` and `area:library`.
+Feature-specific documentation and tests use that feature's area; `documentation`
+can be added for guide changes. Existing triage labels such as `help wanted` and
+`good first issue` can be combined with area labels. Legacy category labels
+(`bug`, `enhancement`, `feature`, and `task`) are no longer assigned to new issues.
+
 ## Run and build
 
 Install [Rust](https://rustup.rs), then run from the repository root:
