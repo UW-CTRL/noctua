@@ -80,5 +80,5 @@ function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true
  first().click();const paperRemove=$('#details [data-tag-remove="read"]');paperRemove.click();await settle();assert(!fixturePapers[0].tags.includes('read')&&registry.some(t=>t.name==='read'),'paper assignment removal deleted tag identity');
  assert(messages.length===0,'unexpected errors: '+messages.join('; '));
  window.webkit.messageHandlers.result.postMessage('PASS: shared tags, immediate removal, global delete, focus-scoped rapid digit toggles, prefix order, emoji reuse/rename, counts, visibility and wrapping');
-})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack));
+})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+'\n'+error.stack));
 </script></body></html>
