@@ -23,7 +23,12 @@ if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspac
  window.title="Noctua browser regression"
  window.contentView=web
  window.ignoresMouseEvents=true
- if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" { window.makeKeyAndOrderFront(nil) } else { window.orderFront(nil) }
+ if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
+  app.setActivationPolicy(.regular)
+  window.makeKeyAndOrderFront(nil)
+  window.makeFirstResponder(web)
+  app.activate(ignoringOtherApps:true)
+ } else { window.orderFront(nil) }
  fixtureWindow=window
 }
 web.navigationDelegate=handler
