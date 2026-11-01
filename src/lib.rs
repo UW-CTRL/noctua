@@ -381,7 +381,8 @@ async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
         }
     }
     let mut list=Vec::new();
-    for target in targets {
+    let links=app.library.note_links(&targets.iter().cloned().collect::<Vec<_>>())?;
+    for target in targets.clone() {
         let folder=app.library.folder_id(&target)?;
         let workspace=workspace::snapshot(&app,&target)?;
         for mut n in app.notes.list(&folder)?.as_array().cloned().unwrap_or_default() {
@@ -391,6 +392,17 @@ async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
             n["author"]=json!(author);
             list.push(n);
         }
+    }
+    // Linked notes keep their home target, so opening and editing use the one shared file.
+    let mut seen=std::collections::HashSet::new();
+    for (collection,folder,id) in links {
+        let Some(home)=app.library.folder_target(&folder) else {continue};
+        if targets.contains(&home)||!seen.insert((folder.clone(),id.clone())) {continue;}
+        let Some(doc)=app.notes.get(&folder,&id)? else {continue};
+        let workspace=workspace::snapshot(&app,&home)?;
+        if workspace["entries"].as_array().unwrap().iter().any(|e|e["note"]==json!(id)&&e["deleted"]==true) {continue;}
+        list.push(json!({"id":doc["id"],"title":doc["title"],"created":doc["created"],"updated":doc["updated"],
+            "tags":app.library.note_tags(&folder,&id)?,"target":home,"author":author,"linked":collection}));
     }
     Ok(Json(json!(list)))
 }

@@ -19,7 +19,8 @@ to Notes to open it. You can also create a note from the Library table header,
 a collection's right-click menu, or the Reader's **More document actions**
 menu, which opens it beside the paper. The Library table lists notes beside
 papers, and the Library, Graph and Lineage views can keep a note open beside
-them; see [Library](research.md). Notes combine
+them; see [Library](research.md). Drag or copy note rows onto another
+collection to link the same note there, like papers. Notes combine
 text, drawing, and media blocks and save automatically. Click text to edit its
 source with a live preview; click away to finish. Hover between blocks to insert
 content. The **Note guide** question-mark icon at the far right of the note header opens the in-app syntax and editing guide.

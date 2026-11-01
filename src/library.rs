@@ -77,6 +77,7 @@ impl Library {
             CREATE TABLE IF NOT EXISTS collection_order (id TEXT PRIMARY KEY REFERENCES collections(id),position INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS library_undo (id TEXT PRIMARY KEY,data TEXT NOT NULL,undone INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS library_cleanup (folder TEXT PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS note_memberships (collection TEXT NOT NULL REFERENCES collections(id),folder TEXT NOT NULL,note TEXT NOT NULL,PRIMARY KEY(collection,folder,note));
             CREATE TABLE IF NOT EXISTS library_state (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL);
             INSERT OR IGNORE INTO library_state VALUES(1,0);")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -116,6 +117,13 @@ impl Library {
     pub fn remove_unpublished_collection(&self, target: &str) -> Result<()> {
         self.conn.lock().unwrap().execute("DELETE FROM collections WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM memberships WHERE collection=?1) AND NOT EXISTS (SELECT 1 FROM collections WHERE parent=?1)", [target])?;
         Ok(())
+    }
+    /// Notes linked into `targets` from another home collection: `(collection, home folder, note id)`.
+    pub fn note_links(&self, targets: &[String]) -> Result<Vec<(String,String,String)>> {
+        let c=self.conn.lock().unwrap();let mut stmt=c.prepare("SELECT collection,folder,note FROM note_memberships WHERE collection=?1 ORDER BY folder,note")?;
+        let mut out=Vec::new();
+        for target in targets {for row in stmt.query_map([target],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?{out.push(row?);}}
+        Ok(out)
     }
     pub fn folder_target(&self, folder: &str) -> Option<String> {
         self.conn.lock().unwrap().query_row("SELECT id FROM collections WHERE notes_folder=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')", [folder], |r|r.get(0)).optional().ok().flatten()

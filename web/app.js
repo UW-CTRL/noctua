@@ -1005,10 +1005,10 @@ function renderLibraryTable(items) {
   });
   if (typeof renderLibraryManagement==='function') renderLibraryManagement();
   const rows = $('#library-rows');
-  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row ${lib.detail?.key === it.key ? 'selected' : ''}">
+  rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row ${lib.selected.has(it.key) ? 'selected' : ''}">
     <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title)}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
-    <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
+    <td class="library-note-kind" title="${it.linked ? `Linked note from ${esc(targetName(it.target) || it.target)}` : 'Note'}, edited ${esc(new Date(it.updated).toLocaleString())}">${it.linked ? 'Linked note' : 'Note'} · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
   </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${lib.selected.has(it.key) ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title || '(untitled)')}</button></td>
     <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
@@ -1029,7 +1029,8 @@ function renderLibraryTable(items) {
     const it = byKey.get(row.dataset.key);
     if (it.kind === 'note') {
       const open = () => openNoteFrom(it.target || lib.target, it.id);
-      row.addEventListener('click', () => { showLibItem(it); row.focus(); });
+      row.addEventListener('click', (e) => { selectLibraryPaper(e, it, row); row.focus(); });
+      if (typeof bindLibraryPaperDrag === 'function') bindLibraryPaperDrag(row, it);
       row.addEventListener('dblclick', open);
       row.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } });
       return;
