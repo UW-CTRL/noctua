@@ -171,6 +171,7 @@ const graphLimit = () => Number($('#limit').value) || 60;
 
 // Resolves to 'ok', 'notfound' (only with quiet404), 'error' or 'stale'.
 async function loadGraph(id, { push = true, quiet404 = false, libKey = null, switchTab = true } = {}) {
+  if ((document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) && typeof setMode === 'function') setMode('graph');
   if (G.layout === 'library') setLayout('network');
   closeSearchResults();
   const token = ++G.token;
@@ -250,6 +251,7 @@ let projectFolderTimer = null;
 async function openProject(target, { push = true } = {}) {
   clearTimeout(projectFolderTimer);projectFolderTimer=null;
   if (!target) return;
+  if ((document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) && typeof setMode === 'function') setMode('graph');
   if (G.layout === 'library') setLayout('network');
   closeSearchResults();
   const token = ++G.token;
@@ -309,6 +311,8 @@ async function openProject(target, { push = true } = {}) {
 // Noctua items carry a DOI / arXiv id / Noctua-written S2 id when we have
 // one; otherwise fall back to Semantic Scholar's title matcher.
 async function graphFromLibrary(item) {
+  if ((document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) && typeof setMode === 'function') setMode('graph');
+  if (G.layout === 'library') setLayout('network');
   const opts = { quiet404: true, libKey: item.key, switchTab: false };
   const ids = [];
   if (item.s2) ids.push(item.s2);
@@ -321,7 +325,9 @@ async function graphFromLibrary(item) {
   if (item.title) {
     toast('Looking up by title on Semantic Scholar…');
     try {
+      const token = G.token;
       const m = await api(`/api/match?title=${enc(item.title)}`);
+      if (token !== G.token) return;
       if (titlesAgree(item.title, m.title)) {
         if (await loadGraph(m.paperId, opts) !== 'notfound') return;
       } else {
@@ -345,6 +351,7 @@ function titlesAgree(a, b) {
 }
 
 async function loadLinks(token) {
+  if (token !== G.token || document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode')) return;
   try {
     const edges = await api('/api/links', { ids: [...G.nodes.keys()] });
     if (token !== G.token) return;
@@ -357,6 +364,7 @@ async function loadLinks(token) {
 }
 
 async function expand(id) {
+  if (document.body.classList.contains('notes-mode') || document.body.classList.contains('pdf-mode') || G.layout === 'library') return;
   const n = G.nodes.get(id);
   if (!n) return;
   const token = G.token;
@@ -657,7 +665,7 @@ async function setIncludeSubfolders(include) {
   await loadCollections();
   if (target && G.project?.target === target) {
     if (target === 'L1') G.project.include_subfolders = saved.include_subfolders;
-    else openProject(target);
+    else if (!document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode') && G.layout !== 'library') openProject(target);
   }
   return saved.include_subfolders;
 }
@@ -774,10 +782,10 @@ function showCollection(id) {
   renderLibTree();
   loadLibItems();
   clearTimeout(projectFolderTimer);projectFolderTimer=null;
-  if (G.layout !== 'library') {
+  if (G.layout !== 'library' && !document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode')) {
     G.token++;
     const target=lib.target;
-    projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&lib.target===target)openProject(target);},300);
+    projectFolderTimer=setTimeout(()=>{projectFolderTimer=null;if(G.layout!=='library'&&!document.body.classList.contains('notes-mode')&&!document.body.classList.contains('pdf-mode')&&lib.target===target)openProject(target);},300);
   }
 }
 // Called when notes open another collection (Reader side note, @ mentions, moves).
@@ -2392,8 +2400,8 @@ const collectionsReady = loadCollections();
 {
   const m = location.hash.match(/^#paper=(.+)$/);
   const pm = location.hash.match(/^#project=(.+)$/);
-  if (m) collectionsReady.then(() => loadGraph(decodeURIComponent(m[1]), { push: false }));
-  else if (pm) collectionsReady.then(() => openProject(decodeURIComponent(pm[1]), { push: false }));
+  if (m && store.get('noctua.mode') !== 'notes') collectionsReady.then(() => loadGraph(decodeURIComponent(m[1]), { push: false }));
+  else if (pm && store.get('noctua.mode') !== 'notes') collectionsReady.then(() => openProject(decodeURIComponent(pm[1]), { push: false }));
 }
 
 // The folder/paper split is shared by Graph and Lineage and remembered locally.

@@ -25,6 +25,7 @@ const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).sl
 
 function setMode(mode) {
   const notes = mode === 'notes';
+  if (mode !== 'graph') { clearTimeout(projectFolderTimer); projectFolderTimer = null; G.token++; }
   document.body.classList.toggle('pdf-mode', mode === 'pdf');
   document.body.classList.toggle('notes-mode', notes);
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));

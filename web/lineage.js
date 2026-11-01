@@ -329,6 +329,7 @@ const LIN = {
 };
 
 const lineageOn = () => G.layout === 'lineage';
+const lineageRequestsAllowed = () => lineageOn() && !document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode');
 const threadColor = (t) => t == null || t < 0 ? colors.muted : PALETTE[t % PALETTE.length];
 const paperShort = (id) => { const p = G.nodes.get(id)?.p; return p ? `${lastName(p)} ${p.year ?? ''}`.trim() : '?'; };
 
@@ -973,17 +974,17 @@ function threadsRequest() {
 // misses and no other requests (links, similar papers) are still loading.
 function scheduleSummary() {
   clearTimeout(LIN.autoTimer);
-  if (G.filter || !LIN.auto || LIN.ai || !LIN.res?.threads.length || !lineageOn() || LIN.error?.key === LIN.reqKey) return;
+  if (!lineageRequestsAllowed() || G.filter || !LIN.auto || LIN.ai || !LIN.res?.threads.length || LIN.error?.key === LIN.reqKey) return;
   const key = LIN.reqKey;
   LIN.autoTimer = setTimeout(() => {
-    if (key !== LIN.reqKey || LIN.ai) return;
+    if (!lineageRequestsAllowed() || key !== LIN.reqKey || LIN.ai) return;
     if (inflight > 0 || LIN.explaining) return scheduleSummary();
     requestThreads({ auto: true });
   }, 2500);
 }
 
 async function requestThreads({ force = false, cacheOnly = false, auto = false } = {}) {
-  if (!LIN.res?.threads.length) return;
+  if (!lineageRequestsAllowed() || !LIN.res?.threads.length) return;
   const key = LIN.reqKey;
   if (!cacheOnly) {
     LIN.explaining = true;
@@ -1042,7 +1043,7 @@ function setLayout(mode, { user = false } = {}) {
   renderDetails();
   kick(1);
   // An empty folder graph is still loaded; reopening it would repeat its notices.
-  if (user && G.layout !== 'library' && G.project?.target !== lib.target && (!G.nodes.size || previous === 'library')) openProject(lib.target);
+  if (user && !document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode') && G.layout !== 'library' && G.project?.target !== lib.target && (!G.nodes.size || previous === 'library')) openProject(lib.target);
 }
 
 document.querySelectorAll('#layout button').forEach((b) => b.addEventListener('click', () => setLayout(b.dataset.layout, { user: true })));
