@@ -45,6 +45,11 @@ const settle=async()=>{for(let n=0;n<100;n++)await Promise.resolve();};
 function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true});target.dispatchEvent(e);return e;}
 </script><script src="../web/library.js"></script><script>
 (async()=>{
+ // Native WebKit focus is delivered in a task after navigation, not a microtask.
+ await new Promise(resolve=>setTimeout(resolve,0));
+ const focusDeadline=Date.now()+5000;
+ while(!document.hasFocus()&&Date.now()<focusDeadline)await new Promise(resolve=>setTimeout(resolve,50));
+ assert(document.hasFocus(),'The fixture window did not acquire native keyboard focus');
  await loadLibItems();
  assert(!$('#library-tags [data-clear-tag]'),'old sidebar X control remains');
  const savedSettings=settings;settings=null;renderLibraryTagPanel();settings=savedSettings;renderLibraryTagPanel();

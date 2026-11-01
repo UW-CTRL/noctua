@@ -7,6 +7,12 @@ class Handler:NSObject,WKScriptMessageHandler,WKNavigationDelegate {
  var finished=false
  var phase="page load"
  func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){if m.name=="progress" {phase=String(describing:m.body);print("PROGRESS: \(phase)");fflush(stdout);return};print(m.body);finished=true;exit(String(describing:m.body).hasPrefix("PASS") ? 0 : 1)}
+ func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
+  guard CommandLine.arguments.dropFirst().first == "tests/library-tags.html", let window=webView.window else { return }
+  window.makeKeyAndOrderFront(nil)
+  window.makeFirstResponder(webView)
+  NSApp.activate(ignoringOtherApps:true)
+ }
  func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error){print(error);exit(1)}
 }
 let handler=Handler(),config=WKWebViewConfiguration()
@@ -25,6 +31,7 @@ if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspac
  window.ignoresMouseEvents=true
  if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
   app.setActivationPolicy(.regular)
+  app.finishLaunching()
   window.makeKeyAndOrderFront(nil)
   window.makeFirstResponder(web)
   app.activate(ignoringOtherApps:true)
