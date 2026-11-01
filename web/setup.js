@@ -724,7 +724,7 @@ function viewSection(s) {
   const toggle = (key, label, hint = '') => `<label class="setting-field" for="setup-view-${key}"><span>${label}${hint ? `<span class="hint">${hint}</span>` : ''}</span><input id="setup-view-${key}" data-view-preference="${key}" type="checkbox" ${s[key] !== false ? 'checked' : ''}></label>`;
   return `<section data-step="view"><h2>View</h2>
     <div class="settings-group" role="group" aria-labelledby="settings-view-library"><h3 id="settings-view-library">Library</h3>
-    ${toggle('show_notes_files', 'Show Notes and Files', 'Show notes and imported files beneath the selected collection in Library.')}
+    ${toggle('show_notes_files', 'Show Notes and Files', 'Show notes and imported files beneath the selected collection in the left sidebar. The central list is unchanged.')}
     <label class="setting-field" for="setup-include-subfolders"><span>Show papers/notes from subfolders<span class="hint library-setting-hint">Include descendant collections in paper and note lists. The library root always includes all papers and notes.</span></span><input id="setup-include-subfolders" type="checkbox" ${s.include_subfolders !== false ? 'checked' : ''}></label>
     </div>
     ${typeof paperInfoLayoutSettings === 'function' ? paperInfoLayoutSettings() : ''}
