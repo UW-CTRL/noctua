@@ -4,6 +4,10 @@
 
 ## Read and follow references
 
+Double-click a Library paper with an attached PDF to open it in a new tab.
+The tab starts in Reader and shows a loading message while the PDF opens.
+If the PDF cannot be opened, a new Reader tab returns to Library and shows the error.
+
 Open a library paper's PDF, scroll through it, or navigate with page controls
 and the **Outline** sidebar. Zoom and page colors can be adjusted independently
 of the app's appearance. Pages are redrawn at each zoom level and at least twice

@@ -1217,7 +1217,16 @@ async function renderSplitPaperBar(reload=false){
 splitPaperBar.querySelector('[data-split-folder]').addEventListener('change',e=>{splitPapers.target=e.target.value;store.set('noctua.pane.split.paperFolder',e.target.value);renderSplitPaperBar(true).catch(e=>toast(e.message));});
 splitPaperBar.querySelector('[data-split-paper]').addEventListener('change',e=>{if(e.target.value&&e.target.value!==PDF.key)openPDF(e.target.value).catch(e=>toast(e.message));});
 document.addEventListener('noctua-split-change',()=>{renderSplitPaperBar(true).catch(e=>toast(e.message));});
-function pdfRoute(){if(!location.hash.startsWith('#pdf='))return;const q=new URLSearchParams(location.hash.slice(1));openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>toast(e.message));}
+function pdfRoute(){
+  if(!location.hash.startsWith('#pdf='))return;
+  const q=new URLSearchParams(location.hash.slice(1));
+  setMode('pdf');
+  if(!PDF.key)$('#pdf-stage').innerHTML='<p role="status">Loading paper…</p>';
+  return openPDF(q.get('pdf'),{page:q.get('page'),annotation:q.get('annotation'),push:false}).catch(e=>{
+    if(!PDF.key){$('#pdf-stage').replaceChildren();setMode('graph');}
+    toast(e.message);
+  });
+}
 setReaderTheme(store.get('noctua.readerTheme')||store.get('noctua.pdfPageTheme'));
 pdfSystemTheme.addEventListener('change',()=>{if(PDF.theme==='system')Promise.resolve(applyReaderTheme()).catch(e=>toast(e.message));});
 window.addEventListener('storage',e=>{if(e.key==='noctua.readerTheme'||e.key===null)Promise.resolve(setReaderTheme(store.get('noctua.readerTheme'))).catch(e=>toast(e.message));});
