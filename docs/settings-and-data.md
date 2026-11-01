@@ -230,7 +230,8 @@ and **Storage**, using the same bold headings and section dividers as the other 
 
 Open **Settings → View** to choose what Library shows. **Show Notes and Files**
 controls the combined list beneath the selected collection, including imported
-files; Notes keeps its files available when this Library list is hidden.
+files; empty collections leave no extra space beneath their sidebar row. Notes
+keeps its files available when this Library list is hidden.
 **Show papers/notes from subfolders** includes descendant collections in Library
 paper and note lists and paper counts, Graph, and Lineage. It is on by default, preserves
 your previous subfolder preference, and the library root always includes all
