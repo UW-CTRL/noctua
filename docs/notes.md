@@ -33,6 +33,11 @@ notes are retained. See [Zotero import](getting-started.md#import-from-zotero-op
 
 ## Note information and tags
 
+The assistant can organize Library collection folders and restore them from Library
+Trash. Moving a folder keeps its notes and files; trashing hides the subtree until
+restored. Permanently deleting a trashed collection also deletes its owned notes
+and files. Library Trash is separate from the project-file Trash.
+
 In the Library list, click a note once to select it and show **Note Info** on the
 right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
 tag row to reveal its removal button; removing it applies immediately to that

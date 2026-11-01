@@ -22,6 +22,7 @@ mod pdf_autohighlight;
 mod media;
 mod mcp;
 mod mcp_data;
+mod mcp_library;
 mod mcp_edits;
 mod notes;
 mod editing;

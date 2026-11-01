@@ -1,5 +1,80 @@
 // Included in agent::tests to share the isolated app/router fixture.
 #[tokio::test]
+async fn mcp_paper_trash_is_atomic_restorable_and_explicitly_purgeable() -> Result<()> {
+    let f=Fixture::new()?;
+    let folder=f.app.library.create_collection("L1","Papers")?;
+    let a=f.app.library.upload(&folder,"Trash alpha.pdf",b"%PDF-1.7\nfixture")?;
+    let b=f.app.library.save(&json!({"title":"Trash beta","abstract":"private full text"}),&folder)?;
+    let original=f.root.join("external-original.pdf");std::fs::write(&original,b"%PDF-1.7\nexternal")?;
+    let db=rusqlite::Connection::open(f.root.join("library/library.sqlite"))?;
+    db.execute("INSERT INTO pdf_links(paper,path) VALUES(?1,?2)",rusqlite::params![b,original.to_string_lossy()])?;drop(db);
+    let annotation=f.app.library.annotate(&a,&json!({"kind":"comment","page":1,"comment":"Keep comment"}),"user",false)?;
+    let papers=json!([{"paper_key":a,"revision":f.app.library.paper(&a)?["revision"]},{"paper_key":b,"revision":f.app.library.paper(&b)?["revision"]}]);
+    let revision=mcp_value(&f,"list_library_collections",json!({}),"plan").await["library_revision"].clone();
+    let mut bad=papers.clone();bad[1]["revision"]=json!(999999);
+    assert_eq!(mcp_value(&f,"trash_papers",json!({"library_revision":revision,"papers":bad}),"direct").await["code"],"CONFLICT");
+    assert_eq!(f.app.library.items("L1")?.len(),2);
+    let args=json!({"library_revision":revision,"papers":papers,"request_id":"trash-batch"});
+    let trashed=mcp_value(&f,"trash_papers",args.clone(),"suggest").await;
+    assert_eq!(trashed["status"],"applied");assert!(f.app.library.items("L1")?.is_empty());
+    assert_eq!(mcp_value(&f,"trash_papers",args,"suggest").await,trashed,"successful retries must not duplicate deletion");
+    let page=mcp_value(&f,"list_library_trash",json!({"kind":"paper","limit":1}),"plan").await;
+    assert_eq!(page["total"],2);assert_eq!(page["has_more"],true);assert_eq!(page["items"][0]["restorable"],true);
+    assert!(page["items"][0].get("data").is_none());assert!(!page.to_string().contains("private full text"));
+    let next=mcp_value(&f,"list_library_trash",json!({"offset":page["next_offset"],"limit":1}),"plan").await;
+    assert_eq!(next["returned_count"],1);assert_eq!(next["has_more"],false);
+    assert_eq!(mcp_value(&f,"list_library_trash",json!({"query":"alpha"}),"plan").await["total"],1);
+    let stale=mcp_value(&f,"restore_library_trash",json!({"library_revision":revision,"kind":"paper","ids":[a]}),"direct").await;
+    assert_eq!(stale["code"],"CONFLICT");
+    let restored=mcp_value(&f,"restore_library_trash",json!({"library_revision":page["library_revision"],"kind":"paper","ids":[a]}),"direct").await;
+    assert_eq!(restored["status"],"applied");assert_eq!(f.app.library.items(&folder)?.len(),1);
+    assert_eq!(f.app.library.annotations(&a)?[0]["id"],annotation["id"]);
+    let entries=json!([{"kind":"paper","id":b}]);
+    assert_eq!(mcp_value(&f,"purge_library_trash",json!({"library_revision":restored["library_revision"],"entries":entries,"confirm":false}),"direct").await["isError"],true);
+    assert_eq!(mcp_value(&f,"purge_library_trash",json!({"library_revision":restored["library_revision"],"entries":[{"kind":"paper","id":a}],"confirm":true}),"direct").await["isError"],true,"active papers cannot be purged");
+    let purged=mcp_value(&f,"purge_library_trash",json!({"library_revision":restored["library_revision"],"entries":entries,"confirm":true}),"direct").await;
+    assert_eq!(purged["status"],"applied");assert!(f.app.library.paper(&b).is_err());assert!(f.app.library.paper(&a).is_ok());
+    assert!(original.is_file(),"purging a paper must preserve its externally linked original PDF");
+    assert_eq!(mcp_value(&f,"list_library_trash",json!({}),"plan").await["total"],0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_folders_move_order_trash_restore_and_purge_owned_files() -> Result<()> {
+    let f=Fixture::new()?;
+    let a=mcp_value(&f,"edit_collection",json!({"op":"create","parent":"L1","name":"Alpha"}),"suggest").await["collection_id"].as_str().unwrap().to_owned();
+    let b=mcp_value(&f,"edit_collection",json!({"op":"create","parent":"L1","name":"Beta"}),"direct").await["collection_id"].as_str().unwrap().to_owned();
+    let child=mcp_value(&f,"edit_collection",json!({"op":"create","parent":a,"name":"Child"}),"direct").await["collection_id"].as_str().unwrap().to_owned();
+    let folder=f.app.library.folder_id(&a)?;let note=f.app.notes.create(&folder,"Owned note")?;
+    let note_path=f.app.notes.root.join(&folder).join(format!("{}.json",note["id"].as_str().unwrap()));
+    let paper=f.app.library.save(&json!({"title":"Keep Library paper"}),&a)?;
+    let revision=f.app.library.collections()?["library_revision"].clone();
+    assert_eq!(mcp_value(&f,"edit_collection",json!({"op":"move","folder_id":a,"parent":child,"library_revision":revision}),"direct").await["isError"],true,"cycles must be rejected");
+    let moved=mcp_value(&f,"edit_collection",json!({"op":"move","folder_id":b,"parent":"L1","anchor":a,"position":"before","library_revision":revision}),"direct").await;
+    assert_eq!(moved["status"],"applied");assert_eq!(f.app.library.collections()?["targets"][1]["id"],b);
+    let ordered=mcp_value(&f,"edit_collection",json!({"op":"reorder","parent":"L1","folder_ids":[a,b],"library_revision":moved["library_revision"]}),"direct").await;
+    assert_eq!(ordered["status"],"applied");assert_eq!(f.app.library.collections()?["targets"][1]["id"],a);
+    let moved_child=mcp_value(&f,"edit_collection",json!({"op":"move","folder_id":child,"parent":b,"library_revision":ordered["library_revision"]}),"direct").await;
+    assert_eq!(moved_child["status"],"applied");
+    assert_eq!(f.app.library.collections()?["targets"].as_array().unwrap().iter().find(|t|t["id"]==child).unwrap()["parent"],b);
+    let ordered=mcp_value(&f,"edit_collection",json!({"op":"move","folder_id":child,"parent":a,"library_revision":moved_child["library_revision"]}),"direct").await;
+    assert_eq!(ordered["status"],"applied");assert!(note_path.is_file());
+    assert_eq!(mcp_value(&f,"edit_collection",json!({"op":"trash","folder_id":"L1","library_revision":ordered["library_revision"]}),"direct").await["isError"],true);
+    let trashed=mcp_value(&f,"edit_collection",json!({"op":"trash","folder_id":a,"library_revision":ordered["library_revision"]}),"suggest").await;
+    assert_eq!(trashed["status"],"applied");assert!(f.app.library.folder_id(&a).is_err());assert!(f.app.library.folder_id(&child).is_err());assert!(note_path.is_file());assert!(f.app.library.paper(&paper).is_ok());
+    let restored=mcp_value(&f,"restore_library_trash",json!({"library_revision":trashed["library_revision"],"kind":"collection","ids":[a]}),"direct").await;
+    assert_eq!(restored["status"],"applied");assert!(f.app.library.folder_id(&child).is_ok());assert!(note_path.is_file());
+    let renamed=mcp_value(&f,"edit_collection",json!({"op":"rename","folder_id":a,"name":"Renamed"}),"direct").await;
+    assert_eq!(renamed["status"],"applied");
+    assert_eq!(mcp_value(&f,"edit_collection",json!({"op":"trash","folder_id":a,"library_revision":restored["library_revision"]}),"direct").await["code"],"CONFLICT","renames must invalidate old snapshots");
+    let trashed=mcp_value(&f,"edit_collection",json!({"op":"trash","folder_id":a,"library_revision":renamed["library_revision"]}),"direct").await;
+    let purged=mcp_value(&f,"purge_library_trash",json!({"library_revision":trashed["library_revision"],"entries":[{"kind":"collection","id":a}],"confirm":true}),"direct").await;
+    assert_eq!(purged["status"],"applied");assert_eq!(purged["warnings"],json!([]));assert!(!note_path.exists());assert!(f.app.library.paper(&paper).is_ok());assert!(f.app.library.folder_id(&b).is_ok());
+    assert_eq!(mcp_value(&f,"list_library_trash",json!({}),"plan").await["total"],0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn missing_linked_original_is_a_download_failure_instead_of_success()->Result<()> {
     let f=Fixture::new()?;
     let key=f.app.library.upload("L1","paper.pdf",b"%PDF-1.7\noriginal")?;
