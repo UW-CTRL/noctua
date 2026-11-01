@@ -2,7 +2,7 @@
 <div class="fixture-layout"><aside id="left"><div id="tags-divider"></div><section id="library-tags"><header><strong>Tags</strong><span data-tag-count></span><button data-clear-tag>X</button></header><div data-library-tag-list></div><footer><input data-search-tags aria-label="Filter tags"></footer></section></aside><div id="library-view"><table><tbody id="library-rows"></tbody></table><input id="outside-input"><div contenteditable="true" id="outside-editor"></div><button id="outside-button">Other panel</button></div><aside id="details"></aside></div><div id="settings-fixture"></div>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const settings={show_tags:true,show_tag_counts:true},G={},calls=[],messages=[],store={get(){},set(){},remove(){}};
+let settings={show_tags:true,show_tag_counts:true};const G={},calls=[],messages=[],store={get(){},set(){},remove(){}};
 const collections={targets:[{id:'L1',name:'Library'},{id:'C1',name:'Collection',parent:'L1'}]},targetName=id=>collections.targets.find(t=>t.id===id)?.name;
 const fixturePapers=[{key:'p1',title:'First paper',revision:1,tags:['read','🟡']},{key:'p2',title:'Other paper',revision:1,tags:['1️⃣']}];
 const fixtureNotes=[{id:'n1',target:'C1',title:'Tagged note',updated:1700000000000,tags:['read','🟡']}];
@@ -47,6 +47,7 @@ function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true
 (async()=>{
  await loadLibItems();
  assert(!$('#library-tags [data-clear-tag]'),'old sidebar X control remains');
+ const savedSettings=settings;settings=null;renderLibraryTagPanel();settings=savedSettings;renderLibraryTagPanel();
  const names=[...document.querySelectorAll('[data-library-tag]')].map(b=>b.dataset.libraryTag);assert(names[0]==='1️⃣'&&names.indexOf('read')>names.indexOf('0️⃣'),'shortcut tags must precede ordinary tags');
  assert($('#library-tags [data-library-tag="read"] small').textContent==='2','counts must include notes and papers');
  const first=()=>$('#library-rows [data-key="p1"]');first().click();

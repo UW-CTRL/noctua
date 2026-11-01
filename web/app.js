@@ -961,7 +961,7 @@ function renderLibItems() {
     'year-asc': (a, b) => (a.year || 9999) - (b.year || 9999),
   }[$('#lib-sort').value];
   items = items.slice().sort(cmp);
-  renderLibraryTable((typeof libraryTableRows === 'function' ? libraryTableRows(items, settings.show_notes_files === false ? [] : lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }) : items).sort(cmp));
+  renderLibraryTable((typeof libraryTableRows === 'function' ? libraryTableRows(items, typeof settings !== 'undefined' && settings?.show_notes_files === false ? [] : lib.notes, { kind: lib.kind, tag: lib.tag, filter: f }) : items).sort(cmp));
   if (!items.length) {
     el.innerHTML = `<p class="hint">${lib.items.length ? 'No matches.' : 'This folder is empty.'}</p>`;
     return;

@@ -19,7 +19,7 @@ window.testErrors=[];
 window.addEventListener('error',e=>testErrors.push(e.message));
 window.addEventListener('unhandledrejection',e=>testErrors.push(String(e.reason)));
 localStorage.clear();localStorage.setItem('noctua.threadsAuto','0');
-const settings={};let openedPDF=[];
+let settings={};let openedPDF=[];
 function openPaperView(key,where){openedPDF.push([key,where]);}
 const fixtureItems=[
  {key:'a',revision:1,tags:['control','<method>'],title:'Zebra networks',creators:['Ada Lovelace'],year:2024,venue:'Journal A',has_pdf:true,abstractNote:'Local abstract',s2:'s1'},
@@ -84,7 +84,8 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(visible($('#layout')),'visualization switch remains visible in Library');
  for(const mode of ['notes-mode','pdf-mode']){document.body.classList.add(mode);assert(!visible($('#layout')),'visualization switch hides in '+mode);document.body.classList.remove(mode);}
  assert(G.layout==='library'&&visible($('#library-view')),'Library is default');
- assert($('#library-rows').children.length===2&&$('#library-rows').textContent.includes('Alpha lineage'),'unmatched local papers included');
+ const pendingSettings=settings;settings=null;renderLibItems();settings=pendingSettings;
+ assert($('#library-rows').children.length===2&&$('#library-rows').textContent.includes('Alpha lineage'),'unmatched local papers included before settings finish loading');
  assert($('#library-title').textContent==='My Library','library heading');
  assert($('#library-tags').parentElement.id==='left'&&visible($('#library-tags')),'Tags must sit in the Library sidebar');
  assert(!$('#library-management [data-tag-filter]'),'tag filter should move out of the paper toolbar');

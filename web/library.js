@@ -531,7 +531,7 @@ function libraryTagCounts(items){
 }
 function renderLibraryTagPanel(){
   const panel=document.getElementById('library-tags');if(!panel)return;
-  const preferences=typeof settings==='undefined'?{}:settings;
+  const preferences=typeof settings==='undefined'?{}:settings||{};
   panel.toggleAttribute('data-view-hidden',preferences.show_tags===false);
   document.getElementById('tags-divider')?.toggleAttribute('data-view-hidden',preferences.show_tags===false);
   const input=panel.querySelector('[data-search-tags]');
