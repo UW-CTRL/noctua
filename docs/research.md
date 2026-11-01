@@ -173,11 +173,15 @@ Up/Down and Home/End, and double-click restores the default. Tag and paper text 
 **Edit details** also edits tags, one per line.
 
 In **Settings → View → Tags**, each digit from **1–9** and **0** maps to a tag.
-Defaults use the corresponding numeric emoji. Choose an existing tag or select
-an emoji from its picker; each choice saves immediately. Choosing a new emoji
-renames the mapped tag while keeping its assignments. Choosing an emoji that
+Each key can be enabled independently; new libraries enable only **1, 2, and 3**,
+using **1️⃣, 2️⃣, and 3️⃣**. Upgrades disable the default numeric mappings
+for 4–0 while preserving custom mappings and all assignments. Type a
+tag name and choose from existing tag suggestions, or enter a new name. Leaving
+the field or pressing Enter saves it. The emoji picker and enabled switch save
+immediately. Disabling a key keeps its mapping and item assignments. A new name or emoji
+renames the mapped tag while keeping its assignments. Choosing a name or emoji that
 already exists links to that tag and leaves the previous tag’s assignments intact.
-With the central Library list focused, press a mapped digit to add its tag to the
+With the central Library list focused, press an enabled mapped digit to add its tag to the
 selected paper or note; press it again to remove that assignment. Applied shortcut
 tags appear before the title. Digits in search fields, editors, Settings, and other
 panels retain their normal typing behavior.

@@ -40,7 +40,10 @@ note. Right-click a tag in the left Tags sidebar and choose **Delete** to remove
 the tag and all its paper and note assignments while keeping the items.
 
 **Settings → View → Tags** controls sidebar tag and count visibility and the ten
-digit shortcuts. With the Library central list focused, a digit toggles its tag
+digit shortcuts. Enable each key separately and type a tag name with existing-tag
+suggestions. New libraries enable only 1, 2, and 3, mapped to 1️⃣, 2️⃣, and 3️⃣.
+Disabling a key preserves its assignments. With the Library central list focused,
+an enabled digit toggles its tag
 on the selected paper or note. Shortcut tags appear before ordinary tags and
 before the item title while applied. Shortcut assignment and emoji selection
 save automatically; choosing an existing emoji tag reuses it and keeps its

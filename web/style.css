@@ -1863,8 +1863,10 @@ body.library-trash-view :is(#library-table-scroll,#library-filter-control,#libra
 .paper-info-section .info-hover-remove:is(:hover,:focus-visible) { color:var(--danger); }
 .paper-info-section :is(li,.paper-info-library-row)>:is(span,strong) { flex:1; min-width:0; }
 .paper-info-tags li { align-items:center; min-height:30px; }
-.tag-shortcut-row { display:grid; grid-template-columns:26px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
-.tag-shortcut-row label { display:flex; flex-direction:column; gap:4px; font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); min-width:0; }
-.tag-shortcut-row select { width:100%; min-width:0; }
+.tag-shortcut-row, .tag-shortcut-header { display:grid; grid-template-columns:26px 54px minmax(100px,1fr) minmax(100px,1fr); align-items:center; gap:10px; margin:10px 0; }
+.tag-shortcut-header { font-size:calc(12px * var(--ui-font-scale)); color:var(--muted); }
+.tag-shortcut-row :is(input[type="text"],select) { width:100%; min-width:0; }
+.tag-shortcut-row input[type="checkbox"] { justify-self:center; width:16px; height:16px; accent-color:var(--accent); }
 .tag-shortcut-row kbd { text-align:center; }
+
 body.library-view:not(.notes-mode):not(.pdf-mode) #workspace-tree[data-view-hidden],body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree>li.tree-files[data-view-hidden] { display:none !important; }

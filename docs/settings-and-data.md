@@ -238,7 +238,9 @@ papers and notes. Scope changes keep existing graph lookups cached.
 
 Under **View → Tags**, show or hide the sidebar tag list and its numeric counts
 independently. These view preferences are saved with Noctua's data and restored
-after restart.
+after restart. Each numeric shortcut has its own enabled switch and editable
+tag field with existing-tag suggestions. New libraries enable only **1, 2, and 3**
+with **1️⃣, 2️⃣, and 3️⃣**. Disabling a shortcut preserves its tag assignments.
 
 The sidebar **New note or file** and **Import files** dialogs include a
 **Collection** selector. The current collection starts selected; choose another

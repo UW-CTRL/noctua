@@ -6,7 +6,7 @@ let settings={show_tags:true,show_tag_counts:true};const G={},calls=[],messages=
 const collections={targets:[{id:'L1',name:'Library'},{id:'C1',name:'Collection',parent:'L1'}]},targetName=id=>collections.targets.find(t=>t.id===id)?.name;
 const fixturePapers=[{key:'p1',title:'First paper',revision:1,tags:['read','🟡']},{key:'p2',title:'Other paper',revision:1,tags:['1️⃣']}];
 const fixtureNotes=[{id:'n1',target:'C1',title:'Tagged note',updated:1700000000000,tags:['read','🟡']}];
-let registry=['1','2','3','4','5','6','7','8','9','0'].map(digit=>({id:'digit'+digit,name:digit+'\ufe0f\u20e3',digit}));registry.push({id:'existing-yellow',name:'🟡',digit:null},{id:'read',name:'read',digit:null});
+let registry=['1','2','3','4','5','6','7','8','9','0'].map(digit=>({id:'digit'+digit,name:digit+'\ufe0f\u20e3',digit,enabled:['1','2','3'].includes(digit)}));registry.push({id:'existing-yellow',name:'🟡',digit:null},{id:'read',name:'read',digit:null});
 const lib={target:'C1',kind:'all',items:fixturePapers,notes:fixtureNotes,selected:new Set(),detail:null};
 const clone=value=>JSON.parse(JSON.stringify(value));
 async function api(path,body){
@@ -17,6 +17,7 @@ async function api(path,body){
    if(matching){if(previous)previous.digit=null;matching.digit=body.digit;}
    else if(previous){const old=previous.name;previous.name=body.name;for(const item of [...fixturePapers,...fixtureNotes])item.tags=item.tags.map(t=>t===old?body.name:t);}
    else registry.push({id:'new-'+body.digit,name:body.name,digit:body.digit});
+   for(const tag of registry.filter(t=>t.digit===body.digit))tag.enabled=body.enabled??tag.enabled??true;
   }else if(body?.op==='delete'){
    const tag=registry.find(t=>t.id===body.id);if(!tag)throw Error('Unknown tag');registry=registry.filter(t=>t!==tag);for(const item of [...fixturePapers,...fixtureNotes])item.tags=item.tags.filter(t=>t!==tag.name);
   }
@@ -53,7 +54,7 @@ function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true
  await loadLibItems();
  assert(!$('#library-tags [data-clear-tag]'),'old sidebar X control remains');
  const savedSettings=settings;settings=null;renderLibraryTagPanel();settings=savedSettings;renderLibraryTagPanel();
- const names=[...document.querySelectorAll('[data-library-tag]')].map(b=>b.dataset.libraryTag);assert(names[0]==='1️⃣'&&names.indexOf('read')>names.indexOf('0️⃣'),'shortcut tags must precede ordinary tags');
+ const names=[...document.querySelectorAll('[data-library-tag]')].map(b=>b.dataset.libraryTag);assert(names[0]==='1️⃣'&&names.indexOf('read')>names.indexOf('3️⃣')&&!names.includes('4️⃣'),'shortcut tags must precede ordinary tags');
  assert($('#library-tags [data-library-tag="read"] small').textContent==='2','counts must include notes and papers');
  const first=()=>$('#library-rows [data-key="p1"]');first().click();
  assert(digit(first(),'1').defaultPrevented,'digit in central list not handled');await libraryTagQueue;
@@ -68,6 +69,19 @@ function digit(target,key){const e=new KeyboardEvent('keydown',{key,bubbles:true
  const input=$('#details .paper-tag-editor input');input.value='fresh note tag';input.closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await settle();assert(fixtureNotes[0].tags.includes('fresh note tag'),'adding a note tag failed');
  $('#settings-fixture').innerHTML=tagShortcutSettings();mountTagShortcuts($('#settings-fixture'));await settle();
  assert(document.querySelectorAll('[data-shortcut-tag]').length===10&&document.querySelectorAll('[data-shortcut-emoji]').length===10&&!$('#settings-fixture button[type="submit"]'),'ten autosaving shortcut mappings and emoji pickers required');
+ assert(document.querySelectorAll('.tag-shortcut-header').length===1&&!document.querySelector('.tag-shortcut-row label'),'column headings must appear only once');
+ assert($('[data-shortcut-tag="1"]').tagName==='INPUT'&&$('[data-shortcut-tag="1"]').list.querySelector('option[value="read"]'),'typed tag field must suggest existing tags');
+ assert([...document.querySelectorAll('[data-shortcut-enabled]')].filter(input=>input.checked).map(input=>input.dataset.shortcutEnabled).join(',')==='1,2,3','only first three shortcut keys enabled by default');
+ let toggle=$('[data-shortcut-enabled="1"]');toggle.checked=false;await toggle.onchange();
+ first().click();assert(!digit(first(),'1').defaultPrevented,'disabled shortcut must leave digits untouched');
+ assert(fixturePapers[1].tags.includes('1️⃣'),'disabling a shortcut must retain assignments');
+ toggle=$('[data-shortcut-enabled="1"]');toggle.checked=true;await toggle.onchange();
+ let typed=$('[data-shortcut-tag="4"]');typed.value='Reading queue';typed.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await settle();
+ assert(registry.some(t=>t.digit==='4'&&t.name==='Reading queue'&&t.enabled===false),'typed new tag must save without enabling disabled key');
+ typed=$('[data-shortcut-tag="4"]');typed.value='read';await typed.onchange();
+ assert(registry.find(t=>t.digit==='4').id==='read','typed existing tag must reuse identity');
+ toggle=$('[data-shortcut-enabled="4"]');toggle.checked=true;await toggle.onchange();
+ first().click();assert(digit(first(),'4').defaultPrevented,'enabled fourth shortcut must be handled');await libraryTagQueue;digit(first(),'4');await libraryTagQueue;
  let chooser=$('[data-shortcut-emoji="1"]');chooser.value='🟡';await chooser.onchange();
  assert(registry.find(t=>t.digit==='1').id==='existing-yellow'&&registry.filter(t=>t.name==='🟡').length===1,'emoji picker failed to reuse existing tag');
  assert(fixturePapers[1].tags.includes('1️⃣')&&fixtureNotes[0].tags.includes('1️⃣'),'reusing existing tag moved previous assignments');
