@@ -33,6 +33,11 @@ notes are retained. See [Zotero import](getting-started.md#import-from-zotero-op
 
 ## Note information and tags
 
+The assistant can organize Library collection folders and restore them from Library
+Trash. Moving a folder keeps its notes and files; trashing hides the subtree until
+restored. Permanently deleting a trashed collection also deletes its owned notes
+and files. Library Trash is separate from the project-file Trash.
+
 Notes show the current **Settings → General → Profile → Name** as their author
 in Library and Note Info. It defaults to the server operating-system username;
 **Use username** restores that default. Name changes also apply to existing notes

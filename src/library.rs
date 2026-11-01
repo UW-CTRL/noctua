@@ -106,7 +106,8 @@ impl Library {
         }
         let mut targets=Vec::new(); walk(&rows,None,0,&mut targets);
         if let Some(root)=targets.iter_mut().find(|t|t["id"]=="L1") { root["count"]=json!(total); }
-        Ok(json!({"live":true,"native":true,"selected":"L1","targets":targets}))
+        let revision:i64=c.query_row("SELECT revision FROM library_state WHERE id=1",[],|r|r.get(0))?;
+        Ok(json!({"live":true,"native":true,"selected":"L1","targets":targets,"library_revision":revision}))
     }
     pub fn folder_id(&self, target: &str) -> Result<String> {
         self.conn.lock().unwrap().query_row("SELECT notes_folder FROM collections WHERE id=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')", [target], |r|r.get(0)).optional()?.ok_or_else(missing)
@@ -120,10 +121,13 @@ impl Library {
         self.conn.lock().unwrap().query_row("SELECT id FROM collections WHERE notes_folder=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')", [folder], |r|r.get(0)).optional().ok().flatten()
     }
     pub fn create_collection(&self, parent: &str, name: &str) -> Result<String> {
-        self.folder_id(parent)?;
         let name=name.trim(); if name.is_empty() || name.len()>200 { return Err(bad("Choose a collection name (1–200 characters)")); }
+        let _gate=self.edit_gate.lock().unwrap();
+        let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
+        if !tx.query_row("SELECT EXISTS(SELECT 1 FROM collections WHERE id=?1 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection'))",[parent],|r|r.get::<_,bool>(0))? {return Err(missing());}
         let key=id("C");
-        self.conn.lock().unwrap().execute("INSERT INTO collections VALUES (?1,?2,?3,?1)",params![key,name,parent])?;
+        tx.execute("INSERT INTO collections VALUES (?1,?2,?3,?1)",params![key,name,parent])?;
+        tx.execute("UPDATE library_state SET revision=revision+1 WHERE id=1",[])?;tx.commit()?;
         Ok(key)
     }
     /// Resolve the plugin's destination under Library without creating duplicate folders.
@@ -141,7 +145,10 @@ impl Library {
     }
     pub fn rename(&self, target: &str, name: &str) -> Result<()> {
         let name=name.trim(); if name.is_empty() || name.len()>200 { return Err(bad("Choose a collection name (1–200 characters)")); }
-        if self.conn.lock().unwrap().execute("UPDATE collections SET name=?1 WHERE id=?2",params![name,target])?==0 { return Err(missing()); }
+        let _gate=self.edit_gate.lock().unwrap();
+        let mut c=self.conn.lock().unwrap();let tx=c.transaction()?;
+        if tx.execute("UPDATE collections SET name=?1 WHERE id=?2 AND id NOT IN (SELECT id FROM library_trash WHERE kind='collection')",params![name,target])?==0 { return Err(missing()); }
+        tx.execute("UPDATE library_state SET revision=revision+1 WHERE id=1",[])?;tx.commit()?;
         Ok(())
     }
     pub fn items(&self, target: &str) -> Result<Vec<Value>> { self.items_scoped(target, false) }

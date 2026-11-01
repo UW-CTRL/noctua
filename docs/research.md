@@ -223,6 +223,15 @@ metadata, annotations and folder project files, and cannot be undone. External
 original PDFs are preserved; immutable PDF cache blobs may remain for reuse.
 There is no automatic purge.
 
+You can also ask the assistant to create, rename, move, or reorder Library
+folders, send selected papers or folder subtrees to Trash, inspect Trash, and
+restore entries. Organization applies immediately in Suggest and Direct; Plan
+can inspect only. Permanent deletion requires an explicit request and an inspected
+selection. To empty Trash, the assistant processes that selection in batches; newly
+changed Library state requires a fresh read. Deleting a collection permanently
+also removes its owned notes and files, while its papers remain in Library.
+Duplicate merging remains a UI action.
+
 ## Paper memos and information layout
 
 Use **Memo** in a saved paper's information panel to keep short personal thoughts

@@ -38,7 +38,11 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-pub(crate) const WRITE_TOOLS: [&str; 14] = [
+pub(crate) const WRITE_TOOLS: [&str; 17] = [
+    "trash_papers",
+    "restore_library_trash",
+    "purge_library_trash",
+
     "edit_paper_info",
     "edit_paper_memo",
     "set_paper_info_layout",
@@ -67,7 +71,7 @@ fn tools(mode: &str) -> Value {
              json!({ "paper_id": paper_id }), &["paper_id"]),
         tool("select_paper", "Highlight a paper in the Noctua window. If it isn't in the current graph, its own graph is opened instead.",
              json!({ "paper_id": paper_id }), &["paper_id"]),
-        tool("list_library_collections", "List the user's Noctua libraries and folders with their ids and paper counts. Counts follow the Show papers/notes from subfolders setting.",
+        tool("list_library_collections", "List active Noctua libraries/folders with stable IDs, parents, tree order and paper counts, plus library_revision for organization changes. Counts follow the Show papers/notes from subfolders setting.",
              json!({}), &[]),
         tool("list_folder_items", "List the papers in a Noctua folder or library, including nested folders when Show papers/notes from subfolders is enabled (the default).",
              json!({ "folder_id": folder_id }), &["folder_id"]),
@@ -329,6 +333,12 @@ async fn run(
         app.ui(action);
     };
     match name {
+        "list_library_trash" => crate::mcp_library::list(app, args),
+        "trash_papers" | "restore_library_trash" | "purge_library_trash" | "edit_collection" => {
+            let result=crate::mcp_library::change(app,name,args)?;
+            ui(json!({"action":"library"}));
+            Ok(result)
+        }
         "edit_paper_info" | "list_paper_memos" | "edit_paper_memo" | "get_paper_info_layout" | "set_paper_info_layout" => {
             let result=crate::mcp_paper_info::run(app,name,args)?;
             if WRITE_TOOLS.contains(&name) {
@@ -373,20 +383,6 @@ async fn run(
             Ok(
                 json!({"status":if failed==0{"applied"}else{"partial_failure"},"failed_count":failed,"results":results}),
             )
-        }
-        "edit_collection" => {
-            let id = match arg("op")? {
-                "create" => app
-                    .library
-                    .create_collection(arg("parent")?, arg("name")?)?,
-                "rename" => {
-                    app.library.rename(arg("folder_id")?, arg("name")?)?;
-                    arg("folder_id")?.to_owned()
-                }
-                _ => bail!("Unsupported collection operation"),
-            };
-            ui(json!({"action":"library"}));
-            Ok(json!({"status":"applied","collection_id":id,"name":arg("name")?}))
         }
         "list_project_files" => data::workspace(app, args),
         "read_project_file" => {
@@ -552,9 +548,10 @@ async fn run(
             ui(json!({"action":"select","id":p["paperId"]}));
             Ok(json!({"status":"ui_requested","paper_id":p["paperId"]}))
         }
-        "list_library_collections" => Ok(
-            json!({"items":app.library_collections()?["targets"],"include_subfolders":app.settings.lock().unwrap().library.include_subfolders}),
-        ),
+        "list_library_collections" => {
+            let collections=app.library_collections()?;
+            Ok(json!({"items":collections["targets"],"library_revision":collections["library_revision"],"include_subfolders":app.settings.lock().unwrap().library.include_subfolders}))
+        }
         "get_project_graph" => Ok(project_summary(
             &crate::project::graph(app, arg("folder_id")?).await?,
             args,
