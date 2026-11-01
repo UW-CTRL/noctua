@@ -294,8 +294,9 @@ row; click a note to open it in Notes. The **Collections** header above the tree
 creates notes, project folders, and imports in the selected collection. See
 [Notes](notes.md#project-files-bibliographies-and-skills).
 
-The Library table lists the selected collection's notes beside its papers. Note
-rows have a notebook icon, show **Note** and their last edit in the Publication
+The Library table lists the selected collection's notes beside its papers.
+Visible rows alternate between two subtle background tones, which stay in order
+after sorting or filtering. Note rows have a notebook icon, show **Note** and their last edit in the Publication
 column, and open in Notes when you click the title, double-click the row, or
 press Enter. Use **All / Papers / Notes** above the table to choose what is
 listed (remembered on this device). The text filter matches note titles; a tag

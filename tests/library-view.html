@@ -31,7 +31,20 @@ function libraryNoteKey(note){return 'note:'+note.target+':'+note.id;}
    assert(Math.abs(gap(paper)-gap(note))<1,'note and paper tag-to-title gaps must match');
   }
  }
+ lib.items=[1,2,3,4].map(n=>({key:'p'+n,title:'Paper '+n,tags:[]}));lib.notes=[{id:'n1',target:'L1',title:'Note',tags:[],updated:1700000000000}];lib.kind='all';
+ const tone=key=>getComputedStyle($(`#library-rows [data-key="${key}"]`)).backgroundColor;
+ for(const theme of ['light','dark']){
+  document.documentElement.dataset.theme=theme;renderLibItems();
+  const rows=[...$('#library-rows').children],odd=getComputedStyle(rows[0]).backgroundColor,even=getComputedStyle(rows[1]).backgroundColor;
+  assert(odd!==even&&rows.every((row,i)=>getComputedStyle(row).backgroundColor===(i%2?even:odd)),theme+' rows must alternate between two tones');
+  rows[1].classList.add('selected');rows[1].setAttribute('aria-selected','true');
+  assert(![odd,even].includes(getComputedStyle(rows[1]).backgroundColor),theme+' selection must override the stripe');
+  lib.kind='papers';renderLibItems();
+  assert(tone('p2')===even&&tone('p3')===odd,theme+' stripes must follow visible rows after filtering');
+  lib.kind='all';
+ }
+ delete document.documentElement.dataset.theme;
  const icon=getComputedStyle($('#view-icon'),'::before');assert(icon.maskImage.includes('data:image/svg+xml')&&icon.maskImage.includes('circle'),'View must have a bundled eye mask rather than a solid square');
- window.webkit.messageHandlers.result.postMessage('PASS: independent sidebar visibility, central All/Papers/Notes filters, matching title spacing with zero/one/two tags, and bundled View icon');
+ window.webkit.messageHandlers.result.postMessage('PASS: independent sidebar visibility, central All/Papers/Notes filters, matching title spacing with zero/one/two tags, alternating row tones in light and dark themes, and bundled View icon');
 })().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+'\n'+error.stack));
 </script></body></html>
