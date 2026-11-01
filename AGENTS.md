@@ -17,6 +17,18 @@ Keep the project README focused on the overview, downloads, and guide links.
 Find guide responsibilities in [docs/AGENTS.md](docs/AGENTS.md) and prompt
 responsibilities in [src/prompts/AGENTS.md](src/prompts/AGENTS.md).
 
+## Issues and pull requests
+
+Use the compact Bug report, Feature request, or Task issue template and set
+GitHub's Issue type to `Bug`, `Feature`, or `Task`, respectively. Free-form issues
+should also have an Issue type. Do not duplicate types with labels. Add at least
+one `area:*` label from the [area map](docs/development.md#issue-labels), based on
+the affected feature; use multiple areas for cross-feature work.
+
+Resolve issues through linked pull requests. Include `Closes #123` in the PR body
+for each fully resolved issue; use `Refs #123` for partial work. Keep issues open
+until the resolving PR is merged.
+
 ## Commits
 
 Use `type: short description` in English, with a lowercase type and an imperative
