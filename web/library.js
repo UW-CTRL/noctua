@@ -380,6 +380,10 @@ const libraryClipboardType='application/x-noctua-library';
 let libraryUndo=null;
 const paperVersions=items=>items.map(({key,revision})=>({key,revision}));
 const selectedLibraryPapers=()=> (lib.items||[]).filter(item=>lib.selected?.has(item.key));
+// Notes link into collections like papers; each keeps its home target and one shared file.
+const selectedLibraryNotes=()=> (lib.notes||[]).filter(note=>lib.selected?.has(libraryNoteKey(note)));
+const noteRefs=notes=>notes.map(note=>({target:note.target||lib.target,id:note.id}));
+const librarySelectionPayload=()=>libraryClipboardPayload('papers',{papers:paperVersions(selectedLibraryPapers()),notes:noteRefs(selectedLibraryNotes()),source:lib.target,cut:false});
 async function libraryManage(body){
   const state=await api('/api/library/manage');
   const result=await api('/api/library/manage',{revision:state.revision,...body});
@@ -422,19 +426,20 @@ function renderLibraryManagement(){
   renderLibraryTagPanel();
   updateLibrarySelection();
 }
-function openLibrarySelectionMenu(items){
-  if(!items.length)return;
-  const d=managementDialog('Selected papers',`<p>${items.length} selected</p><div class="library-selection-actions"><button type="button" data-batch-tags data-icon="pencil">Edit tags</button><button type="button" data-batch-remove data-icon="folder-minus" ${lib.target==='L1'?'disabled':''}>Remove from this collection</button></div>`);
+function openLibrarySelectionMenu(items,notes=[]){
+  if(!items.length&&!notes.length)return;
+  const target=lib.target,linked=notes.filter(note=>note.linked===target),count=items.length+linked.length;
+  const label=[items.length&&`${items.length} paper${items.length>1?'s':''}`,linked.length&&`${linked.length} linked note${linked.length>1?'s':''}`].filter(Boolean).join(' and ');
+  const d=managementDialog('Selected items',`<p>${items.length+notes.length} selected</p><div class="library-selection-actions"><button type="button" data-batch-tags data-icon="pencil" ${items.length?'':'disabled'}>Edit tags</button><button type="button" data-batch-remove data-icon="folder-minus" ${target==='L1'||!count?'disabled':''}>Remove from this collection</button></div>`);
   d.querySelector('[data-batch-tags]').onclick=()=>{d.close();openLibraryTags(items);};
-  const target=lib.target;
-  d.querySelector('[data-batch-remove]').onclick=()=>{d.close();managementForm('Remove from collection',`<p>Remove ${items.length} papers from ${esc(targetName(target))}? Papers remain in Library.</p>`,'Remove',()=>libraryManage({op:'membership',mode:'remove',target,papers:paperVersions(items)}));};
+  d.querySelector('[data-batch-remove]').onclick=()=>{d.close();managementForm('Remove from collection',`<p>Remove ${label} from ${esc(targetName(target))}? They remain in Library and in their home collections.</p>`,'Remove',()=>libraryManage({op:'membership',mode:'remove',target,papers:paperVersions(items),notes:noteRefs(linked)}));};
 }
 document.addEventListener('contextmenu',event=>{
   if(!(event.target instanceof Element)||event.target.closest('input,textarea,[contenteditable="true"],dialog'))return;
   const row=event.target.closest('#library-rows [data-key],#lib-items [data-key]');if(!row)return;
   event.preventDefault();
   if(!lib.selected.has(row.dataset.key)){lib.selected=new Set([row.dataset.key]);updateLibrarySelection();}
-  openLibrarySelectionMenu(selectedLibraryPapers());
+  openLibrarySelectionMenu(selectedLibraryPapers(),selectedLibraryNotes());
 });
 
 function openLibraryTags(items){
@@ -544,7 +549,7 @@ async function pasteLibraryEntries(data,target){
   if(data.kind==='folder'&&data.cut&&store.get('noctua.libraryCutConsumed.'+data.token))throw Error('This cut selection was already moved. Cut it again to move it elsewhere.');
   if(!validLibraryClipboard(data))throw Error('This clipboard belongs to another Noctua server.');
   if(data.kind==='folder'){if(!data.cut)throw Error('Copying folders is not supported; use Cut to move the folder with its files.');await libraryManage({op:'folder_move',target:data.id,parent:target});}
-  else{const items=await Promise.all(data.papers.map(item=>api(paperURL(item.key))));await libraryManage({op:'membership',mode:'add',source:data.source,target,papers:paperVersions(items)});}
+  else{const items=await Promise.all((data.papers||[]).map(item=>api(paperURL(item.key))));await libraryManage({op:'membership',mode:'add',source:data.source,target,papers:paperVersions(items),notes:data.notes||[]});}
   if(data.kind==='folder'&&data.cut){store.remove('noctua.libraryClipboard');store.set('noctua.libraryCutConsumed.'+data.token,'1');}await refreshLibraryManagement();toast(data.kind==='folder'?'Moved folder':'Linked selection to collection');
 }
 for(const type of ['copy','cut'])document.addEventListener(type,event=>{
@@ -552,8 +557,8 @@ for(const type of ['copy','cut'])document.addEventListener(type,event=>{
   const folder=event.target.closest('#lib-tree [data-id]');
   if(folder?.hasAttribute('data-library-trash'))return;
   if(folder&&type==='copy'){toast('Use Cut to move a folder with its project files.');return;}
-  const items=selectedLibraryPapers();if(!folder&&!items.length)return;
-  const data=libraryClipboardPayload(folder?'folder':'papers',folder?{id:folder.dataset.id,cut:true}:{papers:paperVersions(items),source:lib.target,cut:false});
+  if(!folder&&!selectedLibraryPapers().length&&!selectedLibraryNotes().length)return;
+  const data=folder?libraryClipboardPayload('folder',{id:folder.dataset.id,cut:true}):librarySelectionPayload();
   event.clipboardData?.setData(libraryClipboardType,JSON.stringify(data));event.clipboardData?.setData('text/plain',JSON.stringify(data));store.set('noctua.libraryClipboard',JSON.stringify(data));event.preventDefault();toast(folder?'Folder ready to move':'Selection copied as links');
 });
 document.addEventListener('paste',event=>{
@@ -581,7 +586,8 @@ async function dropLibraryEntries(data,row,event){
   if(!validLibraryClipboard(data))throw Error('This drag belongs to another Noctua server.');
   if(row.hasAttribute('data-library-trash')){
     if(data.kind==='folder')confirmDeleteLibraryFolder(data.id);
-    else confirmDeleteLibraryPaper(await Promise.all(data.papers.map(item=>api(paperURL(item.key)))));
+    else if(data.papers?.length)confirmDeleteLibraryPaper(await Promise.all(data.papers.map(item=>api(paperURL(item.key)))));
+    else toast('Delete notes from Notes; Library Trash holds papers and folders.');
     return;
   }
   const target=row.dataset.id,position=libraryFolderDropPosition(row,event,data.kind);
@@ -597,7 +603,7 @@ async function dropLibraryEntries(data,row,event){
   }
 }
 function bindLibraryPaperDrag(row,item){
-  row.draggable=true;row.ondragstart=event=>{if(!lib.selected.has(item.key)){lib.selected=new Set([item.key]);updateLibrarySelection();}libraryDragKind='papers';document.body.classList.add('library-dragging');event.dataTransfer.setData(libraryClipboardType,JSON.stringify(libraryClipboardPayload('papers',{papers:paperVersions(selectedLibraryPapers()),source:lib.target,cut:false})));event.dataTransfer.effectAllowed='all';};
+  row.draggable=true;row.ondragstart=event=>{if(!lib.selected.has(item.key)){lib.selected=new Set([item.key]);updateLibrarySelection();}libraryDragKind='papers';document.body.classList.add('library-dragging');event.dataTransfer.setData(libraryClipboardType,JSON.stringify(librarySelectionPayload()));event.dataTransfer.effectAllowed='all';};
   row.ondragend=endLibraryDrag;
 }
 function bindLibraryFolderDrag(row){

@@ -190,6 +190,14 @@ Collections are links to papers; Library always contains every active paper.
 Copy/paste or drag papers into another collection to add links while keeping all
 existing memberships. PDF bytes are not duplicated. Cutting and pasting papers
 also adds links; only **Remove from collection** explicitly removes a membership.
+Notes link the same way: select note rows (alone or with papers) and drag,
+copy/paste, or cut/paste them onto another collection. A linked note stays one
+shared note in its home collection, so edits, references, and media appear in
+every collection that links it; its Publication column shows **Linked note**.
+Right-click linked notes and choose **Remove from this collection** to unlink
+them. A note cannot be removed from its home collection; delete it in Notes.
+Library and the home collection always list the note, and dropping notes on
+Trash does not delete them.
 Paper info defaults its Collection selector to the currently viewed folder and
 refreshes when you change folders. Its remove button acts on that selector;
 removal is disabled for Library itself.

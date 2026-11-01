@@ -33,6 +33,18 @@ fn restore(c:&Connection,kind:&str,ids:&[String])->Result<()> {
         c.execute("DELETE FROM library_trash WHERE kind=?1 AND id=?2",params![kind,id])?;
     }Ok(())
 }
+/// Validated `(home collection, home folder, note id)` references; the caller checks that the files exist.
+fn note_refs(c:&Connection,v:&Value)->Result<Vec<(String,String,String)>> {
+    let Some(values)=v.as_array() else {return Ok(Vec::new())};
+    if values.len()>1000{return Err(bad("Choose 1–1000 papers or notes"));}
+    let mut out=Vec::new();
+    for value in values {
+        let(target,note)=(text(value,"target"),text(value,"id"));crate::notes::check_id(note).map_err(|_|bad("Invalid note ID"))?;active_folder(c,target)?;
+        let folder:String=c.query_row("SELECT notes_folder FROM collections WHERE id=?1",[target],|r|r.get(0))?;
+        let entry=(target.to_string(),folder,note.to_string());if !out.contains(&entry){out.push(entry);}
+    }
+    Ok(out)
+}
 impl Library {
     pub fn management_state(&self)->Result<Value> {
         let c=self.conn.lock().unwrap();
@@ -58,7 +70,9 @@ impl Library {
         let op=text(b,"op");let batch=id("undo-");let mut undo=None;
         match op {
             "trash"|"membership"|"tags"=>{
-                let chosen=b["papers"].as_array().filter(|a|!a.is_empty()&&a.len()<=1000).context("Choose 1–1000 papers")?;
+                let notes=if op=="membership"{note_refs(&tx,&b["notes"])?}else{Vec::new()};
+                let empty=Vec::new();
+                let chosen=match b["papers"].as_array(){Some(a) if a.len()<=1000&&(!a.is_empty()||!notes.is_empty())=>a,None if !notes.is_empty()=>&empty,_=>return Err(bad(if op=="membership"{"Choose 1–1000 papers or notes"}else{"Choose 1–1000 papers"}))};
                 let mut keys=Vec::new();
                 for item in chosen {let key=text(item,"key");let(p,_,r)=active_paper(&tx,key)?;if item["revision"].as_i64()!=Some(r){return Err(conflict("A selected paper changed. Refresh before trying again."));}keys.push((key.to_string(),p));}
                 if op=="trash" {
@@ -74,6 +88,12 @@ impl Library {
                         if mode!="remove"{tx.execute("INSERT OR IGNORE INTO memberships VALUES(?1,?2)",params![dest,key])?;}
                         if mode=="remove"{tx.execute("DELETE FROM memberships WHERE collection=?1 AND paper=?2",params![dest,key])?;}
                         // Older clients may send move; collections are links, so retain the source.
+                    }
+                    // Notes stay in their home collection and Library already lists every note.
+                    for(home,folder,note)in &notes {
+                        if dest=="L1"||dest==home{if mode=="remove"{return Err(bad("A note always stays in the collection where it was created. Use Notes to delete it."));}continue;}
+                        if mode=="remove"{tx.execute("DELETE FROM note_memberships WHERE collection=?1 AND folder=?2 AND note=?3",params![dest,folder,note])?;}
+                        else{tx.execute("INSERT OR IGNORE INTO note_memberships VALUES(?1,?2,?3)",params![dest,folder,note])?;}
                     }
                 } else {
                     let tags=strings(&b["tags"])?;
@@ -136,7 +156,8 @@ impl Library {
                 let mut pending=folders.clone();while !pending.is_empty(){let mut changed=false;for id in pending.clone(){
                     let has_child:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM collections WHERE parent=?1)",[&id],|r|r.get(0))?;if has_child{continue;}
                     let folder:String=tx.query_row("SELECT notes_folder FROM collections WHERE id=?1",[&id],|r|r.get(0))?;
-                    tx.execute("INSERT OR IGNORE INTO library_cleanup VALUES(?1)",[folder])?;
+                    tx.execute("INSERT OR IGNORE INTO library_cleanup VALUES(?1)",[&folder])?;
+                    tx.execute("DELETE FROM note_memberships WHERE collection=?1 OR folder=?2",params![&id,&folder])?;
                     tx.execute("DELETE FROM memberships WHERE collection=?1",[&id])?;tx.execute("DELETE FROM collection_order WHERE id=?1",[&id])?;
                     tx.execute("DELETE FROM zotero_imports WHERE kind='collection' AND target=?1",[&id])?;
                     tx.execute("DELETE FROM collections WHERE id=?1",[&id])?;tx.execute("DELETE FROM library_trash WHERE kind='collection' AND id=?1",[&id])?;
@@ -184,7 +205,12 @@ impl Library {
     }
 }
 pub async fn get(State(app):Shared)->ApiResult{Ok(Json(app.library.management_state()?))}
-pub async fn post(State(app):Shared,Json(b):Json<Value>)->ApiResult{let mut result=app.library.manage(&b)?;result["warnings"]=json!(app.library.cleanup_purged_folders(&app.notes.root));Ok(Json(result))}
+pub async fn post(State(app):Shared,Json(b):Json<Value>)->ApiResult{
+    for note in b["notes"].as_array().into_iter().flatten(){
+        let folder=app.library.folder_id(text(note,"target"))?;
+        if crate::notes::check_id(text(note,"id")).is_err()||app.notes.get(&folder,text(note,"id"))?.is_none(){return Err(missing().into());}
+    }
+    let mut result=app.library.manage(&b)?;result["warnings"]=json!(app.library.cleanup_purged_folders(&app.notes.root));Ok(Json(result))}
 
 #[cfg(test)]
 mod tests {
@@ -302,6 +328,24 @@ mod tests {
         apply(&lib,json!({"op":"purge","entries":[{"kind":"collection","id":parent}]}))?;
         assert!(lib.cleanup_purged_folders(notes.path()).is_empty());assert!(!notes.path().join(storage).exists());assert!(notes.path().join("keep/safe.txt").exists());assert!(lib.paper(&p).is_ok());
         assert!(apply(&lib,json!({"op":"restore","kind":"collection","ids":[parent]})).is_err());Ok(())
+    }
+    #[test]
+    fn note_links_keep_home_folder_and_reject_home_removal()->Result<()> {
+        let(_d,lib)=fixture()?;let home=lib.create_collection("L1","Home")?;let other=lib.create_collection("L1","Other")?;
+        let folder=lib.folder_id(&home)?;let note=json!([{"target":home,"id":"n1"}]);
+        apply(&lib,json!({"op":"membership","mode":"move","source":home,"target":other,"notes":note}))?;
+        apply(&lib,json!({"op":"membership","mode":"add","target":home,"notes":note}))?;
+        apply(&lib,json!({"op":"membership","mode":"add","target":"L1","notes":note}))?;
+        assert_eq!(lib.note_links(&[other.clone()])?,vec![(other.clone(),folder.clone(),"n1".into())],"Legacy move must add a link that keeps the note's home folder");
+        assert!(lib.note_links(&[home.clone(),"L1".into()])?.is_empty(),"Home and Library already list the note");
+        assert!(apply(&lib,json!({"op":"membership","mode":"remove","target":home,"notes":note})).is_err());
+        assert!(apply(&lib,json!({"op":"membership","mode":"add","target":other,"notes":[{"target":home,"id":"../x"}]})).is_err());
+        let reopened=Library::open(lib.root.clone())?;assert_eq!(reopened.note_links(&[other.clone()])?.len(),1,"Links must persist");
+        apply(&lib,json!({"op":"membership","mode":"remove","target":other,"notes":note}))?;assert!(lib.note_links(&[other.clone()])?.is_empty());
+        apply(&lib,json!({"op":"membership","mode":"add","target":other,"notes":note}))?;
+        apply(&lib,json!({"op":"folder_trash","target":other}))?;apply(&lib,json!({"op":"purge","entries":[{"kind":"collection","id":other}]}))?;
+        assert_eq!(lib.conn.lock().unwrap().query_row("SELECT count(*) FROM note_memberships",[],|r|r.get::<_,i64>(0))?,0,"Purging a folder must drop its note links");
+        Ok(())
     }
     #[test]
     fn merge_refuses_different_pdfs_and_stale_requests_atomically()->Result<()> {
