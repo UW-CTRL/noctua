@@ -137,9 +137,31 @@ function agentSection(s) {
 }
 
 const SETTINGS_TABS = [
+  ['general', 'General'],
   ['appearance', 'Appearance'], ['view', 'View'], ['server', 'Server & Connection'], ['agent', 'Research Assistant'], ['skills', 'Skills'],
   ['search', 'Search'], ['connections', 'Integrations'], ['data', 'Data & Storage'], ['about', 'About & Shortcuts'],
 ];
+
+function generalSection(s) {
+  return `<section data-step="general"><h2>General</h2><div class="settings-group" role="group" aria-labelledby="settings-profile-title"><h3 id="settings-profile-title">Profile</h3><form data-profile-form><label class="setting-field" for="setup-profile-name"><span>Name</span><input class="setup-input" id="setup-profile-name" name="name" maxlength="100" autocomplete="name" value="${esc(s.name||s.username||'')}" placeholder="${esc(s.username||'')}"></label><p class="hint">Used as the author of your notes. Leave blank or choose Use username to use ${esc(s.username||'your operating-system username')}. This profile is shared by clients connected to this server.</p><div class="setup-actions"><button type="submit" class="primary" data-icon="save">Save name</button><button type="button" data-profile-reset>Use username</button></div></form></div><p class="setup-msg" role="status"></p></section>`;
+}
+function mountGeneralSettings(host) {
+  if(!host)return;
+  const form=host.querySelector('[data-profile-form]'),input=host.querySelector('#setup-profile-name'),status=host.querySelector('[role="status"]');
+  let saving=false;
+  const save=async name=>{
+    if(saving)return;saving=true;status.textContent='Saving…';
+    form.querySelectorAll('input,button').forEach(control=>control.disabled=true);
+    try{
+      Object.assign(settings,await api('/api/settings/profile',{name}));input.value=settings.name;
+      if(typeof lib!=='undefined'&&lib.target&&typeof refreshTaggedItems==='function')await refreshTaggedItems();
+      status.textContent='Name saved.';
+    }catch(error){status.textContent=error.message;}
+    finally{saving=false;form.querySelectorAll('input,button').forEach(control=>control.disabled=false);}
+  };
+  form.onsubmit=event=>{event.preventDefault();return save(input.value);};
+  host.querySelector('[data-profile-reset]').onclick=()=>save('');
+}
 
 function isDesktopConnectionClient() {
   try { return !!(window.noctuaDesktopClient || window.top?.noctuaDesktopClient); }
@@ -958,13 +980,14 @@ function openSetup({ firstRun = false, tab } = {}) {
       card.querySelector('.setup-input')?.focus();
       return;
     }
-    const panels = { appearance: appearanceSection(), view: viewSection(settings), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
+    const panels = { general: generalSection(settings), appearance: appearanceSection(), view: viewSection(settings), server: serverSection(), agent: agentSection(settings), skills: skillSettingsSection(),
       search: searchSettingsSection(), connections: keySection(settings, false) + zoteroSection(settings, false) + scholarSection(), data: dataSection(settings), about: aboutSection(settings) };
     card.innerHTML = `<div class="settings-header"><h1 id="settings-title">Settings</h1><button data-act="close" aria-label="Close Settings" data-icon="x" title="Close Settings" data-icon-only>✕</button></div>
       <div class="settings-body"><nav class="settings-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{appearance:'palette',view:'eye',server:'server',agent:'bot',skills:'sparkles',search:'search',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
+        ${SETTINGS_TABS.map(([id, label]) => `<button id="settings-tab-${id}" role="tab" data-icon="${{general:'settings',appearance:'palette',view:'eye',server:'server',agent:'bot',skills:'sparkles',search:'search',connections:'plug',data:'database',about:'info'}[id]}" aria-controls="settings-panel-${id}" data-settings-tab="${id}">${label}</button>`).join('')}
       </nav><div class="settings-content">${SETTINGS_TABS.map(([id]) => `<div id="settings-panel-${id}" data-settings-panel="${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" hidden>${panels[id]}</div>`).join('')}</div></div>`;
     mountSkillSettings(card.querySelector('[data-step="skills"]'));
+    mountGeneralSettings(card.querySelector('[data-step="general"]'));
     mountScholarSettings(card.querySelector('[data-step="scholar"]'));
     mountSearchEngineOrder(card.querySelector('[data-step="search"]'));
     if (typeof mountTagShortcuts === 'function') mountTagShortcuts(card.querySelector('[data-step="view"]'));

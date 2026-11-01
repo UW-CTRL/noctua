@@ -17,6 +17,8 @@ use crate::{agent::Provider, paths, zotero::Zotero, ApiResult, App, Status};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Settings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(default)]
     pub library: LibrarySettings,
     #[serde(default, alias = "skills_location", skip_serializing_if = "Option::is_none")]
@@ -136,6 +138,10 @@ impl Default for HighlightPalette {
     fn default()->Self {Self(["#ffd400","#5fb236","#2ea8e5","#e56eee","#a28ae5","#ff6666"].map(str::to_string).to_vec())}
 }
 impl Settings {
+    pub fn author_name(&self) -> String {
+        self.name.as_deref().map(str::trim).filter(|name| !name.is_empty())
+            .map(str::to_owned).unwrap_or_else(username)
+    }
     fn normalize_highlight_colors(&mut self) {
         for color in &mut self.highlight_palette.0 {*color=color.to_ascii_lowercase();}
         if self.highlight_palette.0.len()!=6||self.highlight_palette.0.iter().any(|color|!crate::library::valid_color(color))||self.highlight_palette.0.iter().collect::<std::collections::HashSet<_>>().len()!=6 {self.highlight_palette=HighlightPalette::default();}
@@ -144,6 +150,24 @@ impl Settings {
             self.highlight_colors.0.insert(category.to_string(),if self.highlight_palette.0.contains(&color){color}else{self.highlight_palette.0[index].clone()});
         }
     }
+}
+
+/// Noctua has one profile per data server; browser clients use that profile.
+pub fn username() -> String {
+    let keys = if cfg!(windows) { ["USERNAME", "USER", "LOGNAME"] } else { ["USER", "LOGNAME", "USERNAME"] };
+    keys.iter().find_map(|key| env::var(key).ok().filter(|name| !name.trim().is_empty()))
+        .or_else(|| dirs::home_dir().and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned())))
+        .unwrap_or_else(|| "user".into())
+}
+
+pub async fn set_profile(State(app): State<Arc<App>>, Json(body): Json<Value>) -> ApiResult {
+    let name = body["name"].as_str().ok_or_else(|| bad("Enter a name"))?.trim();
+    if name.chars().count() > 100 || name.chars().any(char::is_control) {
+        return Err(bad("Use a name of up to 100 characters without line breaks or control characters").into());
+    }
+    update(&app, |settings| settings.name = (!name.is_empty()).then(|| name.to_owned()))?;
+    let name = app.settings.lock().unwrap().author_name();
+    Ok(Json(json!({"name": name, "username": username()})))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -267,6 +291,8 @@ pub async fn get(State(app): State<Arc<App>>) -> Json<Value> {
     };
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
+        "name": s.author_name(),
+        "username": username(),
         "agent": s.agent,
         "app_icon": s.app_icon,
         "include_subfolders": s.library.include_subfolders,
