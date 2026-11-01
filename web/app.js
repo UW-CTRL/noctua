@@ -1007,7 +1007,7 @@ function renderLibraryTable(items) {
   const rows = $('#library-rows');
   rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row ${lib.detail?.key === it.key ? 'selected' : ''}">
     <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title)}</button></td>
-    <td>—</td><td>${esc(it.year || '—')}</td>
+    <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
   </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${lib.selected.has(it.key) ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title || '(untitled)')}</button></td>

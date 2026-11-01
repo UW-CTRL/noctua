@@ -369,8 +369,8 @@ function libraryNoteKey(note){return 'note:'+(note.target||(typeof lib!=='undefi
 // Notes and papers share tags and the same Library filters.
 function libraryTableRows(papers,notes,{kind='all',tag='',filter=''}={}){
   const query=filter.trim().toLowerCase();
-  const noteRows=kind==='papers'||!Array.isArray(notes)?[]:notes.map(n=>({...n,kind:'note',key:libraryNoteKey(n),id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
-    .filter(n=>(!tag||(n.tags||[]).includes(tag))&&(!query||[n.title,...(n.tags||[])].join(' ').toLowerCase().includes(query)));
+  const noteRows=kind==='papers'||!Array.isArray(notes)?[]:notes.map(n=>({...n,kind:'note',key:libraryNoteKey(n),id:n.id,title:n.title||'Untitled note',creators:[n.author||(typeof settings!=='undefined'?settings?.name:'')].filter(Boolean),year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
+    .filter(n=>(!tag||(n.tags||[]).includes(tag))&&(!query||[n.title,...n.creators,...(n.tags||[])].join(' ').toLowerCase().includes(query)));
   return [...(kind==='notes'?[]:papers),...noteRows];
 }
 function setLibraryKind(kind){
@@ -582,6 +582,8 @@ function renderNoteDetails(item){
   const el=document.getElementById('details');
   const target=item.target||lib.target;
   el.innerHTML=`<div class="roles"><span class="role exp">Note Info</span></div><h2>${esc(item.title||'Untitled note')}</h2><p class="hint">${esc(targetName(target)||target)}</p>${item.updated?`<p class="hint">Edited ${esc(new Date(item.updated).toLocaleString())}</p>`:''}<button type="button" data-note-info-open data-icon="notebook-pen">Open note</button>`;
+  const author=item.author||(typeof settings!=='undefined'?settings?.name:'');
+  if(author){const byline=document.createElement('p');byline.className='authors';byline.textContent=author;el.querySelector('h2').after(byline);}
   el.append(createItemTagSection({...item,target}));
   el.querySelector('[data-note-info-open]').onclick=()=>openNoteFrom(target,item.id);
 }

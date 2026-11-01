@@ -223,6 +223,16 @@ Making a skill available does not run its scripts.
 Scripts require approval and separate output review; see
 [Research assistant](assistant.md#project-files-and-imported-skills).
 
+## Profile name
+
+Open **Settings → General → Profile** and set **Name**, then choose **Save name**.
+Notes use this current name in the Library Authors column and Note Info, including
+existing notes. The default is the operating-system username of the Noctua server.
+Choose **Use username**, or save a blank name, to restore that default. The name is
+saved with the server's data and shared by its connected clients. Changing it does
+not edit note contents or change their modification times. Paper authors stay as
+recorded in their bibliographic metadata.
+
 ## Save destination and notifications
 
 **Data & Storage** groups its controls under **Library**, **Save Destination**,

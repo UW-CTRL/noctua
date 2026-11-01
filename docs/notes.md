@@ -33,6 +33,11 @@ notes are retained. See [Zotero import](getting-started.md#import-from-zotero-op
 
 ## Note information and tags
 
+Notes show the current **Settings → General → Profile → Name** as their author
+in Library and Note Info. It defaults to the server operating-system username;
+**Use username** restores that default. Name changes also apply to existing notes
+without editing their contents or modification times. Paper authors are unchanged.
+
 In the Library list, click a note once to select it and show **Note Info** on the
 right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
 tag row to reveal its removal button; removing it applies immediately to that

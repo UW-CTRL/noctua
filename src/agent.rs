@@ -462,6 +462,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn profile_name_defaults_persists_and_updates_existing_note_authors() -> Result<()> {
+        let f = Fixture::new()?;
+        let initial = f.json("/api/settings", None).await;
+        assert_eq!(initial["name"], initial["username"]);
+        assert!(!initial["name"].as_str().unwrap().is_empty());
+        let doc = f.json("/api/notes", Some(json!({"target":"L1","title":"Existing note"}))).await;
+        let url = format!("/api/notes/L1/{}", doc["id"].as_str().unwrap());
+        let before = f.json(&url, None).await;
+        assert_eq!(f.json("/api/notes?target=L1", None).await[0]["author"], initial["name"]);
+        let saved = f.json("/api/settings/profile", Some(json!({"name":"  연구자 Alice  "}))).await;
+        assert_eq!(saved["name"], "연구자 Alice");
+        assert_eq!(Settings::load(&f.root).author_name(), "연구자 Alice");
+        assert!(Settings::load(&f.root).zotero_disabled);
+        assert_eq!(f.json("/api/notes?target=L1", None).await[0]["author"], saved["name"]);
+        assert_eq!(f.json("/api/notes/all", None).await[0]["author"], saved["name"]);
+        assert_eq!(f.json(&url, None).await, before, "Profile changes must not rewrite note content or versions");
+        for invalid in [json!({}), json!({"name":42}), json!({"name":"a\nb"}), json!({"name":"a".repeat(101)})] {
+            assert_eq!(f.request("/api/settings/profile", Some(invalid), None).await.status(), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings", None).await["name"], saved["name"]);
+        let reset = f.json("/api/settings/profile", Some(json!({"name":"  "}))).await;
+        assert_eq!(reset["name"], initial["username"]);
+        assert!(Settings::load(&f.root).name.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn app_icon_preferences_persist_and_reject_unknown_choices() -> Result<()> {
         let f = Fixture::new()?;
         assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");

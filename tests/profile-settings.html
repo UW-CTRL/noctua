@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"></head><body><div id="profile"></div><script>
+const $=selector=>document.querySelector(selector),esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const settings={name:'testuser',username:'testuser'},lib={target:'L1'};
+let fail=false,refreshes=0,calls=[];
+async function api(path,body){calls.push({path,body});if(fail)throw Error('disk full');return {name:body.name.trim()||settings.username,username:settings.username};}
+async function refreshTaggedItems(){refreshes++;}
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+(async()=>{
+ const setup=await(await fetch('../web/setup.js')).text(),library=await(await fetch('../web/library.js')).text();
+ function install(source,name){const start=source.indexOf('function '+name+'('),end=source.indexOf('\n}',start);window[name]=new Function('return '+source.slice(start,end+2))();}
+ for(const name of ['generalSection','mountGeneralSettings'])install(setup,name);
+ install(library,'libraryTableRows');
+ window.libraryNoteKey=note=>'note:L1:'+note.id;
+ const host=$('#profile');host.innerHTML=generalSection(settings);mountGeneralSettings(host);
+ const input=$('#setup-profile-name'),form=$('[data-profile-form]');
+ assert(input.value==='testuser','default field must show username');
+ input.value='연구자 Alice';await form.onsubmit(new Event('submit',{cancelable:true}));
+ assert(settings.name==='연구자 Alice'&&refreshes===1&&calls[0].path==='/api/settings/profile','name must save and refresh notes immediately');
+ const rows=libraryTableRows([], [{id:'n1',title:'Note',author:settings.name}],{filter:'alice'});
+ assert(rows.length===1&&rows[0].creators[0]===settings.name,'note Authors and author filtering must use the profile name');
+ fail=true;input.value='Rejected';await form.onsubmit(new Event('submit',{cancelable:true}));
+ assert(settings.name==='연구자 Alice'&&!input.disabled&&$('[role="status"]').textContent==='disk full','save failure must preserve the saved name and allow retry');
+ fail=false;await $('[data-profile-reset]').onclick();
+ assert(settings.name==='testuser'&&input.value==='testuser'&&calls.at(-1).body.name==='','Use username must reset the custom name');
+ settings.name='<script>alert(1)<'+ '/script>';host.innerHTML=generalSection(settings);
+ assert(!host.querySelector('script')&&host.querySelector('input').value===settings.name,'profile name must be escaped');
+ window.webkit.messageHandlers.result.postMessage('PASS: username default, custom Unicode name, save and immediate refresh, note authors and search, failure recovery, reset and escaping');
+})().catch(error=>window.webkit.messageHandlers.result.postMessage('FAIL: '+error.stack));
+</script></body></html>

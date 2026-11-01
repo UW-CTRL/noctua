@@ -157,6 +157,10 @@ on temporary input copies, not inside an OS sandbox. Plan mode cannot request
 execution. See the [Notes guide](notes.md#project-files-bibliographies-and-skills)
 for package limits, runtimes, and timeouts.
 
+The note author is the current profile Name configured in **Settings → General**;
+it defaults to the server operating-system username. Changing it updates the
+displayed author of existing notes without editing note contents or paper authors.
+
 Note tags are managed through the Library's **Note Info** panel and numeric
 shortcuts configured in **Settings → View → Tags**. They are item metadata,
 separate from note text; note block-editing tools do not add or remove tags.
