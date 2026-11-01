@@ -29,6 +29,7 @@ const fixturePaper={paperId:'s1',title:'Zebra networks',authors:[{name:'Ada Love
 window.requests=[];window.pendingPDF=null;window.pendingSearch=null;window.pendingFolder=null;window.scopeFailure=false;window.tagSaveFailure=false;window.tagWrites=0;
 window.fetch=async(path,opts)=>{
  requests.push(path);let data={};
+ if(path.endsWith('/memos'))return {ok:true,json:async()=>[]};
  if(path.match(/^\/api\/library\/papers\/[ab]$/)){const item=fixtureItems.find(p=>p.key===path.split('/').pop());if(opts?.method==='PUT'){tagWrites++;if(tagSaveFailure)return {ok:false,json:async()=>({error:'Save failed'})};const body=JSON.parse(opts.body);if(body.revision!==item.revision)return {ok:false,json:async()=>({error:'Conflict'})};item.tags=body.tags;item.revision++;}return {ok:true,json:async()=>({...item})};}
  if(path==='/api/library/tags')return {ok:true,json:async()=>[...new Set(fixtureItems.flatMap(p=>p.tags||[]))].map((name,i)=>({id:'tag'+i,name,digit:null}))};
  if(path.startsWith('/api/notes?'))return {ok:true,json:async()=>[]};

@@ -33,6 +33,11 @@ notes are retained. See [Zotero import](getting-started.md#import-from-zotero-op
 
 ## Note information and tags
 
+Notes show the current **Settings → General → Profile → Name** as their author
+in Library and Note Info. It defaults to the server operating-system username;
+**Use username** restores that default. Name changes also apply to existing notes
+without editing their contents or modification times. Paper authors are unchanged.
+
 **Show Notes and Files** in Settings → View affects only the left sidebar;
 the central Library list continues to show notes according to its All / Papers /
 Notes filter. Applied title tags use the same spacing for notes and papers.

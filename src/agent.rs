@@ -462,6 +462,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn paper_info_layout_and_memos_persist_without_overwriting_paper_metadata() -> Result<()> {
+        let f=Fixture::new()?;
+        let defaults=f.json("/api/settings",None).await["paper_info_sections"].clone();
+        assert_eq!(defaults,json!([{"id":"libraries","enabled":true},{"id":"tags","enabled":true},{"id":"abstract","enabled":true},{"id":"memo","enabled":true}]));
+        let layout=json!([{"id":"memo","enabled":true},{"id":"abstract","enabled":true},{"id":"libraries","enabled":false},{"id":"tags","enabled":false}]);
+        assert_eq!(f.json("/api/settings/library",Some(json!({"paper_info_sections":layout}))).await["paper_info_sections"],layout);
+        assert_eq!(serde_json::to_value(Settings::load(&f.root).library)?["paper_info_sections"],layout);
+        for invalid in [json!([]),json!([{"id":"memo","enabled":true},{"id":"memo","enabled":true},{"id":"memo","enabled":true},{"id":"memo","enabled":true}]),json!([{"id":"unknown","enabled":true}])] {
+            assert_eq!(f.request("/api/settings/library",Some(json!({"paper_info_sections":invalid})),None).await.status(),StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings",None).await["paper_info_sections"],layout);
+        let key=f.app.library.save(&json!({"title":"Memo paper"}),"L1")?;
+        let other=f.app.library.save(&json!({"title":"Another memo paper"}),"L1")?;
+        let url=format!("/api/library/papers/{key}/memos");
+        assert_eq!(f.json(&url,None).await,json!([]));
+        let first=f.json(&url,Some(json!({"op":"create","text":"  First thought\nSecond line  "}))).await;
+        let both=f.json(&url,Some(json!({"op":"create","text":"A separate thought"}))).await;
+        assert_eq!(both.as_array().unwrap().len(),2);assert_eq!(first[0]["text"],"First thought\nSecond line");
+        let id=first[0]["id"].as_str().unwrap();
+        let updated=f.json(&url,Some(json!({"op":"edit","id":id,"revision":1,"text":"Updated thought"}))).await;
+        assert_eq!(updated.as_array().unwrap().iter().find(|m|m["id"]==id).unwrap()["revision"],2);
+        assert_eq!(f.request(&url,Some(json!({"op":"edit","id":id,"revision":1,"text":"Stale overwrite"})),None).await.status(),StatusCode::CONFLICT);
+        assert_eq!(f.request(&format!("/api/library/papers/{other}/memos"),Some(json!({"op":"delete","id":id,"revision":2})),None).await.status(),StatusCode::CONFLICT);
+        for text in [" ".to_owned(),"x".repeat(4001)] {assert_eq!(f.request(&url,Some(json!({"op":"create","text":text})),None).await.status(),StatusCode::BAD_REQUEST);}
+        let before=f.app.library.paper(&key)?;
+        f.app.library.edit(&key,&json!({"revision":before["revision"],"title":"Renamed paper"}))?;
+        assert_eq!(f.json(&url,None).await,updated,"metadata edits must retain independent memos");
+        assert_eq!(crate::library::Library::open(f.root.join("library"))?.paper_memos(&key)?,updated);
+        let removed=f.json(&url,Some(json!({"op":"delete","id":id,"revision":2}))).await;
+        assert_eq!(removed.as_array().unwrap().len(),1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn paper_memos_follow_merge_and_trash_restore_then_purge() -> Result<()> {
+        let f=Fixture::new()?;
+        let a=f.app.library.save(&json!({"title":"Retain memo paper"}),"L1")?;
+        let b=f.app.library.save(&json!({"title":"Merge memo paper"}),"L1")?;
+        f.app.library.change_paper_memo(&a,&json!({"op":"create","text":"Retained thought"}))?;
+        f.app.library.change_paper_memo(&b,&json!({"op":"create","text":"Merged thought"}))?;
+        let revision=f.app.library.management_state()?["revision"].clone();
+        f.app.library.manage(&json!({"op":"merge","revision":revision,"target":a,"source":b,"target_revision":f.app.library.paper(&a)?["revision"],"source_revision":f.app.library.paper(&b)?["revision"]}))?;
+        let memos=f.app.library.paper_memos(&a)?;assert_eq!(memos.as_array().unwrap().len(),2);
+        f.app.library.delete_paper(&a,f.app.library.paper(&a)?["revision"].as_i64().unwrap())?;
+        assert!(f.app.library.paper_memos(&a).is_err());assert!(f.app.library.change_paper_memo(&a,&json!({"op":"create","text":"Must not save"})).is_err());
+        f.app.library.manage(&json!({"op":"restore","revision":f.app.library.management_state()?["revision"],"kind":"paper","ids":[a]}))?;
+        assert_eq!(f.app.library.paper_memos(&a)?,memos);
+        f.app.library.delete_paper(&a,f.app.library.paper(&a)?["revision"].as_i64().unwrap())?;
+        f.app.library.manage(&json!({"op":"purge","revision":f.app.library.management_state()?["revision"],"entries":[{"kind":"paper","id":a}]}))?;
+        let db=rusqlite::Connection::open(f.root.join("library/library.sqlite"))?;
+        assert_eq!(db.query_row("SELECT count(*) FROM paper_memos",[],|r|r.get::<_,i64>(0))?,0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn profile_name_defaults_persists_and_updates_existing_note_authors() -> Result<()> {
+        let f = Fixture::new()?;
+        let initial = f.json("/api/settings", None).await;
+        assert_eq!(initial["name"], initial["username"]);
+        assert!(!initial["name"].as_str().unwrap().is_empty());
+        let doc = f.json("/api/notes", Some(json!({"target":"L1","title":"Existing note"}))).await;
+        let url = format!("/api/notes/L1/{}", doc["id"].as_str().unwrap());
+        let before = f.json(&url, None).await;
+        assert_eq!(f.json("/api/notes?target=L1", None).await[0]["author"], initial["name"]);
+        let saved = f.json("/api/settings/profile", Some(json!({"name":"  연구자 Alice  "}))).await;
+        assert_eq!(saved["name"], "연구자 Alice");
+        assert_eq!(Settings::load(&f.root).author_name(), "연구자 Alice");
+        assert!(Settings::load(&f.root).zotero_disabled);
+        assert_eq!(f.json("/api/notes?target=L1", None).await[0]["author"], saved["name"]);
+        assert_eq!(f.json("/api/notes/all", None).await[0]["author"], saved["name"]);
+        assert_eq!(f.json(&url, None).await, before, "Profile changes must not rewrite note content or versions");
+        for invalid in [json!({}), json!({"name":42}), json!({"name":"a\nb"}), json!({"name":"a".repeat(101)})] {
+            assert_eq!(f.request("/api/settings/profile", Some(invalid), None).await.status(), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(f.json("/api/settings", None).await["name"], saved["name"]);
+        let reset = f.json("/api/settings/profile", Some(json!({"name":"  "}))).await;
+        assert_eq!(reset["name"], initial["username"]);
+        assert!(Settings::load(&f.root).name.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn app_icon_preferences_persist_and_reject_unknown_choices() -> Result<()> {
         let f = Fixture::new()?;
         assert_eq!(f.json("/api/settings", None).await["app_icon"], "light");

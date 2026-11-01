@@ -1007,7 +1007,7 @@ function renderLibraryTable(items) {
   const rows = $('#library-rows');
   rows.innerHTML = items.map(it => it.kind === 'note' ? `<tr tabindex="0" data-key="${esc(it.key)}" class="library-note-row ${lib.detail?.key === it.key ? 'selected' : ''}">
     <td><button class="library-paper-title" data-open-note data-icon="notebook-pen" title="Open note">${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title)}</button></td>
-    <td>—</td><td>${esc(it.year || '—')}</td>
+    <td title="${esc(libAuthors(it))}">${esc(libAuthors(it))}</td><td>${esc(it.year || '—')}</td>
     <td class="library-note-kind" title="Note, edited ${esc(new Date(it.updated).toLocaleString())}">Note · edited ${esc(new Date(it.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</td>
   </tr>` : `<tr tabindex="0" data-key="${esc(it.key)}" class="${lib.selected.has(it.key) ? 'selected' : ''}">
     <td><button class="library-paper-title" data-select-paper>${typeof libraryTitleTags === 'function' ? libraryTitleTags(it) : ''}${esc(it.title || '(untitled)')}</button></td>
@@ -1074,8 +1074,7 @@ function renderLibDetails(it) {
     <div class="paper-primary-actions" role="group" aria-label="Paper actions">
       <button id="act-lib-graph" data-icon="network" data-icon-only data-label="Graph" aria-label="${it.key === G.libKey ? 'Rebuild paper graph' : 'Visualize paper graph'}"></button>
     </div>
-    <div class="paper-collection-tools"></div>
-    <div class="section-label">Abstract</div>${abstractHTML(it,true)}`;
+    <div class="paper-info-sections"></div>`;
   el.querySelector('#act-lib-graph').addEventListener('click', () => graphFromLibrary(it));
   libraryPaperActions(el, it);
 }
@@ -1574,6 +1573,7 @@ function runChatAction(a, host) {
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
   if (a.action === 'file_edit_approval') { showFileEditApproval(a, host); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
+  if (a.action === 'paper_info') { refreshPaperInfo(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_changed') { refreshAgentNote(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'agent_edit_proposal') { showAgentEdit(a.proposal_id).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'note_drawing') { prepareNoteDrawing(a).catch(e=>toast(e.message,{error:true})); return; }

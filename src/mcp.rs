@@ -38,7 +38,10 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// Tools that change things; hidden in plan mode.
-pub(crate) const WRITE_TOOLS: [&str; 11] = [
+pub(crate) const WRITE_TOOLS: [&str; 14] = [
+    "edit_paper_info",
+    "edit_paper_memo",
+    "set_paper_info_layout",
     "download_pdf",
     "save_to_library",
     "edit_note",
@@ -326,6 +329,13 @@ async fn run(
         app.ui(action);
     };
     match name {
+        "edit_paper_info" | "list_paper_memos" | "edit_paper_memo" | "get_paper_info_layout" | "set_paper_info_layout" => {
+            let result=crate::mcp_paper_info::run(app,name,args)?;
+            if WRITE_TOOLS.contains(&name) {
+                ui(json!({"action":"paper_info","kind":match name {"edit_paper_info"=>"metadata","edit_paper_memo"=>"memo",_=>"layout"},"key":args["paper_key"],"sections":result["sections"]}));
+            }
+            Ok(result)
+        }
         "search_library" | "list_folder_items" => data::library(app, args),
         "update_paper_memberships" => {
             let keys = args["paper_keys"]

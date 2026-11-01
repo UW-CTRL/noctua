@@ -22,6 +22,7 @@ mod pdf_autohighlight;
 mod media;
 mod mcp;
 mod mcp_data;
+mod mcp_paper_info;
 mod mcp_edits;
 mod notes;
 mod editing;
@@ -364,6 +365,7 @@ struct InkBody {
 }
 
 async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
+    let author = app.settings.lock().unwrap().author_name();
     let include=app.settings.lock().unwrap().library.include_subfolders;
     let collections=app.library.collections()?["targets"].as_array().cloned().unwrap_or_default();
     let mut targets=std::collections::HashSet::from([q.target.clone()]);
@@ -384,6 +386,7 @@ async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
             if workspace["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true) {continue;}
             n["tags"]=app.library.note_tags(&folder,n["id"].as_str().unwrap_or(""))?;
             n["target"]=json!(target);
+            n["author"]=json!(author);
             list.push(n);
         }
     }
@@ -392,6 +395,7 @@ async fn notes_list(State(app): Shared, Query(q): Query<TargetQ>) -> ApiResult {
 
 /// All notes across folders, for @-mentions and note links.
 async fn notes_all(State(app): Shared) -> ApiResult {
+    let author = app.settings.lock().unwrap().author_name();
     let mut out = Vec::new();
     for (folder, list) in app.notes.list_all()? {
         let target = app.library.folder_target(&folder);
@@ -400,6 +404,7 @@ async fn notes_all(State(app): Shared) -> ApiResult {
             if workspace.as_ref().is_some_and(|m|m["entries"].as_array().unwrap().iter().any(|e|e["note"]==n["id"]&&e["deleted"]==true)){continue;}
             n["tags"] = app.library.note_tags(&folder,n["id"].as_str().unwrap_or(""))?;
             n["folder"] = json!(folder);
+            n["author"] = json!(author);
             n["target"] = json!(target);
             out.push(n);
         }
@@ -803,6 +808,7 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/scholar/callback", get(scholar::callback))
         .route("/api/scholar/check", post(scholar::check))
         .route("/api/settings", get(settings::get))
+        .route("/api/settings/profile", post(settings::set_profile))
         .route("/api/settings/app-icon", post(settings::set_app_icon))
         .route("/api/settings/library", post(settings::set_library))
         .route("/api/settings/storage", post(settings::set_storage))

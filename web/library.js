@@ -36,8 +36,120 @@ async function readDiscoveredPaper(p,disposition) {
   try {const saved=await api('/api/library/add',{paper:p,target:lib.target || 'L1',attach_pdf:true});await loadCollections();await loadLibItems();if(saved.paper?.has_pdf)await openPaperView(saved.key,disposition);else toast(saved.warning || 'Paper saved. Attach a PDF from its library details.');}catch(e){toast(e.message);}
 }
 function paperInfoIcon(kind){
-  const paths={library:'<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>',folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',tag:'<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',chevron:'<path d="m18 15-6-6-6 6"/>'};
+  const paths={library:'<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>',folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',tag:'<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',memo:'<path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2Z"/><path d="M16 21v-5h5"/>',abstract:'<path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-5-5H8Z"/><path d="M14 3v6h7M8 13h8M8 17h6"/>',chevron:'<path d="m18 15-6-6-6 6"/>'};
   return `<svg class="paper-info-icon ${kind==='chevron'?'paper-info-chevron':''}" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`;
+}
+const paperInfoLabels={libraries:'Libraries and Collections',tags:'Tags',abstract:'Abstract',memo:'Memo'};
+let paperInfoRefresh=0;
+async function refreshPaperInfo(action){
+  if(action.kind==='layout'){
+    settings.paper_info_sections=action.sections;
+    const host=document.querySelector('#settings-panel-view');if(host)mountPaperInfoSettings(host);
+    renderDetails();return;
+  }
+  if(action.kind==='metadata'){
+    const token=++paperInfoRefresh,paper=await api(paperURL(action.key));if(token!==paperInfoRefresh)return;
+    if(lib.detail?.key===action.key)lib.detail=paper;
+    if(typeof PDF!=='undefined'&&PDF.paper?.key===action.key)PDF.paper=paper;
+    if(lib.target&&typeof loadLibItems==='function')await loadLibItems();
+  }
+  const selected=typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')?PDF.paper:lib.detail;
+  if(selected?.key===action.key)renderDetails();
+}
+function paperInfoSections(){
+  const configured=typeof settings!=='undefined'?settings?.paper_info_sections:null;
+  const result=[],seen=new Set();
+  for(const section of Array.isArray(configured)?configured:[]){if(Object.hasOwn(paperInfoLabels,section.id)&&!seen.has(section.id)){seen.add(section.id);result.push({id:section.id,enabled:section.enabled!==false});}}
+  for(const id of Object.keys(paperInfoLabels))if(!seen.has(id))result.push({id,enabled:true});
+  return result;
+}
+function paperInfoLayoutSettings(){
+  return '<div class="settings-group" data-paper-info-settings><h3>Paper Info</h3><p class="hint">Drag sections to change their order. Move a section to Excluded to hide it, or drag it back to show it.</p><div class="paper-info-layout-groups"></div><p class="paper-tag-error" role="status"></p></div>';
+}
+function mountPaperInfoSettings(host){
+  const root=host?.querySelector('[data-paper-info-settings]');if(!root)return;
+  const groups=root.querySelector('.paper-info-layout-groups'),status=root.querySelector('[role="status"]');let layout=paperInfoSections(),dragging=null,saving=false;
+  const save=async next=>{
+    if(saving)return;const previous=layout;layout=next;saving=true;render();status.textContent='Saving…';
+    try{Object.assign(settings,await api('/api/settings/library',{paper_info_sections:next}));status.textContent='Saved.';if(typeof renderDetails==='function')renderDetails();}
+    catch(error){layout=previous;status.textContent=error.message;}
+    finally{saving=false;render();}
+  };
+  const move=(id,enabled,target=null,after=false)=>{
+    if(saving||id===target)return;
+    const shown=layout.filter(section=>section.enabled&&section.id!==id),excluded=layout.filter(section=>!section.enabled&&section.id!==id),destination=enabled?shown:excluded;
+    const at=target?destination.findIndex(section=>section.id===target):-1;destination.splice(at<0?destination.length:at+Number(after),0,{id,enabled});
+    return save([...shown,...excluded]);
+  };
+  const render=()=>{
+    groups.innerHTML=[true,false].map(enabled=>`<div class="paper-info-layout-zone" data-section-zone="${enabled?'shown':'excluded'}" role="group" aria-label="${enabled?'Shown sections':'Excluded sections'}"><h4>${enabled?'Shown':'Excluded'}</h4><div class="paper-info-layout-list">${layout.filter(section=>section.enabled===enabled).map(section=>`<div class="paper-info-layout-row" data-section-row="${section.id}" draggable="${!saving}"><button type="button" data-section-grip="${section.id}" data-icon="grip-vertical" data-icon-only aria-label="Move ${paperInfoLabels[section.id]}. Arrow keys reorder; Space moves between Shown and Excluded." ${saving?'disabled':''}></button><span>${paperInfoLabels[section.id]}</span></div>`).join('')||'<p class="hint">Drop sections here</p>'}</div></div>`).join('');
+    groups.querySelectorAll('[data-section-row]').forEach(row=>{
+      row.ondragstart=event=>{if(saving){event.preventDefault();return;}dragging=row.dataset.sectionRow;event.dataTransfer.setData('application/x-noctua-paper-info',dragging);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');};
+      row.ondragend=()=>{dragging=null;groups.querySelectorAll('.dragging,.drag-over').forEach(node=>node.classList.remove('dragging','drag-over'));};
+      row.querySelector('button').onkeydown=async event=>{
+        if(!['ArrowUp','ArrowDown',' '].includes(event.key)||saving)return;event.preventDefault();
+        const id=row.dataset.sectionRow,current=layout.find(section=>section.id===id),siblings=layout.filter(section=>section.enabled===current.enabled),index=siblings.findIndex(section=>section.id===id);
+        if(event.key===' ')await move(id,!current.enabled);
+        else {const other=siblings[index+(event.key==='ArrowDown'?1:-1)];if(other)await move(id,current.enabled,other.id,event.key==='ArrowDown');}
+        groups.querySelector(`[data-section-grip="${id}"]`)?.focus();
+      };
+    });
+    groups.querySelectorAll('[data-section-zone]').forEach(zone=>{
+      zone.ondragover=event=>{if(!dragging||saving)return;event.preventDefault();event.dataTransfer.dropEffect='move';zone.classList.add('drag-over');};
+      zone.ondragleave=event=>{if(!zone.contains(event.relatedTarget))zone.classList.remove('drag-over');};
+      zone.ondrop=event=>{if(!dragging||saving)return;event.preventDefault();zone.classList.remove('drag-over');const row=event.target.closest('[data-section-row]'),id=dragging;dragging=null;const rect=row?.getBoundingClientRect();return move(id,zone.dataset.sectionZone==='shown',row?.dataset.sectionRow,!!rect&&event.clientY>rect.top+rect.height/2);};
+    });
+  };
+  render();
+}
+const paperMemoDrafts=new Map();
+const paperMemoSaves=new Map();
+function createPaperMemoSection(paper){
+  const section=document.createElement('details');section.open=true;section.className='paper-info-section paper-info-memo';
+  section.innerHTML=`<summary>${paperInfoIcon('memo')}<span>Memo</span><button type="button" data-memo-add data-icon="plus" data-icon-only aria-label="Add memo" title="Add memo"></button>${paperInfoIcon('chevron')}</summary><div class="paper-memo-list"></div><p class="paper-tag-error" role="status"></p><button type="button" data-memo-reload hidden>Reload memos</button>`;
+  const list=section.querySelector('.paper-memo-list'),status=section.querySelector('[role="status"]'),add=section.querySelector('[data-memo-add]'),reload=section.querySelector('[data-memo-reload]');
+  if(!paperMemoDrafts.has(paper.key))paperMemoDrafts.set(paper.key,new Map());
+  const drafts=paperMemoDrafts.get(paper.key);let memos=[],busy=paperMemoSaves.has(paper.key),loadToken=0;
+  const render=()=>{
+    list.replaceChildren();
+    const editor=(id,memo)=>{
+      const form=document.createElement('form');form.className='paper-memo-editor';
+      form.innerHTML='<textarea maxlength="4000" rows="3" aria-label="Memo text" placeholder="A short thought about this paper…"></textarea><div><button type="submit">Save memo</button><button type="button" data-cancel>Cancel</button></div>';
+      const input=form.querySelector('textarea');input.value=drafts.get(id).text;
+      if(memo&&memo.text!==drafts.get(id).text){const saved=document.createElement('details');saved.className='paper-memo-saved';saved.innerHTML='<summary>Current saved memo</summary><p></p>';saved.querySelector('p').textContent=memo.text;input.after(saved);}
+      if(id!=='new'&&!memo){const hint=document.createElement('p');hint.className='hint';hint.textContent='The saved memo no longer exists. Save to keep this draft as a new memo.';input.before(hint);}input.oninput=()=>{drafts.get(id).text=input.value;};
+      form.querySelector('[data-cancel]').onclick=()=>{drafts.delete(id);render();};
+      form.onsubmit=async event=>{event.preventDefault();if(busy)return;const draft=drafts.get(id);if(!draft.text.trim()){status.textContent='Write a memo before saving.';input.focus();return;}await change(id==='new'||!memo?{op:'create',text:draft.text}:{op:'edit',id,revision:draft.revision,text:draft.text},id);};
+      list.append(form);
+    };
+    for(const memo of memos){
+      if(drafts.has(memo.id)){editor(memo.id,memo);continue;}
+      const article=document.createElement('article');article.className='paper-memo';
+      article.innerHTML='<p></p><footer><time></time><div><button type="button" data-edit data-icon="pencil" data-icon-only aria-label="Edit memo" title="Edit memo"></button><button type="button" data-delete data-icon="trash-2" data-icon-only aria-label="Delete memo" title="Delete memo"></button></div></footer>';
+      article.querySelector('p').textContent=memo.text;article.querySelector('time').textContent=new Date(memo.created).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+      article.querySelector('[data-edit]').onclick=()=>{drafts.set(memo.id,{text:memo.text,revision:memo.revision});render();list.querySelector('textarea')?.focus();};
+      article.querySelector('[data-delete]').onclick=()=>change({op:'delete',id:memo.id,revision:memo.revision});list.append(article);
+    }
+    for(const id of drafts.keys())if(id!=='new'&&!memos.some(memo=>memo.id===id))editor(id);
+    if(drafts.has('new'))editor('new');
+    if(!memos.length&&!drafts.has('new')){const hint=document.createElement('p');hint.className='hint';hint.textContent='Keep a short thought for your next read.';list.append(hint);}
+    section.querySelectorAll('button,textarea').forEach(control=>control.disabled=busy);
+  };
+  const change=async(body,draftId)=>{
+    if(busy)return;++loadToken;busy=true;let done,failed='';paperMemoSaves.set(paper.key,new Promise(resolve=>{done=resolve;}));render();status.textContent='Saving…';
+    try{memos=await api(paperURL(paper.key)+'/memos',body);if(draftId)drafts.delete(draftId);status.textContent='';reload.hidden=true;}
+    catch(error){failed=error.message;status.textContent=failed;reload.hidden=false;}
+    finally{busy=false;paperMemoSaves.delete(paper.key);render();done(failed);}
+  };
+  const load=async(review=false)=>{
+    const token=++loadToken;status.textContent='Loading memos…';
+    try{const loaded=await api(paperURL(paper.key)+'/memos');if(token!==loadToken)return;memos=loaded;if(review)for(const memo of memos){const draft=drafts.get(memo.id);if(draft)draft.revision=memo.revision;}status.textContent=review&&drafts.size?'Memos reloaded. Review your draft before saving again.':'';reload.hidden=true;render();}
+    catch(error){if(token!==loadToken)return;status.textContent=error.message;reload.hidden=false;}
+  };
+  add.onclick=event=>{event.preventDefault();event.stopPropagation();section.open=true;if(!drafts.has('new'))drafts.set('new',{text:''});render();list.querySelector('.paper-memo-editor:last-child textarea')?.focus();};
+  const pending=paperMemoSaves.get(paper.key);
+  if(pending)pending.then(async error=>{if(!section.isConnected)return;busy=false;await load();if(error){status.textContent=error;reload.hidden=false;}});
+  reload.onclick=()=>load(true);render();load();return section;
 }
 function libraryPaperActions(el,it) {
   const box=el.querySelector('.paper-primary-actions'), graph=box.querySelector('#act-lib-graph');
@@ -60,12 +172,16 @@ function libraryPaperActions(el,it) {
   box.append(graph);
   button('Edit details',()=>editLibraryPaper(it.key),{iconOnly:true});
   button('Delete paper',()=>confirmDeleteLibraryPaper(it),{iconOnly:true}).className='paper-delete-action';
-  const membership=el.querySelector('.paper-collection-tools');
+  const membership=el.querySelector('.paper-info-sections');
   const libraries=document.createElement('details');libraries.open=true;libraries.className='paper-info-section paper-info-libraries';
   libraries.innerHTML=`<summary>${paperInfoIcon('library')}<span>Libraries and Collections</span>${paperInfoIcon('chevron')}</summary>`;membership.append(libraries);
   const assigned=document.createElement('div');assigned.className='paper-assigned-collections';assigned.setAttribute('aria-label','Libraries and Collections');assigned.setAttribute('aria-live','polite');libraries.append(assigned);
   renderPaperCollections(assigned,it.key);
-  const tags=createItemTagSection(it);membership.after(tags);
+  const tags=createItemTagSection(it);
+  const abstract=document.createElement('details');abstract.open=true;abstract.className='paper-info-section paper-info-abstract';abstract.innerHTML=`<summary>${paperInfoIcon('abstract')}<span>Abstract</span>${paperInfoIcon('chevron')}</summary>${abstractHTML(it,true)}`;
+  const sections={libraries,tags,abstract};
+  for(const section of paperInfoSections()){if(!section.enabled)continue;const node=section.id==='memo'?createPaperMemoSection(it):sections[section.id];node.dataset.paperInfoSection=section.id;membership.append(node);}
+  if(!paperInfoSections().some(section=>section.id==='libraries'&&section.enabled))libraries.remove();
 
   const label=document.createElement('label');label.className='paper-collection-label';label.htmlFor='paper-collection-target';label.textContent='Collection';
   const row=document.createElement('div');row.className='paper-collection-row';
@@ -369,8 +485,8 @@ function libraryNoteKey(note){return 'note:'+(note.target||(typeof lib!=='undefi
 // Notes and papers share tags and the same Library filters.
 function libraryTableRows(papers,notes,{kind='all',tag='',filter=''}={}){
   const query=filter.trim().toLowerCase();
-  const noteRows=kind==='papers'||!Array.isArray(notes)?[]:notes.map(n=>({...n,kind:'note',key:libraryNoteKey(n),id:n.id,title:n.title||'Untitled note',creators:[],year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
-    .filter(n=>(!tag||(n.tags||[]).includes(tag))&&(!query||[n.title,...(n.tags||[])].join(' ').toLowerCase().includes(query)));
+  const noteRows=kind==='papers'||!Array.isArray(notes)?[]:notes.map(n=>({...n,kind:'note',key:libraryNoteKey(n),id:n.id,title:n.title||'Untitled note',creators:[n.author||(typeof settings!=='undefined'?settings?.name:'')].filter(Boolean),year:n.updated?new Date(n.updated).getFullYear():'',dateAdded:n.updated?new Date(n.updated).toISOString():'',updated:n.updated}))
+    .filter(n=>(!tag||(n.tags||[]).includes(tag))&&(!query||[n.title,...n.creators,...(n.tags||[])].join(' ').toLowerCase().includes(query)));
   return [...(kind==='notes'?[]:papers),...noteRows];
 }
 function setLibraryKind(kind){
@@ -582,6 +698,8 @@ function renderNoteDetails(item){
   const el=document.getElementById('details');
   const target=item.target||lib.target;
   el.innerHTML=`<div class="roles"><span class="role exp">Note Info</span></div><h2>${esc(item.title||'Untitled note')}</h2><p class="hint">${esc(targetName(target)||target)}</p>${item.updated?`<p class="hint">Edited ${esc(new Date(item.updated).toLocaleString())}</p>`:''}<button type="button" data-note-info-open data-icon="notebook-pen">Open note</button>`;
+  const author=item.author||(typeof settings!=='undefined'?settings?.name:'');
+  if(author){const byline=document.createElement('p');byline.className='authors';byline.textContent=author;el.querySelector('h2').after(byline);}
   el.append(createItemTagSection({...item,target}));
   el.querySelector('[data-note-info-open]').onclick=()=>openNoteFrom(target,item.id);
 }
