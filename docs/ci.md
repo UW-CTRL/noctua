@@ -446,3 +446,7 @@ stale annotation revisions. The paper fixture checks native text during resizing
 The paper fixture checks soft wrapping without horizontal overflow, wrapped color
 rows, and diagnostic positions after wrapping. It runs in an active AppKit window
 to avoid WebKit timer throttling during repeated editor mounts.
+
+The macOS paper job also runs the backend library suite, covering linked roots,
+PTY terminals, and sandboxed agent commands that Ubuntu cannot exercise. Update
+fixtures support minor/major release boundaries as well as patch releases.
