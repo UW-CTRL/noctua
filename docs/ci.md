@@ -298,6 +298,9 @@ conflicts, debounced builds, cancellation, and stale PDF-load protection. It log
 completed assertions and pending operations to CI. Application operations have a
 ten-second timeout with an operation name; the WebKit launcher retains its
 35-second overall limit and reports the last progress message on timeout.
+`tests/chat-files.html` uses the same progress log and ten-second named
+timeouts around bundled PDF.js loading, PDF indexing, page rendering, and PNG
+decoding.
 
 `tests/document-tools.html` covers citation source labels and duplicate results,
 rendered title math, stale suggestion requests, line-comment shortcuts, and Find
