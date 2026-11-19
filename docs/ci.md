@@ -35,7 +35,7 @@ contribution and squash-merge conventions.
 | Desktop check (ubuntu-22.04) | Ubuntu | `cargo check --locked -p noctua-app` with the Linux Tauri system dependencies installed. |
 | Paper integration (each platform) | macOS, Windows, Ubuntu | Build the server, test native detachment and paper helpers, then run both real compiler/API suites with one production-staged compiler resource fixture. |
 | Release and workflow checks | Ubuntu | Python and Node release-script tests (including package-resource verification and cache ordering), workspace/lockfile version consistency, and actionlint validation of all workflow YAML files. |
-| Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, manual runs, and weekly on Mondays at 09:17 UTC. |
+| Dependency security audit | Ubuntu | `.github/workflows/security.yml` runs `cargo audit --file Cargo.lock` against RustSec's advisory database on PRs, pushes to main, and manual runs. |
 
 WebKit tests that exercise real timers, such as search debouncing, attach the
 WebView to a visible window without taking focus or accepting mouse input.
@@ -88,8 +88,8 @@ and prefer compatible patched dependency updates; do not hide failures with
 blanket ignores. Database/network failures also fail the check and should be
 distinguished from dependency findings in the job log. The audit only covers
 Rust dependencies, not bundled JavaScript or OS libraries. It does not update
-dependencies, create issues, or require write permissions. Weekly runs become
-active after the workflow is merged into the default branch.
+dependencies, create issues, or require write permissions. It has no scheduled
+runs; start it manually to check for newly published advisories between changes.
 
 Backend assistant tests use the fake CLI fixture; CI does not log into assistant
 accounts or make real model inference requests. Frontend tests use mocks or
