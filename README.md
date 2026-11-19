@@ -18,7 +18,7 @@ Search papers with arXiv, Semantic Scholar, or OpenAlex; explore citation graphs
 with Semantic Scholar.
 
 [Get started](docs/getting-started.md) ·
-[Release Note](https://github.com/UW-CTRL/noctua/releases)
+[Release notes](https://github.com/UW-CTRL/noctua/releases) · [Changelog](CHANGELOG.md)
 
 For headless machines, see [standalone server downloads and installation](docs/server.md#standalone-installation).
 
