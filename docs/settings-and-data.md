@@ -1,5 +1,9 @@
 # Settings and data
 
+For external source directories, Git, and the embedded server terminal, see
+[Linked projects](linked-projects.md). Linked directories remain outside Noctua
+storage and must be backed up separately.
+
 [Documentation](README.md) · [Project README](../README.md)
 
 ## Search engines
@@ -238,12 +242,8 @@ recorded in their bibliographic metadata.
 **Data & Storage** groups its controls under **Library**, **Save Destination**,
 and **Storage**, using the same bold headings and section dividers as the other Settings pages.
 
-Open **Settings → View** to choose what Library shows. **Show Notes and Files**
-controls only the combined list beneath the selected collection in the left
-sidebar, including imported files. Empty collections leave no extra space
-beneath their sidebar row. The central Library list keeps its notes;
-use its All / Papers / Notes filter to choose which items appear. Notes keeps
-its files available when the sidebar list is hidden.
+The collection tree always shows its Papers entry, notes/files, and linked
+directories. Legacy sidebar visibility preferences no longer hide this tree.
 **Show papers/notes from subfolders** includes descendant collections in Library
 paper and note lists and paper counts, Graph, and Lineage. It is on by default, preserves
 your previous subfolder preference, and the library root always includes all

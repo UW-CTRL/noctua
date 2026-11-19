@@ -49,7 +49,7 @@ for connecting and starting your own server.
 | Topic | Guides |
 | --- | --- |
 | Research and reading | [Research](docs/research.md) · [PDF reader](docs/reader.md) |
-| Writing and AI | [Notes](docs/notes.md) · [Research assistant](docs/assistant.md) · [AI prompts](docs/assistant.md#ai-prompts) |
+| Writing and AI | [Notes](docs/notes.md) · [Linked projects](docs/linked-projects.md) · [Research assistant](docs/assistant.md) · [AI prompts](docs/assistant.md#ai-prompts) |
 | Server | [Connections and server operations](docs/server.md) |
 | Settings and data | [Appearance, storage, and backups](docs/settings-and-data.md) |
 | Development | [Build](docs/development.md) · [CI](docs/ci.md) · [Releasing](docs/releases.md) |

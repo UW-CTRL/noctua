@@ -294,9 +294,14 @@ def run(engine, executable):
             except urllib.error.HTTPError as error:
                 assert 'Project changed' in error.read().decode()
             change(op='move',id=main,parent=folder)
+            assert build()['state']=='error','Dependencies outside the main directory must not be staged'
+            for name in ['demo.cls', 'references.bib', 'Media']:
+                entry = next(e['id'] for e in manifest['entries'] if e['name']==name and not e.get('deleted'))
+                change(op='move',id=entry,parent=folder)
+            change(op='edit',id=main,text=source.replace('sections/intro','renamed'))
             nested=build()
             assert nested['state']=='success',nested
-            print('PASS: main document in a subfolder resolves project-root paths')
+            print('PASS: nested main document resolves class, bibliography, image, and input from its own directory')
             work=next((data/'notes').glob('*/.workspace/paper/work'))
             arch='aarch64' if platform.machine().lower() in ('arm64','aarch64') else 'x86_64'
             platform_name={'Darwin':'apple-darwin','Linux':'unknown-linux-musl','Windows':'pc-windows-msvc'}[platform.system()]

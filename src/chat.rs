@@ -170,7 +170,7 @@ async fn run(app: &App, provider: Provider, chat_id: &str, body: &ChatBody, tx: 
     let mcp=mcp_file.0.to_string_lossy().into_owned();
 
     let enabled=crate::skills::set_context(app,chat_id,body.project_target.as_deref(),body.skill_ids.as_ref())?;
-    let instructions=format!("{SYSTEM}\nAvailable skills for this chat: {enabled}. Choose relevant skills based on the task and read their SKILL.md before using them. Explicit slash commands request specific skills.");
+    let instructions=format!("Active project target: {}. Linked workspace IDs identify directories belonging to this collection.\n{SYSTEM}\nAvailable skills for this chat: {enabled}. Choose relevant skills based on the task and read their SKILL.md before using them. Explicit slash commands request specific skills.",body.project_target.as_deref().unwrap_or("none"));
     let session = app.history.session(chat_id, provider);
     let native_pdf_dir = if provider == Provider::Claude {
         // Copies from earlier turns remain available when a session resumes.

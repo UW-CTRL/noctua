@@ -1,5 +1,9 @@
 # Research assistant
 
+For linked-directory file grants and confined project commands, see
+[Linked projects](linked-projects.md#assistant-access). Direct edit grants can
+persist across prompts; Suggest mode retains review of linked-file proposals.
+
 [Documentation](README.md) · [Project README](../README.md)
 
 ## Connect and chat
@@ -167,8 +171,7 @@ independently and its tag entered with existing-tag suggestions; new libraries
 enable only 1, 2, and 3 with numeric emoji. Disabling a key preserves assignments.
 They are item metadata,
 separate from note text; note block-editing tools do not add or remove tags.
-The Show Notes and Files preference affects only the left sidebar, while the
-central Library list retains its All / Papers / Notes filter.
+The collection tree remains visible; its Papers entry opens the paper list.
 Opening or editing Notes does not automatically request Semantic Scholar
 relationships. Use Library's Graph or Lineage when you want those relationships.
 
@@ -331,8 +334,16 @@ Files copied from a file manager can be pasted into the Library collection list 
 
 Project files use image icons for image formats and video icons for video formats; folders and ordinary documents retain their own icons. Icons identify file types and do not imply preview support.
 
-Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+Switch Library, Graph, and Lineage with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Open notes, project files, and PDFs from the collection tree or Papers list. These shortcuts are inactive while a dialog is open.
 
 Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. The assistant can create, rename, move, reorder, and send Library folders to recoverable Trash, and move selected papers to Trash. It can inspect Trash and restore entries, including a folder’s deletion group. These organization changes apply immediately in Suggest and Direct; Plan only reads. Library paper trash preserves annotations and memberships. Duplicate review and merging remain Library UI controls. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
 
 Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved. The assistant can also permanently delete explicitly selected Trash entries when you request permanent deletion, including emptying the inspected Trash in batches. It rereads current state after conflicts and never treats removing collection membership as deleting a paper. Library Trash is separate from each Notes project’s file Trash.
+
+Native note documents restore their last scroll position on this device. Standard LaTeX source files share the note-cell bold/italic and paired-delimiter shortcuts and provide lightweight lexical coloring; these are editor conveniences and do not change document syntax.
+
+Expanding a collection or linked directory does not switch the active document.
+Center document tabs select the file being worked on; chat context follows the
+active document. Project PDFs use the shared Reader, with their source addressed
+through project file tools rather than Library paper identifiers. Their Reader
+annotations are separate Noctua metadata.

@@ -24,10 +24,12 @@ const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).sl
 // ---------------------------------------------------------------- mode & folders
 
 function setMode(mode) {
+  if(mode!=='graph'&&typeof setLayout==='function'&&G.layout!=='library')setLayout('library');
   const notes = mode === 'notes';
   if (mode !== 'graph') { clearTimeout(projectFolderTimer); projectFolderTimer = null; G.token++; }
   document.body.classList.toggle('pdf-mode', mode === 'pdf');
   document.body.classList.toggle('notes-mode', notes);
+  if(typeof syncPDFFilesPanel==='function')syncPDFFilesPanel();
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   store.set('noctua.mode', mode);
   $('#tooltip').classList.add('hidden');
@@ -37,6 +39,7 @@ function setMode(mode) {
   if (!notes) requestAnimationFrame(() => draw());  // the canvas was hidden; repaint at its real size
   renderDetails();
   updateChatContext();
+  if(typeof updateMainTitle==='function')updateMainTitle();
 }
 
 function showNotes() {
@@ -49,6 +52,7 @@ document.addEventListener('noctua-split-change', () => {
   if (document.body.classList.contains('notes-mode')) return;
   if (isNotesMode()) showNotes(); else saveNow();
   updateChatContext();
+  if(typeof updateMainTitle==='function')updateMainTitle();
 });
 
 // Switch folders and notes from the side note itself, without leaving the Reader.
@@ -81,13 +85,14 @@ splitNoteBar.querySelector('[data-split-new]').addEventListener('click', () => c
 // Notes follow the collection selected in the shared tree.
 function notesRefreshFolders() {
   const ids = collections.targets.map((t) => t.id);
+  if(typeof Explorer!=='undefined'&&N.target&&ids.includes(N.target))return;
   const selected = typeof lib !== 'undefined' && !lib.trash ? lib.target : null;
   const want = ids.includes(selected) ? selected : N.target || store.get('noctua.notesTarget');
   const pick = ids.includes(want) ? want : ids.find((i) => i.startsWith('C')) || ids[0] || '';
   if (pick && N.target !== pick) loadNoteFolder(pick);
 }
 
-async function loadNoteFolder(target) {
+async function loadNoteFolder(target,{restore=true}={}) {
   if (!target) return;
   try{await saveWorkspaceFile();await flushNoteEdits();}catch(e){toast(e.message,{error:true});return;}
   rememberWorkspaceView();W.file=null;
@@ -109,6 +114,7 @@ async function loadNoteFolder(target) {
   await loadWorkspace(target);
   const hidden=new Set((W.manifest?.entries||[]).filter(e=>e.deleted&&e.note).map(e=>e.note));
   N.list=N.list.filter(n=>!hidden.has(n.id));
+  if(!restore)return;
   if(await restoreWorkspaceFile(target))return;
   const last = store.get('noctua.note.' + target);
   if (N.list.some((n) => n.id === last)) await openNote(last);
@@ -251,6 +257,7 @@ async function showNote(doc) {
   N.editing = null;
   N.focusBlock = null;
   store.set('noctua.note.' + N.target, doc.id);
+  if(typeof documentOpened==='function')documentOpened({kind:'note',target:N.target,id:doc.id,title:doc.title||'Untitled note'});
   renderNoteList();
   renderEditor();
   updateChatContext();
@@ -444,6 +451,15 @@ function citeHtml(keys, { textual, note }) {
 
 // ---------------------------------------------------------------- editor
 
+function rememberNoteView(){
+ const stage=$('#notes-stage');if(!stage?.dataset.noteViewKey||!stage.querySelector('.note-page'))return;
+ store.set(stage.dataset.noteViewKey,JSON.stringify({top:stage.scrollTop,left:stage.scrollLeft}));
+}
+let noteViewTimer;
+$('#notes-stage')?.addEventListener('scroll',()=>{clearTimeout(noteViewTimer);noteViewTimer=setTimeout(rememberNoteView,250);},{passive:true});
+window.addEventListener('pagehide',rememberNoteView);
+window.addEventListener('beforeunload',rememberNoteView);
+
 function renderEditor() {
   if(typeof paperUnmount==='function')paperUnmount();
   for (const p of N.pads.values()) p.destroy();
@@ -451,8 +467,12 @@ function renderEditor() {
   const stage = $('#notes-stage');
   renderSplitNoteBar();
   N.keepScroll?.();
-  const same = stage.dataset.mediaNote === N.doc?.id;
-  const scroll = same ? { top: stage.scrollTop, left: stage.scrollLeft } : null;
+  rememberNoteView();clearTimeout(noteViewTimer);
+  const viewKey=N.doc?'noctua.noteView.'+N.target+'.'+N.doc.id:'';
+  const same = stage.dataset.noteViewKey === viewKey && !!stage.querySelector('.note-page');
+  let scroll = same ? { top: stage.scrollTop, left: stage.scrollLeft } : null;
+  if(!same&&viewKey){try{scroll=JSON.parse(store.get(viewKey)||'null');}catch{}}
+  stage.dataset.noteViewKey=viewKey;
   const media = same ? captureVideos(stage) : [];
   stage.dataset.mediaNote = N.doc?.id || '';
   if (!N.doc) {
@@ -460,6 +480,7 @@ function renderEditor() {
       <p>${N.target ? 'No note open.' : 'Pick a Noctua folder.'}</p>
       ${N.target ? '<button class="primary" id="note-new-big" data-icon="file-plus" data-icon-only title="New note" aria-label="New note"></button>' : ''}</div>`;
     stage.querySelector('#note-new-big')?.addEventListener('click', createNote);
+    if(typeof updateMainTitle==='function')updateMainTitle();
     return;
   }
   const folder = collections.targets.find((t) => t.id === N.target)?.name || '';
@@ -501,6 +522,7 @@ function renderEditor() {
   restoreVideos(stage, media);
   updateHistoryButtons();
   if (scroll) keepNoteScroll(stage, scroll);
+  if(typeof updateMainTitle==='function')updateMainTitle();
 }
 
 // Drawing rows use the note panel's width and stack in narrow panels.
@@ -546,12 +568,12 @@ function showNoteHelp() {
     dialog.setAttribute('aria-labelledby', 'note-help-title');
     const example = source => `<pre><code>${esc(source)}</code></pre>`;
     dialog.innerHTML = `<div class="note-help-header"><h2 id="note-help-title">Note guide</h2><form method="dialog"><button data-icon="x" data-icon-only aria-label="Close note guide" title="Close" autofocus></button></form></div>
-      <p class="note-help-intro">Write, add media, and connect your research.</p>
+      <p class="note-help-intro">Write, add media, and connect your research. Use Papers in the collection tree for the paper list, or Link directory to work on external project files. Linked file edits save to the original directory; external changes are checked before saving. Expand collections without closing your document. Center document tabs switch between open files after saving; their × buttons close them. The tab list lasts for this window session. In the PDF Reader, choose Files to browse the same tree.</p>
       <section><h3>Note information and tags</h3><p>Notes use your current Name from Settings → General → Profile as their author; the default is the server operating-system username. Save name updates existing notes too, without editing their contents or modification times. Use username restores the default. Paper authors stay unchanged. In Library, single-click a note to view Note Info; double-click to open it. Drag or copy/paste note rows onto another collection to link the same note there; edits appear everywhere, and Remove from this collection in the right-click menu unlinks it without deleting it. Add tags in Note Info and hover over a tag to remove it immediately. Right-click a sidebar tag and choose Delete to remove it from every paper and note. Settings → View controls sidebar Notes and Files visibility, subfolders, tag counts, and digit shortcuts. Hiding sidebar files keeps notes in the central Library list. Enable each digit separately and type a tag name with existing-tag suggestions. New libraries enable only 1, 2, and 3 with numeric emoji. Press an enabled digit with the Library list focused to toggle its tag; disabling it preserves assignments. Tag metadata is separate from note text and is managed through these controls.</p></section>
       <section><h3>Collection research details</h3><p>Choose Folder or Research project when creating a Library collection. Projects use a briefcase icon; Notes file folders are separate. Edit the type, goal, progress, and personal target dates using Research details in the Library collection tree. This data is stored separately and stays hidden from the Notes file tree. Include hidden collection data in your backups.</p></section>
       <section><h3>Zotero notes</h3><p>Choose Library → Import from Zotero → Notes to copy paper and standalone notes into their collections. Imported notes are editable text with paragraph breaks; HTML formatting and embedded images are not reproduced. On re-import, Sync updates untouched imported content and keeps local edits, reporting conflicts. Overwrite replaces imported note content from Zotero.</p></section>
       <section><h3>Selected passages in chat</h3><p>Drag across rendered note text and click Add to chat. You can attach several passages, hover over the annotation count to preview them, and remove individual passages before sending. Theme-colored numbered badges and faint highlights mark attached source passages. The badges match the attachment preview; click a badge to open it. Removing or sending attachments removes the badges and faint highlights without changing your note. These are chat attachments, not saved PDF annotations. The assistant receives the quoted text and note identifiers; adding or removing attachments is a UI-only control.</p></section>
-      <section><h3>Connection and drafts</h3><p>Open notes save a local draft on this device, separately for each server, note, and editor tab. Reloading recovers it. If several drafts exist, choose one in Recover a local draft; other drafts remain until saved or explicitly discarded. Local draft saved, Saving to server, Saved to server, and Disconnected show different states. Reconnection checks the saved server version; another device’s edits require a conflict choice. Keep mine explicitly overwrites the current server version. Drafts are cleared only after a matching server save, or after you explicitly reload the server copy. A failed local save explicitly asks you to keep the window open. A successful HTTP response clears a draft only when it confirms the saved note version. Browser storage is tied to the server web origin; keep a stable address. Storage limits or clearing website data can remove drafts. Server updates temporarily pause editing and save open content before restart. Resolve save conflicts or open dialogs if an update is waiting; failed saves keep the existing server running. Local drafts remain on this device. Offline images and full-library offline access are not supported.</p></section><section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically.</p>${example(String.raw`Inline math: $E = mc^2$
+      <section><h3>Connection and drafts</h3><p>Open notes save a local draft on this device, separately for each server, note, and editor tab. Reloading recovers it. If several drafts exist, choose one in Recover a local draft; other drafts remain until saved or explicitly discarded. Local draft saved, Saving to server, Saved to server, and Disconnected show different states. Reconnection checks the saved server version; another device’s edits require a conflict choice. Keep mine explicitly overwrites the current server version. Drafts are cleared only after a matching server save, or after you explicitly reload the server copy. A failed local save explicitly asks you to keep the window open. A successful HTTP response clears a draft only when it confirms the saved note version. Browser storage is tied to the server web origin; keep a stable address. Storage limits or clearing website data can remove drafts. Server updates temporarily pause editing and save open content before restart. Resolve save conflicts or open dialogs if an update is waiting; failed saves keep the existing server running. Local drafts remain on this device. Offline images and full-library offline access are not supported.</p></section><section><h3>Writing and equations</h3><p>Click text to edit its source, with a live preview below. Press Esc or Command/Ctrl + Enter to finish. Changes save automatically. Command/Ctrl + B or I toggles bold or italic; brackets and dollar signs pair automatically. Reopened notes restore their last scroll position on this device.</p>${example(String.raw`Inline math: $E = mc^2$
 
 \[ a^2 + b^2 = c^2 \]
 
@@ -571,9 +593,9 @@ See Equation \eqref{eq:energy}.`)}</section>
       <section><h3>Assistant changes</h3><p>The assistant can create notes and edit blocks, titles, preambles, and block order. It reads the saved updated version first. Direct edits save on the server before completion. Suggest changes appear in a review dialog; use Assistant changes below the project tree to revisit pending proposals. Accept applies the complete proposal as one undoable change. Concurrent edits require a fresh proposal. Chat can inspect saved handwriting; uncached previews need an active chat. Tree display names and note titles are separate.</p></section>
       <section><h3>Pane controls</h3><p>The thin left/right arrow rails hide or reopen navigation and chat. Pane widths and visibility are remembered without discarding drafts. The paper editor also has arrows to hide either source or PDF while leaving the other visible.</p></section>
       <section><h3>Find</h3><p>Cmd/Ctrl+F searches the selected cell source while editing, or the rendered note when no cell is being edited. In project text files, it searches the source editor only. Match case, Regular expression, and Whole word refine results. Enter/Shift+Enter move between matches; Escape closes Find. Citation suggestions show formatted titles and label Collection or Bib filename, retaining both sources.</p></section>
-      <section><h3>Paper editor</h3><p>Choose New note or file → LaTeX (.tex) to create a standard LaTeX document beside a live compiled PDF. Import .cls, .sty, .bst, .bib, and images, and use their project-relative paths. Set an imported .tex as the main document from the project LaTeX settings. The project settings gear selects bundled Tectonic or pdfLaTeX, with BibTeX, per collection. Compilation uses All in project bibliographies by default; choose Selected files in Project LaTeX settings to restrict the bibliography sources; note cells keep their existing lightweight preview. Double-click compiled PDF text to open and center the matching source line. The Paper editor guide describes source completion and compiler diagnostics. You can also ask chat to inspect the LaTeX build log; agents have read-only access to internal workspace diagnostics.</p></section>
+      <section><h3>Paper editor</h3><p>Choose New note or file → LaTeX (.tex) to create a standard LaTeX document beside a live compiled PDF. Import .cls, .sty, .bst, .bib, and images, and use paths relative to the main .tex file’s directory. Set an imported .tex as the main document from the project LaTeX settings. The project settings gear selects bundled Tectonic or pdfLaTeX, with BibTeX, per collection. Compilation includes only the main document’s directory and its subfolders, with All in main document directory bibliographies by default; choose Selected files in Project LaTeX settings to restrict the bibliography sources; note cells keep their existing lightweight preview. Double-click compiled PDF text to open and center the matching source line. Source autocomplete and native text predictions are disabled. The Paper editor guide describes compiler diagnostics. You can also ask chat to inspect the LaTeX build log; agents have read-only access to internal workspace diagnostics.</p></section>
       <section><h3>Undo and redo</h3><p>The collection and save status align with the left end of the divider below the title. The title has extra space above it, follows the divider’s width where space permits, and wraps onto additional lines as you type. Only the Undo/Redo icons at the far left and Note guide and preamble icons at the far right stay pinned to the top while you scroll. The title scrolls with the document. The center between the edge controls stays transparent and does not block note text or editing. Use Undo/Redo or Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z for typing, titles, preambles, drawing, media resizing, block moves/deletions, and assistant edits. The reader has the same controls for annotations and comments. History lasts for this app session. Save conflicts must be resolved before undoing.</p></section>
-      <section><h3>Project files and bibliographies</h3><p>The assistant can organize Library collection folders and restore them from Library Trash. Moving folders preserves notes and files; trashing hides their subtree until restored. Permanent collection deletion removes owned notes and files. Library Trash and project-file Trash are separate. Switch Library, Notes, and Reader with Option+1/2/3 on macOS or Alt+1/2/3 on Windows/Linux; Reader requires an open PDF. Shortcuts pause while a dialog is open. Library folders can be moved, ordered, or sent to Library Trash without deleting project files; restore there to recover the folder group. Permanently deleting a folder from Library Trash removes its project notes and files and cannot be undone. Each collection has a Project files tree. Image and video files have their own icons; folders and ordinary documents remain distinct. Icons do not imply preview support. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note, LaTeX (.tex), or File, a name, and a destination folder. Refreshing restores the last viewed file or note; text files also restore their cursor and source scroll position. New folder opens a compact folder form. File creates an empty file using the exact filename. LaTeX (.tex) adds a compact 11pt article template with Korean, math, figure, and table support and appends .tex when needed; the first paper becomes the main document. Drag an entry over the project selector to reveal other projects, then drop it on a destination to move it. For name conflicts, choose Overwrite, Skip, or Add number; move notes with their referenced files together in a folder. Project root appears only while dragging project entries. Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Trash shows newest deletions first and scrolls when the list grows. In Trash, click rows to select entries and use Restore or Delete permanently (confirmation required); Command+A or Ctrl+A selects all, and selected folders restore before their contents. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, hover or focus a row for Rename and Trash, and drag entries to move them, and preview media. In Suggest mode, project-file edits ask inline in chat once per file per prompt; Direct mode applies edits without approval popups. Notes retain their block editor. Import or create .bib files anywhere in the project to automatically add their citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Paste files copied from your file manager into the Library collection list with Command+V or Ctrl+V: PDFs become papers, and other formats are stored here in Project files. Binary formats may only support download. Use Image / Video for larger note videos.</p></section>
+      <section><h3>Project files and bibliographies</h3><p>The assistant can organize Library collection folders and restore them from Library Trash. Moving folders preserves notes and files; trashing hides their subtree until restored. Permanent collection deletion removes owned notes and files. Library Trash and project-file Trash are separate. Switch Library, Notes, and Reader with Option+1/2/3 on macOS or Alt+1/2/3 on Windows/Linux; Reader requires an open PDF. Shortcuts pause while a dialog is open. Library folders can be moved, ordered, or sent to Library Trash without deleting project files; restore there to recover the folder group. Permanently deleting a folder from Library Trash removes its project notes and files and cannot be undone. Each collection has a Project files tree. Image and video files have their own icons; folders and ordinary documents remain distinct. Icons do not imply preview support. Images and videos are grouped in a collapsed Media folder by default; click a folder to expand it. Files already placed in custom folders stay there, and later manual moves are preserved. The collection selector and creation icons share one sidebar header. Hover or keyboard-focus a creation icon to reveal its label below without moving the file list. Nested collections use consistent indentation; the current collection is highlighted without a checkmark. New note or file opens a form with Note, LaTeX (.tex), or File, a name, and a destination folder. Refreshing restores the last viewed file or note; text files also restore their cursor and source scroll position. New folder opens a compact folder form. File creates an empty file using the exact filename. LaTeX (.tex) adds a compact 11pt article template with Korean, math, figure, and table support and appends .tex when needed; the first internal paper becomes the main document. Linked directories require an explicit main-document choice. Drag an entry over the project selector to reveal other projects, then drop it on a destination to move it. For name conflicts, choose Overwrite, Skip, or Add number; move notes with their referenced files together in a folder. Project root appears only while dragging project entries. Ctrl-click (Command-click on macOS) adds or removes selections; Shift-click selects a visible range. With the file list focused, Command+A (Ctrl+A on Windows/Linux) selects all visible entries; Delete or Backspace opens one confirmation to move the selection to Trash. Drag a selected row to move the selection together. Drag entries onto a folder or Project root to move them, or onto Trash for an in-app removal confirmation. Folders include their descendants; Undo or Trash restores removed entries. Trash shows newest deletions first and scrolls when the list grows. In Trash, click rows to select entries and use Restore or Delete permanently (confirmation required); Command+A or Ctrl+A selects all, and selected folders restore before their contents. Import files lets you choose or drop files, review and remove selections, then click Import. Failed uploads keep the remaining files for retry. Create folders and text files, import files, hover or focus a row for Rename and Trash, and drag entries to move them, and preview media. For internal files, Suggest mode asks inline once per file per prompt and Direct mode applies edits. Linked files use reviewable proposals in Suggest mode and remembered file-access grants in Direct mode. Notes retain their block editor. Import or create .bib files anywhere in the project to automatically add their citation keys alongside library papers. Suggestions show collection and bibliography sources separately, including duplicates. Rename colliding keys when you need to cite them separately. Invalid bibliography edits show an error and keep the last valid citation index. Text files are editable up to 2 MB; general file imports support up to 32 MB. Paste files copied from your file manager into the Library collection list with Command+V or Ctrl+V: PDFs become papers, and other formats are stored here in Project files. Binary formats may only support download. Use Image / Video for larger note videos.</p></section>
       <section><h3>Agent skills</h3><p>Settings → Skills has Global skills and Noctua local skills. Global Location defaults to ~/.agents/skills; save another existing folder or use Use default. Global installations are read in place. Use Import folder to copy a folder containing one or more SKILL.md packages into Noctua local skills. All imports appear in one list in Noctua's data folder. Disconnect removes one Noctua copy and preserves original files. All skills from both locations are available automatically in every chat; the assistant chooses relevant skills. In chat, type / to search all available skills and choose with Up/Down and Enter/Tab or a click (Esc closes). These commands explicitly request skills for one message. Every script run needs approval and separate output review. Scripts run local code, not in an OS sandbox. Plan mode cannot run scripts; dependencies are not installed automatically.</p></section>
       <section><h3>Find</h3><p>Use Command+F or Ctrl+F to search the rendered note or the source you are editing. Match case, Regular expression, and Whole word refine results. Invalid regular expressions show an error in the Find bar.</p></section><section><h3>Citations and note links</h3><p>Type a citation command and choose a paper from the suggestions. Citation keys default to Noctua library item keys. Project bibliographies can add imported BibTeX keys using the same author/year appearance. Citations resolve against your whole library; click one to read the paper beside the note (⌘/Ctrl-click for its details). Cited papers are listed automatically under References at the bottom of the note.</p>${example(String.raw`\cite{PAPER_KEY}`)}<p>Type [[ or \\noteref{ to search your notes, or link a note using its ID:</p>${example(String.raw`\noteref{NOTE_KEY}`)}<p>In chat, type @ to attach papers, notes, project files, folders, or collections. Results show types and paths. Text files attach excerpts; folders attach listings; media attach file references.</p></section>
       <section><h3>Assistant edits</h3><p>Open Chat to discuss the current note. Suggest mode offers edits for you to accept or reject. Plan mode investigates without changing your note. Direct mode saves requested edits on the server before reporting completion; use Undo to revert them. Suggest changes are reviewed as whole proposals in Assistant changes below the project tree.</p></section>`;
@@ -1069,6 +1091,7 @@ $('#note-list').addEventListener('click', (e) => {
 $('#notes-stage').addEventListener('input', (e) => {
   if (!e.target.classList.contains('note-title') || !N.doc) return;
   N.doc.title = e.target.value;
+  if(typeof updateMainTitle==='function')updateMainTitle();
   layoutNoteTitle();
   const entry = N.list.find((n) => n.id === N.doc.id);
   if (entry) { entry.title = N.doc.title; renderNoteList(); }

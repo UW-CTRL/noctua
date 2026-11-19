@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>Project PDF Reader</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/pdf.css"><link rel="stylesheet" href="../web/icons.css"><body class="pdf-mode"><div id="reader-home"><div id="pdf-sidebar" style="height:400px"></div><div id="research-sidebar"><ul id="lib-tree"><li>Project files</li></ul></div></div><div id="pdf-stage" style="height:650px;width:800px"></div><div id="notes-stage"></div><div id="chat-input"></div>
+<script>
+// Offscreen WebKit can suspend display frames; give PDF.js a deterministic clock.
+window.requestAnimationFrame=callback=>setTimeout(()=>callback(performance.now()),16);window.cancelAnimationFrame=clearTimeout;
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={get(){return null},set(){},remove(){}},paperURL=()=>'/api/project-reader',NoctuaLatex={renderDoc:s=>s.map(esc)};
+const annotations=[];let opened;
+async function api(path,body){if(path.endsWith('/annotation-history'))return {};if(path.endsWith('/annotations')){if(body){const a={...body,id:'a',revision:1,author:'user',status:'accepted',replies:[]};annotations.push(a);return a;}return annotations;}return {title:'Project.pdf',has_pdf:true,pdf_hash:'version',project_file:true};}
+function historyButtons(){return ''}function refreshReaderHistory(){}function splitViewActive(){return false}function notifyProgress(){}function toast(message){window.lastError=message}function setMode(mode){document.body.classList.toggle('pdf-mode',mode==='pdf')}function updateChatContext(){}function showRightTab(){}
+function documentOpened(doc){opened=doc}function projectPDFSource(){return {target:'linked~L1~root',id:'file'}}
+</script><script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script type="module">
+const assert=(ok,message)=>{if(!ok)throw Error(message);window.webkit.messageHandlers.progress.postMessage(message)};
+try{
+ window.webkit.messageHandlers.progress.postMessage('Loading PDF engine');
+ const m=await import('../web/vendor/pdfjs/build/pdf.mjs');m.GlobalWorkerOptions.workerSrc=new URL('../web/vendor/pdfjs/build/pdf.worker.mjs',location.href).href;pdfEngine=Promise.resolve(m);
+ const stream='BT /F1 24 Tf 72 700 Td (Project PDF text) Tj ET';
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream'];
+ let bytes='%PDF-1.7\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(bytes.length);bytes+=(i+1)+' 0 obj\n'+o+'\nendobj\n';});const start=bytes.length;bytes+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+start+'\n%%EOF';
+ window.webkit.messageHandlers.progress.postMessage('Opening generated PDF');
+ const doc=await m.getDocument({data:new TextEncoder().encode(bytes),standardFontDataUrl:new URL('../web/vendor/pdfjs/web/standard_fonts/',location.href).href}).promise;pdfDocument=async()=>doc;
+ window.webkit.messageHandlers.progress.postMessage('Opening shared Reader');
+ await openPDF('project-file',{push:false});assert(PDF.paper.project_file&&opened.kind==='file','project PDFs use the shared Reader and center file tabs');
+ await ensurePDFPage(pdfPageEntries[0]);assert($('#pdf-stage canvas')&&$('#pdf-stage .textLayer'),'project PDF renders a canvas and selectable text');
+ setPDFSidebarTab('files');const files=$('#research-sidebar');assert($('#pdf-files-panel').contains(files)&&!$('#pdf-files-panel').hidden&&$('#pdf-outline-panel').hidden,'Files contains the directory tree as an exclusive sidebar panel');
+ setPDFSidebarTab('outline');await loadPDFOutline(PDF.key,PDF.doc);assert($('#pdf-files-panel').hidden&&!$('#pdf-outline-panel [data-outline-source=ai]'),'project PDFs use document outlines without library-only AI actions');
+ setPDFSidebarTab('annotations');PDF.selection={page:1,quote:'Project PDF text',rects:[[.1,.1,.3,.04]]};await addPDFAnnotation('highlight');assert(annotations.length===1&&$('#pdf-annotation-list article'),'project PDFs support persistent annotation API and Reader annotation cards');
+ document.body.classList.remove('pdf-mode');syncPDFFilesPanel();assert(files.parentElement.id==='reader-home','leaving Reader returns Files to its original sidebar location');
+ window.webkit.messageHandlers.result.postMessage('PASS: project PDF rendering, text selection, center file tabs, exclusive Files/Outline/Annotations panels, and annotation creation');
+}catch(error){window.webkit.messageHandlers.result.postMessage('FAIL: '+error.message+' '+error.stack)}
+</script>

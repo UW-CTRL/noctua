@@ -19,7 +19,7 @@
 <div id="details" hidden></div><div id="cite-picker" hidden></div>
 <script>
 const $=s=>document.querySelector(s), enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const store={get:()=>null,set(){}},collections={targets:[{id:'L1',name:'Research'}]},chat={id:'chat'};
+const store={values:new Map(),get(key){return this.values.get(key)},set(key,value){this.values.set(key,value)}},collections={targets:[{id:'L1',name:'Research'}]},chat={id:'chat'};
 const collectionOptions=()=>'',noteRefHtml=()=>'',noteImageUrl=()=>'',captureVideos=()=>[],restoreVideos=()=>{},applyImgSel=()=>{};
 function toast(s){throw Error(s)} function updateChatContext(){}
 async function api(){return {undo:'Edit note',redo:null}}
@@ -117,6 +117,16 @@ N.doc.blocks=[{id:'c',type:'text',src:String.raw`See \cite{zz} and \citet{k1}, a
 const refs=[...document.querySelectorAll('.note-references li')].map(li=>li.textContent);
 assert(refs.length===2&&refs[0].startsWith('Ada Lovelace and Charles Babbage (1843). Analytical engines.')&&refs[1].includes('zz')&&$('.note-references li a.cite[data-key="k1"]'),'cited papers are listed once below the note, by author: '+refs.join(' | '));
 N.doc.blocks=[{id:'c',type:'text',src:'No citations'}];renderEditor();assert(!$('.note-references'),'the list disappears without citations');
+// Child collections remain ahead of the expanded project's file and Git controls.
+collections.targets.push({id:'C2',parent:'L1',name:'Child'});W.manifest.bib_error='Invalid bibliography';renderWorkspaceTree();
+assert($('#lib-tree > li[data-id="C2"]').nextElementSibling.classList.contains('tree-files'),'child collections precede project contents');
+assert(!$('#workspace-tree').textContent.includes('Bibliography out of date'),'bibliography errors do not clutter the collection tree');
+const longNote={id:'long',title:'Long note',blocks:Array.from({length:35},(_,i)=>({id:'long'+i,type:'text',src:'Paragraph '+i+' of the long document.'}))};
+N.doc=longNote;renderEditor();$('#notes-stage').scrollTop=500;rememberNoteView();const savedTop=$('#notes-stage').scrollTop;assert(savedTop>100,'long note scrolls');
+N.doc={id:'other',title:'Other',blocks:[]};renderEditor();N.doc=longNote;renderEditor();
+assert(Math.abs($('#notes-stage').scrollTop-savedTop)<2,'reopening a native note restores its own scroll position');
+rememberNoteView();$('#notes-stage').innerHTML='<div id="workspace-editor"><textarea></textarea></div>';renderEditor();
+assert(Math.abs($('#notes-stage').scrollTop-savedTop)<2,'returning from a source file restores the native note position');
 window.webkit.messageHandlers.result.postMessage('PASS: sticky edge controls, centered editable title, narrow panes, active notes, preamble, help, independent themes, explicit geometry, the shared collection tree, LaTeX beside drawings, and automatic references');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

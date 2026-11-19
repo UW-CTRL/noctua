@@ -10,7 +10,7 @@ static GATE:Mutex<()>=Mutex::new(());
 pub fn safe_path(s:&str)->Result<()> {
  if s.is_empty()||s.len()>500||s.contains(['\\','\0',':'])||s.split('/').any(|c|c.is_empty()||c=="."||c==".."||c.starts_with('.')) {bail!("Use a relative path without hidden or parent directories");} Ok(())
 }
-pub fn dir(app:&App,target:&str)->Result<PathBuf>{let folder=app.library.folder_id(target)?;crate::notes::check_id(&folder)?;Ok(app.notes.root.join(folder))}
+pub fn dir(app:&App,target:&str)->Result<PathBuf>{if crate::linked::is_linked(target){return crate::linked::metadata_dir(app,target);}let folder=app.library.folder_id(target)?;crate::notes::check_id(&folder)?;Ok(app.notes.root.join(folder))}
 /// Read-only diagnostics under a collection's internal workspace. Never expose a
 /// general filesystem path or follow links out of this project. Reads are bounded
 /// because compiler logs can grow while an agent is inspecting them.
@@ -57,7 +57,7 @@ pub fn inspect_internal(app:&App,target:&str,args:&Value)->Result<Value>{
 fn manifest_path(app:&App,target:&str)->Result<PathBuf>{Ok(dir(app,target)?.join(".workspace").join("manifest.json"))}
 fn load(app:&App,target:&str)->Result<Value>{let p=manifest_path(app,target)?;if p.exists(){Ok(serde_json::from_slice(&std::fs::read(p)?)?)}else{Ok(json!({"revision":0,"entries":[],"bibliographies":[],"skills":[]}))}}
 /// Agent reads discover legacy entries in memory, without organizing or saving them.
-pub fn snapshot(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;discover(app,target,&mut m)?;auto_bibliographies(&mut m);Ok(m)}
+pub fn snapshot(app:&App,target:&str)->Result<Value>{if crate::linked::is_linked(target){return crate::linked::snapshot(app,target);}let _g=GATE.lock().unwrap();let mut m=load(app,target)?;discover(app,target,&mut m)?;auto_bibliographies(&mut m);Ok(m)}
 pub fn create_note(app:&App,target:&str,b:&Value)->Result<Value>{
  let _g=GATE.lock().unwrap();let mut m=load(app,target)?;
  if b["revision"]!=m["revision"]{return Err(crate::Status(StatusCode::CONFLICT,"Project changed. Refresh before creating a note.".into()).into());}
@@ -79,7 +79,7 @@ pub fn create_note(app:&App,target:&str,b:&Value)->Result<Value>{
  })();
  if result.is_err(){let _=app.notes.delete(&folder,&id);}result
 }
-pub(crate) fn paper_manifest(app:&App,target:&str)->Result<Value>{let _gate=GATE.lock().unwrap();load(app,target)}
+pub(crate) fn paper_manifest(app:&App,target:&str)->Result<Value>{if crate::linked::is_linked(target){return crate::linked::snapshot(app,target);}let _gate=GATE.lock().unwrap();load(app,target)}
 fn save(app:&App,target:&str,v:&Value)->Result<()>{let p=manifest_path(app,target)?;std::fs::create_dir_all(p.parent().unwrap())?;crate::notes::write_atomic(&p,&v.to_string())}
 fn history_content(v:Value)->Value{let mut v=crate::editing::content(v);if let Some(entries)=v["entries"].as_array_mut(){entries.retain(|e|e["deleted"]!=true);}v}
 fn file_content(e:&Value)->Value{json!({"blob":e["blob"],"size":e["size"]})}
@@ -89,7 +89,7 @@ fn record_file_changes(app:&App,target:&str,before:&Value,after:&Value,hs:&mut s
 }
 fn key(app:&App,target:&str)->String{format!("{}:workspace:{target}",app.notes.root.display())}
 fn blob(app:&App,target:&str,bytes:&[u8])->Result<String>{let hash=format!("{:x}",Sha256::digest(bytes));let d=dir(app,target)?.join(".files");std::fs::create_dir_all(&d)?;let path=d.join(&hash);if !path.exists(){std::fs::write(path,bytes)?;}Ok(hash)}
-pub fn file_path(app:&App,target:&str,e:&Value)->Result<PathBuf>{
+pub fn file_path(app:&App,target:&str,e:&Value)->Result<PathBuf>{if crate::linked::is_linked(target){return crate::linked::file_path(app,target,e);}
  if let Some(p)=e["legacy"].as_str(){safe_path(p)?;if !p.starts_with("media/")&&!p.starts_with("images/"){bail!("Invalid attachment path");}return Ok(dir(app,target)?.join(p));}
  let h=e["blob"].as_str().context("Not a file")?;if h.len()!=64||!h.bytes().all(|c|c.is_ascii_hexdigit()){bail!("Invalid stored file");}Ok(dir(app,target)?.join(".files").join(h))
 }
@@ -120,7 +120,7 @@ fn organize_media(m:&mut Value) {
  m["media_layout"]=json!(1);
 }
 fn auto_bibliographies(m:&mut Value){m["bibliographies"]=json!(m["entries"].as_array().unwrap().iter().filter(|e|e["kind"]=="file"&&e["deleted"]!=true&&e["name"].as_str().unwrap_or("").to_ascii_lowercase().ends_with(".bib")).map(|e|e["id"].clone()).collect::<Vec<_>>());}
-pub fn list(app:&App,target:&str)->Result<Value>{let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let old=m.clone();discover(app,target,&mut m)?;organize_media(&mut m);auto_bibliographies(&mut m);if old!=m {m["revision"]=json!(m["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;if old["revision"].as_u64().unwrap_or(0)>0&&old["media_layout"]==1{crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().record(history_content(old),history_content(m.clone()),"Import notes or media");}}m["history"]=crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().status();
+pub fn list(app:&App,target:&str)->Result<Value>{if crate::linked::is_linked(target){return crate::linked::list(app,target);}let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let old=m.clone();discover(app,target,&mut m)?;organize_media(&mut m);auto_bibliographies(&mut m);if old!=m {m["revision"]=json!(m["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;if old["revision"].as_u64().unwrap_or(0)>0&&old["media_layout"]==1{crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().record(history_content(old),history_content(m.clone()),"Import notes or media");}}m["history"]=crate::editing::journals().lock().unwrap().entry(key(app,target)).or_default().status();
  match crate::bibliography::index(app,target,&m){Ok(index)=>{m["bib_index"]=json!(index);m["bib_error"]=Value::Null;},Err(e)=>m["bib_error"]=json!(format!("{e:#}"))}
  let folder=app.library.folder_id(target)?;let mut notes=Vec::new();
  for n in app.notes.list(&folder)?.as_array().unwrap(){if let Some(id)=n["id"].as_str(){if let Some(doc)=app.notes.get(&folder,id)?{let text=doc["blocks"].as_array().map(|a|a.iter().filter_map(|b|b["src"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();notes.push((id.to_owned(),n["title"].clone(),text));}}}
@@ -218,6 +218,7 @@ fn transfer(app:&App,target:&str,b:&Value,mut source:Value)->Result<Value>{
  Ok(source)
 }
 pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>{
+ if crate::linked::is_linked(target){return crate::linked::change(app,target,b,upload);}
  let _g=GATE.lock().unwrap();let mut m=load(app,target)?;let rev=m["revision"].as_u64().unwrap_or(0);
  if b["revision"].as_u64()!=Some(rev){return Err(crate::Status(StatusCode::CONFLICT,"Project files changed. Refresh and retry.".into()).into());}
  discover(app,target,&mut m)?;
@@ -266,7 +267,7 @@ pub fn change(app:&App,target:&str,b:&Value,upload:Option<&[u8]>)->Result<Value>
 pub fn history(app:&App,target:&str,b:&Value)->Result<Value>{let _g=GATE.lock().unwrap();let current=load(app,target)?;if b["revision"]!=current["revision"]{bail!("Project changed. Refresh before undoing");}let mut hs=crate::editing::journals().lock().unwrap();let h=hs.entry(key(app,target)).or_default();let redo=b["redo"]==true;let mut m=h.pending(redo,&history_content(current.clone()))?;
  for e in current["entries"].as_array().unwrap(){if !m["entries"].as_array().unwrap().iter().any(|a|a["id"]==e["id"]){let mut tombstone=e.clone();tombstone["deleted"]=json!(true);m["entries"].as_array_mut().unwrap().push(tombstone);}}
  stamp_deletions(&current,&mut m);m["revision"]=json!(current["revision"].as_u64().unwrap_or(0)+1);save(app,target,&m)?;h.finish(redo);m["history"]=h.status();record_file_changes(app,target,&current,&m,&mut hs);Ok(m)}
-pub async fn get(State(app):Shared,Path(target):Path<String>)->ApiResult{Ok(Json(list(&app,&target)?))}
+pub async fn get(State(app):Shared,Path(target):Path<String>)->ApiResult{Ok(Json(tokio::task::spawn_blocking(move||list(&app,&target)).await??))}
 pub async fn edit(State(app):Shared,Path(target):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(change(&app,&target,&b,None)?))}
 pub async fn undo(State(app):Shared,Path(target):Path<String>,Json(b):Json<Value>)->ApiResult{Ok(Json(history(&app,&target,&b)?))}
 pub async fn text(State(app):Shared,Path((target,id)):Path<(String,String)>)->ApiResult{Ok(Json(read(&app,&target,&id)?))}

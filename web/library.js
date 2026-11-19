@@ -13,7 +13,9 @@ async function libraryRequest(path, method='GET', body) {
     return data;
   } finally { clearTimeout(timer); notifyProgress(task, null); }
 }
-const paperURL = key => '/api/library/papers/' + enc(key);
+function projectPDFKey(target,id){return 'project-pdf:'+enc(target)+':'+enc(id);}
+function projectPDFSource(key){if(!key?.startsWith('project-pdf:'))return null;const [target,id]=key.slice(12).split(':').map(decodeURIComponent);return {target,id};}
+const paperURL = key => {const file=projectPDFSource(key);return file?`/api/workspaces/${enc(file.target)}/files/${enc(file.id)}/reader`:'/api/library/papers/'+enc(key);};
 function choosePDFs(multiple=false) {
   return new Promise(resolve=>{const input=document.createElement('input');input.type='file';input.accept='application/pdf,.pdf';input.multiple=multiple;input.onchange=()=>resolve([...input.files]);input.oncancel=()=>resolve([]);input.click();});
 }

@@ -1,5 +1,9 @@
 # Server and connections
 
+For external source directories, Git, and the embedded server terminal, see
+[Linked projects](linked-projects.md). Linked directories remain outside Noctua
+storage and must be backed up separately.
+
 When the desktop app restores a saved connection, it opens the server connection screen if connecting takes longer or fails. A fast connection opens the workspace directly. First-time setup always shows the connection screen.
 
 [Documentation](README.md) · [Settings and data](settings-and-data.md)

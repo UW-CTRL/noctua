@@ -8,7 +8,7 @@ class Handler:NSObject,WKScriptMessageHandler,WKNavigationDelegate {
  var phase="page load"
  func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){if m.name=="progress" {phase=String(describing:m.body);print("PROGRESS: \(phase)");fflush(stdout);return};print(m.body);finished=true;exit(String(describing:m.body).hasPrefix("PASS") ? 0 : 1)}
  func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
-  guard CommandLine.arguments.dropFirst().first == "tests/library-tags.html", let window=webView.window else { return }
+  guard ["tests/library-tags.html", "tests/paper.html"].contains(CommandLine.arguments.dropFirst().first ?? ""), let window=webView.window else { return }
   window.makeKeyAndOrderFront(nil)
   window.makeFirstResponder(webView)
   NSApp.activate(ignoringOtherApps:true)
@@ -24,12 +24,12 @@ let web=WKWebView(frame:NSRect(x:0,y:0,width:1100,height:800),configuration:conf
 // Dialogs and PDF-to-image attachment checks need an attached window to avoid
 // background WebKit canvas and timer throttling.
 var fixtureWindow:NSWindow?
-if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspace.html", "tests/note-drafts.html", "tests/connection.html", "tests/manager-embedded.html", "tests/client-updates.html", "tests/connection-theme.html", "tests/server-maintenance.html", "tests/chat-files.html", "tests/paper.html", "tests/paper-source.html", "tests/document-tools.html", "tests/mentions.html", "tests/panes.html", "tests/library-import.html"].contains(CommandLine.arguments.dropFirst().first ?? "") {
+if ["tests/project-reader.html", "tests/explorer.html", "tests/linked-workspace.html", "tests/linked-projects.html", "tests/library-tags.html", "tests/collection-research.html", "tests/workspace.html", "tests/note-drafts.html", "tests/connection.html", "tests/manager-embedded.html", "tests/client-updates.html", "tests/connection-theme.html", "tests/server-maintenance.html", "tests/chat-files.html", "tests/paper.html", "tests/paper-source.html", "tests/document-tools.html", "tests/mentions.html", "tests/panes.html", "tests/library-import.html"].contains(CommandLine.arguments.dropFirst().first ?? "") {
  let window=NSWindow(contentRect:web.frame,styleMask:[.titled],backing:.buffered,defer:false)
  window.title="Noctua browser regression"
  window.contentView=web
  window.ignoresMouseEvents=true
- if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
+ if ["tests/library-tags.html", "tests/paper.html"].contains(CommandLine.arguments.dropFirst().first ?? "") {
   app.setActivationPolicy(.regular)
   window.makeKeyAndOrderFront(nil)
   window.makeFirstResponder(web)
@@ -39,9 +39,9 @@ if ["tests/library-tags.html", "tests/collection-research.html", "tests/workspac
 }
 web.navigationDelegate=handler
 web.loadFileURL(root.appendingPathComponent(CommandLine.arguments.dropFirst().first ?? "tests/reader.html"),allowingReadAccessTo:root)
-// Focus pseudo-classes need AppKit to dispatch activation and keyboard events.
-// A Foundation-only run loop is enough for rendering fixtures, but not this one.
-if CommandLine.arguments.dropFirst().first == "tests/library-tags.html" {
+// Focus and repeated editor layout checks need active AppKit dispatch.
+// A Foundation-only run loop is enough for the other rendering fixtures.
+if ["tests/library-tags.html", "tests/paper.html"].contains(CommandLine.arguments.dropFirst().first ?? "") {
  DispatchQueue.main.asyncAfter(deadline:.now()+35) {
   print("FAIL: WebKit test timed out during \(handler.phase)")
   exit(1)

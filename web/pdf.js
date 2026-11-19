@@ -27,7 +27,7 @@ function applyPDFHighlightColors(colors,palette=pdfColors){
   }
 }
 const pdfAutoHighlights=new Map();
-const pdfDocs=new Map(),pdfIndexes=new Map(),pdfSaves=new Set();
+const pdfDocHashes=new Map(),pdfDocs=new Map(),pdfIndexes=new Map(),pdfSaves=new Set();
 const pdfSystemTheme=window.matchMedia('(prefers-color-scheme: dark)');
 function applyReaderTheme(){
   const dark=PDF.theme==='dark'||(PDF.theme==='system'&&pdfSystemTheme.matches);
@@ -60,40 +60,52 @@ async function textLayer(page,container,viewport){const m=await pdfjs();containe
   await layer.render();return layer;}
 async function indexPDF(key){
   if(pdfIndexes.has(key))return pdfIndexes.get(key);
-  const work=(async()=>{const cached=await api(paperURL(key)+'/index');if(cached?.version===2)return cached;const paper=await api(paperURL(key)),doc=await pdfDocument(key),pages=[];
+  const work=(async()=>{const project=typeof projectPDFSource==='function'&&projectPDFSource(key),cached=project?null:await api(paperURL(key)+'/index');if(cached?.version===2)return cached;const paper=await api(paperURL(key)),doc=await pdfDocument(key),pages=[];
     for(let n=1;n<=doc.numPages;n++){
       const page=await doc.getPage(n),viewport=page.getViewport({scale:1}),container=document.createElement('div');container.className='textLayer pdf-index-layer';container.style.cssText=`position:fixed;left:-100000px;top:0;width:${viewport.width}px;height:${viewport.height}px;`;document.body.append(container);
       try{const layer=await textLayer(page,container,viewport),bounds=container.getBoundingClientRect();let text='';const words=[];
         for(const div of layer.textDivs){const str=div.textContent,base=text.length;text+=str+'\n';if(!div.firstChild)continue;for(const match of str.matchAll(/\S+/g)){const range=document.createRange();range.setStart(div.firstChild,match.index);range.setEnd(div.firstChild,match.index+match[0].length);const rect=normalizedRect(range.getBoundingClientRect(),bounds);if(rect[2]&&rect[3])words.push({start:base+match.index,end:base+match.index+match[0].length,rect});}}
         pages.push({page:n,width:viewport.width,height:viewport.height,text,words});
       }finally{container.remove();}
-    }const result={version:2,hash:paper.pdf_hash,pages};await libraryRequest(paperURL(key)+'/index','PUT',result);return result;
+    }const result={version:2,hash:paper.pdf_hash,pages};if(!project)await libraryRequest(paperURL(key)+'/index','PUT',result);return result;
   })();pdfIndexes.set(key,work);work.catch(()=>pdfIndexes.delete(key));return work;
 }
 async function pdfPageImage(key,n){const doc=await pdfDocument(key),page=await doc.getPage(n),base=page.getViewport({scale:1});let scale=Math.min(2,1500/base.width);for(let i=0;i<4;i++){const v=page.getViewport({scale}),c=document.createElement('canvas');c.width=Math.ceil(v.width);c.height=Math.ceil(v.height);await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;const blob=await new Promise(r=>c.toBlob(r,'image/png'));if(blob&&blob.size<=5*1024*1024)return libraryRequest(paperURL(key)+'/page-image/'+n,'POST',blob);scale*=.65;}throw new Error('Page preview is too large');}
 async function openPDF(key,{page=1,annotation=null,push=true}={}){
-  const token=++PDF.token;const paper=await api(paperURL(key));if(!paper.has_pdf)throw new Error('Attach a PDF to this paper in Library first.');const doc=await pdfDocument(key);if(token!==PDF.token)return;
-  Object.assign(PDF,{annotationFilter:key===PDF.key?PDF.annotationFilter:null,annotations:key===PDF.key?PDF.annotations:[],key,paper,doc,page:Math.max(1,Math.min(doc.numPages,Number(page)||1)),selection:null,selected:annotation});$('#reader-mode').disabled=false;setMode('pdf');document.title=paper.title+' · Noctua';
+  if(typeof flushDocument==='function')await flushDocument();
+  if(typeof paperUnmount==='function')paperUnmount();
+  const token=++PDF.token;const paper=await api(paperURL(key));
+  if(paper.project_file&&typeof activateProject==='function'){const file=projectPDFSource(key);await activateProject(file.target);W.file=file.id;}
+ if(!paper.has_pdf)throw new Error('Attach a PDF to this paper in Library first.');if(pdfDocHashes.has(key)&&pdfDocHashes.get(key)!==paper.pdf_hash){const old=pdfDocs.get(key);pdfDocs.delete(key);pdfIndexes.delete(key);pdfOutlines.delete(key);old?.then(doc=>doc.destroy()).catch(()=>{});}pdfDocHashes.set(key,paper.pdf_hash);const doc=await pdfDocument(key);if(token!==PDF.token)return;
+  Object.assign(PDF,{annotationFilter:key===PDF.key?PDF.annotationFilter:null,annotations:key===PDF.key&&PDF.paper?.pdf_hash===paper.pdf_hash?PDF.annotations:[],key,paper,doc,page:Math.max(1,Math.min(doc.numPages,Number(page)||1)),selection:null,selected:annotation});setMode('pdf');document.title=paper.title+' · Noctua';
   PDF.outlineSource='document';ensurePDFSidebar();renderPDFOutline();loadPDFOutline(key,doc);
-  if(push)history.pushState({},'', '/#pdf='+enc(key)+'&page='+PDF.page);await renderPDF();await refreshPDFAnnotations();if(annotation)setPDFSidebarTab('annotations');if(annotation)$('#pdf-sidebar [data-id="'+annotation+'"]')?.scrollIntoView({block:'nearest'});indexPDF(key).then(()=>{if(PDF.key===key)return refreshPDFAnnotations();}).catch(e=>toast('PDF text: '+e.message));
+  if(typeof documentOpened==='function'){const file=typeof projectPDFSource==='function'&&projectPDFSource(key);documentOpened(file?{kind:'file',...file,title:paper.title}:{kind:'paper',id:key,title:paper.title});}
+  if(push&&!paper.project_file)history.pushState({},'', '/#pdf='+enc(key)+'&page='+PDF.page);await renderPDF();await refreshPDFAnnotations();if(typeof updateMainTitle==='function')updateMainTitle();if(annotation)setPDFSidebarTab('annotations');if(annotation)$('#pdf-sidebar [data-id="'+annotation+'"]')?.scrollIntoView({block:'nearest'});if(!paper.project_file)indexPDF(key).then(()=>{if(PDF.key===key)return refreshPDFAnnotations();}).catch(e=>toast('PDF text: '+e.message));
 }
 const pdfOutlines=new Map();
 function ensurePDFSidebar(){
   const side=$('#pdf-sidebar');if(side.querySelector('.pdf-sidebar-tabs'))return;
-  side.innerHTML='<div class="tabs pdf-sidebar-tabs" role="tablist" aria-label="Reader navigation"><button id="pdf-outline-tab" role="tab" aria-controls="pdf-outline-panel" data-sidebar="outline" data-icon="book-open">Outline</button><button id="pdf-annotations-tab" role="tab" aria-controls="pdf-annotations-panel" data-sidebar="annotations" data-icon="highlighter">Annotations</button></div><section id="pdf-outline-panel" role="tabpanel" aria-labelledby="pdf-outline-tab"></section><section id="pdf-annotations-panel" role="tabpanel" aria-labelledby="pdf-annotations-tab"><div class="pdf-annotation-toolbar"><div class="pdf-highlight-counts" aria-label="Highlight counts"><span>User highlights <strong data-highlight-count="user">0</strong></span><span>AI highlights <strong data-highlight-count="assistant">0</strong></span></div><div class="pdf-annotation-filters" role="group" aria-label="Filter annotations"><button data-annotation-filter="user" aria-pressed="false">User</button><button data-annotation-filter="novelty" aria-pressed="false">Novelty</button><button data-annotation-filter="method" aria-pressed="false">Methods</button><button data-annotation-filter="results" aria-pressed="false">Results</button><button data-annotation-filter="limitations" aria-pressed="false">Limitations</button></div></div><div id="pdf-auto-highlight-status" role="status"></div><div id="pdf-annotation-list"></div></section>';
+  side.innerHTML='<div class="tabs pdf-sidebar-tabs" role="tablist" aria-label="Reader navigation"><button id="pdf-outline-tab" role="tab" aria-controls="pdf-outline-panel" data-sidebar="outline" data-icon="book-open">Outline</button><button id="pdf-annotations-tab" role="tab" aria-controls="pdf-annotations-panel" data-sidebar="annotations" data-icon="highlighter">Annotations</button><button id="pdf-files-tab" role="tab" aria-controls="pdf-files-panel" data-sidebar="files" data-icon="folder">Files</button></div><section id="pdf-files-panel" role="tabpanel" aria-labelledby="pdf-files-tab"></section><section id="pdf-outline-panel" role="tabpanel" aria-labelledby="pdf-outline-tab"></section><section id="pdf-annotations-panel" role="tabpanel" aria-labelledby="pdf-annotations-tab"><div class="pdf-annotation-toolbar"><div class="pdf-highlight-counts" aria-label="Highlight counts"><span>User highlights <strong data-highlight-count="user">0</strong></span><span>AI highlights <strong data-highlight-count="assistant">0</strong></span></div><div class="pdf-annotation-filters" role="group" aria-label="Filter annotations"><button data-annotation-filter="user" aria-pressed="false">User</button><button data-annotation-filter="novelty" aria-pressed="false">Novelty</button><button data-annotation-filter="method" aria-pressed="false">Methods</button><button data-annotation-filter="results" aria-pressed="false">Results</button><button data-annotation-filter="limitations" aria-pressed="false">Limitations</button></div></div><div id="pdf-auto-highlight-status" role="status"></div><div id="pdf-annotation-list"></div></section>';
   for(const button of side.querySelectorAll('[data-sidebar]')){
     button.onclick=()=>setPDFSidebarTab(button.dataset.sidebar);
     button.onkeydown=event=>{
       if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-      event.preventDefault();const tab=event.key==='Home'?'outline':event.key==='End'?'annotations':button.dataset.sidebar==='outline'?'annotations':'outline';
+      event.preventDefault();const tabs=['outline','annotations','files'],index=tabs.indexOf(button.dataset.sidebar),tab=tabs[event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowLeft'?-1:1)+3)%3];
       setPDFSidebarTab(tab);side.querySelector(`[data-sidebar="${tab}"]`).focus();
     };
   }
   side.querySelector('.pdf-annotation-filters').onclick=event=>{const button=event.target.closest('[data-annotation-filter]');if(button)setPDFAnnotationFilter(button.dataset.annotationFilter,{toggle:true});};
   setPDFSidebarTab(PDF.sidebar||store.get('noctua.pdfSidebar')||'outline');renderPDFOutline();updatePDFAnnotationControls();
 }
+let pdfFilesHome=null;
+function syncPDFFilesPanel(){
+ const tree=$('#research-sidebar'),panel=$('#pdf-files-panel');if(!tree||!panel)return;
+ if(!pdfFilesHome){pdfFilesHome=document.createComment('Files sidebar home');tree.before(pdfFilesHome);}
+ if(document.body.classList.contains('pdf-mode')){if(tree.parentElement!==panel)panel.append(tree);}
+ else if(tree.parentNode!==pdfFilesHome.parentNode)pdfFilesHome.after(tree);
+}
 function setPDFSidebarTab(tab){
-  PDF.sidebar=tab==='annotations'?'annotations':'outline';store.set('noctua.pdfSidebar',PDF.sidebar);
+  PDF.sidebar=['outline','annotations','files'].includes(tab)?tab:'outline';store.set('noctua.pdfSidebar',PDF.sidebar);syncPDFFilesPanel();
   for(const button of document.querySelectorAll('#pdf-sidebar [data-sidebar]')){
     const selected=button.dataset.sidebar===PDF.sidebar;button.setAttribute('aria-selected',String(selected));button.classList.toggle('active',selected);button.tabIndex=selected?0:-1;
     document.getElementById(button.getAttribute('aria-controls')).hidden=!selected;
@@ -117,6 +129,7 @@ function pdfOutlineState(key){
   return pdfOutlines.get(key);
 }
 function setPDFOutlineSource(source){
+  if(PDF.paper?.project_file)source='document';
   PDF.outlineSource=source==='ai'?'ai':'document';renderPDFOutline();
   return loadPDFOutline(PDF.key,PDF.doc,{forceAI:PDF.outlineSource==='ai'});
 }
@@ -177,6 +190,7 @@ function renderPDFOutline(){
   }else if(status==='error'&&!ai)content+='<div class="pdf-outline-empty"><button data-outline-retry>Try again</button></div>';
   else if(!busy)content+=`<p class="pdf-outline-empty">${ai?'No AI-generated outline.':'This PDF has no document outline.'}</p>`;
   panel.innerHTML=`<div class="pdf-outline-source-tabs" role="tablist" aria-label="Outline source"><button id="pdf-outline-source-document" role="tab" aria-controls="pdf-outline-content" data-outline-source="document" aria-selected="${!ai}" tabindex="${ai?-1:0}" class="${ai?'':'active'}" aria-label="Document outline" title="Document outline">Document</button><span class="pdf-outline-source-divider" aria-hidden="true">/</span><button id="pdf-outline-source-ai" role="tab" aria-controls="pdf-outline-content" data-outline-source="ai" aria-selected="${ai}" tabindex="${ai?0:-1}" class="${ai?'active':''}" aria-label="AI-generated outline" title="AI-generated outline">AI-generated</button></div><div id="pdf-outline-content" role="tabpanel" aria-labelledby="pdf-outline-source-${sourceId}" aria-busy="${busy}">${content}</div>`;
+  if(PDF.paper?.project_file){panel.querySelector('[data-outline-source=ai]')?.remove();panel.querySelector('.pdf-outline-source-divider')?.remove();}
   for(const button of panel.querySelectorAll('[data-outline-source]')){
     button.onclick=()=>setPDFOutlineSource(button.dataset.outlineSource);
     button.onkeydown=event=>{
@@ -205,6 +219,7 @@ function updatePDFOutlineSelection(){
   }
 }
 async function autoHighlightPDF(){
+  if(PDF.paper?.project_file)return;
   const key=PDF.key;if(!key)return;
   const previous=pdfAutoHighlights.get(key);if(previous&&['indexing','analyzing'].includes(previous.status))return previous.promise;
   ensurePDFSidebar();setPDFSidebarTab('annotations');setPDFAnnotationFilter(null);
@@ -226,7 +241,7 @@ function updatePDFAutoHighlightUI(){
   const job=pdfAutoHighlights.get(PDF.key),busy=job&&['indexing','analyzing'].includes(job.status);
   const saved=PDF.annotations.filter(a=>a.source==='auto-highlight');
   const button=$('#pdf-stage [data-auto-highlight]');
-  if(button){button.disabled=!!busy;button.setAttribute('aria-busy',String(!!busy));button.dataset.complete=String(!!saved.length);button.title=busy?'Auto-highlight agent is analyzing this paper…':'Auto-highlight paper';}
+  if(button){button.hidden=!!PDF.paper?.project_file;button.disabled=!!busy;button.setAttribute('aria-busy',String(!!busy));button.dataset.complete=String(!!saved.length);button.title=busy?'Auto-highlight agent is analyzing this paper…':'Auto-highlight paper';}
   const status=$('#pdf-auto-highlight-status');if(!status)return;
   status.innerHTML=job?.status==='error'?`<button data-auto-retry title="${esc(job.error)}">Retry auto-highlight</button>`:'';
   status.querySelector('[data-auto-retry]')?.addEventListener('click',autoHighlightPDF);
@@ -349,11 +364,12 @@ let pdfFitTimer=null;
 function refitPDF(now=false){
   clearTimeout(pdfFitTimer);
   pdfFitTimer=setTimeout(async()=>{
-    if(!PDF.fit||!PDF.doc||!document.body.classList.contains('pdf-mode'))return;
+    if(document.body.classList.contains('resizing')||!PDF.fit||!PDF.doc||!document.body.classList.contains('pdf-mode'))return;
     const scale=pdfFitScale(await pdfPageLayout(PDF.doc));
     if(scale&&Math.abs(scale-PDF.scale)>.005)zoomPDF(scale,pdfZoomAnchor(),{fit:true}).catch(e=>toast(e.message));
   },now?0:120);
 }
+window.addEventListener('noctua-pane-resize-end',()=>refitPDF());
 window.addEventListener('resize',()=>refitPDF());
 document.addEventListener('noctua-split-change',()=>refitPDF());
 let pdfDensityTimer=null;
@@ -1089,7 +1105,7 @@ function paintPDFAnnotations(){
     svg.innerHTML=`<g class="pdf-highlight-fills" opacity="${opacity}">${fills}</g>${outline}`;
   }
 }
-async function addPDFAnnotation(kind){if(kind==='highlight'&&!PDF.selection)throw new Error('Select some PDF text first.');const a=await pdfSave(api(paperURL(PDF.key)+'/annotations',{kind,page:PDF.page,color:PDF.color,...(PDF.selection || {}),comment:''}));PDF.selected=a.id;if(!pdfAnnotationMatchesFilter(a,PDF.annotationFilter))setPDFAnnotationFilter(null);PDF.selection=null;getSelection().removeAllRanges();await refreshPDFAnnotations();$('#pdf-sidebar [data-id="'+a.id+'"] textarea')?.focus();}
+async function addPDFAnnotation(kind){if(kind==='highlight'&&!PDF.selection)throw new Error('Select some PDF text first.');const a=await pdfSave(api(paperURL(PDF.key)+'/annotations',{kind,page:PDF.page,color:PDF.color,...(PDF.selection || {}),comment:''}));PDF.selected=a.id;if(!pdfAnnotationMatchesFilter(a,PDF.annotationFilter))setPDFAnnotationFilter(null);PDF.selection=null;getSelection().removeAllRanges();await refreshPDFAnnotations();setPDFSidebarTab('annotations');$('#pdf-sidebar [data-id="'+a.id+'"] textarea')?.focus();}
 const pdfMath=src=>{try{return NoctuaLatex.renderDoc([src || ''])[0];}catch{return esc(src || '');}};
 // Keep one writer per comment so an older response cannot erase a newer draft.
 const pdfCommentEdits=new Map();
@@ -1197,7 +1213,7 @@ async function refreshPDFAnnotations(){refreshReaderHistory();ensurePDFSidebar()
   }
   applyPDFAnnotationFilter();
 }
-function pdfContext(){return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab defaults to Document outline; choosing its AI-generated outline tab starts or loads a separate AI outline; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating, regenerating, or deleting the AI outline are UI-only controls, with no MCP outline-editing tool.'};}
+function pdfContext(){if(PDF.paper?.project_file)return {view:'project_pdf',title:PDF.paper.title,page:PDF.page,project:typeof projectPDFSource==='function'?projectPDFSource(PDF.key):null,selected_text:PDF.selection?.quote,instructions:'This PDF is a project file, not a Library paper. Use project file tools for its source. Reader annotations are stored in Noctua project metadata.'};return {view:'pdf',paper_key:PDF.key,title:PDF.paper?.title,page:PDF.page,selected_text:PDF.selection?.quote,selected_text_page:PDF.selection?.page,selected_annotation:PDF.annotations.find(a=>a.id===PDF.selected),sidebar:PDF.sidebar,annotation_filter:PDF.annotationFilter||'all',instructions:'Use read_pdf/search_pdf/view_pdf_page to inspect this paper; annotate_pdf and comment_on_pdf_annotation save anchored highlights and LaTeX comments. The Reader Outline tab defaults to Document outline; choosing its AI-generated outline tab starts or loads a separate AI outline; the Auto-highlight toolbar button runs a separate analysis worker for novelty, method, results, and limitations; generating, regenerating, or deleting the AI outline are UI-only controls, with no MCP outline-editing tool.'};}
 async function pdfAction(a){if(a.action==='pdf_index')return indexPDF(a.key);if(a.action==='pdf_page')return pdfPageImage(a.key,a.page);if(a.action==='pdf_show')return openPDF(a.key,{page:a.page});if(a.action==='pdf_annotations'){if(PDF.key!==a.key)await openPDF(a.key,{page:a.page,annotation:a.id});else {setMode('pdf');await refreshPDFAnnotations();await selectPDFAnnotation(a.id,{scrollComment:true});}}}
 // Switch papers from the bar above the PDF while a note is open beside it.
 const splitPaperBar=document.createElement('div');
@@ -1232,4 +1248,4 @@ pdfSystemTheme.addEventListener('change',()=>{if(PDF.theme==='system')Promise.re
 window.addEventListener('storage',e=>{if(e.key==='noctua.readerTheme'||e.key===null)Promise.resolve(setReaderTheme(store.get('noctua.readerTheme'))).catch(e=>toast(e.message));});
 window.addEventListener('blur',clearPDFAnnotationSelection);
 window.addEventListener('popstate',pdfRoute);pdfRoute();
-setInterval(()=>{if(PDF.key&&document.body.classList.contains('pdf-mode')&&!document.hidden)refreshPDFAnnotations().catch(()=>{});},3000);
+setInterval(()=>{if(PDF.key&&!PDF.paper?.project_file&&document.body.classList.contains('pdf-mode')&&!document.hidden)refreshPDFAnnotations().catch(()=>{});},3000);

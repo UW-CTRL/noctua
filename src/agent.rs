@@ -376,6 +376,81 @@ mod tests {
         }
     }
 
+    #[cfg(target_os="macos")]
+    #[tokio::test]
+    async fn linked_terminal_and_command_approval_lifecycle() -> Result<()> {
+        use base64::Engine;
+        let f=Fixture::new()?;let external=tempfile::tempdir()?;
+        let linked=f.json("/api/workspaces/L1/links",Some(json!({"path":external.path()}))).await;
+        let target=format!("linked~L1~{}",linked["links"][0]["id"].as_str().unwrap());let url=format!("/api/workspaces/{target}/terminal");
+        let session=f.json(&url,Some(json!({"op":"create","cols":80,"rows":20}))).await;let id=session["id"].clone();
+        f.json(&url,Some(json!({"op":"write","id":id,"input":"printf 'NOCTUA_PTY_OK\\n'\rexit\r"}))).await;
+        let mut found=false;
+        for _ in 0..100{let out=f.json(&url,Some(json!({"op":"poll","id":id}))).await;let bytes=base64::engine::general_purpose::STANDARD.decode(out["output"].as_str().unwrap())?;if String::from_utf8_lossy(&bytes).contains("NOCTUA_PTY_OK"){found=true;break;}tokio::time::sleep(Duration::from_millis(20)).await;}
+        f.json(&url,Some(json!({"op":"resize","id":id,"cols":100,"rows":30}))).await;
+        f.json(&url,Some(json!({"op":"close","id":id}))).await;assert!(found,"PTY output must survive independent polling");
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;
+        let expired=f.json("/mcp?mode=direct&chat_id=chat&turn_id=expired",Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"request_project_command","arguments":{"folder_id":target,"executable":"/bin/echo","args":["stale"]}}}))).await;
+        assert_eq!(expired["result"]["isError"],true,"Expired chat URLs cannot request execution");
+        let request=crate::project_access::request(&f.app,Some("chat"),&json!({"folder_id":target,"executable":"/bin/sh","args":["-c","printf approved > result.txt"],"write":true}),"direct")?;
+        assert_eq!(request["state"],"approval_required");assert!(!external.path().join("result.txt").exists());
+        let id=request["id"].as_str().unwrap();let command_url=format!("/api/project-commands/{id}");
+        f.json(&command_url,Some(json!({"approve":true}))).await;
+        let mut result=Value::Null;for _ in 0..100{result=f.json(&command_url,None).await;if result["result"]["state"]!="running"{break;}tokio::time::sleep(Duration::from_millis(20)).await;}
+        assert_eq!(result["result"]["exit_code"],0,"{result}");assert_eq!(std::fs::read_to_string(external.path().join("result.txt"))?,"approved");
+        assert!(crate::project_access::status(&f.app,Some("another-chat"),id).is_err());
+        let pending=crate::project_access::request(&f.app,Some("chat"),&json!({"folder_id":target,"executable":"/bin/echo","args":["cancelled"]}),"direct")?;
+        crate::project_access::cancel_chat(&f.app,"chat");assert_eq!(crate::project_access::status(&f.app,Some("chat"),pending["id"].as_str().unwrap())?["result"]["state"],"cancelled");Ok(())
+    }
+
+    #[cfg(target_os="macos")]
+    #[tokio::test]
+    async fn linked_workspace_roundtrip_conflicts_and_recovery() -> Result<()> {
+        let f=Fixture::new()?;let external=tempfile::tempdir()?;
+        std::fs::write(external.path().join("main.tex"),"original")?;
+        std::fs::write(external.path().join("refs.bib"),"@article{key,title={Example}}")?;
+        let added=f.json("/api/workspaces/L1/links",Some(json!({"path":external.path()}))).await;
+        let id=added["links"][0]["id"].as_str().unwrap();let target=format!("linked~L1~{id}");let url=format!("/api/workspaces/{target}");
+        let first=f.json(&url,None).await;
+        assert!(first["paper"]["main_file"].is_null());assert_eq!(first["bib_index"][0]["key"],"key");
+        let file=first["entries"].as_array().unwrap().iter().find(|e|e["name"]=="main.tex").unwrap()["id"].clone();
+        std::fs::write(external.path().join("main.tex"),"external")?;
+        let rejected=f.request(&url,Some(json!({"op":"edit","id":file,"text":"lost update","revision":first["revision"]})),None).await;
+        assert_eq!(rejected.status(),StatusCode::CONFLICT);assert_eq!(std::fs::read_to_string(external.path().join("main.tex"))?,"external");
+        let current=f.json(&url,None).await;
+        let saved=f.json(&url,Some(json!({"op":"edit","id":file,"text":"edited in Noctua","revision":current["revision"]}))).await;
+        assert_eq!(std::fs::read_to_string(external.path().join("main.tex"))?,"edited in Noctua");
+        let configured=f.json(&url,Some(json!({"op":"config","paper":{"main_file":file},"revision":saved["revision"]}))).await;
+        let renamed=f.json(&url,Some(json!({"op":"rename","id":file,"name":"paper.tex","revision":configured["revision"]}))).await;
+        let new_id=renamed["paper"]["main_file"].clone();assert_eq!(new_id,file);
+        f.json(&url,Some(json!({"op":"delete","id":new_id,"revision":renamed["revision"]}))).await;
+        assert!(!external.path().join("paper.tex").exists());let trash=f.json(&format!("{url}/linked-trash"),None).await;let current=f.json(&url,None).await;
+        f.json(&url,Some(json!({"op":"restore","id":trash["entries"][0]["trash_id"],"revision":current["revision"]}))).await;
+        assert_eq!(std::fs::read_to_string(external.path().join("paper.tex"))?,"edited in Noctua");
+        crate::project_access::remember(&f.app,&target,"test","Test grant")?;assert!(crate::project_access::allowed(&f.app,&target,"test")?);
+        f.json(&format!("{url}/access"),Some(json!({"op":"revoke","key":"test"}))).await;assert!(!crate::project_access::allowed(&f.app,&target,"test")?);
+        f.json("/api/workspaces/L1/links",Some(json!({"op":"unlink","id":id}))).await;
+        assert!(external.path().join("paper.tex").exists());assert!(crate::linked::root(&f.app,&target).is_err());
+        for asset in ["/linked.js","/linked.css","/vendor/xterm/xterm.js","/vendor/xterm/xterm.css"]{assert_eq!(f.request(asset,None,None).await.status(),StatusCode::OK,"{asset}");}Ok(())
+    }
+
+    #[cfg(target_os="macos")]
+    #[tokio::test]
+    async fn linked_workspace_agent_scope_and_review() -> Result<()> {
+        let f=Fixture::new()?;let external=tempfile::tempdir()?;std::fs::write(external.path().join("main.tex"),"before")?;
+        let linked=f.json("/api/workspaces/L1/links",Some(json!({"path":external.path()}))).await;
+        let target=format!("linked~L1~{}",linked["links"][0]["id"].as_str().unwrap());
+        crate::skills::set_context(&f.app,"chat",Some("L1"),None)?;crate::project_access::check_scope(&f.app,Some("chat"),&target)?;
+        let other=f.app.library.create_collection("L1","Other")?;crate::skills::set_context(&f.app,"other-chat",Some(&other),None)?;
+        assert!(crate::project_access::check_scope(&f.app,Some("other-chat"),&target).is_err());
+        let m=crate::linked::snapshot(&f.app,&target)?;let args=json!({"folder_id":target,"id":m["entries"][0]["id"],"op":"edit","text":"after","revision":m["revision"]});
+        let proposal=crate::mcp_edits::change(&f.app,"edit_project_file",&args,"suggest",Some("chat"))?;
+        assert!(!proposal.is_null());assert_eq!(std::fs::read_to_string(external.path().join("main.tex"))?,"before");
+        let key=crate::project_access::file_key(&args);crate::project_access::remember(&f.app,&target,&key,"main.tex")?;
+        let first=crate::chat_approval::Turn::begin(&f.app,"chat");crate::chat_approval::authorize_linked(&f.app,&first.0,Some("chat"),&args).await?;drop(first);
+        let second=crate::chat_approval::Turn::begin(&f.app,"new-chat");crate::chat_approval::authorize_linked(&f.app,&second.0,Some("new-chat"),&args).await?;Ok(())
+    }
+
     #[tokio::test]
     async fn library_management_http_preserves_trash_and_restores_ids() -> Result<()> {
         let f=Fixture::new()?;
@@ -633,6 +708,101 @@ mod tests {
         assert!(f.json("/api/library/tags",None).await.as_array().unwrap().iter().any(|t|t["name"]=="🟡"));
         assert_eq!(f.json("/api/notes?target=L1",None).await.as_array().unwrap().len(),3);
         Ok(())
+    }
+
+    #[cfg(target_os="macos")]
+    #[tokio::test]
+    async fn workspace_watch_reports_external_changes_without_rescanning() -> Result<()> {
+        let f=Fixture::new()?;let external=tempfile::tempdir()?;
+        let added=f.json("/api/workspaces/L1/links",Some(json!({"op":"link","path":external.path()}))).await;
+        let target=format!("linked~L1~{}",added["links"][0]["id"].as_str().unwrap());
+        let endpoint=format!("/api/workspaces/{target}/changes");
+        let first=f.json(&endpoint,None).await;
+        assert_eq!(first["watching"],true,"{first}");
+        assert_eq!(first,f.json(&endpoint,None).await);
+        std::fs::create_dir(external.path().join("nested"))?;
+        std::fs::write(external.path().join("nested/new.tex"),"New external source")?;
+        tokio::time::timeout(std::time::Duration::from_secs(10),async {
+            loop {if f.json(&endpoint,None).await["generation"]!=first["generation"]{break;}tokio::time::sleep(std::time::Duration::from_millis(100)).await;}
+        }).await?;
+        let listing=f.json(&format!("/api/workspaces/{target}"),None).await;
+        assert!(listing["entries"].as_array().unwrap().iter().any(|e|e["name"]=="new.tex"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn project_pdf_annotations_persist_without_modifying_sources() -> Result<()> {
+        for linked in [false,true] {
+            if linked && !cfg!(target_os="macos") {continue;}
+            let f=Fixture::new()?;let external=tempfile::tempdir()?;
+            let target=if linked {let added=f.json("/api/workspaces/L1/links",Some(json!({"op":"link","path":external.path()}))).await;format!("linked~L1~{}",added["links"][0]["id"].as_str().unwrap())}else{"L1".into()};
+            let m=crate::workspace::list(&f.app,&target)?;
+            let bytes=b"%PDF-1.4\nfixture\n%%EOF";
+            let m=crate::workspace::change(&f.app,&target,&json!({"op":"create","name":"paper.pdf","parent":"","revision":m["revision"]}),Some(bytes))?;
+            let entry=m["entries"].as_array().unwrap().iter().find(|e|e["name"]=="paper.pdf").unwrap();
+            let path=crate::workspace::file_path(&f.app,&target,entry)?;
+            let url=format!("/api/workspaces/{target}/files/{}/reader",entry["id"].as_str().unwrap());
+            assert_eq!(f.json(&url,None).await["project_file"],true);
+            let a=f.json(&(url.clone()+"/annotations"),Some(json!({"kind":"comment","page":1,"color":"#ff0000","comment":"Remember this"}))).await;
+            let list=f.json(&(url.clone()+"/annotations"),None).await;
+            assert_eq!(list[0]["id"],a["id"]);assert_eq!(list[0]["comment"],"Remember this");
+            assert_eq!(std::fs::read(path)?,bytes);
+        }
+        Ok(())
+    }
+
+    async fn verify_main_directory_build(build: bool) -> Result<()> {
+        for linked in [false, true] {
+            if linked && !cfg!(target_os = "macos") { continue; }
+            let f=Fixture::new()?;
+            let external=tempfile::tempdir()?;
+            let target=if linked {
+                let added=f.json("/api/workspaces/L1/links",Some(json!({"op":"link","path":external.path()}))).await;
+                format!("linked~L1~{}",added["links"][0]["id"].as_str().unwrap())
+            } else { "L1".to_owned() };
+            let mut m=crate::workspace::list(&f.app,&target)?;
+            let mut add=|name:&str,parent:&str,kind:&str,text:&str|->Result<String>{
+                m=crate::workspace::change(&f.app,&target,&json!({"op":kind,"name":name,"parent":parent,"text":text,"revision":m["revision"]}),None)?;
+                Ok(m["entries"].as_array().unwrap().iter().find(|e|e["name"]==name&&e["parent"]==parent).unwrap()["id"].as_str().unwrap().to_owned())
+            };
+            let papers=add("papers","","folder","")?;
+            let paper=add("L4DC.27",&papers,"folder","")?;
+            let sections=add("sections",&paper,"folder","")?;
+            let main=add("main.tex",&paper,"create",r"\documentclass{conference}
+\begin{document}\input{sections/body}\cite{local}\end{document}")?;
+            add("conference.cls",&paper,"create",r"\NeedsTeXFormat{LaTeX2e}\ProvidesClass{conference}\LoadClass{article}")?;
+            add("body.tex",&sections,"create","Sibling class and nested input resolved.")?;
+            let bib=add("refs.bib",&paper,"create","@book{local,author={Example, Ada},title={Local references},year={2026}}")?;
+            let outside=add("refs.bib",&papers,"create","@book{local,title={Wrong paper}}")?;
+            drop(add);
+            m=crate::workspace::change(&f.app,&target,&json!({"op":"config","paper":{"main_file":main,"compiler":"pdflatex"},"revision":m["revision"]}),None)?;
+            let url=format!("/api/workspaces/{target}/paper");
+            let initial=f.json(&url,None).await;
+            assert!(initial["configuration_error"].is_null(),"{initial}");
+            m=crate::workspace::change(&f.app,&target,&json!({"op":"edit","id":outside,"text":"Unrelated bibliography edit","revision":m["revision"]}),None)?;
+            assert_eq!(f.json(&url,None).await["current_fingerprint"],initial["current_fingerprint"]);
+            m=crate::workspace::change(&f.app,&target,&json!({"op":"edit","id":bib,"text":"@book{local,author={Example, Ada},title={Updated local references},year={2026}}","revision":m["revision"]}),None)?;
+            assert_ne!(f.json(&url,None).await["current_fingerprint"],initial["current_fingerprint"]);
+            if build {
+                f.json(&url,Some(json!({"revision":m["revision"]}))).await;
+                let result=tokio::time::timeout(std::time::Duration::from_secs(90),async {
+                    loop {let status=f.json(&url,None).await;if !matches!(status["state"].as_str(),Some("queued"|"building")){break status;}tokio::time::sleep(std::time::Duration::from_millis(100)).await;}
+                }).await?;
+                assert_eq!(result["state"],"success","{result}");
+                assert_eq!(result["last_success"]["synctex"],true);
+                if linked {assert!(!external.path().join("papers/L4DC.27/main.pdf").exists());}
+            }
+        }
+        Ok(())
+    }
+    #[tokio::test]
+    async fn paper_snapshot_uses_main_directory_for_internal_and_linked_files() -> Result<()> {
+        verify_main_directory_build(false).await
+    }
+    #[tokio::test]
+    #[ignore = "requires the bundled pdfLaTeX distribution"]
+    async fn paper_compiles_sibling_class_bibliography_and_nested_input() -> Result<()> {
+        verify_main_directory_build(true).await
     }
 
     #[tokio::test]

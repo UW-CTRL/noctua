@@ -1120,15 +1120,15 @@ header .web-select-trigger { height: var(--header-control-height); }
 .workspace-footer { border-top: 1px solid var(--line); }
 .workspace-entries { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
 .workspace-entries>.hint { padding: 6px; font-size: calc(12px * var(--ui-font-scale)); line-height: 1.6; }
-#workspace-tree button, .edit-history button, .note-actions button, #workspace-editor header button { min-height: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
-#workspace-tree button[data-icon-only], .edit-history button, .note-actions button, #workspace-editor header button { width: 28px; padding: 0; }
-#workspace-tree button:hover, .workspace-entry:hover, .edit-history button:enabled:hover { background: var(--bg); color: var(--ink); }
+:is(#workspace-tree,.explorer-tree) button, .edit-history button, .note-actions button, #workspace-editor header button { min-height: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
+:is(#workspace-tree,.explorer-tree) button[data-icon-only], .edit-history button, .note-actions button, #workspace-editor header button { width: 28px; padding: 0; }
+:is(#workspace-tree,.explorer-tree) button:hover, .workspace-entry:hover, .edit-history button:enabled:hover { background: var(--bg); color: var(--ink); }
 .workspace-entry { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--depth) * 14px); border-radius: 6px; }
 .workspace-entry>button:first-child { display: flex; align-items: center; flex: 1; min-width: 0; padding: 4px 6px; text-align: left; font-size: calc(12px * var(--ui-font-scale)); }
 .workspace-entry>button:first-child::before { width: 15px; height: 15px; margin-right: 7px; opacity: .75; }
 .workspace-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-entry.active { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-#workspace-tree .workspace-entry.active>button:first-child { color: var(--accent); font-weight: 600; background: transparent; }
+:is(#workspace-tree,.explorer-tree) .workspace-entry.active>button:first-child { color: var(--accent); font-weight: 600; background: transparent; }
 .workspace-entry :is([data-file-rename],[data-file-trash]) { opacity: 0; }
 .workspace-entry:hover :is([data-file-rename],[data-file-trash]), .workspace-entry:focus-within :is([data-file-rename],[data-file-trash]) { opacity: 1; }
 @media (hover: none) { .workspace-entry :is([data-file-rename],[data-file-trash]) { opacity: 1; } }
@@ -1197,7 +1197,8 @@ header .web-select-trigger { height: var(--header-control-height); }
 #left > #layout { flex-shrink: 0; margin: 0; background: var(--panel); }
 #left > #layout button { flex: 1; min-width: 0; padding: 7px 8px; }
 body:is(.notes-mode, .pdf-mode) #left > #layout { display: none !important; }
-header #research-search { position: relative; flex: 1; min-width: 140px; max-width: 720px; }
+header #research-search { position: relative; flex: 1; min-width: 140px; max-width: 760px; margin-left:clamp(12px,2vw,32px); margin-right:auto; }
+@media (min-width: 801px) { header > #layout { margin-right:8px; } }
 header #search-form { position: relative; width: 100%; max-width: none; gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 header #search-form:focus-within { border-color: var(--accent); }
 header #search-form > .web-select { flex: none; max-width: 175px; border-right: 1px solid var(--line); }
@@ -1351,7 +1352,7 @@ body.notes-mode #lib-tree .library-trash-row, body.notes-mode #library-root-drop
 body.pdf-mode #collection-tools { display: none; }
 #lib-tree > li.tree-files { display: block; min-height: 0; padding: 2px 0 6px; cursor: default; background: none; box-shadow: none; }
 #lib-tree > li.tree-files:hover { background: none; }
-body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree > li.tree-files:has(.workspace-entries:empty):not(:has(.workspace-error, .workspace-dragging)) { display: none; }
+body.library-view:not(.notes-mode):not(.pdf-mode) #lib-tree > li.tree-files:has(.workspace-entries:empty):not(:has(.workspace-error, .workspace-dragging, .linked-roots)) { display: none; }
 #lib-tree > li.tree-files #workspace-tree { overflow: visible; }
 #lib-tree > li.tree-files .workspace-entry { margin-left: calc(var(--tree-indent, 8px) + 18px); }
 #workspace-footer-host { display: none; }
@@ -1579,8 +1580,8 @@ button.pane-toggle:hover,button.pane-toggle:focus-visible { color:var(--accent);
 .workspace-project-drop .workspace-drop-active { background:color-mix(in srgb, var(--accent) 12%, var(--panel)); color:var(--accent); }
 
 .workspace-entry.selected { background:color-mix(in srgb, var(--accent) 16%, var(--panel)); }
-#workspace-tree .workspace-entry>button:is(:hover,:focus-visible) { background:transparent; }
-#workspace-tree .workspace-entry>button[data-icon-only]:is(:hover,:focus-visible) { color:var(--accent); }
+:is(#workspace-tree,.explorer-tree) .workspace-entry>button:is(:hover,:focus-visible) { background:transparent; }
+:is(#workspace-tree,.explorer-tree) .workspace-entry>button[data-icon-only]:is(:hover,:focus-visible) { color:var(--accent); }
 .workspace-entry { user-select:none; }
 
 #workspace-tree:focus, #workspace-tree [data-file]:focus {outline:none;   }
@@ -1901,3 +1902,42 @@ body.library-view:not(.notes-mode):not(.pdf-mode) #workspace-tree[data-view-hidd
 
 .paper-memo-saved { margin-top:6px; font-size:calc(11px * var(--ui-font-scale)); color:var(--muted); }
 .paper-memo-saved p { margin:6px 0; }
+
+/* Source coloring shares the native textarea's metrics; only visible lines exist. */
+.paper-source-colors { position:absolute; left:0; top:0; margin:0; padding:0; border:0; overflow:hidden; pointer-events:none; white-space:pre; color:var(--ink); background:var(--panel); }
+.paper-source-colors > div { white-space:pre-wrap; overflow-wrap:break-word; }
+.paper-source .paper-code-source { position:relative; white-space:pre-wrap; overflow-wrap:break-word; overflow-x:hidden; tab-size:4; }
+.paper-source .syntax-colored { color:transparent; -webkit-text-fill-color:transparent; caret-color:var(--ink); background:transparent; }
+.paper-source .syntax-colored::selection { background:color-mix(in srgb,var(--accent) 28%,transparent); }
+.tex-command { color:light-dark(#2456a6,#8eb8ff); }
+.tex-reference { color:light-dark(#8850a2,#d3a5ef); }
+.tex-format { color:light-dark(#9c471c,#f4b18b); }
+.tex-comment { color:light-dark(#627466,#97ae9d); }
+.tex-math,.tex-delimiter { color:light-dark(#99601b,#e9bd7f); }
+.tex-number { color:light-dark(#187474,#82cdcb); }
+
+.tex-math-content { color:light-dark(#146b61,#79d2bf); }
+.tex-symbol { color:light-dark(#9c3d66,#f3a0c5); }
+.tex-environment,.tex-structure { color:light-dark(#7540a0,#c9a0f2); }
+.tex-operator { color:light-dark(#a34914,#f4b27d); }
+
+body.resizing .paper-source-colors,body.resizing .paper-source-diagnostics { visibility:hidden; }
+body.resizing .paper-source .syntax-colored { color:var(--ink); -webkit-text-fill-color:var(--ink); background:var(--panel); }
+
+/* Center document tabs are independent of the outer application tabs. */
+main.has-document-tabs { grid-template-rows:34px minmax(0,1fr); }
+main.has-document-tabs > :is(#left,#right,.gutter) { grid-row:1 / 3; }
+main.has-document-tabs > :is(#stage,#notes-stage,#pdf-stage,#split-divider,.split-bar) { grid-row:2 !important; }
+#document-tabs { grid-column:3; grid-row:1; display:flex; overflow-x:auto; overflow-y:hidden; min-width:0; background:var(--panel); border-bottom:1px solid var(--line); }
+#document-tabs[hidden] { display:none; }
+.document-tab { display:flex; flex:none; align-items:center; border-right:1px solid var(--line); max-width:260px; }
+.document-tab.active { background:var(--bg); box-shadow:inset 0 -2px var(--accent); }
+.document-tab button { border:0; background:none; border-radius:0; min-height:30px; font-size:12px; }
+.document-tab [role=tab] { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.document-tab [data-close-document] { flex:none; width:24px; padding:3px; }
+body.pdf-mode #pdf-sidebar { max-height:none; height:100%; flex:1; min-height:0; }
+body.pdf-mode #pdf-files-panel { padding:0; overflow:hidden; display:flex; flex-direction:column; }
+body.pdf-mode #pdf-files-panel #research-sidebar { display:flex!important; flex:1; min-height:0; flex-direction:column; overflow:auto; }
+body.pdf-mode #pdf-files-panel :is(#lib-items,.list-tools,#graph-list-switch,.graph-view-only) { display:none!important; }
+body.pdf-mode #pdf-files-panel #lib-tree { max-height:none; }
+.explorer-tree { min-width:0; }

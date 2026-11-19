@@ -10,6 +10,7 @@
 | [Research](research.md) | Library, Graph, Lineage, search, and collections. |
 | [PDF reader](reader.md) | Navigation, previews, annotations, and AI analysis. |
 | [Notes](notes.md) | Project files, bibliographies, LaTeX, media, and undo/redo. |
+| [Linked projects](linked-projects.md) | External directories, Git, terminal sessions, and persistent agent access. |
 | [Research assistant](assistant.md) | Chat, attachments, imported skills, edit modes, and capabilities. |
 | [Server and connections](server.md) | First launch, local/remote servers, CLI, authentication and login auto-start. |
 | [Settings and data](settings-and-data.md) | Appearance, connections, skill management, storage, backups, and updates. |

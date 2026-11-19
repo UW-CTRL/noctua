@@ -75,6 +75,18 @@ const assert=(v,m)=>{if(!v)throw Error(m)};
  let main=box('#stage');note=box('#notes-stage');assert(main.width>200&&note.left>=main.right-1&&Math.abs(main.width-note.width)<12,'library view and note share the column');
  document.body.className='pdf-mode split-library';assert(!splitViewActive()&&getComputedStyle(divider).display==='none','the library split does not open the reader split');
  document.body.className='split-library';setSplitView(false);assert(!document.body.classList.contains('split-library')&&getComputedStyle($('#notes-stage')).display==='none','closing the library split');
+ setPaneCollapsed('right',false);setPaneWidth('right',300);const gutter=$('#gutter-right'),mainElement=$('main');
+ let captured=false,writes=0,ended=0,pendingFrame=null;const originalSet=store.set,originalFrame=requestAnimationFrame,originalCancel=cancelAnimationFrame;window.requestAnimationFrame=fn=>{pendingFrame=fn;return 1;};window.cancelAnimationFrame=()=>{pendingFrame=null;};
+ gutter.setPointerCapture=()=>{captured=true};gutter.hasPointerCapture=()=>captured;gutter.releasePointerCapture=()=>{captured=false};
+ store.set=(key,value)=>{writes++;originalSet.call(store,key,value);};window.addEventListener('noctua-pane-resize-end',()=>ended++);
+ const edge=mainElement.getBoundingClientRect().right;
+ gutter.dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,button:0,clientX:edge-300}));
+ for(let width=301;width<=350;width++)gutter.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,clientX:edge-width}));
+ assert(mainElement.style.getPropertyValue('--right-w')==='300px'&&writes===0,'pointer bursts defer layout and persistence until a frame');pendingFrame(performance.now());
+ assert(mainElement.style.getPropertyValue('--right-w')==='350px'&&writes===0,'one frame applies the latest pointer position without saving');
+ gutter.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,clientX:edge-360}));gutter.dispatchEvent(new PointerEvent('pointerup',{pointerId:1}));
+ assert(mainElement.style.getPropertyValue('--right-w')==='360px'&&writes===1&&ended===1&&!document.body.classList.contains('resizing'),'release flushes final width and saves once');
+ gutter.dispatchEvent(new PointerEvent('pointerdown',{pointerId:2,button:0,clientX:edge-360}));gutter.dispatchEvent(new PointerEvent('pointercancel',{pointerId:2}));assert(!document.body.classList.contains('resizing')&&!captured,'cancel ends the resize session');store.set=originalSet;window.requestAnimationFrame=originalFrame;window.cancelAnimationFrame=originalCancel;
  window.webkit.messageHandlers.result.postMessage('PASS: collapsible rails in graph/notes/PDF modes, saved state, retained widths/drafts, keyboard focus, Lucide icons and the resizable reader/note and library/note splits');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
 </script></body></html>

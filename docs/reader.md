@@ -97,8 +97,8 @@ leaving the Reader: above the PDF, choose a folder (the whole library by default
 and any paper with a PDF; above the note, choose a folder, choose a note, or
 create one with **New note**. **More document actions → New note beside the
 paper** opens the split and starts a note in the selected collection in one step. The navigation
-pane also lists the folder's project files below the Reader outline and
-annotations; choose one there to open it beside the paper. Click the button again to give the PDF the full width; the note stays
+pane has a **Files** tab for collections and project files. Opening a project
+file selects its center document tab. Click the button again to give the PDF the full width; the note stays
 saved and open in Notes. The split, its width, and the side-pane rails are
 remembered on this device.
 
@@ -149,3 +149,18 @@ an existing text layer; Find does not perform OCR.
 
 The thin left/right arrow rails hide or reopen navigation/annotations and chat/details.
 Both side panes can be fully closed without closing the PDF or losing a draft.
+
+## Project PDFs and file navigation
+
+Open a PDF from an internal or linked project directory to use the shared Reader.
+The left sidebar switches between **Outline**, **Annotations**, and **Files**,
+rather than stacking the directory list below annotations. Files retains the
+same expanded collections and directories as the main explorer. Browsing another
+collection does not close the current document. Center document tabs switch
+between opened PDFs, notes, and source files within the current window session.
+
+Project PDFs support document bookmarks, text selection, search, highlights,
+comments, and drawings. Annotations are saved separately in Noctua, keyed to the
+file and its contents; the source PDF is never modified. Replacing its contents
+starts a new annotation set. AI outlines, auto-highlighting, and annotation
+undo/redo remain available for Library papers only.

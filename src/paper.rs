@@ -63,18 +63,22 @@ pub(crate) async fn compilers()->ApiResult{
 #[derive(Clone)]
 struct Input { path: String, source: PathBuf, id: String, blob: String }
 #[derive(Clone)]
-struct Snapshot { compiler: Compiler, files: Vec<Input>, bibliographies:Vec<String>, main: String, main_id: String, fingerprint: String, revision: Value }
+struct Snapshot { frozen: Option<Arc<tempfile::TempDir>>, compiler: Compiler, files: Vec<Input>, bibliographies:Vec<String>, directory: String, main: String, main_id: String, fingerprint: String, revision: Value }
 fn logical_path(entries: &[Value], entry: &Value) -> Result<String> {
+    let index:HashMap<&str,&Value>=entries.iter().filter_map(|e|e["id"].as_str().map(|id|(id,e))).collect();
+    indexed_path(&index,entry)
+}
+fn indexed_path(entries: &HashMap<&str,&Value>, entry: &Value) -> Result<String> {
     let mut parts = vec![entry["name"].as_str().context("File name missing")?.to_owned()];
     let mut parent = entry["parent"].as_str().unwrap_or("");
     let mut seen = HashSet::new();
     while !parent.is_empty() {
         if !seen.insert(parent) { bail!("Folder cycle in paper project"); }
-        let folder = entries.iter().find(|e|e["id"]==parent && e["kind"]=="folder" && e["deleted"]!=true).context("Paper folder is missing")?;
+        let folder = entries.get(parent).filter(|e|e["kind"]=="folder" && e["deleted"]!=true).context("Paper folder is missing")?;
         parts.push(folder["name"].as_str().context("Folder name missing")?.to_owned());
         parent = folder["parent"].as_str().unwrap_or("");
     }
-    parts.reverse(); let path=parts.join("/"); workspace::safe_path(&path)?; Ok(path)
+    parts.reverse(); let path=parts.join("/"); anyhow::ensure!(path.split('/').all(|p|!p.is_empty()&&p!="."&&p!=".."&&!p.eq_ignore_ascii_case(".git")&&!p.contains(['\\',':','\0'])),"Invalid project path"); Ok(path)
 }
 fn snapshot(app: &App, target: &str, manifest: &Value) -> Result<Snapshot> {
     let kind=Compiler::from_settings(&manifest["paper"])?;
@@ -82,13 +86,20 @@ fn snapshot(app: &App, target: &str, manifest: &Value) -> Result<Snapshot> {
     let entries=manifest["entries"].as_array().context("Invalid project")?;
     let main=entries.iter().find(|e|e["id"]==id && e["kind"]=="file" && e["deleted"]!=true).context("The main document was removed. Choose another .tex file")?;
     anyhow::ensure!(main["name"].as_str().unwrap_or("").to_lowercase().ends_with(".tex"),"The main document must be a .tex file");
-    let main_path=logical_path(entries,main)?;
+    let index:HashMap<&str,&Value>=entries.iter().filter_map(|e|e["id"].as_str().map(|id|(id,e))).collect();
+    let main_path=indexed_path(&index,main)?;
+    // Reconstruct the selected document's directory in the disposable build
+    // root. Internal blobs and linked files must have identical relative paths.
+    let prefix=main_path.rsplit_once('/').map(|(parent,_)|format!("{parent}/")).unwrap_or_default();
+    let build_main=main_path.strip_prefix(&prefix).unwrap().to_owned();
     let mut files=Vec::new(); let mut names=HashSet::new(); let mut total=0u64;
-    let mut hash=Sha256::new();hash.update(kind.id());hash.update(kind.version());hash.update("paper-pipeline-v4-auto-bibliography");hash.update(manifest["paper"]["bibliographies"].to_string());hash.update(id);hash.update(&main_path);
+    let mut hash=Sha256::new();hash.update(kind.id());hash.update(kind.version());hash.update("paper-pipeline-v5-main-directory");hash.update(manifest["paper"]["bibliographies"].to_string());hash.update(id);hash.update(&main_path);
     let mut active:Vec<_>=entries.iter().filter(|e|e["kind"]=="file" && e["deleted"]!=true).collect();
     active.sort_by_key(|e|e["id"].as_str().unwrap_or(""));
     for e in active {
-        let path=logical_path(entries,e)?;
+        let logical=indexed_path(&index,e)?;
+        let Some(path)=logical.strip_prefix(&prefix) else {continue;};
+        let path=path.to_owned();
         anyhow::ensure!(names.insert(path.to_lowercase()),"Paper filenames differ only by case: {path}");
         let source=workspace::file_path(app,target,e)?;let meta=std::fs::metadata(&source)?;
         total=total.saturating_add(meta.len());anyhow::ensure!(total<=512<<20,"Paper project exceeds the 512 MB build limit");
@@ -103,7 +114,12 @@ fn snapshot(app: &App, target: &str, manifest: &Value) -> Result<Snapshot> {
     }
     let selection=manifest["paper"]["bibliographies"].as_array();
     let bibliographies=files.iter().filter(|f|f.path.to_lowercase().ends_with(".bib")&&selection.is_none_or(|ids|ids.iter().any(|id|id==&f.id))).map(|f|f.path.clone()).collect();
-    Ok(Snapshot{compiler:kind,files,bibliographies,main:main_path,main_id:id.into(),fingerprint:format!("{:x}",hash.finalize()),revision:manifest["revision"].clone()})
+    Ok(Snapshot{frozen:None,compiler:kind,files,bibliographies,directory:prefix.trim_end_matches('/').to_owned(),main:build_main,main_id:id.into(),fingerprint:format!("{:x}",hash.finalize()),revision:manifest["revision"].clone()})
+}
+fn freeze_linked(app:&App,target:&str,source:&mut Snapshot)->Result<()> {
+    let temp=Arc::new(tempfile::tempdir()?);
+    for input in &mut source.files {let destination=temp.path().join(&input.path);std::fs::create_dir_all(destination.parent().unwrap())?;let bytes=std::fs::read(&input.source)?;anyhow::ensure!(format!("{:x}",Sha256::digest(&bytes))==input.blob,"Project changed while preparing compilation; retry after saving");std::fs::write(&destination,bytes)?;input.source=destination;}
+    anyhow::ensure!(crate::linked::snapshot(app,target)?["revision"]==source.revision,"Project changed while preparing compilation; retry after saving");source.frozen=Some(temp);Ok(())
 }
 struct Job { status: Value, pending: Option<Snapshot>, running: bool, cancel: Arc<AtomicBool>, last: Option<Value> }
 impl Default for Job { fn default()->Self {Self{status:json!({"state":"idle"}),pending:None,running:false,cancel:Arc::new(AtomicBool::new(false)),last:None}} }
@@ -115,8 +131,10 @@ fn load_last(root:&FsPath)->Option<Value>{let v:Value=serde_json::from_slice(&st
 fn view(job:&Job)->Value{let mut v=job.status.clone();v["last_success"]=job.last.clone().unwrap_or(Value::Null);v}
 
 pub(crate) async fn status(State(app):Shared,Path(target):Path<String>)->ApiResult{
-    let root=cache(&app,&target)?;let manifest=workspace::paper_manifest(&app,&target)?;
-    let current=snapshot(&app,&target,&manifest);
+    let (root,manifest,current)=tokio::task::spawn_blocking(move||->Result<_>{
+        let root=cache(&app,&target)?;let manifest=workspace::paper_manifest(&app,&target)?;
+        let current=snapshot(&app,&target,&manifest);Ok((root,manifest,current))
+    }).await??;
     let mut map=jobs().lock().unwrap();let job=map.entry(root.clone()).or_default();
     if job.last.is_none(){job.last=load_last(&root);}
     let mut v=view(job);v["compiler"]=json!(Compiler::from_settings(&manifest["paper"])?.id());v["current_revision"]=manifest["revision"].clone();
@@ -127,7 +145,9 @@ pub(crate) async fn status(State(app):Shared,Path(target):Path<String>)->ApiResu
 pub(crate) async fn start(State(app):Shared,Path(target):Path<String>,Json(body):Json<Value>)->ApiResult{
     let manifest=workspace::paper_manifest(&app,&target)?;
     if body["revision"]!=manifest["revision"] {return Err(crate::Status(StatusCode::CONFLICT,"Project changed. Save or reload before compiling.".into()).into());}
-    let source=snapshot(&app,&target,&manifest)?;let root=cache(&app,&target)?;compiler(source.compiler)?;
+    let mut source=snapshot(&app,&target,&manifest)?;
+    if crate::linked::is_linked(&target){freeze_linked(&app,&target,&mut source)?;}
+    let root=cache(&app,&target)?;compiler(source.compiler)?;
     let mut map=jobs().lock().unwrap();let job=map.entry(root.clone()).or_default();
     if job.last.is_none(){job.last=load_last(&root);}
     // Identical requests from other windows share one build.
@@ -207,7 +227,7 @@ async fn compile(root:&FsPath,s:&Snapshot,cancel:&AtomicBool)->Result<String>{
     let work=root.join("work");let out=root.join("out");
     // Clear removed inputs; keep only bounded intermediates from this main document.
     if work.exists(){std::fs::remove_dir_all(&work)?;}
-    let build_id=format!("{}:{}",s.main_id,s.compiler.id());
+    let build_id=format!("main-directory-v1:{}:{}:{}",s.directory,s.main_id,s.compiler.id());
     if std::fs::read_to_string(root.join("main-id")).ok().as_deref()!=Some(&build_id) && out.exists(){std::fs::remove_dir_all(&out)?;}
     std::fs::create_dir_all(&work)?;std::fs::create_dir_all(&out)?;std::fs::write(root.join("main-id"),&build_id)?;
     for input in &s.files {let dest=work.join(&input.path);std::fs::create_dir_all(dest.parent().unwrap())?;std::fs::copy(&input.source,&dest)?;
@@ -225,7 +245,7 @@ async fn compile(root:&FsPath,s:&Snapshot,cancel:&AtomicBool)->Result<String>{
         }
     }
     // Tectonic anchors its input provider at the primary file's directory.
-    // A private root copy gives every main file the same project-root semantics.
+    // The staged root is the selected main file's immediate directory.
     if s.bibliographies.is_empty(){std::fs::copy(work.join(&s.main),work.join(".noctua-paper.tex"))?;}else{
         let mut bibliography=String::new();for path in &s.bibliographies{bibliography.push_str(&std::fs::read_to_string(work.join(path)).with_context(||format!("Bibliography must be UTF-8: {path}"))?);bibliography.push('\n');}
         std::fs::write(work.join(".noctua-project-references.bib"),bibliography)?;

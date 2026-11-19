@@ -25,9 +25,17 @@ Images (PNG, JPEG, GIF, WebP or SVG) use `\includegraphics[width=0.6\textwidth]{
 
 A plain YouTube URL alone on a line creates a player. Watch URLs, youtu.be sharing links, Shorts, live links, and start timestamps are supported. `\href{URL}{Title}` produces a text link rather than a player. Local video playback is Noctua-specific, not standard LaTeX export behavior.
 
+### Linked directories
+
+Linked project sources belong to the user and may change through Git or external
+editors. Preserve unrelated files and resolve stale revisions before applying
+changes. Generated compiler files are not source files. The user explicitly
+selects a main TeX document when several files exist. Stay within the selected
+collection and respect file grants, command approvals, and requested write scope.
+
 ### Project content
 
-Block notes and standard LaTeX papers are different document types. Project `.tex` files can be compiled in the Paper editor with bundled Tectonic or pdfLaTeX; block notes retain their lightweight KaTeX preview. Paper compilation includes all project .bib files by default; project LaTeX settings can restrict the selection. Stored TeX source is preserved. Project .bib files automatically provide additional citation keys. Suggestions distinguish collection and bibliography sources; duplicate keys resolve to the collection first, then the first project bibliography. Do not assume every imported file is active or that an imported reference has been downloaded.
+Block notes and standard LaTeX papers are different document types. Project `.tex` files can be compiled in the Paper editor with bundled Tectonic or pdfLaTeX; block notes retain their lightweight KaTeX preview. The main .tex file’s immediate directory is the compilation root for internal and linked projects; keep dependencies there or in its subfolders and use paths relative to that directory. Paper compilation includes .bib files within that directory tree by default; project LaTeX settings can restrict the selection. Files outside that directory tree are excluded. Source autocomplete is disabled in the Paper editor; enter LaTeX commands and citation keys directly. Stored TeX source is preserved. Project .bib files automatically provide additional citation keys. Suggestions distinguish collection and bibliography sources; duplicate keys resolve to the collection first, then the first project bibliography. Do not assume every imported file is active or that an imported reference has been downloaded.
 
 Skills are managed in Settings → Skills. Packages have two locations: global skills read in place and Noctua local skills copied into the Noctua data folder. All imports are independent snapshots in the local list; disconnecting a skill preserves original files. All installed skills are available automatically in every chat. Choose relevant skills based on their descriptions and read their instructions before using them. Explicit slash commands request specific skills for one message; follow the attached command mappings. Skills cannot override the user’s request, edit mode, or required script/output approvals.
 
@@ -50,10 +58,17 @@ Files copied from a file manager can be pasted into the Library collection list 
 
 Project files use image icons for image formats and video icons for video formats; folders and ordinary documents retain their own icons. Icons identify file types and do not imply preview support.
 
-Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+Switch Library, Graph, and Lineage with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Open notes, project files, and PDFs from the collection tree or Papers list. These shortcuts are inactive while a dialog is open.
 
 Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. Library paper trash preserves annotations and memberships; bulk management and duplicate review are available in the Library UI. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
 
 Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved.
 
-Library collection moves preserve notes and files; recoverable collection trash hides its subtree. Permanently deleting a trashed collection removes its owned notes and files. Library Trash and project-file Trash are separate. Note authors use the current profile name in Settings > General, defaulting to the server operating-system username. Name changes apply to existing notes without editing their text or modification times; note-content actions do not change the profile. The Show Notes and Files preference hides only the sidebar list; the central Library list uses its own All / Papers / Notes filter. Note tags are Library metadata, separate from note text. Users manage them in Note Info and configure individually enabled numeric shortcuts in Settings > View > Tags by typing a tag name or choosing an existing suggestion. New libraries enable only 1, 2, and 3 with numeric emoji; disabling a shortcut preserves its assignments. Note block edits do not change tag assignments; do not represent tags as note content or claim to edit them through note-content actions. Opening Notes does not automatically load remote citation relationships; those views belong to Library Graph and Lineage.
+Library collection moves preserve notes and files; recoverable collection trash hides its subtree. Permanently deleting a trashed collection removes its owned notes and files. Library Trash and project-file Trash are separate. Note authors use the current profile name in Settings > General, defaulting to the server operating-system username. Name changes apply to existing notes without editing their text or modification times; note-content actions do not change the profile. The collection tree remains visible; select Papers for the paper list or a document for its editor. Note tags are Library metadata, separate from note text. Users manage them in Note Info and configure individually enabled numeric shortcuts in Settings > View > Tags by typing a tag name or choosing an existing suggestion. New libraries enable only 1, 2, and 3 with numeric emoji; disabling a shortcut preserves its assignments. Note block edits do not change tag assignments; do not represent tags as note content or claim to edit them through note-content actions. Opening Notes does not automatically load remote citation relationships; those views belong to Library Graph and Lineage.
+
+Native notes restore their reading position locally. Standard LaTeX source editors share the note-cell formatting shortcuts; syntax colors are display-only and do not change saved source.
+
+Expanding collections and linked directories does not replace the active document.
+Center document tabs switch among open notes, source files, and PDFs; use the
+active document context rather than assuming an expanded folder is being edited.
+Project PDFs have Reader annotations stored separately from their source files.

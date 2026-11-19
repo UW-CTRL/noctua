@@ -12,6 +12,8 @@
   <script src="/connection.js"></script>
 <script src="/drafts.js"></script>
 <script src="/fonts.js"></script>
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="/linked.css">
 </head>
 <body>
   <script>
@@ -20,11 +22,11 @@
   </script>
   <header>
     <div class="brand">🦉 <span>Noctua</span></div>
-    <div class="mode-switch" role="tablist">
-      <button data-mode="graph" aria-keyshortcuts="Alt+1" title="Library (Option+1 / Alt+1)" class="active" data-icon="library">Library</button>
-      <button data-mode="notes" aria-keyshortcuts="Alt+2" title="Notes (Option+2 / Alt+2)" data-icon="notebook-pen">Notes</button>
-      <button data-mode="pdf" aria-keyshortcuts="Alt+3" title="Reader (Option+3 / Alt+3)" id="reader-mode" disabled data-icon="book-open">Reader</button>
-    </div>
+      <div id="layout" class="visualization-tabs" role="group" aria-label="Visualization">
+        <button data-layout="library" aria-keyshortcuts="Alt+1" data-icon="library" class="active" aria-pressed="true" title="Browse every paper in your library">Library</button>
+        <button data-layout="network" aria-keyshortcuts="Alt+2" data-icon="network" aria-pressed="false" title="Force-directed citation network">Graph</button>
+        <button data-layout="lineage" aria-keyshortcuts="Alt+3" data-icon="threads" aria-pressed="false" title="Papers in time order, grouped into research threads">Lineage</button>
+      </div>
     <div id="research-search">
       <form id="search-form" autocomplete="off" role="search">
         <select id="search-engine" aria-label="Paper search engine" title="Choose search engine. Tab in the search field switches engines.">
@@ -46,11 +48,6 @@
       <div id="pdf-sidebar"></div>
       <div id="notes-side">
         <ul id="note-list" class="note-list"></ul>
-      </div>
-      <div id="layout" class="visualization-tabs" role="group" aria-label="Visualization">
-        <button data-layout="library" data-icon="library" class="active" aria-pressed="true" title="Browse every paper in your library">Library</button>
-        <button data-layout="network" data-icon="network" aria-pressed="false" title="Force-directed citation network">Graph</button>
-        <button data-layout="lineage" data-icon="threads" aria-pressed="false" title="Papers in time order, grouped into research threads">Lineage</button>
       </div>
       <div id="research-sidebar">
       <div id="tab-library" class="tab-body">
@@ -115,7 +112,7 @@
       <section id="library-view" aria-label="Library papers">
         <div class="library-heading">
           <div><h1 id="library-title">Library</h1><span id="library-count" class="hint"></span></div>
-          <div id="library-kind" class="library-kind" role="group" aria-label="Show papers, notes, or both">
+          <div id="library-kind" hidden class="library-kind" role="group" aria-label="Show papers, notes, or both">
             <button type="button" data-kind="all" aria-pressed="true" class="active">All</button>
             <button type="button" data-kind="papers" aria-pressed="false">Papers</button>
             <button type="button" data-kind="notes" aria-pressed="false">Notes</button>
@@ -250,6 +247,9 @@
   <script src="/pdf-objects.js"></script>
   <script src="/pdf.js"></script>
   <script src="/split-drag.js"></script>
+  <script src="/vendor/xterm/xterm.js"></script>
+  <script src="/linked.js"></script>
+  <script src="/documents.js"></script>
   <script src="/update-dialogs.js"></script>
   <script src="/browser-connect.js"></script>
   <script src="/setup.js"></script>

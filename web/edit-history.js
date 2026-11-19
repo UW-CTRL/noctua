@@ -33,7 +33,7 @@ async function undoNote(redo=false){
 let readerHistoryBusy=false;
 async function refreshReaderHistory(){if(!PDF.key)return;const key=PDF.key;try{const h=await api(paperURL(key)+'/annotation-history');if(PDF.key!==key)return;document.querySelectorAll('[data-history="reader"]').forEach(el=>{for(const action of ['undo','redo']){const b=el.querySelector(`[data-${action}]`);b.disabled=readerHistoryBusy||!h[action];b.title=h[action]?`${action}: ${h[action]}`:action;}});}catch(e){console.error(e);}}
 async function undoReader(redo=false){
- if(readerHistoryBusy||!PDF.key)return;readerHistoryBusy=true;const key=PDF.key;const stage=document.getElementById('pdf-stage');const active=document.activeElement;const caret=active?.matches('textarea')?{id:active.closest('[data-id]')?.dataset.id,start:active.selectionStart,end:active.selectionEnd}:null;if(stage)stage.inert=true;
+ if(readerHistoryBusy||!PDF.key||PDF.paper?.project_file)return;readerHistoryBusy=true;const key=PDF.key;const stage=document.getElementById('pdf-stage');const active=document.activeElement;const caret=active?.matches('textarea')?{id:active.closest('[data-id]')?.dataset.id,start:active.selectionStart,end:active.selectionEnd}:null;if(stage)stage.inert=true;
  try{
   for(const e of pdfCommentEdits.values())if(e.key===key&&!e.deleted){await savePDFComment(e);if(e.conflict||e.error)throw Error(e.error||'Resolve comment conflict first.');}
   await Promise.all([...pdfSaves]);if(PDF.key!==key)return;

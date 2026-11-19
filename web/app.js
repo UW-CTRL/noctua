@@ -16,9 +16,8 @@ const store = {
 let inflight = 0;
 let queueTimer = null;
 
-async function api(path, body) {
-  inflight++;
-  watchQueue();
+async function api(path, body, {background=false}={}) {
+  if(!background){inflight++;watchQueue();}
   try {
     const opts = body === undefined ? {} : {
       method: 'POST',
@@ -30,7 +29,7 @@ async function api(path, body) {
     if (!r.ok) throw Object.assign(new Error(j.error || `HTTP ${r.status}`), { status: r.status });
     return j;
   } finally {
-    inflight--;
+    if(!background)inflight--;
     if (!inflight) notifyProgress('requests', null);
   }
 }
@@ -197,7 +196,7 @@ async function loadGraph(id, { push = true, quiet404 = false, libKey = null, swi
 
   const url = '#paper=' + enc(c.id);
   if (push && location.hash !== url) history.pushState(null, '', url);
-  document.title = `${g.center.title} · Noctua`;
+  if(typeof updateMainTitle==='function')updateMainTitle();else document.title = `${g.center.title} · Noctua`;
   $('#empty').classList.add('hidden');
 
   view.x = 0; view.y = 0; view.k = 0.9;
@@ -235,7 +234,7 @@ function clearGraph({ push = true } = {}) {
   resetGraph();
   G.libKey = null;
   if (push && location.hash) history.pushState(null, '', location.pathname);
-  document.title = 'Noctua';
+  if(typeof updateMainTitle==='function')updateMainTitle();else document.title = 'Noctua';
   $('#empty').classList.remove('hidden');
   $('#tooltip').classList.add('hidden');
   hideToast({ keepError: true });
@@ -296,7 +295,7 @@ async function openProject(target, { push = true } = {}) {
 
   const url = '#project=' + enc(target);
   if (push && location.hash !== url) history.pushState(null, '', url);
-  document.title = `${name} · Noctua`;
+  if(typeof updateMainTitle==='function')updateMainTitle();else document.title = `${name} · Noctua`;
   $('#empty').classList.add('hidden');
   view.x = 0; view.y = 0; view.k = 0.9;
   G.autoFit = true;
@@ -687,6 +686,7 @@ function abstractHTML(p,native=false){
 
 function renderDetails() {
   const el = $('#details');
+  if(typeof PDF!=='undefined'&&document.body.classList.contains('pdf-mode')&&PDF.paper?.project_file){el.innerHTML=`<h2>${esc(PDF.paper.title)}</h2><p class="hint">Project PDF · use Files to browse its collection.</p>`;return;}
   if (typeof PDF !== 'undefined' && document.body.classList.contains('pdf-mode') && PDF.paper) return renderLibDetails(PDF.paper);
   const n = G.nodes.get(G.selected);
   const p = n?.p || results.find((r) => r.paperId && r.paperId === G.selected);
@@ -783,6 +783,7 @@ function showCollection(id) {
   renderDetails();
   renderLibTree();
   loadLibItems();
+  if(typeof updateMainTitle==='function')updateMainTitle();
   clearTimeout(projectFolderTimer);projectFolderTimer=null;
   if (G.layout !== 'library' && !document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode')) {
     G.token++;
@@ -805,6 +806,7 @@ function revealCollection(id) {
 }
 
 function renderLibTree() {
+  const restoreScroll=typeof preserveDirectoryScroll==='function'?preserveDirectoryScroll():()=>{};
   const el = $('#lib-tree');
   if (!collections.targets.length) {
     el.innerHTML = `<p class="hint">${esc(collections.error || 'Noctua library not found.')} <a href="#" class="open-settings">Settings</a></p>`;
@@ -820,7 +822,7 @@ function renderLibTree() {
   });
   el.innerHTML = targets.map((t) => `
     <li data-id="${esc(t.id)}" tabindex="0" class="${!lib.trash && t.id === lib.target ? 'active' : ''}" style="padding-left:${8 + (t.level || 0) * 8}px">
-      ${parents.has(t.id) ? `<button type="button" class="t-toggle" data-icon="${lib.expanded.has(t.id) ? 'chevron-down' : 'chevron-right'}" data-icon-only aria-expanded="${lib.expanded.has(t.id)}" aria-label="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} ${esc(t.name)}" title="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} subfolders"></button>` : '<span class="t-toggle-spacer" aria-hidden="true"></span>'}
+      ${(parents.has(t.id)||typeof Explorer!=='undefined') ? `<button type="button" class="t-toggle" data-icon="${lib.expanded.has(t.id) ? 'chevron-down' : 'chevron-right'}" data-icon-only aria-expanded="${lib.expanded.has(t.id)}" aria-label="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} ${esc(t.name)}" title="${lib.expanded.has(t.id) ? 'Collapse' : 'Expand'} subfolders"></button>` : '<span class="t-toggle-spacer" aria-hidden="true"></span>'}
       <span class="tree-symbol" title="${t.is_project ? 'Research project' : t.id.startsWith('L') ? 'Library' : 'Folder'}" aria-label="${t.is_project ? 'Research project' : 'Folder'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.id.startsWith('L') ? '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/>' : t.is_project ? '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>' : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'}</svg></span>
       <span class="t-name">${esc(t.name)}</span>
       <span class="t-tail">
@@ -842,9 +844,11 @@ function renderLibTree() {
     li.addEventListener('contextmenu', event=>{event.preventDefault();event.stopPropagation();openLibraryFolderMenu(li.dataset.id,li,event);});
     li.addEventListener('click', () => {
       if (li.querySelector('input')) return;
+      if(typeof browseCollection==='function'&&(G.layout==='library'||document.body.classList.contains('pdf-mode'))){browseCollection(li.dataset.id).catch(error=>toast(error.message,{error:true}));return;}
       showCollection(li.dataset.id);
+      if(typeof restoreCollectionView==='function'&&G.layout==='library'){restoreCollectionView();return;}
       if (typeof loadNoteFolder === 'function' && N.target !== lib.target) loadNoteFolder(lib.target);
-      $('#lib-tree').querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus();
+      $('#lib-tree').querySelector(`[data-id="${CSS.escape(lib.target)}"]`)?.focus({preventScroll:true});
     });
     li.addEventListener('keydown', (e) => {
       if (e.target !== li || e.isComposing || e.key !== 'Enter' || !li.dataset.id.startsWith('C')) return;
@@ -855,10 +859,11 @@ function renderLibTree() {
     li.querySelector('.t-toggle')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = li.dataset.id;
+      if(typeof browseCollection==='function'&&(G.layout==='library'||document.body.classList.contains('pdf-mode'))){browseCollection(id).catch(error=>toast(error.message,{error:true}));return;}
       if (!lib.expanded.delete(id)) lib.expanded.add(id);
       store.set('noctua.expandedFolders', JSON.stringify([...lib.expanded]));
       renderLibTree();
-      el.querySelector(`[data-id="${CSS.escape(id)}"] .t-toggle`)?.focus();
+      el.querySelector(`[data-id="${CSS.escape(id)}"] .t-toggle`)?.focus({preventScroll:true});
     });
     li.querySelector('.t-rename:not(.t-new)')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -871,6 +876,7 @@ function renderLibTree() {
 
   });
   if (typeof placeWorkspaceTree === 'function') placeWorkspaceTree();
+  restoreScroll();
 }
 
 function startRename(li) {
@@ -1541,7 +1547,7 @@ async function openChat(id) {
   if (c.busy) {
     const notice=appendMsg('assistant','<p class="tool">This server is still replying. The task continues when this interface closes.</p><button class="stop-server-reply">Stop server reply</button>');
     notice.querySelector('button').onclick=async()=>{try{await api(`/api/chats/${enc(id)}/stop`,{});}catch(e){toast(e.message,{error:true});}};
-    for (const request of c.pending_file_edits||[]) runChatAction(request,notice);
+    for (const request of [...c.pending_file_edits||[],...c.pending_project_commands||[]]) runChatAction(request,notice);
     const provider=chat.provider;
     setTimeout(()=>{if(chat.id===id&&chat.provider===provider&&!chat.busy)openChat(id);},1500);
   }
@@ -1572,6 +1578,7 @@ function runChatAction(a, host) {
   if (a.action === 'chat_pdf_page') { window.NoctuaChatFiles.preparePDFPage(a).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action?.startsWith('pdf_')) { pdfAction(a).catch((e) => toast(e.message, { error: true })); return; }
   if (a.action === 'skill_run') { showSkillRun(a.id); return; }
+  if (a.action === 'project_command_approval') { showProjectCommandApproval(a, host); return; }
   if (a.action === 'file_edit_approval') { showFileEditApproval(a, host); return; }
   if (a.action === 'workspace_changed') { refreshWorkspaceView(a.target).catch(e=>toast(e.message,{error:true})); return; }
   if (a.action === 'paper_info') { refreshPaperInfo(a).catch(e=>toast(e.message,{error:true})); return; }
@@ -1877,6 +1884,7 @@ function size() {
 }
 
 function draw() {
+  if(G.layout==='library'||document.body.classList.contains('notes-mode')||document.body.classList.contains('pdf-mode')||document.body.classList.contains('resizing'))return;
   const { w, h, dpr } = size();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
@@ -2383,6 +2391,7 @@ window.addEventListener('popstate', () => {
   else if (pm) openProject(decodeURIComponent(pm[1]), { push: false });
   else if (!location.hash.startsWith('#pdf=')) clearGraph({ push: false });
 });
+window.addEventListener('noctua-pane-resize-end',draw);
 new ResizeObserver(() => draw()).observe($('#stage'));
 new ResizeObserver(() => draw()).observe($('#stage .controls'));
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
@@ -2493,9 +2502,9 @@ $('#chat-input').addEventListener('input', () => { try { window.preserveChatDraf
 document.addEventListener('keydown', event => {
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || event.isComposing || event.defaultPrevented) return;
   if (document.querySelector('dialog[open]')) return;
-  const mode = {Digit1:'graph', Digit2:'notes', Digit3:'pdf'}[event.code];
+  const mode = {Digit1:'library', Digit2:'network', Digit3:'lineage'}[event.code];
   if (!mode) return;
-  const button = document.querySelector(`.mode-switch button[data-mode="${mode}"]`);
+  const button = document.querySelector(`#layout button[data-layout="${mode}"]`);
   event.preventDefault();
   if (button && !button.disabled) button.click();
 });

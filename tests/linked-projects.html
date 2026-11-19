@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Linked project regression</title><link rel="stylesheet" href="../web/linked.css"></head><body>
+<div id="notes-stage"><div id="workspace-editor"><header><span data-file-status></span></header></div></div><div id="chat-log"></div>
+<script>
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+Object.defineProperty(document,'hidden',{get:()=>false});
+const target='linked~L1~test',N={target:'L1',doc:null},lib={target:'L1'},G={layout:'library'};
+const W={target,file:'main',text:'draft',dirty:false,fileRevision:1,manifest:{linked:true,root:'/tmp/project',revision:1,entries:[{id:'main',kind:'file',name:'main.tex',blob:'a'}]}};
+let disk='initial',revision=1,blob='a',opened=0,bib=0,rendered=0,saves=[];
+const store={values:new Map(),get(k){return this.values.get(k)},set(k,v){this.values.set(k,v)}};
+async function api(path,body){if(body){if(body.revision!==revision)throw Error('Disk changed again');saves.push(body);disk=body.text;revision++;blob=disk;return manifest();}if(path.includes('/files/'))return {text:disk,revision};return manifest();}
+function manifest(){return {linked:true,root:'/tmp/project',revision,entries:[{id:'main',kind:'file',name:'main.tex',blob}],git:{branch:'main',root:'/tmp/project',status:''}};}
+function workspaceDialog(title,html){const d=document.createElement('dialog');d.setAttribute('aria-label',title);d.innerHTML=html;d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();return d;}
+function workspaceChildren(){return new Map();}
+function renderWorkspaceTree(){rendered++;}function applyBibliography(){bib++;}function updateChatContext(){}function renderEditor(){}function toast(e){throw Error(e)}
+async function openWorkspaceFile(){opened++;W.text=disk;W.saved=disk;W.dirty=false;W.fileRevision=revision;}
+async function saveWorkspaceFile(){}async function flushNoteEdits(){}async function restoreWorkspaceFile(){return false;}function setMode(){}function setLayout(){}function loadLibItems(){}
+async function loadNoteFolder(c){N.target=c;}const workspaceURL=()=>'/api/workspaces/'+enc(W.target);
+function assert(value,message){if(!value)throw Error(message);window.webkit.messageHandlers.progress.postMessage(message)}
+async function settle(){for(let i=0;i<15;i++)await Promise.resolve();await new Promise(r=>setTimeout(r,30));}
+</script>
+<script src="../web/linked.js"></script>
+<script>
+(async()=>{
+ window.removeEventListener('focus',refreshProjectTrees);
+ Linked.links.set('L1',{supported:true,links:[{id:'test',name:'Project',path:'/tmp/project',available:true,target}]});
+ assert(linkedCollection(target)==='L1'&&linkedCollection('L1')==='L1','collection scope');
+ const header=document.createElement('div');header.innerHTML=linkedTreeHeader();assert(header.querySelector('[data-project-papers]')&&header.querySelector('[data-linked-root]')&&header.querySelector('[data-root-terminal]')&&!header.querySelector('.linked-status'),'Papers, linked roots, and terminal actions');
+ revision=2;blob='b';disk='external';await reconcileLinkedFiles();assert(opened===1&&W.text==='external'&&bib===1,'clean file reloads with updated bibliography');W.manifest.git.branch='old-branch';const beforeRender=rendered;await reconcileLinkedFiles();assert(W.manifest.git.branch==='main'&&rendered>beforeRender,'Git-only updates refresh without source edits');
+ W.dirty=true;W.text='my unsaved draft';revision=3;blob='c';disk='pulled from Git';await reconcileLinkedFiles();
+ assert(Linked.conflict&&$('dialog [data-local]').value==='my unsaved draft'&&$('dialog [data-disk]').value==='pulled from Git','dirty draft and disk shown separately');assert(saves.length===0,'conflict must not save automatically');
+ $('dialog [data-later]').click();await settle();assert(W.dirty&&W.text==='my unsaved draft','keep draft preserves text');await reconcileLinkedFiles();assert(!$('dialog'),'dismissed disk version does not repeatedly interrupt');
+ await showLinkedConflict(manifest());revision=4;blob='d';disk='newer pull';$('dialog [data-save]').click();await settle();assert($('dialog [data-error]').textContent.includes('changed again')&&saves.length===0,'second intervening write rejected');
+ $('dialog [data-later]').click();await settle();await showLinkedConflict(manifest());$('dialog [data-save]').click();await settle();assert(saves.length===1&&disk==='my unsaved draft'&&!W.dirty,'explicit overwrite uses current revision');
+ window.webkit.messageHandlers.result.postMessage('PASS: linked tree, clean reload, dirty conflict comparison, dismissed drafts, and stale overwrite protection');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
+</script></body></html>
