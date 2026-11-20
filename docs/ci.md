@@ -294,7 +294,9 @@ subfolder inputs, cached compilation, errors, stale revisions, cancellation, and
 artifact retention. It requires network for uncached TeX resources.
 
 The frontend suite includes `tests/paper.html` for editor/preview behavior, save
-conflicts, debounced builds, cancellation, and stale PDF-load protection. It logs
+conflicts, debounced builds, cancellation, and stale PDF-load protection. It also
+checks that prose and TeX input do not invoke autocomplete and that native text
+suggestions are disabled on source fields. It logs
 completed assertions and pending operations to CI. Application operations have a
 ten-second timeout with an operation name; the WebKit launcher retains its
 35-second overall limit and reports the last progress message on timeout.
@@ -396,3 +398,55 @@ non-followed upstream redirects, uploads larger than the default Axum body limit
 and delivery of the first chat event before the upstream stream finishes.
 Browser resource tests cover runtime UI changes and traversal/symlink rejection.
 Signed cross-platform server fixtures validate the Desktop release verifier.
+
+## Linked workspace checks
+
+Backend library tests cover live-file revisions, stale writes, trash restoration,
+stable IDs after Noctua renames, persisted/revoked grants, collection scoping,
+Git parent detection, PTY sessions, and approved command execution. On macOS the
+confinement test launches `sandbox-exec` and verifies denied writes through child
+processes and symlinks. Run these tests outside an enclosing sandbox that forbids
+creating macOS sandbox profiles.
+
+`tests/linked-projects.html` checks clean editor reloads, dirty-draft comparison,
+keeping drafts, and rejection of a second intervening disk edit. It runs through
+the standard WebKit harness. `tests/linked-workspace.html` exercises the actual
+workspace editor, linked creation destinations, explicit TeX entry-point selection,
+and the Papers navigation action. `tests/workspace.html` and `tests/research.swift`
+cover the unified tree and navigation shortcuts.
+
+Paper directory-scope regressions cover internal and linked sources, including
+cache invalidation for sibling versus local bibliography edits. With the bundled
+pdfLaTeX distribution installed, run the real build check with
+`cargo test --lib paper_compiles_sibling_class_bibliography_and_nested_input -- --ignored`.
+It compiles a nested main file using a sibling class, a local bibliography, and
+an included subfolder source, and checks that SyncTeX is published.
+
+Performance regressions cover native filesystem change tokens, unchanged-token
+refreshes avoiding directory scans, frame-coalesced pane drags and cancellation,
+and idle/hidden compiler polling. The paper fixture also checks that diagnostic
+geometry waits until a pane drag ends.
+
+Editor QOL checks cover child collections preceding project contents, native-note scroll restoration across document switches, escaped LaTeX syntax coloring, and bounded coloring of large source files.
+
+Sidebar regression checks cover scroll retention across file switches, root-row
+actions and settings, and tab titles across paper/source/note/project transitions.
+Syntax tests cover multiline math state, comments, and separate symbol/environment
+colors; navigation checks cover spacing between search and visualization tabs.
+
+`tests/explorer.html` covers independent collection/root expansion, center file
+tabs, caret restoration, save-before-switch behavior, and blocked navigation on
+save errors. `tests/project-reader.html` opens a generated PDF with real PDF.js
+rendering and checks canvas/text layers, project annotation creation, and the
+exclusive Files/Outline/Annotations sidebar. Its test-only frame clock avoids
+offscreen WebKit animation suspension. Backend project Reader tests cover both
+internal and linked PDFs, source-byte preservation, geometry validation, and
+stale annotation revisions. The paper fixture checks native text during resizing.
+
+The paper fixture checks soft wrapping without horizontal overflow, wrapped color
+rows, and diagnostic positions after wrapping. It runs in an active AppKit window
+to avoid WebKit timer throttling during repeated editor mounts.
+
+The macOS paper job also runs the backend library suite, covering linked roots,
+PTY terminals, and sandboxed agent commands that Ubuntu cannot exercise. Update
+fixtures support minor/major release boundaries as well as patch releases.

@@ -290,28 +290,21 @@ branches start collapsed. Your later choices are remembered in this browser.
 It controls Library paper and note lists, paper counts, and folder graphs,
 including assistant folder tools. Duplicate papers appear once even if saved in
 multiple nested folders. The library root always shows all papers and notes.
-Project files keep their own collection scope. **Show Notes and Files in Library**
-in View hides or shows the combined folder list, including imported files.
+Project files keep their own collection scope. The always-visible collection tree
+contains a permanent **Papers** node, notes/files, and any linked directories.
+Select Papers to show the central paper table. Select a note or project file to
+open its editor; expanding a collection leaves the current document open. The single
+**Library | Graph | Lineage** navigation group replaces the separate Notes and
+Reader tabs. Open a PDF from the Papers list to read it.
+
 Folder counts align at the right edge. Hover a folder or focus its controls to
-replace its count with rename, new-folder, and available import actions.
-The library supports filtering, sorting, and metadata editing.
-
-The same tree appears in **Notes**, and the selection is shared between the two
-modes. The selected collection's notes and project files are listed under its
-row; click a note to open it in Notes. The **Collections** header above the tree
+rename it, create a child folder, or import content. The **Collections** header
 creates notes, project folders, and imports in the selected collection. See
-[Notes](notes.md#project-files-bibliographies-and-skills).
+[Notes](notes.md#project-files-bibliographies-and-skills) and
+[Linked projects](linked-projects.md) for external directories and Git.
 
-The Library table lists the selected collection's notes beside its papers.
-Visible rows alternate between two subtle background tones, which stay in order
-after sorting or filtering. Note rows have a notebook icon, show **Note** and their last edit in the Publication
-column, and open in Notes when you click the title, double-click the row, or
-press Enter. Use **All / Papers / Notes** above the table to choose what is
-listed (remembered on this device). The text filter matches note titles; a tag
-filter lists papers only, since notes have no tags. Notes are listed for the
-selected collection itself, not its subfolders. The **New note** icon beside the
-filter, or **New note** in a collection's right-click menu, creates a note there
-and opens it.
+The Papers table supports filtering, sorting, and metadata editing. Its rows
+alternate between two background tones, retained after sorting and filtering.
 
 To write while you browse, click **Open notes beside this view** (two columns)
 in the Library header or the Graph and Lineage toolbar. The note opens to the
@@ -378,6 +371,18 @@ a complete server update snapshot includes it when notes are inside the data
 folder. An external notes directory needs its own backup, as described in
 [Server and connections](server.md#drafts-backup-and-updates).
 
-Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+Switch Library, Graph, and Lineage with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Open notes, project files, and PDFs from the collection tree or Papers list. These shortcuts are inactive while a dialog is open.
 
 Trash appears as the last row in the continuous Library folder list and is a virtual folder, not a collection membership. Click it to browse and restore deleted items in the main area. Drag papers or folders onto Trash to delete them after confirmation. Removing a paper from a collection or linking it to other collections does not put it in Trash.
+
+Expanded collections show their child collections before the project file tree, keeping them above linked-project Git and terminal controls. Bibliography indexing warnings are omitted from the collection tree.
+
+The header separates search from Library/Graph/Lineage. Opening another project
+file preserves the collection tree’s scroll position. Tab labels follow the main
+pane: paper title for Reader, collection and document for notes/source files,
+and collection/project context for a project or Papers view.
+
+Collections and linked roots expand independently. Center document tabs retain
+opened files for the current window session, separate from outer application
+tabs. In Reader, the **Files** sidebar tab shows this same explorer. Search has
+a wider field with space on both sides of the header navigation.

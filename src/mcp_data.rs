@@ -678,6 +678,8 @@ pub fn workspace(app: &App, a: &Value) -> Result<Value> {
         .collect();
     let mut out = page(entries, a, 50);
     out["folder_id"] = json!(target);
+    out["linked"] = m["linked"].clone();
+    out["linked_projects"] = crate::linked::descriptors(app,target)?;
     out["revision"] = m["revision"].clone();
     out["bibliographies"] = m["bibliographies"].clone();
     out["skills"] = m["skills"].clone();

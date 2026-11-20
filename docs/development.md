@@ -337,3 +337,59 @@ immutable browser UI snapshot beside its durable local server, and retains it
 across independent server updates. Replacing this snapshot is an explicit browser
 deployment operation; Desktop UI upgrades do not silently hot-swap open browser
 sessions. Update browser files between sessions and refresh clients together.
+
+## Linked workspace implementation
+
+External roots use `linked~<collection>~<link-id>` workspace targets. Their registry,
+root identity, paper settings, file-ID mappings, access grants, and trash are
+stored under the owning collection's internal `.workspace` directory. Workspace
+routes adapt live files into the existing entry format without copying source
+files into immutable blob storage. Revisions fingerprint visible file contents
+and settings; writes reject stale revisions. Compilation freezes and verifies its
+inputs before queuing a build. Client reconciliation queries `/api/workspaces/{target}/changes` once per second
+while visible. A shared native watcher per canonical root supplies an opaque
+generation token; unchanged tokens avoid scans, Git subprocesses, and bibliography
+parsing. Watcher capacity is bounded at 64 roots, with inactive entries evicted
+on subsequent access after two minutes. Clients rescan on invalidation, focus,
+expansion, and a 30-second safety interval (including watcher failure). Event
+numbers are hints only: edit revision checks and compilation snapshots still read
+the actual files. Compiler cache output is excluded from internal invalidations.
+
+Background API reads do not trigger the global progress indicator or its status
+requests. Compiler status polling runs while a job is active and stops when idle
+or hidden; workspace changes and visibility restore it. Source typing and pane
+drags defer background reconciliation. Build paths use an ID index rather than
+repeated linear parent searches. Tree entries are grouped by parent per render.
+
+Pane dragging caches its initial bounds and coalesces pointer events to one width
+update per animation frame. Width persistence, PDF refitting, and diagnostic
+geometry are deferred until release/cancel. Hidden graph views skip drawing, and
+PDF preview pages outside the prefetch margin release their canvas/text DOM.
+
+
+Terminals use macOS PTYs and authenticated HTTP polling with a bounded byte
+buffer. They are separate from agent command requests: those require active chat
+scope, user-issued grants, and a macOS write-confinement profile. Network access
+is independently requested. Profiles preserve ordinary tool reads; they enforce
+write boundaries rather than a confidential read sandbox. Server shutdown closes
+terminals and agent command process groups. Command approval never enables an
+unconfined fallback. xterm.js 5.5.0 is bundled under `web/vendor/xterm` with its MIT
+license, so the terminal does not fetch executable assets from a CDN at runtime.
+
+Compiler diagnostic locations are parsed by matching the extension and line-number
+suffix before extracting the path. Avoid unanchored filename wildcards: long
+compiler lines can otherwise cause quadratic regular-expression work on the UI
+thread. Unchanged diagnostic results are reused while the source manifest and
+main-file selection remain unchanged. The paper WebKit fixture includes a long-log
+latency regression alongside source-location checks.
+
+### Project explorer and Reader integration
+
+`web/documents.js` owns independent collection expansion and session document
+tabs. It serializes file switches and flushes drafts before navigation. The
+Reader moves the existing explorer DOM into its Files panel and returns it when
+leaving Reader, preserving one directory tree rather than duplicating controls.
+`src/workspace_reader.rs` resolves PDFs through workspace access rules and stores
+annotations under `.workspace/reader/`, keyed by file identity and content hash.
+Annotation revisions reject stale writes; project PDFs do not use Library paper
+IDs or Library-only AI/history routes.

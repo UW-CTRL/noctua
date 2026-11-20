@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="../web/style.css">
 <link rel="stylesheet" href="../web/pdf.css">
 <link rel="stylesheet" href="../web/icons.css">
-<body class="pdf-mode"><div id="chat-selections" hidden></div><textarea id="chat-input"></textarea><section id="pdf-stage" style="height:600px;width:900px"></section><aside id="pdf-sidebar" style="height:250px"></aside>
+<body class="pdf-mode"><div id="chat-selections" hidden></div><textarea id="chat-input"></textarea><section id="pdf-stage" style="height:600px;width:900px"></section><div id="reader-side-host"><aside id="pdf-sidebar" style="height:250px"></aside><div id="research-sidebar"><div id="lib-tree">Directory fixture</div></div></div>
 <script>
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const preferences=new Map(),localStorage={removeItem:k=>preferences.delete(k)},store={get:k=>preferences.get(k),set:(k,v)=>preferences.set(k,v)},paperURL=key=>'/api/papers/'+key;
@@ -17,6 +17,7 @@ window.fetch=async(url,options)=>{
  }
  return nativeFetch(url,options);
 };
+function historyButtons(){return ''}function refreshReaderHistory(){}function splitViewActive(){return false}
 const chat={provider:'claude',id:null};function showRightTab(){}function updateChatContext(){}function setMode(){}function notifyProgress(){}function toast(e,options){window.lastOutlineToast={message:e,options};console.error(e);}function openPaperView(){}
 </script>
 <script src="../web/pdf-objects.js"></script><script src="../web/pdf.js"></script><script src="../web/chat-selections.js"></script>
@@ -240,6 +241,10 @@ async function checkPDFAutoHighlight(){
 async function checkPDFOutline(){
  const original={key:PDF.key,sidebar:PDF.sidebar,outlineSource:PDF.outlineSource},originalAPI=api,originalIndex=indexPDF;
  try{
+  ensurePDFSidebar();setPDFSidebarTab('files');
+  const files=$('#research-sidebar');assert($('#pdf-files-panel').contains(files)&&!$('#pdf-files-panel').hidden&&$('#pdf-outline-panel').hidden,'Files is an exclusive Reader sidebar panel');
+  setPDFSidebarTab('outline');assert($('#pdf-files-panel').hidden&&$('#research-sidebar')===files,'switching Reader panels preserves the directory tree');
+  document.body.classList.remove('pdf-mode');syncPDFFilesPanel();assert(files.parentElement.id==='reader-side-host','leaving Reader restores the directory panel home');document.body.classList.add('pdf-mode');
   ensurePDFSidebar();setPDFSidebarTab('annotations');
   const draft=$('#pdf-annotations-panel textarea');draft.value='Unsaved outline-switch draft';draft.oninput();
   setPDFSidebarTab('outline');

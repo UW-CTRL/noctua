@@ -1,0 +1,96 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Linked editor integration</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/linked.css"><link rel="stylesheet" href="../web/vendor/xterm/xterm.css"></head><body class="notes-mode">
+<div id="chat-log"></div><div id="collection-tools"><button data-new-file>New file</button><button data-new-folder>New folder</button><button data-import-file>Import</button></div>
+<ul id="lib-tree"><li data-id="L1">Collection</li></ul><div id="notes-side"><ul id="note-list"></ul></div><div id="notes-stage"></div>
+<script>
+Object.defineProperty(document,'hidden',{get:()=>false});
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PDF={paper:{title:'A previously opened paper'}};
+const collections={targets:[{id:'L1',name:'Research'}]};
+let texKeys;
+const target='linked~L1~root',settings={},G={layout:'library'},lib={target:'L1'},N={target:'L1',items:new Map(),list:[],doc:null};
+const store={data:{},get(k){return this.data[k]},set(k,v){this.data[k]=v}},lastSplitSide=()=>null;
+const terminalCalls=[];
+const root={linked:true,revision:1,root:'/tmp/project',entries:[],history:{},paper:{},git:null};let source='',configWrites=0;
+const clone=v=>JSON.parse(JSON.stringify(v));
+let apiReads=0,fullReads=0;
+async function api(path,body){
+ if(!body)apiReads++;
+ if(path.endsWith('/changes'))return {generation:path.includes(target)?root.revision:1,watching:true};
+ if(path.endsWith('/access'))return {grants:[]};
+ if(path.endsWith('/terminal')){terminalCalls.push(body);if(body.op==='create')return {id:'session',directory:'/tmp/project',server:'test'};return {output:body.op==='poll'&&!body.offset?btoa('terminal ready\r\n'):'',offset:16,ended:false};}
+ if(path.endsWith('/links'))return {supported:true,links:[{target,id:'root',name:'Project',path:'/tmp/project',available:true}]};
+ if(path==='/api/workspaces/L1')return {revision:1,entries:[{id:'internal',name:'Internal note.txt',kind:'file',parent:''}],history:{}};
+ if(path.includes('/files/'))return {text:source,revision:root.revision,history:{}};
+ if(path==='/api/workspaces/'+target){if(!body)fullReads++;if(body){if(body.revision!==root.revision)throw Error('Stale revision');if(body.op==='create'){root.entries.push({id:'main',name:body.name,kind:'file',parent:body.parent||'',blob:'created',size:body.text.length});source=body.text;}else if(body.op==='edit'){source=body.text;root.entries[0].blob=source;}else if(body.op==='config'){configWrites++;if(body.paper)root.paper=body.paper;if(body.show_ignored!==undefined)root.show_ignored=body.show_ignored;}root.revision++;}return clone(root);}
+ throw Error('Unexpected API: '+path);
+}
+function setMode(mode){document.body.classList.toggle('notes-mode',mode==='notes');}function isNotesMode(){return document.body.classList.contains('notes-mode');}
+function setLayout(mode){G.layout=mode;}function loadLibItems(){}function updateChatContext(){}function typeset(){}function stopEdit(){}function renderEditor(){}function toast(message){throw Error(message)}async function flushNoteEdits(){}async function saveNow(){}
+function collectionOptions(selected){return `<option value="L1" ${selected==='L1'?'selected':''}>Collection</option>`;}
+function assert(value,message){if(!value)throw Error(message);window.webkit.messageHandlers.progress.postMessage(message);}
+async function settle(){for(let i=0;i<30;i++)await Promise.resolve();await new Promise(r=>setTimeout(r,20));}
+</script>
+<script src="../web/vendor/xterm/xterm.js"></script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script><script src="../web/linked.js"></script>
+<script>
+(async()=>{
+ const noteSource=await (await fetch('../web/notes.js')).text();
+ texKeys=new Function(noteSource.slice(noteSource.indexOf('const PAIRS ='),noteSource.indexOf('// ---------------------------------------------------------------- \\cite picker'))+';return texKeys;')();
+ window.removeEventListener('focus',refreshProjectTrees);
+ await loadWorkspace('L1');await settle();assert($('#workspace-tree [data-project-papers]')&&$('#workspace-tree [data-linked-root]'),'internal tree includes Papers and linked project');
+ await openLinkedRoot(target);assert(W.target===target&&N.target==='L1','linked editor preserves owning collection');assert($('#lib-tree .tree-files [data-linked-root][aria-current]'),'linked tree stays under owning collection');
+ workspaceCreate(false);await settle();const d=$('dialog');assert(d.querySelector('[data-collection]').value===target,'new file defaults to linked directory');assert(d.querySelector('[value=note]').disabled,'block notes remain internal');d.querySelector('[data-kind]').value='tex';d.querySelector('[data-name]').value='main';d.querySelector('form').requestSubmit();await settle();
+ assert(root.entries[0]?.name==='main.tex'&&W.file==='main'&&$('#workspace-editor textarea'),'created linked TeX opens in real source editor');assert(configWrites===0&&!root.paper.main_file,'linked main document requires explicit selection');
+ assert(document.title==='Research · main.tex · Noctua','tab title follows the open source file');
+ assert(!$('.linked-status')&&!$('#workspace-tree [data-linked-ignored]')&&$('[data-root-terminal]')&&$('[data-manage-link]'),'linked actions stay on the root row without a status footer');
+ await linkDirectoryDialog('root');const linkSettings=$('dialog[open]'),ignored=linkSettings.querySelector('[data-linked-ignored]');assert(ignored&&!ignored.disabled,'ignored files setting lives in root settings');ignored.checked=true;await ignored.onchange();assert(root.show_ignored&&W.manifest.show_ignored,'ignored files setting updates the linked root with a revision');linkSettings.close();
+ const list=$('#lib-tree');list.style.height='160px';list.style.overflow='auto';
+ root.entries.push(...Array.from({length:60},(_,i)=>({id:'extra'+i,name:'extra'+i+'.tex',kind:'file',parent:'',blob:'same'})));root.revision++;await reconcileLinkedFiles();
+ list.scrollTop=450;const beforeSwitch=list.scrollTop;await openWorkspaceFile('extra20');assert(beforeSwitch>0&&Math.abs(list.scrollTop-beforeSwitch)<2,'opening another file preserves directory scroll');assert(document.title==='Research · extra20.tex · Noctua','switching source files updates the tab title');await openWorkspaceFile('main');
+ list.style.height='';list.style.overflow='';
+ const shortcutSource=$('#workspace-editor textarea');shortcutSource.focus();shortcutSource.value='word';shortcutSource.setSelectionRange(0,4);
+ shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'i',metaKey:true,bubbles:true,cancelable:true}));assert(shortcutSource.value===String.raw`\textit{word}`,'source editor shares native note italic shortcut');
+ shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'i',metaKey:true,bubbles:true,cancelable:true}));assert(shortcutSource.value==='word','format shortcut toggles off');
+ shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'b',ctrlKey:true,bubbles:true,cancelable:true}));assert(shortcutSource.value===String.raw`\textbf{word}`,'source editor shares native note bold shortcut');
+ shortcutSource.value='';shortcutSource.setSelectionRange(0,0);shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'{',bubbles:true,cancelable:true}));assert(shortcutSource.value==='{}'&&shortcutSource.selectionStart===1,'source brackets pair');
+ shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));assert(shortcutSource.value==='','empty source pairs delete together');
+ shortcutSource.dispatchEvent(new KeyboardEvent('keydown',{key:'$',bubbles:true,cancelable:true}));assert(shortcutSource.value==='$$'&&shortcutSource.selectionStart===1,'source math delimiters pair');
+ const ta=$('#workspace-editor textarea');ta.value='edited source';ta.dispatchEvent(new Event('input'));await saveWorkspaceFile();assert(source==='edited source'&&!W.dirty,'source editor saves through linked workspace target');
+ ta.blur();W.lastInputAt=-Infinity;
+ source='external update';root.entries[0].blob='external';root.revision++;await reconcileLinkedFiles();assert($('#workspace-editor textarea').value==='external update','real editor reloads external source');
+ root.entries.push({id:'folder',name:'chapters',kind:'folder',parent:''},{id:'nested',name:'sections',kind:'folder',parent:'folder'},{id:'child',name:'intro.tex',kind:'file',parent:'nested',blob:'child'});root.revision++;await reconcileLinkedFiles();
+ $('#workspace-tree [data-file="folder"]').click();await settle();assert(W.target===target&&$('#workspace-tree [data-file="nested"]')&&!$('#workspace-tree [data-file="child"]'),'linked folder expands without leaving the project');
+ $('#workspace-tree [data-file="nested"]').click();await settle();assert($('#workspace-tree [data-file="child"]')?.closest('.linked-children'),'nested linked files remain inside their root');
+ const papersRow=$('[data-project-papers]').parentElement,rootRow=$('[data-linked-root]').parentElement,internalRow=$('[data-cached-entry="internal"]').parentElement;
+ assert([rootRow,internalRow].every(row=>row.getBoundingClientRect().left===papersRow.getBoundingClientRect().left),'Papers, internal files, and linked roots align');
+ assert($('[data-file="child"]').getBoundingClientRect().left>$('[data-file="nested"]').getBoundingClientRect().left,'nested file indentation follows its parent');
+ $('[data-linked-root]').click();assert(!$('[data-file="folder"]')?.checkVisibility(),'linked root collapses');
+ $('[data-linked-root]').click();await settle();assert($('[data-file="child"]')&&W.target===target&&W.file==='main','reopening a root preserves nested expansion and the open editor');
+ await loadWorkspace('L1');await settle();assert($('[data-cached-entry="child"]'),'expanded linked tree stays visible beside internal files');
+ root.entries.push({id:'finder-added',name:'from-finder.tex',kind:'file',parent:'nested',blob:'new'});root.revision++;
+ await refreshProjectTrees();assert(W.target==='L1'&&$('[data-cached-entry="finder-added"]'),'Finder additions refresh an expanded linked directory while the internal project is active');
+
+ $('[data-cached-entry="child"]').click();await settle();assert(W.target===target&&W.file==='child','cached linked file opens in its own workspace');
+ root.entries.push({id:'active-added',name:'new-active.tex',kind:'file',parent:'nested',blob:'new'});root.revision++;
+ await refreshProjectTrees();assert($('[data-file="active-added"]')&&W.file==='child','new linked files appear without closing the current editor');
+ const editor=$('#workspace-editor textarea');editor.focus();W.lastInputAt=performance.now();
+ root.entries.push({id:'during-typing',name:'arrived.tex',kind:'file',parent:'nested',blob:'new'});root.revision++;
+ const readsBefore=apiReads;await refreshProjectTrees();assert(apiReads===readsBefore&&!$('[data-file="during-typing"]'),'typing defers filesystem requests and tree changes');
+ W.lastInputAt=-Infinity;await refreshProjectTrees();assert($('[data-file="during-typing"]')&&document.activeElement===editor,'refresh resumes after typing without replacing or blurring the editor');
+ const baselineReads=fullReads;await refreshProjectTrees({force:false});await refreshProjectTrees({force:false});assert(fullReads===baselineReads,'unchanged watcher tokens avoid full directory listings');
+ root.entries.push({id:'watch-added',name:'watch.tex',kind:'file',parent:'nested',blob:'new'});root.revision++;
+ await refreshProjectTrees({force:false});assert(fullReads===baselineReads+1&&$('[data-file="watch-added"]'),'watcher invalidation refreshes added files once');
+
+
+ root.entries=root.entries.filter(e=>e.id!=='finder-added');root.revision++;
+ await refreshProjectTrees();assert(!$('[data-file="finder-added"]'),'external removals refresh the visible nested tree');
+
+ assert($('[data-root-terminal]')?.textContent==='Terminal','each linked root exposes a labeled terminal action');
+ $('#workspace-tree [data-project-papers]').click();assert(G.layout==='library'&&lib.kind==='papers'&&!isNotesMode(),'Papers explicitly opens the paper table');
+ await $('[data-root-terminal]').onclick();await settle();const session=Linked.terminals.get(target);assert(session&&session.term.buffer.active.getLine(0).translateToString().includes('terminal ready'),'real terminal renderer displays server output');session.term.input('git status\r');await settle();assert(terminalCalls.some(c=>c.op==='write'&&c.input==='git status\r'),'terminal forwards input to its linked server session');assert(terminalCalls.some(c=>c.op==='resize'),'terminal communicates its dimensions');session.panel.querySelector('[data-hide]').click();assert(session.panel.hidden,'hide preserves terminal');await openProjectTerminal();assert(!session.panel.hidden&&terminalCalls.filter(c=>c.op==='create').length===1,'reopening reuses the shell');await session.panel.querySelector('[data-close]').onclick();assert(!Linked.terminals.size&&!document.querySelector('.project-terminal'),'close cleans up terminal resources');
+ document.body.classList.remove('notes-mode');document.body.classList.add('pdf-mode');updateMainTitle();assert(document.title==='A previously opened paper · Noctua','paper view uses the paper title');
+ document.body.classList.remove('pdf-mode');document.body.classList.add('notes-mode');await openWorkspaceFile('main');assert(document.title==='Research · main.tex · Noctua','leaving a paper for source replaces the stale paper title');
+ await openLinkedRoot(target,{restore:false});assert(document.title==='Research · Project · Noctua','linked project welcome uses its collection and root name');
+ N.doc={id:'note',title:'Reading notes'};W.file=null;$('#notes-stage').innerHTML='<div class="note-page"></div>';updateMainTitle();assert(document.title==='Research · Reading notes · Noctua','native note title follows the main pane');
+ window.webkit.messageHandlers.result.postMessage('PASS: linked directory tree, collection identity, creation destination, explicit TeX main, real source editing, external reload, and Papers navigation');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+'\n'+e.stack));
+</script></body></html>

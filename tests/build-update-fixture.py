@@ -16,9 +16,15 @@ manifest=(root/'Cargo.toml').read_text()
 manifest=re.sub(r'^members = .*$', 'members = ["crates/client"]', manifest, flags=re.M)
 match=re.search(r'(^version = ")(\d+)\.(\d+)\.(\d+)(")',manifest,re.M)
 assert match,'expected stable server package version'
-patch=int(match[4])+(-1 if previous else 1)
-assert patch>=0,'previous fixture requires a nonzero patch version'
-version=f'{match[2]}.{match[3]}.{patch}'
+major,minor,patch=map(int,(match[2],match[3],match[4]))
+if previous:
+    if patch: patch-=1
+    elif minor: minor-=1
+    elif major: major-=1
+    else: raise ValueError('0.0.0 has no earlier stable fixture version')
+else:
+    patch+=1
+version=f'{major}.{minor}.{patch}'
 manifest=manifest[:match.start()]+match[1]+version+match[5]+manifest[match.end():]
 manifest+='\n[[bin]]\nname = "'+fixture_name+'"\npath = "src/main.rs"\n'
 (project/'Cargo.toml').write_text(manifest)

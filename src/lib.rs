@@ -30,6 +30,11 @@ mod notes;
 mod editing;
 mod chat_approval;
 mod workspace;
+mod linked;
+mod workspace_watch;
+mod workspace_reader;
+mod project_terminal;
+mod project_access;
 mod research;
 pub mod paper;
 mod bibliography;
@@ -288,7 +293,16 @@ struct ModeQ {
 
 async fn mcp_endpoint(State(app): Shared, Query(q): Query<ModeQ>, Json(req): Json<Value>) -> Response {
     let mut mode = chat::mode_or_default(&q.mode);
-    if mode == "suggest" && req["method"] == "tools/call" && req["params"]["name"] == "edit_project_file" {
+    if req["method"]=="tools/call"&&req["params"]["name"]=="request_project_command" {
+        let valid=q.turn_id.as_deref().ok_or_else(||anyhow::anyhow!("An active chat turn is required")).and_then(|id|chat_approval::validate_turn(&app,id,q.chat_id.as_deref()));
+        if let Err(e)=valid{return Json(json!({"jsonrpc":"2.0","id":req["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("Error: {e:#}")}]}})).into_response();}
+    }
+    let linked_edit = req["params"]["name"]=="edit_project_file" && linked::is_linked(req["params"]["arguments"]["folder_id"].as_str().unwrap_or(""));
+    if linked_edit && mode=="direct" {
+        let result=async { let args=&req["params"]["arguments"];project_access::check_scope(&app,q.chat_id.as_deref(),args["folder_id"].as_str().unwrap())?;chat_approval::authorize_linked(&app,q.turn_id.as_deref().ok_or_else(||anyhow::anyhow!("An active chat is required"))?,q.chat_id.as_deref(),args).await }.await;
+        if let Err(e)=result{return Json(json!({"jsonrpc":"2.0","id":req["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("Error: {e:#}")}]}})).into_response();}
+    }
+    if !linked_edit && mode == "suggest" && req["method"] == "tools/call" && req["params"]["name"] == "edit_project_file" {
         if let Some(turn) = q.turn_id.as_deref() {
             match chat_approval::authorize(&app, turn, q.chat_id.as_deref(), &req["params"]["arguments"]).await {
                 Ok(()) => mode = "direct",
@@ -298,7 +312,7 @@ async fn mcp_endpoint(State(app): Shared, Query(q): Query<ModeQ>, Json(req): Jso
     }
     match mcp::handle(&app, &req, mode, q.chat_id.as_deref()).await {
         Some(resp) => {
-            if q.mode=="suggest" && req["params"]["name"]=="edit_project_file" {
+            if (q.mode=="suggest" || linked_edit) && req["params"]["name"]=="edit_project_file" {
                 if let Some(turn)=q.turn_id.as_deref() { chat_approval::created(&app,turn,q.chat_id.as_deref(),&req["params"]["arguments"],&resp); }
             }
             Json(resp).into_response()
@@ -323,19 +337,21 @@ async fn chats_list(State(app): Shared, Query(q): Query<AgentQuery>) -> ApiResul
 
 async fn chats_get(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> Response {
     match app.history.get(&id, q.provider(&app)) {
-        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); c["pending_file_edits"]=json!(chat_approval::pending_for_chat(&app,&id)); Json(c).into_response() },
+        Ok(Some(mut c)) => { c["busy"] = json!(app.chat_jobs.lock().unwrap().contains(&id)); c["pending_file_edits"]=json!(chat_approval::pending_for_chat(&app,&id)); c["pending_project_commands"]=json!(project_access::pending(&app,&id)); Json(c).into_response() },
         Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such chat" }))).into_response(),
         Err(e) => ApiError(e).into_response(),
     }
 }
 
 async fn chat_cancel(State(app): Shared, Path(id): Path<String>) -> ApiResult {
+    project_access::cancel_chat(&app,&id);
     if let Some(cancel)=app.chat_cancels.lock().unwrap().get(&id) {cancel.notify_one();}
     Ok(Json(json!({"ok":true})))
 }
 
 async fn chats_delete(State(app): Shared, Path(id): Path<String>, Query(q): Query<AgentQuery>) -> ApiResult {
     if app.chat_jobs.lock().unwrap().contains(&id) { return Err(Status(StatusCode::CONFLICT, "Stop this chat before deleting it.".into()).into()); }
+    project_access::cancel_chat(&app,&id);
     app.history.delete(&id, q.provider(&app))?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -674,10 +690,12 @@ async fn server_stop(State(app): Shared) -> ApiResult {
     let _admission=r.admission.lock().unwrap();
     let previous=r.draining.swap(true,std::sync::atomic::Ordering::SeqCst);
     let pending_review=skills::pending_review(&app)||chat_approval::pending(&app);
-    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || paper::busy() || pending_review || app.login_gate.try_lock().is_err() {
+    if r.requests.load(std::sync::atomic::Ordering::SeqCst)>0 || !app.chat_jobs.lock().unwrap().is_empty() || skills::busy() || paper::busy() || (project_terminal::busy() || project_access::busy()) || pending_review || app.login_gate.try_lock().is_err() {
         r.draining.store(previous,std::sync::atomic::Ordering::SeqCst);
         return Err(Status(StatusCode::CONFLICT,if pending_review{"A chat file edit or skill run awaits approval/output review. Apply/reject it before stopping; its results were kept."}else{"Tasks or other requests are active. Wait and retry; no task was stopped."}.into()).into());
     }
+    project_terminal::close_all();
+    project_access::close_all();
     r.shutdown.notify_one();
     Ok(Json(json!({"draining":true})))
 }
@@ -691,7 +709,7 @@ async fn server_update_control(State(app):Shared,Json(body):Json<Value>)->ApiRes
     let notice=r.maintenance.lock().unwrap().control(action,id,body["version"].as_str().unwrap_or(""))?;
     if action=="drain" {r.draining.store(true,std::sync::atomic::Ordering::SeqCst);}
     if action=="cancel" {r.draining.store(false,std::sync::atomic::Ordering::SeqCst);}
-    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && !paper::busy() && app.login_gate.try_lock().is_ok();
+    let idle=r.requests.load(std::sync::atomic::Ordering::SeqCst)==0 && app.chat_jobs.lock().unwrap().is_empty() && !skills::busy() && !paper::busy() && !(project_terminal::busy() || project_access::busy()) && app.login_gate.try_lock().is_ok();
     let mut response=json!({"maintenance":notice,"idle":idle&&!pending_review,"pending_review":pending_review});
     if action=="begin" {response["launch_environment"]=server_launch::launch_environment(&app)?;}
     Ok(Json(response))
@@ -743,6 +761,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/panes.js",get(||async{web_assets::response("panes.js")}))
         .route("/split-drag.js",get(||async{web_assets::response("split-drag.js")}))
         .route("/research.js",get(||async{web_assets::response("research.js")}))
+        .route("/documents.js",get(||async{web_assets::response("documents.js")}))
+        .route("/linked.js",get(||async{web_assets::response("linked.js")}))
+        .route("/linked.css",get(||async{web_assets::response("linked.css")}))
+        .route("/vendor/xterm/xterm.js",get(||async{web_assets::response("vendor/xterm/xterm.js")}))
+        .route("/vendor/xterm/xterm.css",get(||async{web_assets::response("vendor/xterm/xterm.css")}))
         .route("/workspace.js",get(||async{web_assets::response("workspace.js")}))
         .route("/citations.js",get(||async{web_assets::response("citations.js")}))
         .route("/find.js",get(||async{web_assets::response("find.js")}))
@@ -789,6 +812,12 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/chat-edit-approvals/{id}",post(chat_approval::decide))
         .route("/api/skill-runs/{id}",get(skills::run_status).post(skills::decide))
         .route("/api/collections/{target}/research",get(research::get).post(research::edit))
+        .route("/api/workspaces/{target}/access",get(project_access::list).post(project_access::revoke))
+        .route("/api/project-commands/{id}",get(project_access::inspect).post(project_access::decision))
+        .route("/api/workspaces/{target}/terminal",post(project_terminal::handle))
+        .route("/api/workspaces/{target}/links",get(linked::links).post(linked::manage))
+        .route("/api/workspaces/{target}/linked-trash",get(linked::trash))
+        .route("/api/workspaces/{target}/changes",get(workspace_watch::changes))
         .route("/api/workspaces/{target}",get(workspace::get).post(workspace::edit))
         .route("/api/workspaces/{target}/bibliography-search",get(bibliography::search))
         .route("/api/paper-compilers",get(paper::compilers))
@@ -800,6 +829,11 @@ fn router(app: Arc<App>, hosts: Arc<Vec<String>>) -> Router {
         .route("/api/workspaces/{target}/upload",post(workspace::upload).layer(DefaultBodyLimit::max(32 << 20)))
         .route("/api/workspaces/{target}/files/{id}",get(workspace::text))
         .route("/api/workspaces/{target}/files/{id}/content",get(workspace::download))
+        .route("/api/workspaces/{target}/files/{id}/reader",get(workspace_reader::metadata))
+        .route("/api/workspaces/{target}/files/{id}/reader/pdf",get(workspace::download))
+        .route("/api/workspaces/{target}/files/{id}/reader/annotations",get(workspace_reader::annotations).post(workspace_reader::create))
+        .route("/api/workspaces/{target}/files/{id}/reader/annotations/{aid}",axum::routing::put(workspace_reader::update).delete(workspace_reader::delete))
+        .route("/api/workspaces/{target}/files/{id}/reader/annotation-history",get(workspace_reader::history))
         .route("/api/workspaces/{target}/files/{id}/history",post(workspace::file_undo))
         .route("/api/notes/{target}/{id}/history",get(notes_history).post(notes_undo))
         .route("/api/note-media/{target}", post(media::upload).layer(DefaultBodyLimit::disable()))

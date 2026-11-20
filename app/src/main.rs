@@ -527,6 +527,7 @@ async fn connect_server(
         let navigation_origin=ui_address.clone();
         let opener_app=app.clone();
         let opener_origin=ui_address.clone();
+        let allow_project_picker=mode=="local";
         let ready_ticket=uuid::Uuid::new_v4().simple().to_string();
         let (ready_tx,ready_rx)=tokio::sync::oneshot::channel();
         shell.flush.lock().unwrap().insert(ready_ticket.clone(),PendingReply{window:label.clone(),purpose:"ready",sender:ready_tx});
@@ -537,6 +538,7 @@ async fn connect_server(
         let mut provisional=ProvisionalWindow{app:app.clone(),label:label.clone(),ticket:ready_ticket.clone(),committed:false};
         let w=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("loading.html".into()))
             .initialization_script(appearance::CONTENT_SCRIPT)
+            .initialization_script(if allow_project_picker {include_str!("project-picker.js")}else{""})
             .initialization_script(format!("window.noctuaServerAddress={};",serde_json::to_string(&address)?))
             .initialization_script(format!("window.noctuaManagerUrl={};",serde_json::to_string(&manager_url)?))
             .initialization_script(format!("window.noctuaAppIcon = {}; window.noctuaAppVersion = {};",serde_json::to_string(&*app.state::<icons::Icons>().0.lock().unwrap()).unwrap(),serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap()))
@@ -556,6 +558,20 @@ async fn connect_server(
             .title("Noctua").inner_size(1440.,900.).min_inner_size(820.,520.).disable_drag_drop_handler()
             .on_navigation(move|url|{
                 if url.host_str()==Some("noctua.invalid") {
+                    if url.path()=="/project-directory" {
+                        let fields=url.query_pairs().into_owned().collect::<Vec<_>>();
+                        if allow_project_picker && url.scheme()=="https" && fields.len()==1 && fields[0].0=="request" && uuid::Uuid::parse_str(&fields[0].1).is_ok() {
+                            if let Some(window)=callback_app.get_webview_window(&callback_label).filter(|w|w.url().ok().is_some_and(|u|u.origin().ascii_serialization()==navigation_origin)) {
+                                let request=fields[0].1.clone();let expected_origin=navigation_origin.clone();
+                                callback_app.dialog().file().pick_folder(move |selected| {
+                                    if !window.url().ok().is_some_and(|u|u.origin().ascii_serialization()==expected_origin){return;}
+                                    let path=selected.and_then(|p|p.into_path().ok()).map(|p|p.to_string_lossy().into_owned());
+                                    let detail=json!({"request":request,"path":path});let _=window.eval(&format!("window.dispatchEvent(new CustomEvent('noctua-project-directory',{{detail:{detail}}}));"));
+                                });
+                            }
+                        }
+                        return false;
+                    }
                     if url.path()=="/appearance" {appearance::remember(&callback_app,url);return false;}
                     if url.path()=="/app-icon" {
                         if let Some((icon,request))=appearance::icon_request(url) {

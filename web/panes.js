@@ -33,11 +33,16 @@ for(const side of ['left','right']){
  g.addEventListener('pointerdown',e=>{
   if(e.target.closest('button')||e.button!==0)return;
   e.preventDefault();g.setPointerCapture(e.pointerId);g.classList.add('dragging');document.body.classList.add('resizing');
-  const width=ev=>{const r=$('main').getBoundingClientRect();return side==='left'?ev.clientX-r.left:r.right-ev.clientX;};
-  const move=ev=>{if(paneCollapsed(side))setPaneCollapsed(side,false);setPaneWidth(side,width(ev),false);};
-  const up=ev=>{g.removeEventListener('pointermove',move);g.removeEventListener('pointerup',up);g.removeEventListener('pointercancel',cancel);g.classList.remove('dragging');document.body.classList.remove('resizing');if(g.hasPointerCapture(ev.pointerId))g.releasePointerCapture(ev.pointerId);if(!paneCollapsed(side))setPaneWidth(side,parseFloat($('main').style.getPropertyValue(`--${side}-w`))||PANES[side].def);};
-  const cancel=ev=>up(ev);
-  g.addEventListener('pointermove',move);g.addEventListener('pointerup',up);g.addEventListener('pointercancel',cancel);
+  if(paneCollapsed(side))setPaneCollapsed(side,false);
+  const main=$('main'),rect=main.getBoundingClientRect(),other=side==='left'?'right':'left';
+  const otherWidth=paneCollapsed(other)?0:parseFloat(getComputedStyle(main).getPropertyValue(`--${other}-w`))||PANES[other].def;
+  const max=Math.max(PANES[side].min,Math.min(PANES[side].max,rect.width-otherWidth-320-32));
+  let pending=null,frame=null,finished=false;
+  const apply=()=>{frame=null;if(pending!==null)main.style.setProperty(`--${side}-w`,Math.round(Math.max(PANES[side].min,Math.min(max,pending)))+'px');};
+  const move=ev=>{pending=side==='left'?ev.clientX-rect.left:rect.right-ev.clientX;if(frame===null)frame=requestAnimationFrame(apply);};
+  const up=ev=>{if(finished)return;finished=true;if(frame!==null)cancelAnimationFrame(frame);apply();g.removeEventListener('pointermove',move);for(const type of ['pointerup','pointercancel','lostpointercapture'])g.removeEventListener(type,up);g.classList.remove('dragging');document.body.classList.remove('resizing');if(g.hasPointerCapture(ev.pointerId))g.releasePointerCapture(ev.pointerId);store.set(`noctua.pane.${side}`,main.style.getPropertyValue(`--${side}-w`).replace('px',''));window.dispatchEvent(new Event('noctua-pane-resize-end'));};
+  g.addEventListener('pointermove',move);
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])g.addEventListener(type,up);
  });
  g.addEventListener('dblclick',e=>{if(!e.target.closest('button')){setPaneCollapsed(side,false);setPaneWidth(side,PANES[side].def);}});
 }
@@ -91,9 +96,12 @@ function setSplitView(on,save=true){
  d.addEventListener('pointerdown',e=>{
   if(e.button!==0)return;
   e.preventDefault();d.setPointerCapture(e.pointerId);d.classList.add('dragging');document.body.classList.add('resizing');
-  const move=ev=>{const a=splitMain().getBoundingClientRect(),b=$('#notes-stage').getBoundingClientRect(),w=b.right-a.left;if(w>0)setSplitRatio((ev.clientX-a.left)/w,false);};
-  const up=ev=>{d.removeEventListener('pointermove',move);d.removeEventListener('pointerup',up);d.removeEventListener('pointercancel',up);d.classList.remove('dragging');document.body.classList.remove('resizing');if(d.hasPointerCapture(ev.pointerId))d.releasePointerCapture(ev.pointerId);setSplitRatio(splitRatio());window.dispatchEvent(new Event('resize'));};
-  d.addEventListener('pointermove',move);d.addEventListener('pointerup',up);d.addEventListener('pointercancel',up);
+  const a=splitMain().getBoundingClientRect(),b=$('#notes-stage').getBoundingClientRect(),width=b.right-a.left;
+  let pending=null,frame=null,finished=false;
+  const apply=()=>{frame=null;if(pending!==null&&width>0)setSplitRatio((pending-a.left)/width,false);};
+  const move=ev=>{pending=ev.clientX;if(frame===null)frame=requestAnimationFrame(apply);};
+  const up=ev=>{if(finished)return;finished=true;if(frame!==null)cancelAnimationFrame(frame);apply();d.removeEventListener('pointermove',move);for(const type of ['pointerup','pointercancel','lostpointercapture'])d.removeEventListener(type,up);d.classList.remove('dragging');document.body.classList.remove('resizing');if(d.hasPointerCapture(ev.pointerId))d.releasePointerCapture(ev.pointerId);setSplitRatio(splitRatio());window.dispatchEvent(new Event('noctua-pane-resize-end'));window.dispatchEvent(new Event('resize'));};
+  d.addEventListener('pointermove',move);for(const type of ['pointerup','pointercancel','lostpointercapture'])d.addEventListener(type,up);
  });
  d.addEventListener('dblclick',()=>setSplitRatio(SPLIT.def));
  d.addEventListener('keydown',e=>{

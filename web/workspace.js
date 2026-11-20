@@ -1,5 +1,11 @@
 'use strict';
-const W={selected:new Set(),anchor:null,expanded:new Set(),drag:null,target:null,manifest:null,file:null,text:'',saved:'',timer:null,saving:null,dirty:false,fileRevision:null,fileHistory:{}};
+const W={lastInputAt:-Infinity,selected:new Set(),anchor:null,expanded:new Set(),drag:null,target:null,manifest:null,file:null,text:'',saved:'',timer:null,saving:null,dirty:false,fileRevision:null,fileHistory:{}};
+function workspaceTyping(){return performance.now()-W.lastInputAt<750&&document.activeElement?.matches('#workspace-editor textarea');}
+function workspaceChildren(entries){
+ const groups=new Map();for(const entry of entries){const parent=entry.parent||'';if(!groups.has(parent))groups.set(parent,[]);groups.get(parent).push(entry);}
+ for(const group of groups.values())group.sort((a,b)=>(a.kind==='folder'?-1:0)-(b.kind==='folder'?-1:0)||a.name.localeCompare(b.name));
+ return groups;
+}
 const workspaceURL=()=>`/api/workspaces/${enc(W.target)}`;
 function rememberWorkspaceView(){
  const ta=$('#workspace-editor textarea');if(!W.target||!W.file||!ta)return;
@@ -14,10 +20,10 @@ window.addEventListener('pagehide',rememberWorkspaceView);
 window.addEventListener('beforeunload',rememberWorkspaceView);
 function workspaceDialog(title,html){const d=document.createElement('dialog');d.className='workspace-dialog';d.setAttribute('aria-label',title);d.innerHTML=`<header><strong>${esc(title)}</strong><button data-close data-icon="x" data-icon-only title="Close" aria-label="Close"></button></header>${html}`;document.body.appendChild(d);d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('close',()=>d.remove());d.showModal();return d;}
 async function loadWorkspace(target){
- try{const m=await api(`/api/workspaces/${enc(target)}`);if(N.target!==target)return;if(W.target!==target){W.selected.clear();W.anchor=null;try{W.expanded=new Set(JSON.parse(store.get('noctua.workspaceExpanded.'+target)||'[]'));}catch{W.expanded=new Set();}}W.target=target;W.manifest=m;renderWorkspaceTree();applyBibliography();}catch(e){toast(e.message,{error:true});}
+ try{const m=await api(`/api/workspaces/${enc(target)}`);if(N.target!==target)return;if(typeof Linked!=='undefined'){Linked.internal.set(target,m);loadLinkedRoots(target).catch(()=>{});}if(W.target!==target){W.selected.clear();W.anchor=null;try{W.expanded=new Set(JSON.parse(store.get('noctua.workspaceExpanded.'+target)||'[]'));}catch{W.expanded=new Set();}}W.target=target;W.manifest=m;if(typeof Explorer!=='undefined')Explorer.open.add(typeof linkedCollection==='function'?linkedCollection(target):target);renderWorkspaceTree();applyBibliography();}catch(e){toast(e.message,{error:true});}
 }
 function applyBibliography(){
- if(!W.manifest||W.target!==N.target)return;
+ if(!W.manifest||(typeof linkedCollection==='function'?linkedCollection(W.target):W.target)!==N.target)return;
  for(const [key,it]of N.items)if(it.bib)N.items.delete(key);
  for(const it of W.manifest.bib_index||[])if(!N.items.has(it.key))N.items.set(it.key,it);
  typeset();
@@ -29,39 +35,57 @@ function workspaceFileIcon(entry) {
  if(['mp4','m4v','mov','webm','avi','mkv','mpeg','mpg'].includes(ext))return 'video';
  return ext==='bib'?'library':'file-text';
 }
+// Capture every possible sidebar scroll container before replacing its children.
+function preserveDirectoryScroll(){
+ const positions=[];for(let node=document.getElementById('lib-tree');node;node=node.parentElement)positions.push([node,node.scrollTop,node.scrollLeft]);
+ return ()=>{for(const [node,top,left]of positions){node.scrollTop=top;node.scrollLeft=left;}};
+}
+function updateMainTitle(){
+ const notes=document.body.classList.contains('notes-mode'),pdf=document.body.classList.contains('pdf-mode');
+ let title='';
+ if(pdf&&typeof PDF!=='undefined'){const collection=PDF.paper?.project_file?collections.targets.find(t=>t.id===(typeof linkedCollection==='function'?linkedCollection(W.target):W.target))?.name:null;title=[collection,PDF.paper?.title||'Paper'].filter(Boolean).join(' · ');}
+ else if(notes){
+  const target=typeof linkedCollection==='function'?linkedCollection(W.target||N.target):W.target||N.target;
+  const collection=collections.targets.find(item=>item.id===target)?.name||target||'Collection';
+  const file=W.file&&W.manifest?.entries.find(item=>item.id===W.file);
+  const root=typeof Linked!=='undefined'?Linked.links.get(target)?.links.find(item=>item.target===W.target)?.name:null;
+  const documentName=file?.name||($('#notes-stage .note-page')?N.doc?.title:null)||root;
+  title=[collection,documentName||'Project'].join(' · ');
+ }else if(typeof G!=='undefined'){
+  const collection=collections.targets.find(item=>item.id===lib.target)?.name||'Library';
+  title=G.layout==='library'?(lib.trash?'Trash':collection+' · Papers'):(G.center?.title||G.project?.name||collection)+' · '+(G.layout==='lineage'?'Lineage':'Graph');
+ }
+ const next=title?title+' · Noctua':'Noctua';if(document.title!==next)document.title=next;
+}
 function renderWorkspaceTree(){
+ const restoreScroll=preserveDirectoryScroll();
  let tree=W.treeEl;if(!tree){tree=W.treeEl=document.createElement('div');tree.id='workspace-tree';}
  placeWorkspaceTree();
  $('#note-list').hidden=true;
  const m=W.manifest;if(!m)return;
  const entries=m.entries.filter(e=>!e.deleted);
  W.selected=new Set([...W.selected].filter(id=>entries.some(e=>e.id===id)));
- const children=(parent,depth=0)=>entries.filter(e=>(e.parent||'')===parent).sort((a,b)=>(a.kind==='folder'?-1:0)-(b.kind==='folder'?-1:0)||a.name.localeCompare(b.name)).map(e=>{
+ const groups=workspaceChildren(entries);
+ const children=(parent,depth=0)=>(groups.get(parent)||[]).map(e=>{
   const title=e.kind==='note'&&!e.renamed?(N.list.find(n=>n.id===e.note)?.title||e.name):e.name;
   const active=e.kind==='note'?(!W.file&&N.doc?.id===e.note):W.file===e.id;
   const icon=e.kind==='folder'?(W.expanded.has(e.id)?'folder-open':'folder'):e.kind==='note'?'notebook-pen':workspaceFileIcon(e);
-  return `<div class="workspace-entry ${active?'active':''} ${W.selected.has(e.id)?'selected':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" aria-pressed="${W.selected.has(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-rename="${esc(e.id)}" data-icon="pencil" data-icon-only title="Rename ${esc(title)}" aria-label="Rename ${esc(title)}"></button><button data-file-trash="${esc(e.id)}" data-icon="trash-2" data-icon-only title="Move ${esc(title)} to trash" aria-label="Move ${esc(title)} to trash"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?children(e.id,depth+1):''}`;
+  return `<div class="workspace-entry ${active?'active':''} ${W.selected.has(e.id)?'selected':''}" draggable="true" data-entry="${esc(e.id)}" ${e.kind==='folder'?`data-drop-folder="${esc(e.id)}"`:''} style="--depth:${depth}"><button data-file="${esc(e.id)}" aria-pressed="${W.selected.has(e.id)}" data-icon="${icon}" title="${esc(title)}" ${active?'aria-current="page"':''} ${e.kind==='folder'?`aria-expanded="${W.expanded.has(e.id)}"`: ''}><span class="workspace-name">${esc(title)}</span></button><button data-file-rename="${esc(e.id)}" data-icon="pencil" data-icon-only title="Rename ${esc(title)}" aria-label="Rename ${esc(title)}"></button><button data-file-trash="${esc(e.id)}" data-icon="trash-2" data-icon-only title="Move ${esc(title)} to trash" aria-label="Move ${esc(title)} to trash"></button></div>${e.kind==='folder'&&W.expanded.has(e.id)?`<div class="workspace-children">${children(e.id,depth+1)}</div>`:''}`;
  }).join('');
  const action=(attr,icon,label)=>`<button ${attr} data-icon="${icon}" data-icon-only title="${label}" aria-label="${label}"></button>`;
- tree.innerHTML=`${m.bib_error?`<p class="workspace-error" role="alert">Bibliography out of date: ${esc(m.bib_error)}</p>`:''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
+ tree.innerHTML=`${typeof linkedTreeHeader==='function'?linkedTreeHeader():''}<div class="workspace-root-drop" data-drop-folder="" title="Drop an entry here to move it out of its folder">Project root</div><div class="workspace-entries">${children('')}</div><div class="workspace-footer"><div role="group" aria-label="Project settings">${action('data-latex-settings','settings','Project LaTeX settings')}${action('data-trash','trash-2','Project trash')}${action('data-agent-edits','list-checks','Assistant changes')}</div>${historyButtons('workspace')}</div>`;
  updateWorkspaceHistory();
+ if(typeof bindLinkedTree==='function')bindLinkedTree(tree);
  tree.querySelector('[data-trash]').onclick=showWorkspaceTrash;tree.querySelector('[data-agent-edits]').onclick=()=>showAgentEdits().catch(e=>toast(e.message,{error:true}));
  tree.querySelector('[data-latex-settings]').onclick=()=>showPaperSettings().catch(e=>toast(e.message,{error:true}));
- const libraryNote=entry=>entry?.kind==='note'&&typeof G!=='undefined'&&G.layout==='library'&&!document.body.classList.contains('notes-mode')&&!document.body.classList.contains('pdf-mode');
- const openEntry=id=>{if(typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');return openWorkspaceFile(id).catch(e=>toast(e.message,{error:true}));};
+ const openEntry=id=>{if(typeof openProjectEntry==='function')return openProjectEntry(W.target,id).catch(e=>toast(e.message,{error:true}));if(typeof isNotesMode==='function'&&!isNotesMode())setMode('notes');return openWorkspaceFile(id).catch(e=>toast(e.message,{error:true}));};
  tree.querySelectorAll('[data-file]').forEach(b=>{
   b.onclick=event=>{
    const modified=event.ctrlKey||event.metaKey||event.shiftKey;
    selectWorkspaceEntry(b.dataset.file,event);tree.focus({preventScroll:true});if(modified)return;
    const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);
-   if(libraryNote(entry)){
-    const note=N.list.find(n=>n.id===entry.note);
-    showLibItem({kind:'note',key:typeof libraryNoteKey==='function'?libraryNoteKey({id:entry.note,target:W.target}):'note:'+W.target+':'+entry.note,id:entry.note,title:entry.renamed?entry.name:note?.title||entry.name,target:W.target,tags:note?.tags||[],created:note?.created,updated:note?.updated});
-    return;
-   }
    if(entry?.kind==='folder')openWorkspaceFile(b.dataset.file).catch(e=>toast(e.message,{error:true}));else openEntry(b.dataset.file);
   };
-  b.ondblclick=()=>{const entry=W.manifest.entries.find(e=>e.id===b.dataset.file);if(libraryNote(entry))openEntry(b.dataset.file);};
  });
  tree.querySelectorAll('[data-file-rename]').forEach(b=>b.onclick=()=>workspaceRename(b.dataset.fileRename));
  tree.querySelectorAll('[data-file-trash]').forEach(b=>b.onclick=()=>confirmWorkspaceTrash(b.dataset.fileTrash));
@@ -80,19 +104,25 @@ function renderWorkspaceTree(){
  // Project-wide actions stay at the bottom of the sidebar, below the whole tree.
  const footer=tree.querySelector('.workspace-footer'),footerHost=document.getElementById('workspace-footer-host');
  if(footer&&footerHost){footerHost.replaceChildren(footer);bindWorkspaceDrag(footerHost);}
+ restoreScroll();updateMainTitle();
 }
 // The open collection's notes and files sit under its row in the shared
 // collection tree, in Library and Notes alike. Without a visible row (for
 // example in a fixture without the tree) they stay in the notes side panel.
 function placeWorkspaceTree(){
+ if(typeof renderExplorer==='function'){renderExplorer();return;}
  const tree=W.treeEl;if(!tree)return;
- const hidden=typeof settings!=='undefined'&&settings?.show_notes_files===false;
+ const hidden=false;
  tree.toggleAttribute('data-view-hidden',hidden);
- const row=W.target&&document.querySelector(`#lib-tree > li[data-id="${CSS.escape(W.target)}"]`);
+ const row=W.target&&document.querySelector(`#lib-tree > li[data-id="${CSS.escape(typeof linkedCollection==='function'?linkedCollection(W.target):W.target)}"]`);
  let host=document.querySelector('#lib-tree > li.tree-files');
  if(!row){host?.remove();if(tree.parentElement?.id!=='notes-side')$('#note-list')?.before(tree);return;}
- if(host&&host.previousElementSibling!==row){host.remove();host=null;}
- if(!host){host=document.createElement('li');host.className='tree-files';host.setAttribute('role','none');row.after(host);}
+ let anchor=row;
+ const byId=new Map(collections.targets.map(t=>[t.id,t]));
+ const descendant=id=>{const seen=new Set();for(let parent=byId.get(id)?.parent;parent&&!seen.has(parent);parent=byId.get(parent)?.parent){if(parent===row.dataset.id)return true;seen.add(parent);}return false;};
+ for(let next=row.nextElementSibling;next;next=next.nextElementSibling){if(next===host)continue;if(!descendant(next.dataset.id))break;anchor=next;}
+ if(host&&host.previousElementSibling!==anchor){host.remove();host=null;}
+ if(!host){host=document.createElement('li');host.className='tree-files';host.setAttribute('role','none');anchor.after(host);}
  host.toggleAttribute('data-view-hidden',hidden);
  host.style.setProperty('--tree-indent',row.style.paddingLeft||'8px');
  if(tree.parentElement!==host)host.append(tree);
@@ -237,13 +267,15 @@ Refer to Equation~\eqref{eq:energy}.
 `;}
 // Keep collection selection local to the dialog until creation is submitted.
 function workspaceDestinationOptions(selected) {
- if(typeof collectionOptions==='function')return collectionOptions(selected);
+ if(typeof collectionOptions==='function'){const roots=typeof Linked==='undefined'?[]:[...Linked.links.values()].flatMap(r=>r.links||[]);return collectionOptions(selected)+roots.map(r=>`<option value="${esc(r.target)}" ${r.target===selected?'selected':''}>${esc(r.name)} (linked)</option>`).join('');}
  return `<option value="${esc(selected)}">${esc(selected)}</option>`;
 }
 function workspaceInitialDestination(){
+ if(W.manifest?.linked&&(typeof Explorer==='undefined'||lib.target===linkedCollection(W.target)))return W.target;
  return typeof lib!=='undefined'&&lib.target&&!lib.trash?lib.target:W.target;
 }
 async function useWorkspaceDestination(target){
+ if(typeof linkedTarget==='function'&&linkedTarget(target)){if(W.target!==target)await openLinkedRoot(target,{restore:false});return;}
  if(W.target!==target||N.target!==target)await loadNoteFolder(target);
  if(W.target!==target||N.target!==target||!W.manifest)throw Error('Could not open the selected collection. Your edits have been kept.');
 }
@@ -255,7 +287,7 @@ function workspaceCreate(folder){
  let folderSequence=0,busy=false;
  const renderFolders=m=>{parent.innerHTML='<option value="">Project root</option>'+m.entries.filter(e=>e.kind==='folder'&&!e.deleted).map(f=>`<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('');};
  const loadFolders=async()=>{
-  const seq=++folderSequence,target=destination.value;button.disabled=true;error.textContent='';
+  const seq=++folderSequence,target=destination.value;button.disabled=true;error.textContent='';const kind=d.querySelector('[data-kind]');if(kind){const linked=typeof linkedTarget==='function'&&linkedTarget(target);kind.querySelector('[value=note]').disabled=linked;if(linked&&kind.value==='note')kind.value='file';}
   try {const m=target===W.target&&W.manifest?W.manifest:await api(`/api/workspaces/${enc(target)}`);if(seq!==folderSequence)return;renderFolders(m);button.disabled=false;}
   catch(e){if(seq===folderSequence)error.textContent=e.message;}
  };
@@ -281,7 +313,7 @@ function workspaceCreate(folder){
    const ids=new Set(W.manifest.entries.map(e=>e.id));
    const m=await workspaceChange({op:folder?'folder':'create',name,text:tex?defaultPaperTemplate():'',parent:selectedParent});
    const entry=m.entries.find(e=>!ids.has(e.id)&&e.kind===(folder?'folder':'file'));
-   if(tex&&entry&&!m.entries.some(e=>e.id===m.paper?.main_file&&!e.deleted))await workspaceChange({op:'config',paper:{main_file:entry.id}});
+   if(tex&&entry&&!m.linked&&!m.entries.some(e=>e.id===m.paper?.main_file&&!e.deleted))await workspaceChange({op:'config',paper:{main_file:entry.id}});
    if(entry?.parent){W.expanded.add(entry.parent);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();}
    d.close();if(entry&&!folder)await openWorkspaceFile(entry.id);
   }catch(e){error.textContent=e.message;}finally{busy=false;controls.forEach(control=>control.disabled=false);}
@@ -333,7 +365,7 @@ function confirmWorkspaceTrash(id){
    let m;for(const key of ids)m=await workspaceChange({op:'delete',id:key});
    const removed=new Set(m.entries.filter(e=>e.deleted).map(e=>e.id));
    const removedNotes=new Set(m.entries.filter(e=>e.deleted&&e.note).map(e=>e.note));
-   const closeFile=W.file&&removed.has(W.file),closeNote=N.doc&&removedNotes.has(N.doc.id);
+   const closeFile=W.file&&(removed.has(W.file)||(m.linked&&!m.entries.some(e=>e.id===W.file))),closeNote=N.doc&&removedNotes.has(N.doc.id);
    if(closeFile)W.file=null;
    if(closeNote){N.doc=null;N.editing=null;resetNoteHistory();}
    N.list=N.list.filter(n=>!removedNotes.has(n.id));
@@ -343,33 +375,40 @@ function confirmWorkspaceTrash(id){
  };
  d.querySelector('[data-cancel]').focus();
 }
-async function openWorkspaceFile(id){
- const target=W.target,e=W.manifest.entries.find(e=>e.id===id&&!e.deleted);if(!e)return;if(e.kind==='folder'){if(W.expanded.has(id))W.expanded.delete(id);else W.expanded.add(id);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();return;}
+async function openWorkspaceFile(id,{external=false}={}){
+ if(external&&(W.dirty||W.file!==id))return;const reloadBaseline=W.text;
+ const target=W.target,e=W.manifest.entries.find(e=>e.id===id&&!e.deleted);if(!e)return;if(e.kind==='folder'){if(W.expanded.has(id))W.expanded.delete(id);else W.expanded.add(id);store.set('noctua.workspaceExpanded.'+target,JSON.stringify([...W.expanded]));renderWorkspaceTree();if(typeof refreshProjectTrees==='function')refreshProjectTrees();return;}
  rememberWorkspaceView();await saveWorkspaceFile();await flushNoteEdits();if(W.target!==target)return;stopEdit();
  if(typeof paperUnmount==='function')paperUnmount();
  if(e.kind==='note'){W.file=null;await openNote(e.note);return;}
  const r=await api(workspaceURL()+'/files/'+enc(id));if(target!==W.target)return;
+ if(external&&(W.dirty||W.text!==reloadBaseline)){if(typeof showLinkedConflict==='function')await showLinkedConflict(W.manifest);return;}
  W.file=id;W.text=r.text??'';W.saved=W.text;W.dirty=false;W.manifest.revision=r.revision;W.fileRevision=r.revision;W.fileHistory=r.history||{};
  const url=workspaceURL()+'/files/'+enc(id)+'/content',ext=(e.source_name||e.name).split('.').pop().toLowerCase();
- const preview=r.text!=null?`<textarea class="workspace-source" aria-label="File source" spellcheck="false"></textarea>`:['png','jpg','jpeg','gif','webp'].includes(ext)?`<img src="${url}" alt="${esc(e.name)}">`:['mp4','m4v','mov','webm'].includes(ext)?`<video src="${url}" controls></video>`:ext==='pdf'?`<iframe title="PDF preview" src="${url}"></iframe>`:`<p>This file can be downloaded below.</p>`;
+ if(ext==='pdf'&&typeof projectPDFKey==='function'){store.set('noctua.openFile.'+target,id);await openPDF(projectPDFKey(target,id),{push:false});renderWorkspaceTree();return;}
+ const preview=r.text!=null?`<textarea class="workspace-source" aria-label="File source" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" writingsuggestions="false"></textarea>`:['png','jpg','jpeg','gif','webp'].includes(ext)?`<img src="${url}" alt="${esc(e.name)}">`:['mp4','m4v','mov','webm'].includes(ext)?`<video src="${url}" controls></video>`:ext==='pdf'?`<iframe title="PDF preview" src="${url}"></iframe>`:`<p>This file can be downloaded below.</p>`;
+ if(typeof rememberNoteView==='function')rememberNoteView();
  $('#notes-stage').innerHTML=`<div id="workspace-editor"><header><strong title="${esc(e.name)}">${esc(e.name)}</strong><span data-file-status role="status">Saved</span>${historyButtons('file')}<button data-reload-file data-icon="refresh-cw" data-icon-only title="Reload saved file" aria-label="Reload saved file"></button><a class="workspace-download" href="${url}" download="${esc(e.name)}">Download</a></header>${preview}</div>`;
  $('#workspace-editor [data-reload-file]').onclick=()=>{if(W.dirty&&!confirm('Discard unsaved changes and reload this file?'))return;W.dirty=false;openWorkspaceFile(id).catch(e=>toast(e.message,{error:true}));};
- const ta=$('#workspace-editor textarea');if(ta){ta.value=W.text;ta.oninput=()=>{W.text=ta.value;W.dirty=true;updateWorkspaceHistory();$('#workspace-editor [data-file-status]').textContent='Unsaved';clearTimeout(W.timer);W.timer=setTimeout(()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true})),800);};ta.onblur=()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true}));}
+ const ta=$('#workspace-editor textarea');if(ta){ta.value=W.text;if(['tex','sty','cls','bib','bst'].includes(ext))ta.addEventListener('keydown',event=>{if(typeof texKeys==='function')texKeys(event,ta);});ta.oninput=()=>{W.lastInputAt=performance.now();W.text=ta.value;W.dirty=true;updateWorkspaceHistory();$('#workspace-editor [data-file-status]').textContent='Unsaved';clearTimeout(W.timer);W.timer=setTimeout(()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true})),800);};ta.onblur=()=>saveWorkspaceFile().catch(err=>toast(err.message,{error:true}));}
  store.set('noctua.openFile.'+target,id);
+ if(typeof linkedCollection==='function')store.set('noctua.collectionView.'+linkedCollection(target),target);
  renderWorkspaceTree();if(typeof paperMount==='function')paperMount(e);
+ if(typeof documentOpened==='function')documentOpened({kind:'file',target,id,title:e.name});
  if(ta){try{const view=JSON.parse(store.get('noctua.fileView.'+target+'.'+id)||'null');if(view){ta.setSelectionRange(view.start||0,view.end||0);ta.scrollTop=view.top||0;ta.scrollLeft=view.left||0;}}catch{}}
 }
 async function saveWorkspaceFile(){
  clearTimeout(W.timer);if(W.saving){await W.saving;if(W.dirty)return saveWorkspaceFile();return;}
+ if(typeof Linked!=='undefined'&&Linked.conflict)throw Error('Resolve the disk conflict before saving');
  if(!W.dirty||!W.file)return;const target=W.target,id=W.file,text=W.text,revision=W.fileRevision;
- W.saving=(async()=>{const m=await api(`/api/workspaces/${enc(target)}`,{op:'edit',id,text,revision});if(W.target!==target||W.file!==id)return;W.manifest=m;W.fileRevision=m.revision;W.saved=text;W.dirty=W.text!==text;const info=await api(`/api/workspaces/${enc(target)}/files/${enc(id)}`);if(W.target===target&&W.file===id)W.fileHistory=info.history||{};const status=$('#workspace-editor [data-file-status]');if(status)status.textContent=W.dirty?'Unsaved':'Saved';renderWorkspaceTree();applyBibliography();})();
+ W.saving=(async()=>{const m=await api(`/api/workspaces/${enc(target)}`,{op:'edit',id,text,revision});if(W.target!==target||W.file!==id)return;W.manifest=m;W.fileRevision=m.revision;W.saved=text;W.dirty=W.text!==text;const info=await api(`/api/workspaces/${enc(target)}/files/${enc(id)}`);if(W.target===target&&W.file===id)W.fileHistory=info.history||{};const status=$('#workspace-editor [data-file-status]');if(status)status.textContent=W.dirty?'Unsaved':'Saved';updateWorkspaceHistory();if(m.entries.some(e=>e.id===id&&/\.bib$/i.test(e.name)))applyBibliography();})();
  try{await W.saving;}catch(e){const status=$('#workspace-editor [data-file-status]');if(status)status.textContent='Save failed: '+e.message;throw e;}finally{W.saving=null;}
 }
 async function workspaceUndo(redo=false,fileOnly=false){try{const target=W.target;const caret=$('#workspace-editor textarea')?.selectionStart;await saveWorkspaceFile();if(W.target!==target)return;const id=W.file;W.manifest=await api(workspaceURL()+(fileOnly&&id?'/files/'+enc(id)+'/history':'/history'),{revision:fileOnly?W.fileRevision:W.manifest.revision,redo});renderWorkspaceTree();applyBibliography();if(id&&W.manifest.entries.some(e=>e.id===id&&!e.deleted)){await openWorkspaceFile(id);if(caret!=null){const ta=$('#workspace-editor textarea');ta?.focus();ta?.setSelectionRange(Math.min(caret,ta.value.length),Math.min(caret,ta.value.length));}}else if(id){W.file=null;renderEditor();}}catch(e){toast(e.message,{error:true});}}
 function showBibReference(key){const it=N.items.get(key);if(!it?.bib)return false;const safe=u=>{try{const url=new URL(u);return ['https:','http:'].includes(url.protocol)?url.href:null;}catch{return null;}};const url=safe(it.url)||(it.doi?safe('https://doi.org/'+it.doi):null);const d=workspaceDialog(it.title||key,`<p>${esc(it.creators.join('; '))} · ${esc(it.year||'n.d.')}</p><p>Key: ${esc(key)} · ${esc(it.file_name)}</p>${url?`<a href="${esc(url)}" target="_blank" rel="noopener">Open reference</a>`:''}${it.library_key?'<button data-paper>Open library paper</button>':''}<button data-bib>Edit bibliography</button>`);d.querySelector('[data-bib]').onclick=()=>{d.close();openWorkspaceFile(it.file_id).catch(e=>toast(e.message));};if(it.library_key)d.querySelector('[data-paper]').onclick=()=>{d.close();const paper=N.items.get(it.library_key);if(paper){lib.detail=paper;renderLibDetails(paper);showRightTab('paper');}};return true;}
 window.addEventListener('beforeunload',e=>{if(W.dirty){e.preventDefault();e.returnValue='';}});
 
-function chatProjectTarget(){return isNotesMode()?N.target:(G.project?.target||lib.target||N.target||null);}
+function chatProjectTarget(){return isNotesMode()?(W.target||N.target):(G.project?.target||lib.target||N.target||null);}
 async function showSkillRun(id){
  const d=workspaceDialog('Skill script request','<div data-run>Loading…</div>');let timer;
  const update=async()=>{if(!d.isConnected)return;try{const r=await api('/api/skill-runs/'+enc(id));const pending=r.status==='approval_required',review=r.status==='review_required';
@@ -415,7 +454,7 @@ function showFileEditApproval(a, host) {
  const key=a.approval_id;
  if(fileEditApprovals.has(key)){const previous=fileEditApprovals.get(key);if(!previous.card.isConnected)(host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(previous.card);if(!previous.deciding&&!previous.settled)previous.card.querySelector('[data-diffs]').innerHTML=fileEditDiffHTML(a.changes);return;}
  const d=document.createElement('section');d.className='chat-edit-approval';
- d.innerHTML=`<p><strong>Allow edits to ${esc(a.changes[0]?.name||'this file')} for this prompt?</strong></p><details><summary>View proposed changes</summary><div class="edit-diff-scroll" data-diffs>${fileEditDiffHTML(a.changes)}</div></details><p class="workspace-error" role="alert" data-error></p><footer><button data-reject>Decline</button><button class="primary" data-approve>Allow this file</button></footer><p data-status role="status"></p>`;
+ d.innerHTML=`<p><strong>Allow edits to ${esc(a.changes[0]?.name||'this file')} ${a.persistent?'until you revoke access?':'for this prompt?'}</strong></p><details><summary>View proposed changes</summary><div class="edit-diff-scroll" data-diffs>${fileEditDiffHTML(a.changes)}</div></details>${a.persistent?'<label><input type="checkbox" data-remember checked> Remember access in Direct edit mode</label>':''}<p class="workspace-error" role="alert" data-error></p><footer><button data-reject>Decline</button><button class="primary" data-approve>Allow this file</button></footer><p data-status role="status"></p>`;
  (host||document.querySelector('#chat-log .msg.assistant:last-child')||$('#chat-log')).appendChild(d);
  const state={card:d,deciding:false,settled:false};fileEditApprovals.set(key,state);
  const decide=async approve=>{
@@ -424,10 +463,10 @@ function showFileEditApproval(a, host) {
   try{
    if(approve)await saveWorkspaceFile();
    if(state.settled)return;
-   await api('/api/chat-edit-approvals/'+enc(a.turn_id),{chat_id:a.chat_id,approval_id:key,approve});
+   await api('/api/chat-edit-approvals/'+enc(a.turn_id),{chat_id:a.chat_id,approval_id:key,approve,remember:!!d.querySelector('[data-remember]')?.checked});
    if(state.settled)return;
    state.settled=true;d.querySelector('footer').hidden=true;
-   d.querySelector('[data-status]').textContent=approve?'Allowed for this prompt.':'Declined for this prompt.';
+   d.querySelector('[data-status]').textContent=approve?(a.persistent&&d.querySelector('[data-remember]')?.checked?'Access saved until revoked.':'Allowed for this prompt.'):'Declined for this prompt.';
    d.querySelector('details').open=false;
   }catch(e){if(!state.settled)d.querySelector('[data-error]').textContent=e.message;}
   finally{state.deciding=false;if(!state.settled)d.querySelectorAll('button').forEach(b=>b.disabled=false);}
@@ -439,6 +478,7 @@ function closeFileEditApprovals(){for(const s of fileEditApprovals.values()){if(
 
 
 async function refreshWorkspaceView(target){
+ if(typeof linkedTarget==='function'&&linkedTarget(target)){if(W.target!==target)return;W.manifest=await api(workspaceURL());renderWorkspaceTree();applyBibliography();if(W.file&&!W.dirty)await openWorkspaceFile(W.file);return;}
  if(N.target!==target)return;
  const notes=await api(`/api/notes?target=${enc(target)}`);
  if(N.target!==target)return;
@@ -449,6 +489,7 @@ async function refreshWorkspaceView(target){
 }
 
 function showWorkspaceTrash(){
+ if(typeof linkedTarget==='function'&&linkedTarget(W.target)){showLinkedTrash().catch(e=>toast(e.message,{error:true}));return;}
  const target=W.target,entries=(W.manifest?.entries||[]).filter(e=>e.deleted&&!e.purged).sort((a,b)=>(b.deleted_at||0)-(a.deleted_at||0)),selected=new Set();let busy=false;
  const d=workspaceDialog('Project trash',`<ul class="workspace-trash-list" aria-label="Deleted entries" role="listbox" aria-multiselectable="true">${entries.map(e=>`<li data-trash-select="${esc(e.id)}" role="option" aria-selected="false" tabindex="0"><span class="workspace-trash-name" title="${esc(e.name)}">${esc(e.name)}</span></li>`).join('')||'<li class="hint">Trash is empty.</li>'}</ul><p class="workspace-error" data-error role="alert"></p><footer><span data-selected-count>0 selected</span><button data-restore-selected data-icon="undo-2" disabled>Restore</button><button data-purge data-icon="trash-2" disabled>Delete permanently</button></footer>`);
  d.classList.add('workspace-compact','workspace-trash');

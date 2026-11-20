@@ -9,7 +9,7 @@ async function showPaperSettings(){
  const target=W.target;if(!target)return;
  const main=paperMain(),files=(W.manifest?.entries||[]).filter(e=>e.kind==='file'&&!e.deleted&&/\.tex$/i.test(e.name));
  const bibs=(W.manifest?.entries||[]).filter(e=>e.kind==='file'&&!e.deleted&&/\.bib$/i.test(e.name)),selection=W.manifest?.paper?.bibliographies;
- const d=workspaceDialog('Project LaTeX settings',`<form><p>These settings apply only to this collection/project.</p><label>Compiler <select data-latex-compiler><option value="tectonic">Tectonic (XeLaTeX)</option><option value="pdflatex">pdfLaTeX</option></select></label><p data-compiler-info role="status">Checking bundled compilers…</p><label>Main document <select data-latex-main><option value="">Choose a .tex file</option>${files.map(e=>`<option value="${esc(e.id)}">${esc(paperPath(e))}</option>`).join('')}</select></label><label>Bibliographies <select data-latex-bib-mode><option value="all">All in project</option><option value="selected">Selected files</option></select></label><fieldset data-latex-bib-files><legend>Bibliography files</legend>${bibs.map(e=>`<label><input type="checkbox" data-latex-bib value="${esc(e.id)}" ${!Array.isArray(selection)||selection.includes(e.id)?'checked':''}> ${esc(paperPath(e))}</label>`).join('')||'<p>No .bib files in this project.</p>'}</fieldset><label><input type="checkbox" data-latex-auto ${paperAuto()?'checked':''}> Compile automatically after edits</label><p>Both compilers are included with Noctua. Choose pdfLaTeX for templates designed for Overleaf’s default compiler. Output also depends on package versions and fonts.</p><p class="workspace-error" data-error role="alert"></p></form>`);
+ const d=workspaceDialog('Project LaTeX settings',`<form><p>These settings apply only to this collection/project.</p><label>Compiler <select data-latex-compiler><option value="tectonic">Tectonic (XeLaTeX)</option><option value="pdflatex">pdfLaTeX</option></select></label><p data-compiler-info role="status">Checking bundled compilers…</p><label>Main document <select data-latex-main><option value="">Choose a .tex file</option>${files.map(e=>`<option value="${esc(e.id)}">${esc(paperPath(e))}</option>`).join('')}</select></label><p>Build paths are relative to the main document’s folder. Only files in that folder and its subfolders are included, including selected bibliographies.</p><label>Bibliographies <select data-latex-bib-mode><option value="all">All in main document directory</option><option value="selected">Selected files</option></select></label><fieldset data-latex-bib-files><legend>Bibliography files</legend>${bibs.map(e=>`<label><input type="checkbox" data-latex-bib value="${esc(e.id)}" ${!Array.isArray(selection)||selection.includes(e.id)?'checked':''}> ${esc(paperPath(e))}</label>`).join('')||'<p>No .bib files in this project.</p>'}</fieldset><label><input type="checkbox" data-latex-auto ${paperAuto()?'checked':''}> Compile automatically after edits</label><p>Both compilers are included with Noctua. Choose pdfLaTeX for templates designed for Overleaf’s default compiler. Output also depends on package versions and fonts.</p><p class="workspace-error" data-error role="alert"></p></form>`);
  const bibMode=d.querySelector('[data-latex-bib-mode]');bibMode.value=Array.isArray(selection)?'selected':'all';const showBibs=()=>{d.querySelector('[data-latex-bib-files]').hidden=bibMode.value==='all';};bibMode.onchange=showBibs;showBibs();
  const select=d.querySelector('[data-latex-compiler]');select.value=paperCompiler();d.querySelector('[data-latex-main]').value=main?.id||'';
  let available=[];const info=()=>{const engine=available.find(e=>e.id===select.value);d.querySelector('[data-compiler-info]').textContent=engine?(engine.available?`Bundled ${engine.version}`:engine.error):'Compiler information unavailable';};select.onchange=info;
@@ -36,12 +36,19 @@ async function showPaperSettings(){
 }
 function paperMain(){return W.manifest?.entries.find(e=>e.id===W.manifest?.paper?.main_file&&!e.deleted);}
 function paperPath(entry){const parts=[entry.name],seen=new Set();let parent=entry.parent;while(parent&&!seen.has(parent)){seen.add(parent);const folder=W.manifest.entries.find(e=>e.id===parent);if(!folder)break;parts.unshift(folder.name);parent=folder.parent;}return parts.join('/');}
+function paperBuildPath(entry){
+ const main=paperMain(),path=paperPath(entry),mainPath=main?paperPath(main):'';
+ const prefix=mainPath.includes('/')?mainPath.slice(0,mainPath.lastIndexOf('/')+1):'';
+ return path.startsWith(prefix)?path.slice(prefix.length):null;
+}
+
 function paperUnmount(){
+ Paper.colors?.destroy();Paper.colors=null;
  Paper.sourceMarkers?.destroy();Paper.sourceMarkers=null;
  Paper.labelFiles?.clear();
  Paper.completionCleanup?.();Paper.completionCleanup=null;
  const pane=$('#paper-pages');if(pane&&Paper.target)Paper.views.set(Paper.target,{scroll:pane.scrollTop,scale:Paper.scale,fit:Paper.fit,width:$('#paper-split')?.style.getPropertyValue('--paper-source-width')||'50%'});
- Paper.resizeObserver?.disconnect();clearTimeout(Paper.resizeTimer);
+ if(Paper.resizeEnd)window.removeEventListener('noctua-pane-resize-end',Paper.resizeEnd);Paper.resizeEnd=null;Paper.resizeObserver?.disconnect();clearTimeout(Paper.resizeTimer);
  Paper.generation++;clearTimeout(Paper.timer);clearTimeout(Paper.poll);Paper.observer?.disconnect();Paper.observer=null;
  for(const task of Paper.tasks)task.cancel();Paper.tasks.clear();Paper.doc?.destroy();Paper.doc=null;Paper.target=null;Paper.loaded=null;Paper.displayed=null;Paper.requested=null;Paper.current=null;Paper.busy=false;
 }
@@ -126,7 +133,7 @@ function paperClassSuggestions(context){
  const classes=new Map(PAPER_TEX_CLASSES.map(([name,description])=>[name,[name,name,description]]));
  for(const entry of W.manifest?.entries||[]){
   if(entry.kind!=='file'||entry.deleted||!/\.cls$/i.test(entry.name))continue;
-  const name=paperPath(entry).replace(/\.cls$/i,'');classes.set(name,[name,name,'Project class']);
+  const path=paperBuildPath(entry);if(path===null)continue;const name=path.replace(/\.cls$/i,'');classes.set(name,[name,name,'Project class']);
  }
  const q=context.query.toLowerCase();
  return [...classes.values()].filter(item=>!q||item[0].toLowerCase().includes(q)).sort((a,b)=>a[0].localeCompare(b[0])).slice(0,50);
@@ -135,7 +142,7 @@ function paperPackageSuggestions(context){
  const packages=new Map(PAPER_TEX_PACKAGES.map(([name,description])=>[name,[name,name,description]]));
  for(const entry of W.manifest?.entries||[]){
   if(entry.kind!=='file'||entry.deleted||!/\.sty$/i.test(entry.name))continue;
-  const name=paperPath(entry).replace(/\.sty$/i,'');packages.set(name,[name,name,'Project package']);
+  const path=paperBuildPath(entry);if(path===null)continue;const name=path.replace(/\.sty$/i,'');packages.set(name,[name,name,'Project package']);
  }
  const q=context.query.toLowerCase(),selected=new Set(context.selectedPackages);
  return [...packages.values()].filter(item=>!selected.has(item[0])&&(!q||item[0].toLowerCase().includes(q))).sort((a,b)=>a[0].localeCompare(b[0])).slice(0,50);
@@ -143,8 +150,8 @@ function paperPackageSuggestions(context){
 function paperFileSuggestions(context){
  const graphics=context.fileCommand==='includegraphics',q=context.query.toLowerCase().replace(/^\.\//,'');
  const extensions=graphics?/\.(pdf|png|jpe?g|eps|ps|mps)$/i:context.fileCommand==='input'?/\.(tex|txt|tikz|pgf|def|sty|cls)$/i:/\.tex$/i;
- return (W.manifest?.entries||[]).filter(entry=>entry.kind==='file'&&!entry.deleted&&extensions.test(entry.name))
-  .map(entry=>{const path=paperPath(entry),insert=context.fileCommand==='include'?path.replace(/\.tex$/i,''):path;return [path,insert,graphics?'Image':/\.tex$/i.test(path)?'TeX source':'Text source'];})
+ return (W.manifest?.entries||[]).filter(entry=>entry.kind==='file'&&!entry.deleted&&extensions.test(entry.name)&&paperBuildPath(entry)!==null)
+  .map(entry=>{const path=paperBuildPath(entry),insert=context.fileCommand==='include'?path.replace(/\.tex$/i,''):path;return [path,insert,graphics?'Image':/\.tex$/i.test(path)?'TeX source':'Text source'];})
   .filter(item=>!q||item[0].toLowerCase().includes(q))
   .sort((a,b)=>a[0].localeCompare(b[0])).slice(0,50);
 }
@@ -155,8 +162,8 @@ function paperLabelSource(text){
   .replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/gm,(_,prefix,pairs)=>prefix+pairs);
 }
 async function paperLabels(source){
- const target=W.target,current=W.file,entries=(W.manifest?.entries||[]).filter(e=>e.kind==='file'&&!e.deleted&&/\.tex$/i.test(e.name));
- const paths=new Map(entries.map(e=>[e.id,paperPath(e)])),byPath=new Map(entries.map(e=>[paperPath(e),e]));
+ const target=W.target,current=W.file,entries=(W.manifest?.entries||[]).filter(e=>e.kind==='file'&&!e.deleted&&/\.tex$/i.test(e.name)&&paperBuildPath(e)!==null);
+ const paths=new Map(entries.map(e=>[e.id,paperBuildPath(e)])),byPath=new Map(entries.map(e=>[paperBuildPath(e),e]));
  const revision=W.manifest?.revision,main=W.manifest?.paper?.main_file,queue=[...new Set([current,main].filter(id=>paths.has(id)))],seen=new Set(),labels=new Map(),errors=[];
  const working=source.value,cache=Paper.labelFiles??=new Map();
  const normalize=path=>{const parts=[];for(const part of path.split('/')){if(part==='..')parts.pop();else if(part&&part!=='.')parts.push(part);}return parts.join('/');};
@@ -279,11 +286,13 @@ function paperMount(entry){
  const divider=document.createElement('div');divider.className='paper-divider';divider.tabIndex=0;divider.setAttribute('role','separator');divider.setAttribute('aria-label','Resize source and PDF');divider.setAttribute('aria-orientation','vertical');divider.setAttribute('aria-valuemin','20');divider.setAttribute('aria-valuemax','80');divider.setAttribute('aria-valuenow',String(parseFloat(view?.width||store.get('noctua.paper.source-width')||'50%')));
  const preview=document.createElement('div');preview.id='paper-pages';preview.innerHTML='<p class="paper-empty">The compiled PDF appears here. First-time builds can take longer while TeX support files download.</p>';
  split.append(editor,divider,preview);host.appendChild(split);
+ Paper.colors=paperAttachColors(source,editor);
  const sourceToggle=document.createElement('button'),previewToggle=document.createElement('button');
  for(const [button,side] of [[sourceToggle,'source'],[previewToggle,'preview']]){button.className='pane-toggle paper-pane-toggle';button.dataset.paperPane=side;button.dataset.iconOnly='';button.setAttribute('aria-controls',side==='source'?'paper-source':'paper-pages');divider.appendChild(button);}
  editor.id='paper-source';
  Paper.sourceMarkers=paperAttachSourceDiagnostics(source,editor);
- if(/\.(tex|cls|sty)$/i.test(entry.name))Paper.completionCleanup=paperAttachCompletion(source);
+ // Keep typing free of completion scans, lookups, and native text predictions.
+ for(const [name,value]of Object.entries({autocomplete:'off',autocorrect:'off',autocapitalize:'off',spellcheck:'false',writingsuggestions:'false'}))source.setAttribute(name,value);
  const collapse=(side,save=true)=>{
   const hidden=split.dataset.hiddenPane===side?'':side;
   if(hidden==='preview')Paper.views.set(target,{...Paper.views.get(target),scroll:preview.scrollTop,scale:Paper.scale,fit:Paper.fit,width:split.style.getPropertyValue('--paper-source-width')});
@@ -299,12 +308,18 @@ function paperMount(entry){
  sourceToggle.onclick=()=>collapse('source');previewToggle.onclick=()=>collapse('preview');
  collapse(['source','preview'].includes(store.get('noctua.paper.hidden-pane'))?store.get('noctua.paper.hidden-pane'):'',false);
  let previewWidth=preview.clientWidth;
- Paper.resizeObserver=new ResizeObserver(()=>{const width=preview.clientWidth;if(width===previewWidth)return;previewWidth=width;clearTimeout(Paper.resizeTimer);if(width>0&&Paper.fit)Paper.resizeTimer=setTimeout(()=>{if(generation===Paper.generation)paperDraw(generation).catch(e=>paperMessage(e.message));},120);});
+ const resizePreview=()=>{clearTimeout(Paper.resizeTimer);if(document.body.classList.contains('resizing'))return;if(preview.clientWidth>0&&Paper.fit)Paper.resizeTimer=setTimeout(()=>{if(generation===Paper.generation)paperDraw(generation).catch(e=>paperMessage(e.message));},120);};
+ Paper.resizeEnd=resizePreview;window.addEventListener('noctua-pane-resize-end',resizePreview);
+ Paper.resizeObserver=new ResizeObserver(()=>{const width=preview.clientWidth;if(width===previewWidth)return;previewWidth=width;resizePreview();});
  Paper.resizeObserver.observe(preview);
  const logs=document.createElement('details');logs.className='paper-logs';logs.innerHTML=`<summary><span>Compiler log</span><span data-paper-status role="status">${main?'Loading preview…':'Choose a main .tex document'}</span><span data-paper-diagnostics role="status" hidden></span></summary><div data-paper-errors></div><pre data-paper-log></pre>`;host.appendChild(logs);
- const resize=pct=>{pct=Math.min(80,Math.max(20,pct));split.style.setProperty('--paper-source-width',pct+'%');store.set('noctua.paper.source-width',pct+'%');divider.setAttribute('aria-valuenow',String(Math.round(pct)));};
- divider.onpointerdown=e=>{if(e.target.closest('button')||split.dataset.hiddenPane)return;divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const r=split.getBoundingClientRect();resize((e.clientX-r.left)/r.width*100);}};
- divider.onpointerup=()=>{if(Paper.fit)paperDraw(generation).catch(e=>paperMessage(e.message));};
+ const resize=(pct,save=true)=>{pct=Math.min(80,Math.max(20,pct));split.style.setProperty('--paper-source-width',pct+'%');if(save)store.set('noctua.paper.source-width',pct+'%');divider.setAttribute('aria-valuenow',String(Math.round(pct)));};
+ let dividerFrame=null,dividerPoint=null,dividerBounds=null;
+ const applyDivider=()=>{dividerFrame=null;if(dividerBounds&&dividerPoint!==null)resize((dividerPoint-dividerBounds.left)/dividerBounds.width*100,false);};
+ divider.onpointerdown=e=>{if(e.target.closest('button')||split.dataset.hiddenPane)return;dividerBounds=split.getBoundingClientRect();divider.setPointerCapture(e.pointerId);document.body.classList.add('resizing');};
+ divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){dividerPoint=e.clientX;if(dividerFrame===null)dividerFrame=requestAnimationFrame(applyDivider);}};
+ const endDivider=()=>{if(!dividerBounds)return;if(dividerFrame!==null)cancelAnimationFrame(dividerFrame);applyDivider();dividerBounds=null;dividerPoint=null;store.set('noctua.paper.source-width',split.style.getPropertyValue('--paper-source-width'));document.body.classList.remove('resizing');window.dispatchEvent(new Event('noctua-pane-resize-end'));};
+ divider.onpointerup=endDivider;divider.onpointercancel=endDivider;divider.onlostpointercapture=endDivider;
  divider.onkeydown=e=>{if(e.target.closest('button')||split.dataset.hiddenPane)return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();resize(parseFloat(split.style.getPropertyValue('--paper-source-width'))+(e.key==='ArrowLeft'?-2:2));if(Paper.fit)paperDraw(generation).catch(e=>paperMessage(e.message));}};
  toolbar.querySelector('[data-paper-compile]').onclick=()=>paperCompile(true);
  toolbar.querySelector('[data-paper-stop]').onclick=async()=>{clearTimeout(Paper.timer);Paper.requested='stopped';try{await api(projectPaperURL(target)+'/cancel',{});await paperPoll(generation);}catch(e){paperMessage(e.message);}};
@@ -329,9 +344,12 @@ async function paperCompile(force=false){
 }
 async function paperPoll(generation){
  if(generation!==Paper.generation||!Paper.target)return;clearTimeout(Paper.poll);
- const target=Paper.target,poll=++Paper.pollSerial;
+ const target=Paper.target,poll=++Paper.pollSerial;let pollAgain=false;
+ const typing=()=>typeof workspaceTyping==='function'&&workspaceTyping();
  try{
-  const s=await api(projectPaperURL(target));if(generation!==Paper.generation||poll!==Paper.pollSerial)return;
+  if(document.hidden)return;
+  if(document.body.classList.contains('resizing')||typing()){pollAgain=true;return;}
+  const s=await api(projectPaperURL(target),undefined,{background:true});pollAgain=['queued','building','cancelling'].includes(s.state);if(generation!==Paper.generation||poll!==Paper.pollSerial)return;if(typing()||document.body.classList.contains('resizing')){pollAgain=true;return;}
   if(s.current_revision!==undefined&&s.current_revision!==W.manifest.revision&&!W.dirty){await refreshWorkspaceView(target);return;}
   if(Paper.current&&Paper.current!==s.current_fingerprint)Paper.requested=null;Paper.current=s.current_fingerprint;
   const building=['queued','building','cancelling'].includes(s.state);
@@ -348,28 +366,30 @@ async function paperPoll(generation){
    if(Paper.loaded!==artifact){Paper.loaded=artifact;await paperLoadPDF(url,generation);}
    if(generation===Paper.generation&&Paper.loaded===artifact&&Paper.doc)Paper.displayed=last;
   }
-  if(generation!==Paper.generation||poll!==Paper.pollSerial)return;
+  if(generation!==Paper.generation||poll!==Paper.pollSerial)return;if(typing()||document.body.classList.contains('resizing')){pollAgain=true;return;}
   // Retry only after another edit or an explicit request, not on every failed poll.
   if(paperAuto()&&!building&&!s.configuration_error&&stale&&!W.dirty&&!Paper.busy&&Paper.requested===null){Paper.requested=s.current_fingerprint;await paperCompile(false);}
- }catch(e){if(generation===Paper.generation&&poll===Paper.pollSerial)paperMessage(e.message);}
- finally{if(generation===Paper.generation&&poll===Paper.pollSerial){clearTimeout(Paper.poll);Paper.poll=setTimeout(()=>paperPoll(generation),1500);}}
+ }catch(e){pollAgain=true;if(generation===Paper.generation&&poll===Paper.pollSerial)paperMessage(e.message);}
+ finally{if(generation===Paper.generation&&poll===Paper.pollSerial){clearTimeout(Paper.poll);Paper.poll=pollAgain?setTimeout(()=>paperPoll(generation),1500):null;}}
 }
 function paperParseDiagnostics(status){
  const entries=(W.manifest?.entries||[]).filter(e=>!e.deleted&&e.kind==='file'),main=paperMain();
  const resolve=path=>{
   path=path.replace(/^\.\/|^["']|["']$/g,'');
   if(path==='.noctua-paper.tex')return main;
-  return entries.find(e=>paperPath(e)===path);
+  return entries.find(e=>paperBuildPath(e)===path);
  };
- const found=[],stack=[];let current=main?paperPath(main):null,pending=null;
+ const found=[],stack=[];let current=main?paperBuildPath(main):null,pending=null;
  for(const raw of (status.log||'').split('\n')){
   const line=raw.trim();if(!line)continue;
   for(const token of line.matchAll(/\((?:(?:\.\/)?([^\s()]+\.(?:tex|cls|sty|bib|bst)))?|\)/g)){
    if(token[0]===')'){if(stack.length)current=stack.pop();}else{stack.push(current);if(token[1])current=token[1];}
   }
-  const location=/(.+?\.(?:tex|cls|sty|bib|bst)):(\d+):/.exec(line);
+  // Find the suffix first: an unanchored filename wildcard retries every
+  // prefix of long compiler lines, causing quadratic main-thread stalls.
+  const location=/\.(tex|cls|sty|bib|bst):(\d+):/.exec(line);
   let path=null,number=null;
-  if(location){path=location[1].replace(/^(?:error|warning):\s*/i,'').replace(/^\.\//,'');number=Number(location[2]);}
+  if(location){path=line.slice(0,location.index+location[1].length+1).replace(/^(?:error|warning):\s*/i,'').replace(/^\.\//,'');number=Number(location[2]);}
   const level=/\bwarning\b/i.test(line)?'warning':/^!|\berror:|fatal error|emergency stop/i.test(line)||location?'error':null;
   if(level){
    const input=/\bon input line\s+(\d+)/i.exec(line);
@@ -388,8 +408,12 @@ function paperAttachSourceDiagnostics(source,editor){
  const target=W.target,file=W.file,controller=new AbortController(),signal=controller.signal;
  let items=[],signature=null,invalid=false,geometry=null;
  const paint=()=>{
-  overlay.replaceChildren();if(invalid||!items.length||!source.clientWidth)return;
+  if(document.body.classList.contains('resizing'))return;overlay.replaceChildren();if(invalid||!items.length||!source.clientWidth)return;
   const style=getComputedStyle(source),height=parseFloat(style.lineHeight)||20;
+  if(!geometry&&source.wrap==='off'){
+   const count=source.value.split('\n').length,padding=parseFloat(style.paddingTop)||0;
+   geometry=new Map(items.filter(item=>item.line>0&&item.line<=count).map(item=>[item.line,{top:padding+(item.line-1)*height,height}]));
+  }
   if(!geometry){
    const mirror=document.createElement('div');
    for(const key of ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft','boxSizing','tabSize','wordBreak','overflowWrap'])mirror.style[key]=style[key];
@@ -409,7 +433,8 @@ function paperAttachSourceDiagnostics(source,editor){
    button.onclick=()=>paperShowDiagnostics(diagnostics,'all',target);mark.append(button);overlay.append(mark);
   }
  };
- const schedule=()=>paint();
+ const schedule=()=>{if(!document.body.classList.contains('resizing'))paint();};
+ window.addEventListener('noctua-pane-resize-end',schedule,{signal});
  source.addEventListener('scroll',schedule,{signal});
  source.addEventListener('input',()=>{invalid=true;geometry=null;overlay.replaceChildren();},{signal});
  const observer=new ResizeObserver(()=>{geometry=null;schedule();});observer.observe(source);
@@ -444,7 +469,11 @@ function paperShowDiagnostics(items,level,target){
 }
 function paperDiagnosticSummary(status){
  const node=$('[data-paper-diagnostics]');if(!node)return;
- const items=paperParseDiagnostics(status),target=W.target,errors=items.filter(d=>d.level==='error').length,warnings=items.filter(d=>d.level==='warning').length;
+ const cache=Paper.diagnosticsCache,entries=W.manifest?.entries;
+ const same=cache&&cache.target===W.target&&cache.entries===entries&&cache.main===W.manifest?.paper?.main_file&&['log','state','configuration_error','message'].every(key=>cache[key]===status[key]);
+ const items=same?cache.items:paperParseDiagnostics(status);
+ if(!same)Paper.diagnosticsCache={target:W.target,entries,main:W.manifest?.paper?.main_file,log:status.log,state:status.state,configuration_error:status.configuration_error,message:status.message,items};
+ const target=W.target,errors=items.filter(d=>d.level==='error').length,warnings=items.filter(d=>d.level==='warning').length;
  Paper.sourceMarkers?.update(items,status);
  node._diagnostics=items;node.hidden=!items.length;
  const counts=errors+':'+warnings;
@@ -460,7 +489,7 @@ function paperDiagnosticSummary(status){
 function paperDiagnostics(log){
  const container=$('[data-paper-errors]');if(!container)return;container.replaceChildren();const seen=new Set();
  for(const line of log.split('\n')){const m=/(?:^|\s)(?:\.\/)?([^\s:]+\.(?:tex|cls|sty|bib|bst)):(\d+):/.exec(line);if(!m)continue;
-  const path=m[1],number=Number(m[2]);const entry=W.manifest.entries.find(e=>!e.deleted&&e.kind==='file'&&paperPath(e)===path);if(!entry||seen.has(path+':'+number))continue;seen.add(path+':'+number);
+  const path=m[1],number=Number(m[2]);const entry=W.manifest.entries.find(e=>!e.deleted&&e.kind==='file'&&paperBuildPath(e)===path);if(!entry||seen.has(path+':'+number))continue;seen.add(path+':'+number);
   const button=document.createElement('button');button.textContent=path+':'+number;button.onclick=async()=>{try{await openWorkspaceFile(entry.id);const ta=$('#workspace-editor textarea');if(!ta)return;const pos=ta.value.split('\n').slice(0,number-1).join('\n').length+(number>1?1:0);ta.focus();ta.setSelectionRange(pos,pos);ta.scrollTop=(number-3)*parseFloat(getComputedStyle(ta).lineHeight);}catch(e){toast(e.message,{error:true});}};container.appendChild(button);
  }
 }
@@ -478,15 +507,15 @@ async function paperDraw(generation){
  const engine=await pdfjs();if(!active())return;
  const first=await doc.getPage(1);if(!active())return;if(Paper.fit)Paper.scale=Math.max(.1,(pane.clientWidth-40)/first.getViewport({scale:1}).width);const scale=Paper.scale,base=first.getViewport({scale});pane.replaceChildren();
  $('[data-paper-zoom]').textContent=Math.round(scale*100)+'%';
- const render=async node=>{if(node.dataset.rendered||!active())return;node.dataset.rendered='true';
-  try{const page=await doc.getPage(Number(node.dataset.page));if(!active())return;const viewport=page.getViewport({scale}),ratio=Math.min(devicePixelRatio||1,3);
+ const render=async node=>{if(node.dataset.rendered||!active())return;node.dataset.rendered='true';const version=Symbol();node.renderVersion=version;const pageActive=()=>active()&&node.renderVersion===version;
+  try{const page=await doc.getPage(Number(node.dataset.page));if(!pageActive())return;const viewport=page.getViewport({scale}),ratio=Math.min(devicePixelRatio||1,3);
    node.style.width=viewport.width+'px';node.style.height=viewport.height+'px';const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width*ratio);canvas.height=Math.ceil(viewport.height*ratio);canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';node.appendChild(canvas);
-   const task=page.render({canvasContext:canvas.getContext('2d'),viewport,transform:[ratio,0,0,ratio,0,0]});Paper.tasks.add(task);try{await task.promise;}finally{Paper.tasks.delete(task);}if(!active())return;
+   const task=page.render({canvasContext:canvas.getContext('2d'),viewport,transform:[ratio,0,0,ratio,0,0]});node.renderTask=task;Paper.tasks.add(task);try{await task.promise;}finally{Paper.tasks.delete(task);if(node.renderTask===task)node.renderTask=null;}if(!pageActive())return;
    const layer=document.createElement('div');layer.className='textLayer';layer.style.setProperty('--total-scale-factor',scale);node.appendChild(layer);await new engine.TextLayer({textContentSource:await page.getTextContent(),container:layer,viewport}).render();
-   layer.addEventListener('dblclick',event=>{if(active()){event.preventDefault();paperSourceAt(event,page,viewport,node,generation);}});
-  }catch(e){if(active()&&e.name!=='RenderingCancelledException')paperMessage('PDF preview: '+e.message);}
+   layer.addEventListener('dblclick',event=>{if(pageActive()){event.preventDefault();paperSourceAt(event,page,viewport,node,generation);}});
+  }catch(e){if(pageActive()&&e.name!=='RenderingCancelledException')paperMessage('PDF preview: '+e.message);}
  };
- Paper.observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting)render(entry.target);},{root:pane,rootMargin:'600px'});
+ Paper.observer=new IntersectionObserver(entries=>{for(const entry of entries){const node=entry.target;if(entry.isIntersecting)render(node);else{node.renderVersion=null;node.renderTask?.cancel();node.replaceChildren();delete node.dataset.rendered;}}},{root:pane,rootMargin:'600px'});
  for(let i=1;i<=doc.numPages;i++){const node=document.createElement('div');node.className='paper-page';node.dataset.page=i;node.style.width=base.width+'px';node.style.height=base.height+'px';pane.appendChild(node);Paper.observer.observe(node);}
  pane.scrollTop=scroll;
 }
@@ -524,4 +553,79 @@ function paperCenterLine(ta,line){
  mirror.append(document.createTextNode(ta.value.slice(0,start)));const marker=document.createElement('span');marker.textContent=lines[index]||'\u200b';mirror.append(marker);document.body.append(mirror);
  const top=marker.getBoundingClientRect().top-mirror.getBoundingClientRect().top;
  ta.scrollTop=Math.max(0,top-ta.clientHeight/2+(parseFloat(style.lineHeight)||20)/2);ta.scrollLeft=0;mirror.remove();
+}
+
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Paper.target)paperPoll(Paper.generation);});
+
+// Lexical coloring only: no completion, TeX execution, or document-wide DOM.
+function paperColorLine(line,state={math:''},emit=true){
+ const tokens=/\\(?:begin|end)\s*\{[^}\n]*\}|\\(?:[a-zA-Z@]+\*?|[^\n])|%[^\n]*|\$\$?|[{}\[\]_^&=+<>-]|\b\d+(?:\.\d+)?\b/g;
+ let html='',at=0,match;
+ const add=(text,kind)=>{if(emit&&text)html+=kind?`<span class="tex-${kind}">${esc(text)}</span>`:esc(text);};
+ while((match=tokens.exec(line))){
+  add(line.slice(at,match.index),state.math?'math-content':'');const token=match[0];let kind='';
+  const environment=/^\\(begin|end)\s*\{([^}]+)\}$/.exec(token);
+  if(token[0]==='%')kind='comment';
+  else if(environment){
+   kind='environment';const name=environment[2];
+   if(/^(?:equation|align|alignat|gather|multline|flalign|displaymath|math|eqnarray)\*?$/.test(name))state.math=environment[1]==='begin'?'env:'+name:'';
+  }else if(token[0]==='$'){
+   kind='math';if(!state.math)state.math=token;else if(state.math===token)state.math='';
+  }else if(['\\(','\\[','\\)','\\]'].includes(token)){
+   kind='math';if(token==='\\('||token==='\\[')state.math=token;else if(state.math===(token==='\\)'?'\\(':'\\['))state.math='';
+  }else if(token[0]==='\\'){
+   const name=token.slice(1).replace(/\*$/,'');
+   kind=/^(?:cite\w*|ref|eqref|autoref|cref|Cref|label)$/.test(name)?'reference':/^(?:textit|textbf|emph|textsc|texttt)$/.test(name)?'format':/^(?:section|subsection|subsubsection|chapter|part|documentclass|usepackage|newcommand|renewcommand|def|title|author|item)$/.test(name)?'structure':state.math||/^(?:alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|rho|sigma|tau|phi|psi|omega|Gamma|Delta|Theta|Lambda|Pi|Sigma|Phi|Psi|Omega|sum|int|infty|prod|partial|nabla)$/.test(name)?'symbol':'command';
+  }else kind=/^[{}\[\]]$/.test(token)?'delimiter':/^\d/.test(token)?'number':state.math?'operator':'';
+  add(token,kind);at=tokens.lastIndex;
+ }
+ add(line.slice(at),state.math?'math-content':'');return html;
+}
+function paperAttachColors(source,host){
+ const layer=document.createElement('pre');layer.className='paper-source-colors';layer.setAttribute('aria-hidden','true');host.prepend(layer);
+ const controller=new AbortController(),{signal}=controller;let timer=null,frame=null,lines=null,version=null,composing=false,states=[''],paintKey=null,geometry=null;
+ source.wrap='soft';source.classList.add('paper-code-source');
+ const paint=()=>{
+  frame=null;if(composing||document.body.classList.contains('resizing'))return;
+  // Very large sources retain the plain native editor rather than delaying input.
+  if(source.value.length>200000){source.classList.remove('syntax-colored');layer.hidden=true;return;}
+  if(version!==source.value){
+   version=source.value;const next=version.split('\n');let unchanged=0;
+   while(lines&&unchanged<lines.length&&unchanged<next.length&&lines[unchanged]===next[unchanged])unchanged++;
+   states.length=Math.min(states.length,unchanged+1);lines=next;geometry=null;
+  }
+  if(lines.length>10000){source.classList.remove('syntax-colored');layer.hidden=true;return;}
+  const style=getComputedStyle(source),height=parseFloat(style.lineHeight),top=parseFloat(style.paddingTop),left=parseFloat(style.paddingLeft);
+  if(!height||!source.clientHeight)return;
+  const width=source.clientWidth-left-parseFloat(style.paddingRight);
+  const layout=[width,style.font,style.lineHeight,style.letterSpacing,style.tabSize].join('\u0000');
+  // Measure plain wrapped lines only when text or width changes; scrolling reuses offsets.
+  if(!geometry||geometry.layout!==layout){
+   const mirror=document.createElement('div');Object.assign(mirror.style,{position:'fixed',visibility:'hidden',pointerEvents:'none',left:'0',top:'0',width:width+'px',font:style.font,lineHeight:style.lineHeight,letterSpacing:style.letterSpacing,tabSize:style.tabSize,whiteSpace:'pre-wrap',overflowWrap:'break-word'});
+   for(const text of lines){const row=document.createElement('div');row.textContent=text||'\u200b';mirror.append(row);}
+   document.body.append(mirror);const origin=mirror.getBoundingClientRect().top;
+   geometry={layout,offsets:Array.from(mirror.children,row=>row.getBoundingClientRect().top-origin)};mirror.remove();
+  }
+  const offsets=geometry.offsets;let low=0,high=offsets.length;
+  while(low+1<high){const mid=(low+high)>>1;if(offsets[mid]<=source.scrollTop-top)low=mid;else high=mid;}
+  const first=low,count=Math.min(150,Math.ceil(source.clientHeight/height)+2);
+  const visible=lines.slice(first,first+count);
+  for(let i=states.length-1;i<first;i++){const state={math:states[i]};paperColorLine(lines[i],state,false);states[i+1]=state.math;}
+  const state={math:states[first]||''};
+  // Bound token work even for generated single-line files.
+  if(visible.some(line=>line.length>20000)){source.classList.remove('syntax-colored');layer.hidden=true;return;}
+  const nextKey=[first,source.scrollTop,source.scrollLeft,source.clientWidth,source.clientHeight,style.font,style.letterSpacing].join('\u0000');
+  if(paintKey?.value===version&&paintKey.layout===nextKey&&!layer.hidden&&source.classList.contains('syntax-colored'))return;paintKey={value:version,layout:nextKey};
+  layer.hidden=false;layer.style.font=style.font;layer.style.lineHeight=style.lineHeight;layer.style.letterSpacing=style.letterSpacing;layer.style.tabSize=style.tabSize;
+  layer.style.width=source.clientWidth+'px';layer.style.height=source.clientHeight+'px';
+  layer.innerHTML=`<div style="width:${width}px;transform:translate(${left}px,${top+offsets[first]-source.scrollTop}px)">${visible.map((line,index)=>{const html=paperColorLine(line,state);states[first+index+1]=state.math;return `<div>${html||'\u200b'}</div>`;}).join('')}</div>`;
+  source.classList.add('syntax-colored');
+ };
+ const schedule=()=>{if(!document.body.classList.contains('resizing')&&frame===null)frame=requestAnimationFrame(paint);};
+ const edited=()=>{source.classList.remove('syntax-colored');layer.hidden=true;clearTimeout(timer);timer=setTimeout(paint,80);};
+ source.addEventListener('input',edited,{signal});source.addEventListener('scroll',schedule,{signal,passive:true});
+ source.addEventListener('compositionstart',()=>{composing=true;edited();},{signal});source.addEventListener('compositionend',()=>{composing=false;edited();},{signal});
+ window.addEventListener('noctua-pane-resize-end',schedule,{signal});
+ const observer=new ResizeObserver(schedule);observer.observe(source);paint();
+ return {destroy(){controller.abort();observer.disconnect();clearTimeout(timer);if(frame!==null)cancelAnimationFrame(frame);source.classList.remove('syntax-colored','paper-code-source');layer.remove();}};
 }

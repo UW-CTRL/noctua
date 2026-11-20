@@ -22,6 +22,7 @@ For cross-feature requirements, follow
 | [reader.md](reader.md) | PDF navigation, annotations, and Reader AI actions. |
 | [papers.md](papers.md) | Standard LaTeX paper editing, compilation, templates, and PDF preview. |
 | [notes.md](notes.md) | Note syntax, handwriting, media, and edits. |
+| [linked-projects.md](linked-projects.md) | External directories, Git, terminal sessions, and persistent agent access. |
 | [assistant.md](assistant.md) | Chat, attachments, modes, capabilities, and prompt explanations. |
 | [server.md](server.md) | Independent server, connection recovery, CLI, authentication, login services, drafts and server updates. |
 | [settings-and-data.md](settings-and-data.md) | Settings, skill management, storage, backups, and updates. |

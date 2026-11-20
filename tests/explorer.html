@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><title>Document workspace</title><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/linked.css"><link rel="stylesheet" href="../web/icons.css"><body class="notes-mode library-view"><main><aside id="left"><div id="research-sidebar"><ul id="lib-tree"></ul></div><div id="notes-side"><ul id="note-list"></ul></div></aside><div id="notes-stage"></div><div id="pdf-stage"></div><div id="stage"></div><aside id="right"></aside></main><div id="chat-log"></div>
+<script>
+Object.defineProperty(document,'hidden',{get:()=>false});
+const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const collections={targets:[{id:'L1',name:'First'},{id:'C2',name:'Second'}]},lib={target:'L1',expanded:new Set()},G={layout:'library'},settings={},chat={};
+const N={target:'L1',items:new Map(),list:[],doc:null},PDF={page:1};
+const store={data:{},get(k){return this.data[k]},set(k,v){this.data[k]=v},remove(k){delete this.data[k]}};
+const linked='linked~C2~root',manifests=new Map(['L1','C2',linked].map(target=>[target,{revision:1,entries:[{id:'a',name:'a.tex',kind:'file',blob:'a',parent:''},{id:'b',name:'b.tex',kind:'file',blob:'b',parent:''}],history:{},root:'/tmp/project'}]));
+const texts=new Map();let failSave=false;
+async function api(path,body){
+ const target=decodeURIComponent(path.split('/')[3]),m=manifests.get(target);
+ if(path.endsWith('/links'))return {supported:true,links:target==='C2'?[{id:'root',target:linked,name:'ctrl',path:'/tmp/project',available:true}]:[]};
+ if(path.endsWith('/changes'))return {generation:m.revision};
+ if(path.includes('/files/'))return {text:texts.get(target+':'+path.split('/')[5])||'original',revision:m.revision,history:{}};
+ if(body){if(failSave)throw Error('Save conflict');if(body.op==='edit'){texts.set(target+':'+body.id,body.text);m.revision++;}}
+ return structuredClone(m);
+}
+function toast(message){window.lastError=message;}function typeset(){}function stopEdit(){}function updateChatContext(){}function rememberNoteView(){}function paperUnmount(){}async function flushNoteEdits(){}async function saveNow(){}
+function setMode(mode){document.body.classList.toggle('notes-mode',mode==='notes');document.body.classList.toggle('pdf-mode',mode==='pdf');}function isNotesMode(){return document.body.classList.contains('notes-mode')}function setLayout(mode){G.layout=mode}function loadLibItems(){}function lastSplitSide(){return null}
+function renderEditor(){$('#notes-stage').innerHTML='';}function showCollection(id){lib.target=id;renderLibTree();}
+function renderLibTree(){$('#lib-tree').innerHTML=collections.targets.map(c=>`<li data-id="${c.id}">${c.name}</li>`).join('');if(typeof renderExplorer==='function')renderExplorer();}
+async function loadNoteFolder(target){N.target=target;await loadWorkspace(target);}function collectionOptions(){return ''}
+function assert(value,message){if(!value)throw Error(message);window.webkit.messageHandlers.progress.postMessage(message)}
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+</script><script src="../web/edit-history.js"></script><script src="../web/workspace.js"></script><script src="../web/linked.js"></script><script src="../web/documents.js"></script><script>
+(async()=>{
+ renderLibTree();await loadWorkspace('L1');await loadExplorerCollection('L1');renderWorkspaceTree();await openProjectEntry('L1','a');
+ const original=$('#workspace-editor textarea');original.value='draft in first';original.dispatchEvent(new Event('input'));original.setSelectionRange(5,5);
+ await browseCollection('C2');assert(W.target==='L1'&&W.file==='a'&&$('#workspace-editor textarea')===original&&W.dirty,'expanding another collection preserves the active editor and draft');
+ const cachedStyle=getComputedStyle($('#lib-tree [data-cached-target="C2"]'));assert(cachedStyle.borderTopWidth==='0px'&&cachedStyle.backgroundColor==='rgba(0, 0, 0, 0)','inactive collection files use the same borderless rows as active files');
+ assert($('#lib-tree [data-cached-target="C2"]')&&$('#lib-tree [data-file="a"]'),'multiple collection file trees remain expanded');
+ await $('[data-linked-root]').onclick();assert(W.target==='L1'&&$('#workspace-editor textarea')===original&&$(`[data-cached-target="${linked}"]`),'expanding a linked root leaves the active document alone');
+ await openProjectEntry('C2','b');assert(texts.get('L1:a')==='draft in first'&&Documents.items.length===2&&W.target==='C2','opening a second document saves the first and adds a center tab');
+ await switchDocument(documentKey({kind:'file',target:'L1',id:'a'}));assert($('#workspace-editor textarea').value==='draft in first'&&$('#workspace-editor textarea').selectionStart===5,'center tabs restore saved text and caret');
+ failSave=true;$('#workspace-editor textarea').value='keep this';$('#workspace-editor textarea').dispatchEvent(new Event('input'));await switchDocument(documentKey({kind:'file',target:'C2',id:'b'})).catch(()=>{});assert(W.target==='L1'&&W.dirty&&$('#workspace-editor textarea').value==='keep this','failed saves prevent tab switches and preserve drafts');
+ failSave=false;await closeDocument(Documents.active);assert(Documents.items.length===1&&W.target==='C2','closing active document saves then activates its neighbor');
+ await browseCollection('L1');assert(W.target==='C2'&&W.file==='b','collapsing another collection does not switch files');
+ assert($('#document-tabs').getAttribute('role')==='tablist'&&$('main').classList.contains('has-document-tabs'),'center document tabs have independent accessible navigation');
+ const divider=document.createElement('div');divider.id='split-divider';$('main').append(divider);document.body.classList.add('pdf-mode','split-view');assert(getComputedStyle(divider).gridRowStart==='2','split divider stays below center document tabs');document.body.classList.remove('pdf-mode','split-view');
+ window.webkit.messageHandlers.result.postMessage('PASS: independent multi-collection browsing, linked expansion, center document tabs, save conflicts, caret restoration and close behavior');
+})().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.stack));
+</script>

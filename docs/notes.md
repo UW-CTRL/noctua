@@ -1,5 +1,9 @@
 # Notes
 
+For external source directories, Git, and the embedded server terminal, see
+[Linked projects](linked-projects.md). Linked directories remain outside Noctua
+storage and must be backed up separately.
+
 [Documentation](README.md) · [Project README](../README.md)
 
 Notes save automatically; the save state appears quietly beside the collection
@@ -8,14 +12,12 @@ and failures also raise a notification.
 
 ## Write in a collection
 
-Library and Notes share one collection tree in the left sidebar: selecting a
-collection in either mode selects it in both, and the collection's notes and
-files appear nested under its row. **Settings → View** controls whether this combined
-Notes and Files list is visible in Library; Notes keeps its project navigation.
-Selecting a collection or opening Notes does not load Semantic Scholar graphs.
+The left sidebar shares one collection tree across Library, Graph, and Lineage.
+Select **Papers** for the central paper list; select notes or files to open their
+editors. Linked directories appear alongside existing collection content. There
+are no separate top-level Notes and Reader tabs.
 Graph and Lineage load relationships when used in Library. Select a collection and use **New note or
-file** (above the tree, in Library or Notes) and select **Note**; Noctua switches
-to Notes to open it. You can also create a note from the Library table header,
+file** (above the tree, in Library or Notes) and select **Note** to open its editor. You can also create a note from the Library table header,
 a collection's right-click menu, or the Reader's **More document actions**
 menu, which opens it beside the paper. The Library table lists notes beside
 papers, and the Library, Graph and Lineage views can keep a note open beside
@@ -44,15 +46,9 @@ in Library and Note Info. It defaults to the server operating-system username;
 **Use username** restores that default. Name changes also apply to existing notes
 without editing their contents or modification times. Paper authors are unchanged.
 
-**Show Notes and Files** in Settings → View affects only the left sidebar;
-the central Library list continues to show notes according to its All / Papers /
-Notes filter. Applied title tags use the same spacing for notes and papers.
-
-In the Library list, click a note once to select it and show **Note Info** on the
-right; double-click to open it in Notes. Add tags in Note Info. Hover or focus a
-tag row to reveal its removal button; removing it applies immediately to that
-note. Right-click a tag in the left Tags sidebar and choose **Delete** to remove
-the tag and all its paper and note assignments while keeping the items.
+The collection tree always shows its notes and files. Select a note to open its
+editor; the Papers node opens the paper table. Existing note tags and metadata
+remain stored with their notes.
 
 **Settings → View → Tags** controls sidebar tag and count visibility and the ten
 digit shortcuts. Enable each key separately and type a tag name with existing-tag
@@ -353,8 +349,19 @@ Files copied from a file manager can be pasted into the Library collection list 
 
 Project files use image icons for image formats and video icons for video formats; folders and ordinary documents retain their own icons. Icons identify file types and do not imply preview support.
 
-Switch Library, Notes, and Reader with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Reader requires an open PDF. These shortcuts are inactive while a dialog is open.
+Switch Library, Graph, and Lineage with Option+1, Option+2, and Option+3 on macOS, or Alt+1, Alt+2, and Alt+3 on Windows/Linux. Select documents in the collection tree or Papers list. These shortcuts are inactive while a dialog is open.
 
 Library folders can be moved, ordered, or moved to recoverable Library trash without changing collection IDs or deleting project files. Restore a deleted folder in Library Trash to recover its deletion group. Library paper trash preserves annotations and memberships; bulk management and duplicate review are available in the Library UI. Duplicate merges retain annotation IDs and citation aliases, but refuse different PDFs.
 
 Library Trash supports permanent deletion after confirmation. Permanently deleting a folder removes its owned project notes and files; permanently deleting a paper removes its metadata and annotations. These actions cannot be restored or undone. External original PDFs are preserved.
+
+Native cell documents remember their scroll position per note and collection on this device, including when returning from a project source file.
+
+Tabs identify the collection and currently open note or source file; switching
+files keeps the directory list at its current scroll position.
+
+Expanding collections or linked directories leaves the current note open. Files
+open in center document tabs, separate from outer application tabs; switching
+saves edits and restores the document position. Close tabs with ×. The tab list
+lasts for the current window session. In the PDF Reader, the same directory tree
+is available under **Files**, alongside **Outline** and **Annotations**.

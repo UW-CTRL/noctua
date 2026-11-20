@@ -1,6 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../web/style.css"><link rel="stylesheet" href="../web/icons.css"><link rel="stylesheet" href="../web/pdf.css"></head><body>
 <div id="notes-stage" style="height:650px;width:1050px;display:flex"></div>
 <script>
+let fixtureHidden=false;Object.defineProperty(document,'hidden',{get:()=>fixtureHidden});
 const $=s=>document.querySelector(s),enc=encodeURIComponent,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={data:{},get(k){return this.data[k]??null;},set(k,v){this.data[k]=v;}};
 const W={target:'L1',file:'main',dirty:false,manifest:{revision:1,paper:{main_file:'main'},entries:[{id:'main',kind:'file',name:'main.tex',parent:''},{id:'bib',kind:'file',name:'references.bib',parent:''}]}};
@@ -38,19 +39,13 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  const typeTex=(value,caret=value.length)=>{source.focus();source.value=value;source.setSelectionRange(caret,caret);source.dispatchEvent(new Event('input',{bubbles:true}));};
  const keyTex=key=>source.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
  let inserted=0;source.addEventListener('input',()=>inserted++);
- typeTex('\\');assert(!$('#paper-tex-completion').hidden,'backslash opens command list');
- typeTex('before \\fra after',11);assert($('#paper-tex-completion code').textContent==='\\frac','command prefix filters suggestions');
- const beforeInsert=inserted;keyTex('Tab');assert(source.value==='before \\frac{}{} after'&&source.selectionStart===13,'snippet preserves surrounding text and puts caret in first argument');assert(inserted===beforeInsert+1&&$('#paper-tex-completion').hidden,'completion dispatches input for save and compile');
- typeTex('\\begin{ali} suffix',10);assert([...$('#paper-tex-completion').children].some(row=>row.textContent.includes('begin{align}')),'environment prefix suggestions');
- const align=[...$('#paper-tex-completion').children].find(row=>row.querySelector('code').textContent==='\\begin{align}');align.click();assert(source.value==='\\begin{align}\n\n\\end{align} suffix','environment inserts matching end without duplicate brace');assert(source.selectionStart===14,'environment caret is in body');
- typeTex('\\alp');keyTex('ArrowDown');assert(source.getAttribute('aria-activedescendant')==='paper-tex-option-0','single suggestion arrow wraps');keyTex('Enter');assert(source.value==='\\alpha','Enter inserts command');
- typeTex('\\s');const activeBefore=source.getAttribute('aria-activedescendant');keyTex('ArrowDown');assert(source.getAttribute('aria-activedescendant')!==activeBefore,'arrows move selection');keyTex('Escape');assert($('#paper-tex-completion').hidden&&document.activeElement===source,'Escape closes menu while keeping editor focus');
- typeTex('\\\\');assert($('#paper-tex-completion').hidden,'line break does not trigger commands');
- typeTex('% comment \\fra');assert($('#paper-tex-completion').hidden,'comments do not trigger commands');
- typeTex('\\% \\fra');assert(!$('#paper-tex-completion').hidden,'escaped percent is not a comment');
- typeTex('\\newcommand{\\myvector}[2]{#1+#2}\n\\myv');assert($('#paper-tex-completion code').textContent==='\\myvector','local macro suggested');keyTex('Tab');assert(source.value.endsWith('\\myvector{}{}'),'local macro arguments inserted');
- typeTex('\\alp');source.dispatchEvent(new CompositionEvent('compositionstart'));assert($('#paper-tex-completion').hidden,'composition hides suggestions');source.dispatchEvent(new CompositionEvent('compositionend'));
- source.dispatchEvent(new Event('blur'));assert($('#paper-tex-completion').hidden,'blur dismisses suggestions');source.value='Unsaved source';const previewDoc=Paper.doc;
+ const originalContext=paperTexContext;let completionScans=0;paperTexContext=()=>{completionScans++;return null;};
+ for(const text of ['ordinary contextual words','\\cite{example','\\ref{section','\\input{chapter','\\fra'])typeTex(text);
+ assert(!$('#paper-tex-completion')&&completionScans===0,'typing prose and TeX commands never invokes autocomplete');
+ paperTexContext=originalContext;
+ assert(['autocomplete','autocorrect','autocapitalize'].every(name=>source.getAttribute(name)==='off')&&source.getAttribute('writingsuggestions')==='false'&&source.getAttribute('spellcheck')==='false','source editor disables native text predictions and corrections');
+ const enter=new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});source.dispatchEvent(enter);assert(!enter.defaultPrevented,'Enter is not intercepted by suggestions');
+ source.value='Unsaved source';const previewDoc=Paper.doc;
  $('[data-paper-pane="source"]').click();await delay(150);assert($('.paper-source').hidden&&!$('#paper-pages').hidden,'source fully collapses');assert(source.value==='Unsaved source'&&Paper.doc===previewDoc,'collapse retains editor and PDF');
  $('[data-paper-pane="preview"]').click();assert(!$('.paper-source').hidden&&$('#paper-pages').hidden,'hiding preview restores source instead of hiding both');
  assert($('#paper-split').style.getPropertyValue('--paper-source-width')==='52%','collapse preserves divider ratio');
@@ -71,7 +66,7 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  const markedSource=$('#workspace-editor textarea');markedSource.value=['First line','x '.repeat(180),'Third line',...Array(80).fill('More source')].join('\n');markedSource.setSelectionRange(0,0);markedSource.scrollTop=0;
  const markerStatus={state:'error',fingerprint:'marked',log:'main.tex:2: Undefined command\nmain.tex:3: LaTeX Warning: Reference undefined.\nreferences.bib:1: LaTeX Warning: Another file.'};paperDiagnosticSummary(markerStatus);
  assert(document.querySelectorAll('.paper-source-diagnostic').length===2&&$('.paper-source-diagnostic[data-line="2"]').dataset.level==='error'&&$('.paper-source-diagnostic[data-line="3"]').dataset.level==='warning','source marks only diagnostics in the active file with severity');
- const markerTop=parseFloat($('.paper-source-diagnostic[data-line="3"]').style.top);assert(markerTop>parseFloat($('.paper-source-diagnostic[data-line="2"]').style.top)+40,'markers account for wrapped source lines');
+ const markerTop=parseFloat($('.paper-source-diagnostic[data-line="3"]').style.top);assert(markerTop-parseFloat($('.paper-source-diagnostic[data-line="2"]').style.top)>parseFloat(getComputedStyle(markedSource).lineHeight),'markers account for wrapped source lines');
  markedSource.scrollTop=20;markedSource.dispatchEvent(new Event('scroll'));assert(Math.abs(parseFloat($('.paper-source-diagnostic[data-line="3"]').style.top)-(markerTop-20))<1,'markers follow editor scrolling');
  $('.paper-source-diagnostic[data-line="3"] button').click();const lineList=$('dialog[open]');assert(lineList.querySelectorAll('.paper-diagnostic-row').length===1&&lineList.textContent.includes('Reference undefined'),'source marker opens that line diagnostics');lineList.close();
  markedSource.dispatchEvent(new Event('input',{bubbles:true}));assert(!$('.paper-source-diagnostic'),'editing clears outdated source markers');paperDiagnosticSummary(markerStatus);assert(!$('.paper-source-diagnostic'),'unchanged old log cannot restore stale markers');
@@ -95,7 +90,7 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
   pending.old(older);await step('discard older PDF',()=>olderLoad);
   assert(Paper.doc===newest&&oldDisposed,'late old PDF cannot replace newer preview');
  }finally{pdfjs=originalEngine;}
- await step('open paper settings',()=>showPaperSettings());await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');assert(settings.querySelector('[data-latex-bib-mode]').value==='all'&&settings.querySelector('[data-latex-bib-files]').hidden,'bibliographies default to all in project');const bibMode=settings.querySelector('[data-latex-bib-mode]');bibMode.value='selected';bibMode.dispatchEvent(new Event('change'));assert(!settings.querySelector('[data-latex-bib-files]').hidden,'custom selection reveals bibliography files');
+ await step('open paper settings',()=>showPaperSettings());await delay(50);const settings=$('dialog');assert(settings,'settings gear dialog opens');assert(settings.querySelector('[data-latex-bib-mode]').value==='all'&&settings.querySelector('[data-latex-bib-files]').hidden,'bibliographies default to the main document directory');const bibMode=settings.querySelector('[data-latex-bib-mode]');bibMode.value='selected';bibMode.dispatchEvent(new Event('change'));assert(!settings.querySelector('[data-latex-bib-files]').hidden,'custom selection reveals bibliography files');
  settings.querySelector('[data-latex-compiler]').value='pdflatex';settings.querySelector('[data-latex-compiler]').dispatchEvent(new Event('change'));
  assert(settings.querySelector('[data-compiler-info]').textContent.includes('TeX Live'),'bundled compiler version displayed');
  settings.querySelector('[data-latex-auto]').checked=false;assert(!settings.querySelector('footer')&&!settings.querySelector('[data-cancel]'),'settings has only close control');settingsFail=true;await step('save paper settings',()=>settings.querySelector('[data-close]').onclick());assert(settings.open&&settings.querySelector('[data-error]').textContent==='Settings conflict'&&!settings.querySelector('[data-close]').disabled,'failed close keeps settings open for retry');settingsFail=false;await step('save paper settings',()=>settings.querySelector('[data-close]').onclick());assert(!settings.open,'successful close saves before dismissing');
@@ -104,6 +99,41 @@ function mount(){paperUnmount();$('#notes-stage').innerHTML='<div id="workspace-
  await step('open paper settings',()=>showPaperSettings());const escapeSettings=$('dialog[open]');escapeSettings.querySelector('[data-latex-auto]').checked=true;escapeSettings.dispatchEvent(new Event('cancel',{cancelable:true}));await delay(50);assert(!escapeSettings.open&&W.manifest.paper.auto_compile,'Escape also saves settings');
  W.manifest.paper={main_file:'main',compiler:'tectonic',auto_compile:true};assert(paperCompiler()==='tectonic'&&paperAuto(),'next project uses its own settings');
  const generation=Paper.generation;paperUnmount();await step('ignore poll after unmount',()=>paperPoll(generation));assert(!Paper.target&&!Paper.doc,'leaving editor disposes PDF and polling');
- window.webkit.messageHandlers.result.postMessage('PASS: TeX completion, paper split view, manual/automatic builds, save conflicts, last-good PDF, diagnostics, zoom, resizing, supporting files, cancellation, and cleanup');
+ W.manifest.entries=[{id:'dir',name:'paper',kind:'folder',parent:''},{id:'main',name:'main.tex',kind:'file',parent:'dir'},{id:'local',name:'body.tex',kind:'file',parent:'dir'},{id:'outside',name:'body.tex',kind:'file',parent:''},{id:'class',name:'conference.cls',kind:'file',parent:'dir'},{id:'other-class',name:'unrelated.cls',kind:'file',parent:''}];
+ assert(paperBuildPath(W.manifest.entries[2])==='body.tex'&&paperBuildPath(W.manifest.entries[3])===null,'build paths use the main directory and exclude sibling papers');
+ const suggestions=paperFileSuggestions({fileCommand:'input',query:''});assert(suggestions.some(s=>s[1]==='body.tex')&&!suggestions.some(s=>s[1].startsWith('paper/')),'file completion inserts main-directory-relative paths');
+ const classes=paperClassSuggestions({query:''});assert(classes.some(s=>s[1]==='conference')&&!classes.some(s=>s[1]==='unrelated'),'class completion follows build scope');
+ const diagnostics=paperParseDiagnostics({state:'error',log:'body.tex:3: Undefined control sequence'});assert(diagnostics[0].file==='local','compiler errors resolve inside the main directory even with duplicate filenames outside it');
+ const longLog='Compiler output '+('x'.repeat(8000)+'\n').repeat(16)+'body.tex:12: Undefined control sequence';
+ const began=performance.now(),longDiagnostics=paperParseDiagnostics({state:'error',log:longLog});
+ assert(performance.now()-began<200,'long compiler log lines parse without blocking typing');
+ assert(longDiagnostics.length===1&&longDiagnostics[0].file==='local'&&longDiagnostics[0].line===12,'long log retains precise source diagnostics');
+ const spaced=paperParseDiagnostics({state:'error',log:'error: folder with spaces/body.tex:7: Undefined control sequence'});
+ assert(spaced[0].path==='folder with spaces/body.tex'&&spaced[0].line===7,'diagnostics preserve paths containing spaces');
+ const summary=document.createElement('span');summary.dataset.paperDiagnostics='';document.body.append(summary);
+ const parseDiagnostics=paperParseDiagnostics;let parses=0;paperParseDiagnostics=status=>{parses++;return parseDiagnostics(status);};
+ try{const status={state:'error',log:'body.tex:3: Undefined control sequence'};Paper.diagnosticsCache=null;paperDiagnosticSummary(status);paperDiagnosticSummary({...status});assert(parses===1,'unchanged compiler logs reuse parsed diagnostics');paperDiagnosticSummary({...status,log:'body.tex:4: Undefined control sequence'});assert(parses===2,'changed compiler logs refresh diagnostics');W.manifest.entries=[...W.manifest.entries];paperDiagnosticSummary({...status,log:'body.tex:4: Undefined control sequence'});assert(parses===3,'source manifest changes refresh diagnostic locations');}finally{paperParseDiagnostics=parseDiagnostics;summary.remove();}
+ const colorSample=paperColorLine(String.raw`\textit{word} \cite{key} $x_2$ % comment <script>`);
+ assert(colorSample.includes('tex-format')&&colorSample.includes('tex-reference')&&colorSample.includes('tex-math')&&colorSample.includes('tex-comment')&&!colorSample.includes('<script>'),'lexical colors distinguish commands, references, math, comments and escape HTML');
+ assert(!paperColorLine(String.raw`\% ordinary`).includes('tex-comment'),'escaped percent is not a comment');
+ const mathState={math:''};const mathLine=paperColorLine(String.raw`Text $x + \omega$ after \begin{align}`,mathState);
+ assert(mathLine.includes('tex-math-content')&&mathLine.includes('tex-symbol')&&mathLine.includes('tex-environment')&&mathState.math==='env:align','math content, symbols, and environments have distinct colors');
+ assert(paperColorLine('y = 2',mathState).includes('tex-math-content'),'math environments carry across lines');paperColorLine(String.raw`\end{align} plain`,mathState);assert(mathState.math===''&&!paperColorLine('plain',mathState).includes('tex-math-content'),'ending math restores prose coloring');
+ const dollars={math:''};paperColorLine('$$',dollars);paperColorLine('% $$ ignored',dollars);assert(dollars.math==='$$','comments do not close math');paperColorLine('$$',dollars);assert(!dollars.math,'display math closes');
+ W.file='main';mount();const colorSource=$('#workspace-editor textarea');colorSource.value=Array.from({length:5000},(_,i)=>'\\section{Line '+i+'}').join('\n');colorSource.dispatchEvent(new Event('input'));await delay(120);
+ assert(colorSource.classList.contains('syntax-colored')&&document.querySelectorAll('.paper-source-colors span').length<1000,'long sources color a bounded viewport');
+ colorSource.value+=' changed';colorSource.dispatchEvent(new Event('input'));assert(!colorSource.classList.contains('syntax-colored'),'typing immediately restores native text while colors catch up');
+ await delay(120);const nativeFrame=window.requestAnimationFrame;let colorFrame;window.requestAnimationFrame=callback=>{colorFrame=callback;return 1;};
+ colorSource.scrollTop=2000;colorSource.dispatchEvent(new Event('scroll'));window.requestAnimationFrame=nativeFrame;if(colorFrame)colorFrame();
+ assert(colorSource.scrollTop>0&&!$('.paper-source-colors').textContent.includes('Line 0}'),'color viewport follows source scrolling');
+ W.file='main';fixtureHidden=false;status={state:'success',current_revision:W.manifest.revision,current_fingerprint:'idle',stale:false};mount();await delay(100);await paperPoll(Paper.generation);assert(Paper.poll===null,'idle compiler status stops polling');
+ fixtureHidden=true;const readsBefore=requests.length;await paperPoll(Paper.generation);assert(requests.length===readsBefore&&Paper.poll===null,'hidden editor makes no compiler-status requests');fixtureHidden=false;
+ const wrapSource=$('#workspace-editor textarea');wrapSource.value='Long wrapped paragraph '.repeat(30)+'\n\\section{After wrapping}';wrapSource.dispatchEvent(new Event('input'));wrapSource.scrollTop=0;await delay(160);assert(wrapSource.wrap==='soft'&&wrapSource.scrollWidth<=wrapSource.clientWidth+1,'source wraps without horizontal scrolling');const wrappedRows=$('.paper-source-colors > div').children;assert(wrappedRows[0].getBoundingClientRect().height>parseFloat(getComputedStyle(wrapSource).lineHeight)&&wrappedRows[1].querySelector('.tex-structure'),'color overlay wraps prose and retains following command colors');
+ const markerSource=$('.paper-source textarea');markerSource.value=Array.from({length:5000},()=> 'Long source line '.repeat(5)).join('\n');
+ document.body.classList.add('resizing');Paper.sourceMarkers.update([{file:'main',line:1,level:'warning',message:'warning'}],{state:'success',fingerprint:'drag'});
+ assert(!$('.paper-source-diagnostic'),'pane dragging defers source diagnostic geometry');
+ assert(getComputedStyle($('.paper-source-colors')).visibility==='hidden'&&getComputedStyle(markerSource).webkitTextFillColor!=='rgba(0, 0, 0, 0)','pane drags hide the color overlay and show native source text');
+ document.body.classList.remove('resizing');window.dispatchEvent(new Event('noctua-pane-resize-end'));assert($('.paper-source-diagnostic'),'ending pane drag restores diagnostic markers');paperUnmount();
+ window.webkit.messageHandlers.result.postMessage('PASS: autocomplete disabled, paper split view, manual/automatic builds, save conflicts, last-good PDF, diagnostics, zoom, resizing, supporting files, cancellation, and cleanup');
 })().catch(e=>window.webkit.messageHandlers.result.postMessage('FAIL: '+e.message+' '+e.stack));
 </script></body></html>

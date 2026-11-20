@@ -1019,6 +1019,7 @@ async function requestThreads({ force = false, cacheOnly = false, auto = false }
 // ---------------------------------------------------------------- wiring
 
 function setLayout(mode, { user = false } = {}) {
+  if(user&&typeof setMode==='function')setMode(mode==='library'?'notes':'graph');
   if(mode==='library'){clearTimeout(projectFolderTimer);projectFolderTimer=null;G.token++;}
   const previous = G.layout;
   if(mode!=='library'){lib.trash=false;document.body.classList.remove('library-trash-view');}
@@ -1031,7 +1032,7 @@ function setLayout(mode, { user = false } = {}) {
     b.classList.toggle('active', b.dataset.layout === G.layout);
     b.setAttribute('aria-pressed', String(b.dataset.layout === G.layout));
   });
-  if (G.layout === 'library') renderLibItems();
+  if (G.layout === 'library') {renderLibItems();if(user&&typeof restoreCollectionView==='function')restoreCollectionView();}
   if (lineageOn()) {
     LIN.sig = '';
     scheduleSummary();
@@ -1041,6 +1042,7 @@ function setLayout(mode, { user = false } = {}) {
   }
   G.autoFit = true;
   renderDetails();
+  if(typeof updateMainTitle==='function')updateMainTitle();
   kick(1);
   // An empty folder graph is still loaded; reopening it would repeat its notices.
   if (user && !document.body.classList.contains('notes-mode') && !document.body.classList.contains('pdf-mode') && G.layout !== 'library' && G.project?.target !== lib.target && (!G.nodes.size || previous === 'library')) openProject(lib.target);

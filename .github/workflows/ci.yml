@@ -198,6 +198,9 @@ jobs:
       - name: Build server for paper integration
         if: needs.release-checks.outputs.run_paper != 'false'
         run: cargo build --locked --bin noctua
+      - name: Test macOS linked workspace capabilities
+        if: needs.release-checks.outputs.run_paper != 'false' && matrix.platform == 'macos-latest'
+        run: cargo test --locked -p noctua --lib
       - name: Test paper fixture and SyncTeX helpers
         if: needs.release-checks.outputs.run_paper != 'false'
         run: python -m unittest discover -s tests -p 'test_paper_*.py'

@@ -154,6 +154,10 @@ rebuilds. New tags build only Apple Silicon.
 
 ## Prepare release notes
 
+The [changelog](../CHANGELOG.md) records the prepared release, including behavior
+changes, compatibility limits, and migration notes. Keep its unreleased section
+in sync with the reviewed branch and use it when reviewing generated release notes.
+
 GitHub's native release-note generator lists merged PRs with links and adds a
 full changelog comparison when a previous release is available. It selects the
 previous release automatically; earlier unpublished drafts may not provide the

@@ -6,7 +6,7 @@ use axum::{extract::{Path, State}, Json};
 use serde_json::{json, Value};
 use crate::{App, Shared, ApiResult};
 
-struct FileApproval { id: String, decision: Option<bool>, changes: Vec<Value> }
+struct FileApproval { grant: Option<(String,String)>, id: String, decision: Option<bool>, changes: Vec<Value> }
 struct Approval { root: PathBuf, chat: String, files: HashMap<String, FileApproval> }
 static TURNS: OnceLock<Mutex<HashMap<String, Approval>>> = OnceLock::new();
 fn turns() -> &'static Mutex<HashMap<String, Approval>> { TURNS.get_or_init(Default::default) }
@@ -17,7 +17,7 @@ pub(crate) fn pending_for_chat(app:&App,chat:&str)->Vec<Value>{
     let map=turns().lock().unwrap();let mut events=Vec::new();
     for (id,turn) in map.iter().filter(|(_,turn)|turn.root==app.data_dir&&turn.chat==chat){
         for file in turn.files.values().filter(|file|file.decision.is_none()&&!file.changes.is_empty()){
-            events.push(json!({"action":"file_edit_approval","chat_id":chat,"turn_id":id,"approval_id":file.id,"changes":file.changes}));
+            events.push(json!({"action":"file_edit_approval","chat_id":chat,"turn_id":id,"approval_id":file.id,"persistent":file.grant.is_some(),"changes":file.changes}));
         }
     }
     events
@@ -65,7 +65,13 @@ pub fn created(app: &App, turn: &str, chat: Option<&str>, args: &Value, response
     if let Ok(a)=check(&mut map,app,turn,chat) { if let Some(permission)=a.files.remove(&old) { a.files.insert(new,permission); } }
 }
 
-pub async fn authorize(app: &App, id: &str, chat: Option<&str>, args: &Value) -> Result<()> {
+pub async fn authorize(app: &App, id: &str, chat: Option<&str>, args: &Value) -> Result<()> {authorize_inner(app,id,chat,args,false).await}
+pub async fn authorize_linked(app: &App,id:&str,chat:Option<&str>,args:&Value)->Result<()>{
+    {let mut all=turns().lock().unwrap();check(&mut all,app,id,chat)?;}
+    if crate::project_access::allowed(app,args["folder_id"].as_str().context("Linked folder required")?,&crate::project_access::file_key(args))?{return Ok(());}
+    authorize_inner(app,id,chat,args,true).await
+}
+async fn authorize_inner(app: &App, id: &str, chat: Option<&str>, args: &Value,persistent:bool) -> Result<()> {
     let key=file_key(args)?;
     // Read and validate the snapshot before displaying it. Execution still uses
     // workspace::change's original revision check after approval, so a user's
@@ -90,11 +96,11 @@ pub async fn authorize(app: &App, id: &str, chat: Option<&str>, args: &Value) ->
         let mut map = turns().lock().unwrap();
         let a = check(&mut map, app, id, chat)?;
         anyhow::ensure!(a.files.contains_key(&key) || a.files.len()<100, "Too many pending files");
-        let file=a.files.entry(key.clone()).or_insert_with(||FileApproval {id:uuid::Uuid::new_v4().to_string(),decision:None,changes:vec![]});
+        let file=a.files.entry(key.clone()).or_insert_with(||FileApproval {grant:if persistent{Some((target.to_owned(),crate::project_access::file_key(args)))}else{None},id:uuid::Uuid::new_v4().to_string(),decision:None,changes:vec![]});
         if file.decision.is_none() {
             anyhow::ensure!(file.changes.len()<100, "Too many pending edits");
             file.changes.push(proposal);
-            app.ui(json!({"action":"file_edit_approval","chat_id":chat,"turn_id":id,"approval_id":file.id,"changes":file.changes}));
+            app.ui(json!({"action":"file_edit_approval","chat_id":chat,"turn_id":id,"approval_id":file.id,"persistent":file.grant.is_some(),"changes":file.changes}));
         }
         file.id.clone()
     };
@@ -120,6 +126,11 @@ pub async fn decide(State(app): Shared, Path(id): Path<String>, Json(body): Json
     let a = check(&mut map, &app, &id, body["chat_id"].as_str())?;
     let file=a.files.values_mut().find(|f|Some(f.id.as_str())==body["approval_id"].as_str()).context("Unknown file approval")?;
     if file.changes.is_empty() || file.decision.is_some() { return Err(anyhow::anyhow!("This approval is no longer pending").into()); }
+    if body["approve"]==true&&body["remember"]==true {if let Some((target,key))=&file.grant{crate::project_access::remember(&app,target,key,file.changes[0]["name"].as_str().unwrap_or("Project file"))?;}}
     file.decision = Some(body["approve"].as_bool().context("Missing approval decision")?);
     Ok(Json(json!({"approved":file.decision})))
 }
+
+pub fn revoke_linked(app:&App,target:&str){for turn in turns().lock().unwrap().values_mut().filter(|t|t.root==app.data_dir){turn.files.retain(|_,f|f.grant.as_ref().is_none_or(|(t,_)|t!=target));}}
+
+pub fn validate_turn(app:&App,id:&str,chat:Option<&str>)->Result<()>{check(&mut turns().lock().unwrap(),app,id,chat)?;Ok(())}

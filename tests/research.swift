@@ -74,16 +74,16 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
 (async()=>{
  markPhase('library and layout');
  await collectionsReady;await settle();
- assert(document.querySelector('[data-mode="graph"]').textContent==='Library','top-level mode named Library');
+ assert(document.querySelector('header [data-layout="library"]').textContent==='Library','single top-level navigation starts with Library');
  assert(!document.querySelector('[data-tab="results"]'),'Search tab removed');
  assert(!document.querySelector('[data-tab="projects"], #proj-target, #proj-open'),'redundant Projects navigation removed');
  assert(!$('#clear-graph'),'redundant Close graph button removed');
  assert(!$('[data-tab="library"], [data-tab="nodes"]'),'redundant Folders/Papers tabs removed');
  assert($('[data-layout="network"]').textContent==='Graph','Network renamed Graph');
  assert(!$('#left > .tabs'),'secondary sidebar tabs removed');
- assert($('#left > #layout')&&!$('#stage #layout'),'visualization switch lives at top of left sidebar');
+ assert($('header > #layout')&&!$('#left #layout')&&!$('.mode-switch'),'one navigation group lives in the header');
  assert(visible($('#layout')),'visualization switch remains visible in Library');
- for(const mode of ['notes-mode','pdf-mode']){document.body.classList.add(mode);assert(!visible($('#layout')),'visualization switch hides in '+mode);document.body.classList.remove(mode);}
+ for(const mode of ['notes-mode','pdf-mode']){document.body.classList.add(mode);assert(visible($('#layout')),'navigation stays visible in '+mode);document.body.classList.remove(mode);}
  assert(G.layout==='library'&&visible($('#library-view')),'Library is default');
  const pendingSettings=settings;settings=null;renderLibItems();settings=pendingSettings;
  assert($('#library-rows').children.length===2&&$('#library-rows').textContent.includes('Alpha lineage'),'unmatched local papers included before settings finish loading');
@@ -115,13 +115,14 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  noteRow.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));assert(openedNotes.length===1&&openedNotes[0].target==='C1','double-click note must open its own collection');
  lib.notes=previousNotes;renderLibItems();
 
- const modeClicks=[];const trackMode=e=>modeClicks.push(e.currentTarget.dataset.mode);
- document.querySelectorAll('.mode-switch button').forEach(button=>button.addEventListener('click',trackMode));
+ const realShortcutLayout=setLayout;setLayout=()=>{};
+ const modeClicks=[];const trackMode=e=>modeClicks.push(e.currentTarget.dataset.layout);
+ document.querySelectorAll('#layout button').forEach(button=>button.addEventListener('click',trackMode));
  for(const [code,key]of [['Digit1','¡'],['Digit2','™'],['Digit3','£']])document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,code,key,bubbles:true,cancelable:true}));
- assert(modeClicks.join(',')==='graph,notes','Option digits should switch Library/Notes and skip disabled Reader');
- $('#reader-mode').disabled=false;document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,code:'Digit3',key:'£',bubbles:true,cancelable:true}));assert(modeClicks.at(-1)==='pdf','Alt+3 should switch enabled Reader');$('#reader-mode').disabled=true;
+ assert(modeClicks.join(',')==='library,network,lineage','Option digits should switch Library, Graph, and Lineage');
+
  const modeCount=modeClicks.length;document.dispatchEvent(new KeyboardEvent('keydown',{altKey:true,ctrlKey:true,code:'Digit2',bubbles:true}));assert(modeClicks.length===modeCount,'AltGr must not switch modes');
- document.querySelectorAll('.mode-switch button').forEach(button=>button.removeEventListener('click',trackMode));
+ document.querySelectorAll('#layout button').forEach(button=>button.removeEventListener('click',trackMode));setLayout=realShortcutLayout;
 
  showLibItem(lib.items.find(item=>item.key==='a'));
  await settle();assert($('#details .paper-assigned-collections').textContent.includes('Networks / Subfolder'),'Paper info should show directly assigned collection paths');
@@ -227,6 +228,7 @@ document.querySelectorAll('input, textarea').forEach(field=>field.spellcheck=fal
  assert(getComputedStyle($('#library-table-filter')).opacity==='1','empty library filter is always visible');
  $('#library-table-filter').value='Hopper';$('#library-table-filter').dispatchEvent(new Event('input'));
  assert($('#library-rows').children.length===1&&$('#library-rows tr').dataset.key==='b','filter by author');
+ const searchBox=$('#research-search').getBoundingClientRect(),tabsBox=$('#layout').getBoundingClientRect();assert(searchBox.left-tabsBox.right>=12,'header search is separated from navigation tabs');
  assert($('header #search-form')&&!$('#stage #search-form'),'global paper search restored to header');
  assert(document.querySelectorAll('#library-table-filter').length===1&&$('.library-heading #library-table-filter'),'single filter shares the library heading');
  const searchRequests=requests.filter(p=>p.startsWith('/api/search')).length;
