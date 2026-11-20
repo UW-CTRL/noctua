@@ -450,3 +450,8 @@ to avoid WebKit timer throttling during repeated editor mounts.
 The macOS paper job also runs the backend library suite, covering linked roots,
 PTY terminals, and sandboxed agent commands that Ubuntu cannot exercise. Update
 fixtures support minor/major release boundaries as well as patch releases.
+
+macOS packaging checks verify the actual application resource seal in both the
+DMG and updater archive, independently of the Tauri updater signature. They
+accept valid ad-hoc signatures; notarization requires a separate Developer ID
+release setup and Gatekeeper check.

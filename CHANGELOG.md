@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.4.0 — Unreleased
+## 0.4.1 — 2026-11-20
+
+Desktop-only patch; bundles the existing Server 0.4.0 release.
+
+- Fix macOS release packaging to sign the entire application bundle, correcting
+  the incomplete signature in 0.4.0 that produces a “damaged” error.
+- Verify macOS bundle signatures inside both DMGs and updater archives before
+  publication. Ad-hoc signing does not provide Apple notarization.
+
+## 0.4.0 — 2026-11-20
 
 Desktop and Server release, following 0.3.10. This release brings external project
 folders, a unified explorer, and document tabs to Noctua, alongside LaTeX editor

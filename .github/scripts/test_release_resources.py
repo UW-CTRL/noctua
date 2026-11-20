@@ -62,10 +62,33 @@ class ReleaseResourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'signature is required'):
                 resources.check_macos_updater(root)
             archive.with_name(archive.name + '.sig').write_text('signed fixture')
-            resources.check_macos_updater(root)
+            with patch.object(resources, 'verify_macos_apps') as verify:
+                resources.check_macos_updater(root)
+                verify.assert_called_once()
             write(self.names[1:])
             with self.assertRaisesRegex(ValueError, 'missing: server'):
                 resources.check_macos_updater(root)
+
+    def test_macos_bundle_signature_is_required_and_failure_propagates(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, 'application bundle'):
+                resources.verify_macos_apps(folder)
+            app = Path(folder) / 'Noctua.app'
+            app.mkdir()
+            with patch.object(resources.subprocess, 'run') as run:
+                resources.verify_macos_apps(folder)
+                run.assert_called_once_with(
+                    ['codesign', '--verify', '--deep', '--strict', '--verbose=2', str(app)],
+                    check=True)
+                run.side_effect = subprocess.CalledProcessError(1, 'codesign')
+                with self.assertRaises(subprocess.CalledProcessError):
+                    resources.verify_macos_apps(folder)
+
+    def test_release_config_signs_the_macos_bundle(self):
+        import json
+        config = json.loads((ROOT / 'app/tauri.release.conf.json').read_text())
+        self.assertEqual(config['bundle']['macOS']['signingIdentity'], '-')
 
     def test_new_desktop_packages_keep_a_browser_ui_snapshot(self):
         import os

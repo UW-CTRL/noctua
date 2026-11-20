@@ -166,3 +166,14 @@ width, selection, and drafts; visibility is remembered across restarts. Drag the
 rail to resize an open pane up to the space the center view needs, or double-click
 outside the arrow to reset its width.
 Arrow buttons are keyboard accessible with Tab and Enter/Space.
+
+### macOS download warnings
+
+Updater signatures and Apple notarization are different checks. Noctua's current
+release setup does not provide Apple notarization. For an unverified-developer
+warning on a download you trust, follow [Apple's Open Anyway instructions](https://support.apple.com/en-us/102445).
+
+The 0.4.0 DMG has a confirmed incomplete application-bundle signature and can
+report “damaged.” Re-downloading that same release does not repair the signature.
+Install Desktop 0.4.1 or later, which corrects the bundle signature. Do not disable
+Gatekeeper globally.
