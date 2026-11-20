@@ -8,6 +8,8 @@ Desktop-only patch; bundles the existing Server 0.4.0 release.
   the incomplete signature in 0.4.0 that produces a “damaged” error.
 - Verify macOS bundle signatures inside both DMGs and updater archives before
   publication. Ad-hoc signing does not provide Apple notarization.
+- Correct server packaging tests to use the independent server version during
+  desktop-only releases.
 
 ## 0.4.0 — 2026-11-20
 

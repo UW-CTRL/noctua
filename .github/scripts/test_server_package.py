@@ -31,7 +31,10 @@ class ServerPackageTests(unittest.TestCase):
         for name in ['dark', 'light']:
             (self.root / f'app/icons/icon-{name}.svg').write_text('<svg/>')
         import tomllib
-        self.version = tomllib.loads((self.root / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+        manifest = tomllib.loads((self.root / "Cargo.toml").read_text())
+        self.version = manifest["package"]["version"]
+        if isinstance(self.version, dict):
+            self.version = manifest["workspace"]["package"]["version"]
         self.tag = "server-v" + self.version
 
     def binary(self, target):
