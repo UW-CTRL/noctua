@@ -26,6 +26,17 @@ def validate(names):
         raise ValueError('Installer is missing: ' + ', '.join(missing))
 
 
+def verify_macos_apps(folder):
+    apps = [path for path in Path(folder).glob('*.app') if path.is_dir()]
+    if not apps:
+        raise ValueError('Installer is missing its macOS application bundle.')
+    for app in apps:
+        # Updater signatures do not validate Apple's application resource seal.
+        # Accept a valid ad-hoc signature; Developer ID/notarization is separate.
+        subprocess.run(['codesign', '--verify', '--deep', '--strict', '--verbose=2',
+                        str(app)], check=True)
+
+
 def check_macos_updater(root):
     archives = list(root.glob('target/**/release/bundle/macos/*.app.tar.gz'))
     if not archives:
@@ -36,6 +47,9 @@ def check_macos_updater(root):
             raise ValueError('macOS updater signature is required.')
         with tarfile.open(archive) as package:
             validate(package.getnames())
+            with tempfile.TemporaryDirectory(prefix='noctua-updater-') as folder:
+                package.extractall(folder, filter='data')
+                verify_macos_apps(folder)
 
 
 def check(root, platform=sys.platform):
@@ -62,6 +76,7 @@ def check(root, platform=sys.platform):
                     names = [str(path.relative_to(mount)) for path in Path(mount).rglob('*')
                              if path.is_file() or path.is_symlink()]
                     validate(names)
+                    verify_macos_apps(mount)
                 finally:
                     subprocess.run(['hdiutil', 'detach', mount], check=True)
         elif platform == 'win32':

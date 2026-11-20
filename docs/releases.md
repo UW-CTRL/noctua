@@ -254,6 +254,24 @@ the user requests a check in Settings;
 drafts and releases marked as prereleases are not offered. A release without a
 manifest produces a visible check error rather than claiming the app is current.
 
+## macOS application signing
+
+macOS release builds explicitly ad-hoc sign the complete application bundle.
+Installer checks validate its resource seal with `codesign --verify --deep
+--strict`, both inside the DMG and after extracting the updater archive. This
+catches incomplete linker-only signatures that macOS reports as a damaged app.
+Tauri updater signatures protect update downloads; they do not replace Apple's
+application signing or notarization.
+
+Ad-hoc signing does not identify an Apple-verified developer or provide
+notarization. Users may still need **Privacy & Security → Open Anyway** after
+attempting to open the app. To distribute without that warning, configure a
+Developer ID Application certificate and Apple notarization credentials following
+[Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/), replace
+the ad-hoc identity, and verify Gatekeeper acceptance of the downloaded installer.
+Never publish a bundle that fails code-signature verification or advise disabling
+Gatekeeper globally.
+
 ## Update signing setup
 
 Before tagging the first updater-enabled release, generate a persistent signing
